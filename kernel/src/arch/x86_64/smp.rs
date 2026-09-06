@@ -215,6 +215,7 @@ pub extern "C" fn ap_entry() -> ! {
     super::kpti::load_ap();
     cpu::set_gs(1);
     crate::mm::paging::enable_smep_smap();
+    crate::mm::paging::enable_pcid();
     apic::enable();
     AP_ONLINE.store(true, Ordering::Release);
     irq::enable();

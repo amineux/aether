@@ -14,9 +14,12 @@ LOADER_ELF  := $(BUILD)/aether.elf
 INIT_BLOB   := $(BUILD)/init.elf
 PROBE_BLOB  := $(BUILD)/probe.elf
 QEMU        := qemu-system-x86_64
+# Stock qemu64 often has no PCID (full-flush fallback). `+pcid,+invpcid`
+# is the tagged-TLB path (`make qemu-pcid-ci`). `-pcid` forces fallback.
+QEMU_CPU    := qemu64,+smep,+smap
 QEMU_FLAGS  := -kernel $(LOADER_ELF) -serial stdio -display none \
                -no-reboot -no-shutdown -m 128M \
-               -cpu qemu64,+smep,+smap \
+               -cpu $(QEMU_CPU) \
                -device isa-debug-exit,iobase=0xf4,iosize=0x04
 # CI forces slide index 1 (16 MiB). Interactive `make qemu` may use
 # rdrand/rdtsc when `-append` is omitted.
@@ -49,7 +52,8 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
 .PHONY: all kernel kernel-riscv kernel-aarch64 loader user-init user-init-riscv \
         user-init-aarch64 user-probe \
         qemu qemu-riscv qemu-aarch64 \
-        qemu-debug qemu-ci qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
+        qemu-debug qemu-ci qemu-pcid-ci qemu-nopcid-ci \
+        qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
@@ -60,7 +64,9 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + KPTI + SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + KPTI + PCID-or-fallback + SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-pcid-ci - same guest with -cpu qemu64,+pcid,+invpcid (tagged TLB)"
+	@echo "  make qemu-nopcid-ci - same guest with -cpu qemu64,-pcid (full-flush fallback)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
@@ -143,6 +149,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] pcid" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
@@ -152,10 +159,52 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + KPTI + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + KPTI + PCID + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
+	exit 1
+
+# Forced tagged-TLB path. Last `-cpu` wins over QEMU_FLAGS.
+qemu-pcid-ci: $(LOADER_ELF)
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/qemu-pcid-serial.log
+	set +e; \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_FLAGS) -cpu $(QEMU_CPU),+pcid,+invpcid $(QEMU_CI_APPEND) \
+		> $(BUILD)/qemu-pcid-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/qemu-pcid-serial.log; \
+	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
+	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
+		echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-pcid-ci: pcid ok banner missing or bad exit (qemu exit $$ec)"; \
+	exit 1
+
+# Forced full-flush fallback (stock qemu64 may already lack PCID).
+qemu-nopcid-ci: $(LOADER_ELF)
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/qemu-nopcid-serial.log
+	set +e; \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_FLAGS) -cpu $(QEMU_CPU),-pcid $(QEMU_CI_APPEND) \
+		> $(BUILD)/qemu-nopcid-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/qemu-nopcid-serial.log; \
+	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
+	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[mm\\] pcid fallback" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-nopcid-serial.log; then \
+		echo "qemu-nopcid-ci: full-flush fallback + SoftNPU /init ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-nopcid-ci: pcid fallback banner missing or bad exit (qemu exit $$ec)"; \
 	exit 1
 
 qemu-debug: $(LOADER_ELF)
@@ -185,6 +234,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] pcid" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \

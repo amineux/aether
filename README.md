@@ -216,7 +216,9 @@ The kernel and `/init` are **separate Cargo projects** so
   kernel span, and runs at the slid RIP. The identity 4 GiB stays
   mapped on the **kernel** CR3 on purpose (SoftNPU DMA, AP SIPI).
   User CR3 is a KPTI subset: ELF window + 4 KiB supervisor trampoline,
-  no HH, no identity DMA. Not Meltdown-complete / PIE / PCID / COW.
+  no HH, no identity DMA. PCID tags those CR3 switches when the CPU
+  advertises it (`-cpu qemu64,+pcid,+invpcid`); otherwise `mov cr3`
+  still full-flushes. Not Meltdown-complete / PIE / COW.
   SMP is a QEMU `-smp 2` smoke; APs do not run `/init`.
   `make qemu-smp` proves two harts; `make qemu` stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`

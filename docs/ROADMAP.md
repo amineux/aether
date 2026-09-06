@@ -388,8 +388,9 @@ Sequenced follow-ups (do not claim them here):
    canonical alias. Needed before the slide is a real secret.
 2. **KPTI.** Separate user CR3 without kernel HH (Meltdown unmap).
    Identity DMA / SIPI must keep a supervisor-only low map on the
-   kernel CR3.
+   kernel CR3. **Landed** as a later subset.
 3. **PCID** so KPTI CR3 switches are not a full TLB shootdown.
+   **Landed** as a later subset (CPUID-gated; fallback is full flush).
 4. **COW** / growable `mmap` — unrelated to this slide.
 
 Still stubbed at the KASLR cut: PIE / unmap of the unused alias,
@@ -411,7 +412,8 @@ PCID, not PIE / reloc, not COW:
 - Syscall / IRQ from ring-3 land in the identity trampoline, switch
   CR3 to the kernel map, then jump to the higher-half handler.
   Return copies the `iretq` frame onto the trampoline stack and
-  switches back. PCID is not armed (each `mov cr3` is a full flush).
+  switches back. PCID (next cut) tags those `mov cr3`s when the CPU
+  advertises it; without PCID each switch is still a full flush.
 - Host tests: `core/src/aspace.rs` (`kpti_user_has_no_hh_or_identity_dma`).
   QEMU: `[mm] kpti ok` plus the existing SoftNPU / `/init` / clone /
   KASLR / HH greps. `make qemu-ci` greps the kpti line.
@@ -423,13 +425,50 @@ Honest limits (do not market these as done):
 - The four trampoline pages are still mapped in user CR3
   (supervisor-only). That is not a complete Meltdown unmap.
 - Unused KASLR canonical alias stays on the kernel map (not PIE).
-- No PCID, no speculation barriers, no NX on trampoline data.
+- No speculation barriers, no NX on trampoline data.
 
-Sequenced follow-ups: PIE + reloc (unmap unused alias), PCID,
+Sequenced follow-ups: PIE + reloc (unmap unused alias), PCID (next),
 COW / growable `mmap`.
 
-Still stubbed: PIE / unmap of the unused alias, PCID, COW,
-tearing down the kernel identity 4 GiB.
+Still stubbed at the KPTI cut: PIE / unmap of the unused alias, PCID
+(later subset), COW, tearing down the kernel identity 4 GiB.
+
+## PCID tagged TLB (this cut)
+
+Landed as a **documented subset**, not Meltdown-complete, not a
+Linux-style PCID allocator, not a speculation barrier:
+
+- CPUID.1:ECX[17] (`PCID`) gates `CR4.PCIDE`. Kernel aspace is PCID
+  1; each distinct user PML4 (`/init`, `/probe`) gets the next id
+  from 2. `SYS_CLONE` shares the caller's PML4 and therefore the
+  same PCID.
+- `mov cr3` carries the PCID and the no-flush bit (CR3[63]) so a
+  KPTI kernel↔user switch does not shoot down the other context.
+  INVPCID type 1 (CPUID.7:EBX[10]) flushes one PCID on remap
+  (`allow_user_2m`) / aspace teardown. No INVPCID → `mov cr3` with
+  bit 63 clear for that PCID, then restore.
+- **Fallback:** stock `qemu64` often has no PCID. `mov cr3` stays a
+  full flush; serial prints `[mm] pcid fallback`. CI covers both:
+  `make qemu-nopcid-ci` (`-cpu qemu64,+smep,+smap,-pcid`) and
+  `make qemu-pcid-ci` (`-cpu qemu64,+smep,+smap,+pcid,+invpcid`).
+  `make qemu-ci` greps `[mm] pcid` on whatever `qemu64` advertises.
+- Host tests: `core/src/aspace.rs` (`cr3_tagged`, `PcidAlloc` kernel
+  vs user vs clone-share). QEMU: `[mm] pcid ok` or
+  `[mm] pcid fallback`. SoftNPU kthread-B stays on kernel CR3
+  (identity DMA). RISC-V / aarch64 unchanged. No new syscall.
+
+Honest limits (do not market these as done):
+
+- This is a TLB-tag optimization for KPTI CR3 switches. Trampoline
+  pages remain mapped. No lfence / speculation barriers. Not a
+  Meltdown-complete claim.
+- PCIDs are a handful of boot aspaces, not a recycled 12-bit
+  allocator under fork load.
+- Unused KASLR alias stays (not PIE). Identity 4 GiB stays on the
+  kernel CR3 for DMA.
+
+Still stubbed: PIE / unmap of the unused alias, COW, tearing down
+the kernel identity 4 GiB.
 
 ## User-level threads / `SYS_CLONE` (this cut)
 
@@ -543,7 +582,7 @@ Search for `// STUB:` / `STUB` :
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
-| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + KPTI subset (user CR3: no HH / no identity DMA; 4 KiB trampoline; kernel CR3 keeps DMA). PCID / COW / PIE-reloc still stub |
+| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + KPTI + PCID subset (tagged `mov cr3` when CPUID.PCID; else full flush). COW / PIE-reloc still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
@@ -575,9 +614,9 @@ kernel thread queue sleeps.
 3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.
-4. **PCID / COW / PIE-KASLR.** KPTI user CR3 (no HH / no identity DMA;
-   trampoline entry) landed. Do not claim Meltdown-complete, PCID,
-   PIE reloc, or a secret slide.
+4. **COW / PIE-KASLR.** KPTI + PCID landed (tagged TLB when CPUID
+   advertises PCID; full flush otherwise). Do not claim
+   Meltdown-complete, PIE reloc, or a secret slide.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
@@ -600,13 +639,13 @@ kernel thread queue sleeps.
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
-  kernel map, the KASLR boot-time slide, the KPTI user-CR3 subset
-  (this cut), user-level
+  kernel map, the KASLR boot-time slide, the KPTI user-CR3 subset,
+  the PCID tagged-TLB subset (this cut), user-level
   threads via `SYS_CLONE`, and in-kernel
   ramfs for `/init`, RISC-V PLIC + SoftNPU software doorbell, and
   aarch64 EL0 `/init` are landed. ABI stays stable
   (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
-  PCID / PIE-reloc KASLR remain deferred.
+  PIE-reloc KASLR remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -624,9 +663,10 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   user-level threads / `SYS_CLONE` (PR #23), in-kernel ramfs
   for `/init` (PR #24), RISC-V PLIC + SoftNPU doorbell (PR #25),
   aarch64 EL0 `/init` (PR #26), the x86 KASLR boot-time
-  slide (PR #27), and the x86 KPTI user-CR3 subset (this cut)
+  slide (PR #27), the x86 KPTI user-CR3 subset (PR #28), and the
+  x86 PCID tagged-TLB subset (this cut)
   are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), virtio-blk, PCID / PIE-reloc
+  Custom QEMU virtio-accel (path A), virtio-blk, PIE-reloc
   KASLR, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor

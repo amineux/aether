@@ -29,6 +29,12 @@ jobs:
       - name: QEMU demo (isa-debug-exit success)
         run: make qemu-ci
 
+      - name: QEMU PCID tagged TLB (-cpu +pcid,+invpcid)
+        run: make qemu-pcid-ci
+
+      - name: QEMU PCID fallback (-cpu -pcid)
+        run: make qemu-nopcid-ci
+
       - name: QEMU SMP smoke (-smp 2)
         run: make qemu-smp-ci
 
