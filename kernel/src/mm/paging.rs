@@ -10,12 +10,16 @@
 //! (tables are still addressed by PA), AP SIPI, Multiboot mailbox,
 //! and user ELF windows. That table stays the **kernel CR3**
 //! (supervisor-only). Each ring-3 task gets a cloned PML4: same
-//! identity + HH kernel mappings, USER only on that task's 2 MiB ELF
-//! window, other known user windows unmapped.
+//! identity + HH kernel mappings. Each ring-3 task gets a **KPTI**
+//! PML4: USER only on that task's 2 MiB ELF window, no `PML4[511]`
+//! (no kernel HH), no identity 4 GiB, plus four supervisor 4 KiB
+//! trampoline pages for syscall/IRQ entry. CR3 switches to the kernel
+//! map on enter and back on exit. SoftNPU kthread-B stays on kernel
+//! CR3 so `IdentityDma` still sees the intentional 4 GiB window.
 //!
-//! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy).
-//! Not PIE / reloc (cannot unmap the unused alias), not KPTI, not
-//! PCID, not COW, not a POSIX MM.
+//! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy)
+//! plus documented KPTI subset. Not PIE / reloc, not Meltdown-complete,
+//! not PCID, not COW, not a POSIX MM.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -28,7 +32,7 @@ use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{
     kaslr_slide_valid, kernel_text_va_slid, KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA,
-    KERNEL_TEXT_VA, KERNEL_VMA, USER_IMAGE_BASE, USER_PROBE_BASE,
+    KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA, USER_IMAGE_BASE, USER_PROBE_BASE,
 };
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
@@ -246,31 +250,30 @@ pub fn allow_user_walk_low() {
     }
 }
 
-/// Mark the 2 MiB page covering `va` user-accessible (identity map).
+/// Mark the 2 MiB page covering `va` user-accessible on the **user**
+/// CR3 (KPTI). Does not touch the kernel identity map.
 #[cfg(target_arch = "x86_64")]
 pub fn allow_user_2m(va: u64) {
-    unsafe {
-        let pml4 = (cr3() & !0xFFF) as *mut u64;
-        let pml4e = core::ptr::read_volatile(pml4);
-        if pml4e & P == 0 {
-            return;
-        }
-        let pdpt = (pml4e & 0x000F_FFFF_FFFF_F000) as *mut u64;
-        let i3 = ((va >> 30) & 0x1FF) as usize;
-        let pdpte = core::ptr::read_volatile(pdpt.add(i3));
-        if pdpte & P == 0 || pdpte & PS != 0 {
-            return;
-        }
-        core::ptr::write_volatile(pdpt.add(i3), pdpte | US);
-        let pd = (pdpte & 0x000F_FFFF_FFFF_F000) as *mut u64;
-        let i2 = ((va >> 21) & 0x1FF) as usize;
-        let pde = core::ptr::read_volatile(pd.add(i2));
-        if pde & P == 0 {
-            return;
-        }
-        core::ptr::write_volatile(pd.add(i2), pde | US);
-        invlpg(va);
+    let root = crate::arch::x86_64::kpti::user_cr3();
+    let root = if root == 0 { unsafe { cr3() } } else { root } & !0xFFF;
+    let i3 = ((va >> 30) & 0x1FF) as usize;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    if i3 != 0 {
+        return;
     }
+    let pml4e = read64(root);
+    if pml4e & P == 0 {
+        return;
+    }
+    let pdpt = pml4e & 0x000F_FFFF_FFFF_F000;
+    let pdpte = read64(pdpt);
+    if pdpte & P == 0 || pdpte & PS != 0 {
+        return;
+    }
+    write64(pdpt, pdpte | US);
+    let pd = pdpte & 0x000F_FFFF_FFFF_F000;
+    write64(pd + i2 as u64 * 8, (va & !0x1F_FFFF) | P | RW | US | PS);
+    invlpg(va);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -282,70 +285,40 @@ fn alloc_zeroed_page() -> Option<u64> {
     Some(p.0)
 }
 
-/// Clone the kernel identity + HH map into a new PML4. USER only on
-/// `[user_lo, user_hi)`; each VA in `unmap` loses Present on its 2 MiB leaf.
-/// PML4[511] is copied with the rest of the kernel PML4 (shared HH PDPT).
+/// Build a KPTI user PML4: USER 2 MiB on `[user_lo, user_hi)`, supervisor
+/// 4 KiB trampoline pages, no HH, no identity 4 GiB. `unmap` clears those
+/// 2 MiB leaves (they are not mapped unless they overlap the user window).
 #[cfg(target_arch = "x86_64")]
 pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u64> {
-    let kcr3 = kernel_cr3();
     let pml4 = alloc_zeroed_page()?;
     let pdpt = alloc_zeroed_page()?;
-    unsafe {
-        core::ptr::copy_nonoverlapping(kcr3 as *const u8, pml4 as *mut u8, 4096);
-    }
-    let k_pml4e = read64(kcr3);
-    if k_pml4e & P == 0 {
-        return None;
-    }
-    let k_pdpt = k_pml4e & 0x000F_FFFF_FFFF_F000;
-    unsafe {
-        core::ptr::copy_nonoverlapping(k_pdpt as *const u8, pdpt as *mut u8, 4096);
-    }
-
-    let mut new_pds = [0u64; 4];
-    for i in 0..4 {
-        let k_pdpte = read64(k_pdpt + i as u64 * 8);
-        if k_pdpte & P == 0 {
-            continue;
-        }
-        let pd = alloc_zeroed_page()?;
-        let k_pd = k_pdpte & 0x000F_FFFF_FFFF_F000;
-        unsafe {
-            core::ptr::copy_nonoverlapping(k_pd as *const u8, pd as *mut u8, 4096);
-        }
-        for j in 0..512u64 {
-            let e = read64(pd + j * 8);
-            write64(pd + j * 8, e & !US);
-        }
-        write64(
-            pdpt + i as u64 * 8,
-            (pd & !0xFFF) | (k_pdpte & (PS | 0xFFF) & !US) | P | RW,
-        );
-        new_pds[i] = pd;
-    }
+    let pd0 = alloc_zeroed_page()?;
+    let pt = alloc_zeroed_page()?;
 
     write64(pml4, (pdpt & !0xFFF) | P | RW | US);
+    write64(pdpt, (pd0 & !0xFFF) | P | RW | US);
+    write64(pd0, (pt & !0xFFF) | P | RW);
 
-    let gi = ((user_lo >> 30) & 0x1FF) as usize;
-    if gi < 4 {
-        write64(pdpt + gi as u64 * 8, read64(pdpt + gi as u64 * 8) | US);
+    for &pa in &KPTI_TRAMP_PAS {
+        let i = (pa >> 12) & 0x1FF;
+        write64(pt + i * 8, (pa & !0xFFF) | P | RW);
     }
 
     let mut va = user_lo & !0x1F_FFFF;
     while va < user_hi {
-        let i3 = ((va >> 30) & 0x1FF) as usize;
-        let i2 = ((va >> 21) & 0x1FF) as usize;
-        if i3 < 4 && new_pds[i3] != 0 {
-            write64(new_pds[i3] + i2 as u64 * 8, read64(new_pds[i3] + i2 as u64 * 8) | US);
+        let i3 = (va >> 30) & 0x1FF;
+        let i2 = (va >> 21) & 0x1FF;
+        if i3 == 0 {
+            write64(pd0 + i2 * 8, (va & !0x1F_FFFF) | P | RW | US | PS);
         }
         va += 0x20_0000;
     }
 
     for &u in unmap {
-        let i3 = ((u >> 30) & 0x1FF) as usize;
-        let i2 = ((u >> 21) & 0x1FF) as usize;
-        if i3 < 4 && new_pds[i3] != 0 {
-            write64(new_pds[i3] + i2 as u64 * 8, read64(new_pds[i3] + i2 as u64 * 8) & !P);
+        let i3 = (u >> 30) & 0x1FF;
+        let i2 = (u >> 21) & 0x1FF;
+        if i3 == 0 {
+            write64(pd0 + i2 * 8, 0);
         }
     }
 
@@ -486,19 +459,41 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     console::nl();
 
     let slid = kernel_text_va();
-    let hh_in_user = unsafe { walk_in(init_cr3, slid) }
+    let hh_in_user = unsafe { walk_in(init_cr3, slid) }.is_some();
+    let canon_in_user = unsafe { walk_in(init_cr3, KERNEL_TEXT_VA) }.is_some();
+    let lma_in_user = unsafe { walk_in(init_cr3, KERNEL_LMA) }.is_some();
+    let dma_in_user = unsafe { walk_in(init_cr3, 0x0100_0000) }.is_some();
+    let tramp = unsafe { walk_in(init_cr3, KPTI_TRAMP_VA) };
+    let tramp_ok = tramp
+        .as_ref()
+        .map(|w| w.phys.0 == KPTI_TRAMP_VA && !w.user)
+        .unwrap_or(false);
+    let k_keeps_dma = unsafe { walk_in(k, KERNEL_LMA) }
         .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
         .unwrap_or(false);
-    let canon_in_user = unsafe { walk_in(init_cr3, KERNEL_TEXT_VA) }
+    let k_keeps_hh = unsafe { walk_in(k, slid) }
         .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
         .unwrap_or(false);
+
+    write_str("[mm] kpti user tramp=");
+    print_walk("", init_cr3, KPTI_TRAMP_VA);
+    write_str(" hh=");
+    write_u64(hh_in_user as u64);
+    write_str(" identity=");
+    write_u64(lma_in_user as u64);
+    console::nl();
 
     let init_ok = user_mapped(init_cr3, USER_IMAGE_BASE)
         && !user_mapped(init_cr3, USER_PROBE_BASE)
         && unsafe { walk_in(init_cr3, USER_PROBE_BASE) }.is_none()
         && !user_mapped(k, USER_IMAGE_BASE)
-        && hh_in_user
-        && canon_in_user;
+        && !hh_in_user
+        && !canon_in_user
+        && !lma_in_user
+        && !dma_in_user
+        && tramp_ok
+        && k_keeps_dma
+        && k_keeps_hh;
 
     let probe_ok = if let Some(p) = probe_cr3 {
         write_str("[mm] /probe CR3=");
@@ -511,13 +506,22 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         user_mapped(p, USER_PROBE_BASE)
             && !user_mapped(p, USER_IMAGE_BASE)
             && unsafe { walk_in(p, USER_IMAGE_BASE) }.is_none()
+            && unsafe { walk_in(p, slid) }.is_none()
+            && unsafe { walk_in(p, KPTI_TRAMP_VA) }
+                .map(|w| !w.user)
+                .unwrap_or(false)
     } else {
         true
     };
 
     let ok = init_ok && probe_ok && smep_enabled() && smap_enabled();
     if ok {
-        println!("[mm] aspace isolate ok (task-local USER leaves + SMEP/SMAP + HH in user CR3)");
+        println!(
+            "[mm] aspace isolate ok (task-local USER leaves + SMEP/SMAP + KPTI trampoline)"
+        );
+        println!(
+            "[mm] kpti ok (user CR3: no HH, no identity DMA; trampoline only; not Meltdown-complete)"
+        );
     } else {
         println!("[mm] aspace isolate FAIL");
     }

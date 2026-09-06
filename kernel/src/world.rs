@@ -181,8 +181,10 @@ pub fn run_pending_accel() {
         if !w.pending && !w.npu.doorbell_pending() && !w.npu.irq_pending() {
             return;
         }
-        // IRQ may fire on a user satp/CR3. IdentityDma is PA=VA through
-        // the trampoline map; U-bit / SMAP leaves need SUM / STAC.
+        // x86: KPTI entry already switched to kernel CR3; IdentityDma
+        // is PA=VA on that map. RISC-V IRQ may fire on a user satp —
+        // IdentityDma is PA=VA through the trampoline map; U-bit / SMAP
+        // leaves need SUM / STAC.
         crate::mm::paging::with_user_access(|| {
             let _ = w.npu.service();
             w.npu.poll()

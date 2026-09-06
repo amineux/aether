@@ -2,9 +2,14 @@
 
 use core::arch::global_asm;
 
+use aether_core::KPTI_SLOT_BASE;
+
 use super::gdt::{KCODE, KDATA, USER_CS};
 use super::idt::InterruptFrame;
 use super::io::{rdmsr, wrmsr};
+
+/// User RSP saved by the identity trampoline before the kernel CR3 switch.
+const KPTI_SLOT_URSP: u64 = KPTI_SLOT_BASE + 16;
 
 const IA32_EFER: u32 = 0xC000_0080;
 const IA32_STAR: u32 = 0xC000_0081;
@@ -86,10 +91,9 @@ global_asm!(
 
     .global syscall_entry
     syscall_entry:
-        mov [SYSCALL_USER_RSP], rsp
         mov rsp, [SYSCALL_KSTACK]
         push {user_ss}
-        push qword ptr [SYSCALL_USER_RSP]
+        push qword ptr [{slot_ursp}]
         push r11
         push {user_cs}
         push rcx
@@ -98,18 +102,9 @@ global_asm!(
         SYSCALL_PUSH_REGS
         mov rdi, rsp
         call syscall_from_user
-        SYSCALL_POP_REGS
-        add rsp, 16
-        cmp qword ptr [rsp + 8], {user_cs}
-        jne 1f
-        pop rcx
-        add rsp, 8
-        pop r11
-        pop rsp
-        sysretq
-    1:
-        iretq
+        jmp kpti_exit
     "#,
     user_cs = const USER_CS as u64,
     user_ss = const super::gdt::USER_DS as u64,
+    slot_ursp = const KPTI_SLOT_URSP,
 );

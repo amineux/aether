@@ -9,8 +9,16 @@
 //! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
 //! SIPI / user windows do not move. The kernel is still linked at
 //! `KERNEL_TEXT_VA` (`code-model=kernel`); the unused alias stays so
-//! absolute symbols keep working. This is not PIE / reloc, not KPTI,
-//! not PCID, not COW, not a POSIX `mmap`.
+//! absolute symbols keep working. This is not PIE / reloc, not PCID,
+//! not COW, not a POSIX `mmap`.
+//!
+//! **KPTI subset:** `clone_user` does **not** copy PML4[511] or the
+//! identity 4 GiB. User CR3 maps the task's 2 MiB ELF window (USER)
+//! plus four supervisor 4 KiB trampoline pages at [`KPTI_TRAMP_VA`]
+//! (syscall/IRQ entry). Kernel CR3 keeps identity + HH so SoftNPU
+//! `IdentityDma`, AP SIPI, and page-table PA walks still work. Not a
+//! Meltdown-complete KAISER claim (trampoline pages stay mapped;
+//! PCID is later).
 //!
 //! `SYS_CLONE` user threads share one of these maps; they do not get
 //! a second PML4.
@@ -47,6 +55,20 @@ pub const KASLR_MAILBOX_SLIDE: u64 = KASLR_MAILBOX + 8;
 pub const KASLR_HH_PD0: u64 = 0x7_1000;
 /// Dedicated HH PD1.
 pub const KASLR_HH_PD1: u64 = 0x7_2000;
+
+/// Identity VA/PA of the KPTI trampoline (code + GDT/TSS + slots).
+/// After HH PDs (`0x71000` / `0x72000`), before the kernel LMA.
+pub const KPTI_TRAMP_VA: u64 = 0x7_3000;
+/// Shadow IDT (256 × 16 bytes).
+pub const KPTI_TRAMP_IDT: u64 = 0x7_4000;
+/// Entry stack (two pages). Grows down from [`KPTI_TRAMP_STACK_TOP`].
+pub const KPTI_TRAMP_STACK: u64 = 0x7_5000;
+/// TSS.RSP0 / scratch stack top (16-byte aligned).
+pub const KPTI_TRAMP_STACK_TOP: u64 = 0x7_7000;
+/// Supervisor-only 4 KiB pages mapped in user CR3.
+pub const KPTI_TRAMP_PAS: [u64; 4] = [0x7_3000, 0x7_4000, 0x7_5000, 0x7_6000];
+/// Slots at the end of the trampoline code page (`kernel_cr3`, …).
+pub const KPTI_SLOT_BASE: u64 = 0x7_3F00;
 
 /// `PA → KERNEL_VMA + PA` when `PA` fits in the HH 2 GiB window.
 pub fn phys_to_hh(pa: u64) -> Option<u64> {
@@ -150,6 +172,9 @@ pub struct IdentityAs {
     pub hh_pd: [[u64; 512]; 2],
     /// Boot-time slide applied to the HH kernel span (bytes).
     pub slide: u64,
+    /// KPTI user map: first 2 MiB is a 4 KiB PT (trampoline only).
+    /// `None` on the kernel CR3 (2 MiB identity leaves).
+    pub tramp_pt: Option<[u64; 512]>,
 }
 
 impl IdentityAs {
@@ -160,6 +185,7 @@ impl IdentityAs {
             pd: [[0; 512]; 4],
             hh_pd: [[0; 512]; 2],
             slide: 0,
+            tramp_pt: None,
         }
     }
 
@@ -201,21 +227,23 @@ impl IdentityAs {
         s
     }
 
-    /// Clone the kernel map. USER only on `[user_lo, user_hi)`. Each
-    /// address in `unmap` has its 2 MiB leaf Present bit cleared.
+    /// KPTI user map: USER only on `[user_lo, user_hi)`, supervisor 4 KiB
+    /// trampoline pages, no HH (`PML4[511]=0`), no identity 4 GiB.
+    /// Each address in `unmap` has its 2 MiB leaf Present bit cleared.
     pub fn clone_user(&self, user_lo: u64, user_hi: u64, unmap: &[u64]) -> Self {
-        let mut s = self.clone();
-        s.pml4[0] |= PTE_US;
-        let i3 = ((user_lo >> 30) & 0x1FF) as usize;
-        if i3 < 4 {
-            s.pdpt[i3] |= PTE_US;
-        }
+        let _ = self;
+        let mut s = Self::empty();
+        s.pml4[0] = 0x2000 | PTE_P | PTE_RW | PTE_US;
+        s.pdpt[0] = 0x3000 | PTE_P | PTE_RW | PTE_US;
         let mut va = user_lo & !(PAGE_2M - 1);
         while va < user_hi {
             let gi = ((va >> 30) & 0x1FF) as usize;
             let i2 = ((va >> 21) & 0x1FF) as usize;
             if gi < 4 {
-                s.pd[gi][i2] |= PTE_US;
+                s.pd[gi][i2] = (va & !(PAGE_2M - 1)) | PTE_P | PTE_RW | PTE_US | PTE_PS;
+                if gi != 0 {
+                    s.pdpt[gi] = (0x3000 + gi as u64 * 0x1000) | PTE_P | PTE_RW | PTE_US;
+                }
             }
             va += PAGE_2M;
         }
@@ -223,9 +251,16 @@ impl IdentityAs {
             let gi = ((u >> 30) & 0x1FF) as usize;
             let i2 = ((u >> 21) & 0x1FF) as usize;
             if gi < 4 {
-                s.pd[gi][i2] &= !PTE_P;
+                s.pd[gi][i2] = 0;
             }
         }
+        let mut pt = [0u64; 512];
+        for &pa in &KPTI_TRAMP_PAS {
+            pt[((pa >> 12) & 0x1FF) as usize] = pa | PTE_P | PTE_RW;
+        }
+        s.tramp_pt = Some(pt);
+        // First 2 MiB: table (no PS, no US). Trampoline only.
+        s.pd[0][0] = PTE_P | PTE_RW;
         s
     }
 
@@ -255,6 +290,28 @@ impl IdentityAs {
         let i2 = ((va >> 21) & 0x1FF) as usize;
         let pde = pd[i2];
         if pde & PTE_P == 0 {
+            return None;
+        }
+        if pde & PTE_PS == 0 {
+            if i4 == 0 && i3 == 0 && i2 == 0 {
+                if let Some(pt) = &self.tramp_pt {
+                    let i1 = ((va >> 12) & 0x1FF) as usize;
+                    let pte = pt[i1];
+                    if pte & PTE_P == 0 {
+                        return None;
+                    }
+                    return Some(Walk {
+                        pde: pte,
+                        phys: (pte & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF),
+                        user: pml4e & PTE_US != 0
+                            && pdpte & PTE_US != 0
+                            && pde & PTE_US != 0
+                            && pte & PTE_US != 0,
+                        present: true,
+                        huge_2m: false,
+                    });
+                }
+            }
             return None;
         }
         Some(Walk {
@@ -313,7 +370,7 @@ mod tests {
 
         let init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
         assert!(!init.user_mapped(KERNEL_TEXT_VA));
-        assert_eq!(init.walk(KERNEL_TEXT_VA).unwrap().phys, KERNEL_LMA);
+        assert!(init.walk(KERNEL_TEXT_VA).is_none());
         assert!(init.user_mapped(USER_IMAGE_BASE));
     }
 
@@ -364,7 +421,7 @@ mod tests {
 
         let init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
         assert!(!init.user_mapped(slid_text));
-        assert_eq!(init.walk(slid_text).unwrap().phys, KERNEL_LMA);
+        assert!(init.walk(slid_text).is_none());
         assert!(init.user_mapped(USER_IMAGE_BASE));
         assert_eq!(init.walk(USER_IMAGE_BASE).unwrap().phys, USER_IMAGE_BASE);
     }
@@ -380,12 +437,13 @@ mod tests {
         assert!(!init.user_mapped(USER_PROBE_BASE));
         assert!(init.walk(USER_PROBE_BASE).is_none());
         assert!(!init.user_mapped(0x400000));
-        assert!(init.walk(0x400000).unwrap().present);
+        assert!(init.walk(0x400000).is_none());
 
         assert!(probe.user_mapped(USER_PROBE_BASE));
         assert!(!probe.user_mapped(USER_IMAGE_BASE));
         assert!(probe.walk(USER_IMAGE_BASE).is_none());
         assert!(!probe.user_mapped(0x400000));
+        assert!(probe.walk(0x400000).is_none());
     }
 
     #[test]
@@ -414,6 +472,36 @@ mod tests {
         assert_eq!(shared.walk(child_sp).unwrap().phys, child_sp);
         assert!(shared.walk(USER_PROBE_BASE).is_none());
         assert!(!shared.user_mapped(KERNEL_TEXT_VA));
+        assert!(shared.walk(KERNEL_TEXT_VA).is_none());
+    }
+
+    #[test]
+    fn kpti_user_has_no_hh_or_identity_dma() {
+        let slide = KASLR_SLIDE_STRIDE;
+        let k = IdentityAs::kernel_with_slide(slide);
+        let u = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+
+        assert!(k.walk(KERNEL_TEXT_VA).is_some());
+        assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
+        assert_eq!(k.walk(0x0100_0000).unwrap().phys, 0x0100_0000);
+        assert_eq!(k.walk(0x8000).unwrap().phys, 0x8000);
+
+        assert!(u.walk(KERNEL_TEXT_VA).is_none());
+        assert!(u.walk(KERNEL_TEXT_VA + slide).is_none());
+        assert!(u.walk(KERNEL_LMA).is_none());
+        assert!(u.walk(0x0100_0000).is_none());
+        assert!(u.walk(0x1000).is_none());
+        assert!(u.pml4[511] == 0);
+
+        let tw = u.walk(KPTI_TRAMP_VA).unwrap();
+        assert!(tw.present && !tw.user && !tw.huge_2m);
+        assert_eq!(tw.phys, KPTI_TRAMP_VA);
+        assert!(!u.user_mapped(KPTI_TRAMP_VA));
+        assert!(!u.user_mapped(KPTI_TRAMP_IDT));
+        assert!(u.walk(KPTI_TRAMP_IDT).unwrap().present);
+        assert!(u.walk(KPTI_TRAMP_STACK).unwrap().present);
+        assert!(u.user_mapped(USER_IMAGE_BASE));
+        assert!(u.walk(USER_PROBE_BASE).is_none());
     }
 }
 

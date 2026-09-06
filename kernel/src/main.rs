@@ -70,6 +70,7 @@ pub extern "C" fn kmain() -> ! {
     {
         arch::gdt::init();
         arch::syscall::init();
+        arch::x86_64::kpti::init();
     }
 
     arch::timer::init();

@@ -44,6 +44,8 @@ pub use aspace::{
     phys_to_hh, phys_to_hh_slid, IdentityAs, Sv39As, Ttbr0As, CR4_SMAP, CR4_SMEP,
     KASLR_HH_PD0, KASLR_HH_PD1, KASLR_KERNEL_SPAN, KASLR_MAILBOX, KASLR_MAILBOX_SLIDE,
     KASLR_SLIDE_COUNT, KASLR_SLIDE_STRIDE, KERNEL_HH_SPAN, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA,
+    KPTI_SLOT_BASE, KPTI_TRAMP_IDT, KPTI_TRAMP_PAS, KPTI_TRAMP_STACK, KPTI_TRAMP_STACK_TOP,
+    KPTI_TRAMP_VA,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};

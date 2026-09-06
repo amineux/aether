@@ -212,6 +212,7 @@ fn run_work_steal_smoke() {
 pub extern "C" fn ap_entry() -> ! {
     idt::load();
     gdt::load_ap();
+    super::kpti::load_ap();
     cpu::set_gs(1);
     crate::mm::paging::enable_smep_smap();
     apic::enable();
