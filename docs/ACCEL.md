@@ -86,31 +86,39 @@ The older `VirtioAccelQueue` helper remains as a host-tested ring model.
 
 ## Map API (Soft SMMU; not hardware)
 
-`aether_core::iommu::IommuMap` is a **software** stream-ID page table:
+`aether_core::iommu::IommuMap` is a **software** stream-ID page table.
+It is not a hardware SMMU and not a full SMMUv3 emulator.
 
 ```text
-map(Memory cap + MAP, guest_pa, len, stream_id) -> MappedRegion { iova != guest_pa }
-translate_stream(sid, guest_pa) -> iova
-resolve_stream(sid, iova)       -> guest_pa
-covers_stream(sid, pa, len)     -> bool
-unmap / unmap_stream / unmap_for
+StreamId = chiplet | tile | ssid     (not a PCIe BDF)
+STE  →  CD (ssid)  →  block descriptors
+
+capture(sid)                         // first sighting; DMA still aborts
+bind_stream(Memory+MAP, sid)         // install STE + CD
+map(...)                             // capture+bind on first authorized use
+translate / resolve                  // StreamAbort until Bound
+unbind_stream(sid)                   // FLR analogue
 ```
 
 Rules:
 
 1. Refuse unless `cap.kind == Memory` and `cap.rights` contains `MAP`.
-2. Each `stream_id` is its own IOVA namespace. Two streams may pin the
-   same guest PA to different IOVAs. Same-stream guest-PA overlap is
-   `Overlap` (or `CrossTenant` if another tenant holds the window).
-3. IOVAs come from a per-stream bump allocator above 4 GiB
-   (`SOFT_SMMU_IOVA_BASE`). This is not identity and not a hardware SMMU.
-4. Translate / unmap that name the wrong stream return `WrongStream`.
-   Unmap authorized by the wrong tenant is `CrossTenant`. Unmapped is
-   `NotMapped`.
+   Bind and map share that gate. Capture alone does not authorize DMA.
+2. StreamIDs are accelerator / chiplet identities. Two SIDs (including
+   two chiplets with the same tile number, or two SSIDs on one STE) may
+   pin the same guest PA to different IOVAs. Same-SID guest-PA overlap
+   is `Overlap` (or `CrossTenant` if another tenant holds the window).
+3. IOVAs come from a per-(STE, CD) bump allocator above 4 GiB
+   (`SOFT_SMMU_IOVA_BASE`). This is not identity.
+4. Translate on an Unbound / Captured SID, or an STE whose SSID has no
+   CD, is `StreamAbort`. Wrong SID is `WrongStream`. Wrong tenant is
+   `CrossTenant`. Unmapped on a bound SID is `NotMapped`.
 5. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
    Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`. SoftNPU DMA
-   uses stream 0: submit writes IOVAs into the virtqueue; `service`
-   resolves IOVA → guest PA before the software engine loads.
+   uses stream 0: first pin binds that SID; submit writes IOVAs into
+   the virtqueue; `service` resolves IOVA → guest PA.
+
+Bank QoS / bandwidth coloring is not part of Soft SMMU.
 
 `SYS_MAP` walks the Memory cap, pins the arena through Soft SMMU
 (stream 0), and sets USER on the 2 MiB page. `/init` tensors may live

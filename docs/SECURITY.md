@@ -55,7 +55,7 @@ These are marked so a security review does not assume them:
 | --- | --- | --- |
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables — **landed**: `/init` is ring-3; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
-| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks per-stream pins, allocates non-identity IOVA, and refuses maps without Memory+MAP; hardware SMMU is still open |
+| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
 | No revocation broadcast | A derived cap in another table survives revoke of the parent | seL4-style CNode / CDT |
 | Identity map | Kernel and “user” share one address space | Per-task PML4 |
 | No crypto / measured boot | Out of scope for v0.1 | — |

@@ -32,7 +32,7 @@ gaps:
 
 | Gap | Honest reading |
 | --- | --- |
-| Hardware SMMU | Soft SMMU is software only; a real device can still DMA past it |
+| Hardware SMMU | Soft SMMU is software only (chiplet SIDs + capture/bind); a real device can still DMA past it |
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
 | RISC-V is thin | kmain + UART + Sv39 + `aether_core` self-check. No ring-3, no PLIC virtio |
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |

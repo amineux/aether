@@ -219,7 +219,10 @@ fn map_hal_error(e: MapError) -> HalError {
         MapError::NoMemoryCap => HalError::NoMemoryCap,
         MapError::BadRange | MapError::Overlap => HalError::BadArg,
         MapError::TableFull => HalError::Busy,
-        MapError::NotMapped | MapError::CrossTenant | MapError::WrongStream => HalError::Fault,
+        MapError::NotMapped
+        | MapError::CrossTenant
+        | MapError::WrongStream
+        | MapError::StreamAbort => HalError::Fault,
     }
 }
 

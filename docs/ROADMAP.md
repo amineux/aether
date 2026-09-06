@@ -60,23 +60,31 @@ Honest limits of this cut:
 
 ## Year-1 H1: Soft SMMU
 
-Landed (software only — **not** a hardware SMMU):
+Landed (software only — **not** a hardware SMMU, **not** an SMMUv3 emulator):
 
 - Per-stream Soft-SMMU block table in `core/src/iommu.rs`. Stream A and
-  stream B may pin the same guest PA to different IOVAs. Same-stream
+  stream B may pin the same guest PA to different IOVAs. Same-SID
   guest-PA overlap is `Overlap` (or `CrossTenant` if another tenant
   already holds the window).
-- Non-identity IOVA allocator: each SID gets a 256 MiB window above
+- **Chiplet StreamIDs** (`StreamId` = `chiplet | tile | ssid`), not PCIe
+  BDF. STE → CD (SSID) indexing is a software table, not a guest walk.
+- **SID lifecycle** (OpenVMM / smmuv3-accel shaped): Unbound → Captured
+  on first sighting → Bound on Memory+MAP `bind_stream` / first `map`.
+  Translate **aborts** (`StreamAbort`) until Bound. `unbind_stream` is
+  the FLR analogue.
+- Non-identity IOVA allocator: each (STE, CD) gets a window above
   4 GiB (`SOFT_SMMU_IOVA_BASE`). `iova != guest_pa` for the QEMU demo.
 - `translate` / `resolve` / `unmap` are stream-aware (`WrongStream`,
-  `NotMapped`, `CrossTenant`). Memory+MAP is still required to pin.
+  `NotMapped`, `CrossTenant`, `StreamAbort`). Memory+MAP is still
+  required to pin or bind.
 - SoftNPU / virtqueue DMA writes IOVAs into the avail ring and resolves
   them back to guest PA before `IdentityDma` / `SliceMem` loads.
-- Host tests cover stream A vs B, translate hit/miss, unmap, cap refuse,
-  and non-identity IOVA.
+- Host tests cover stream A vs B, chiplet SIDs, abort-until-bound,
+  translate hit/miss, unmap, cap refuse, and non-identity IOVA.
 
 Hardware SMMU (program a real SID / PT walk on an IOMMU) is still a
-stub. QEMU does not emulate an SMMU for this path.
+stub. QEMU does not emulate an SMMU for this path. Bank QoS beyond
+existing admit/refuse is out of scope.
 
 ## STUB markers in the tree
 
