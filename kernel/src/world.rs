@@ -2,7 +2,7 @@
 
 use aether_core::accel::{AccelJobDesc, AccelOp};
 use aether_core::arena::{Arena, ArenaAllocator, ArenaRequest};
-use aether_core::caps::{CapKind, CapRights, CapTable, Capability, CPtr};
+use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
 use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
 use aether_core::iommu::MapRequest;
@@ -10,7 +10,7 @@ use aether_core::phase::Phase;
 use aether_core::preempt::WaitWhy;
 use aether_core::sysnr::{UserCompletion, UserIpcMsg};
 use aether_core::types::{BankId, PhysAddr, TenantId};
-use aether_core::{USER_IMAGE_BASE, USER_IMAGE_END, INIT_EP_CPTR, INIT_QUEUE_CPTR};
+use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_IMAGE_BASE, USER_IMAGE_END};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::SoftNpuDevice;
 use aether_hal::AccelDevice;
@@ -72,7 +72,7 @@ pub fn init() {
 
     let mut npu = SoftNpuDevice::new(IdentityDma);
     let _ = npu.probe();
-    // Identity-map the /init image so stack tensors remain legal DMA targets.
+    // Soft-SMMU pin the /init image so stack tensors remain legal DMA targets.
     let user_mem = caps
         .mint(Capability {
             kind: CapKind::Memory,
@@ -107,7 +107,7 @@ pub fn init() {
     write_str(" object ep=");
     write_u64(ep.0 as u64);
     console::nl();
-    println!("[boot] virtqueue MMIO negotiated (SoftNPU backend, identity IOVA)");
+    println!("[boot] virtqueue MMIO negotiated (SoftNPU backend, Soft SMMU)");
 }
 
 fn with<T>(f: impl FnOnce(&mut Inner) -> T) -> T {
@@ -239,7 +239,11 @@ pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     Ok(0)
 }
 
-pub fn sys_recv(cptr: u64, out_ptr: u64, frame: &mut crate::arch::idt::InterruptFrame) -> Result<u64, SysError> {
+pub fn sys_recv(
+    cptr: u64,
+    out_ptr: u64,
+    frame: &mut crate::arch::idt::InterruptFrame,
+) -> Result<u64, SysError> {
     let object = with(|w| {
         w.caps
             .require(CPtr(cptr as u16), CapKind::Endpoint, CapRights::READ)
@@ -285,7 +289,7 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
     write_hex(va);
     write_str(" iova=");
     write_hex(iova.0);
-    write_str(" (identity) user-2M");
+    write_str(" (soft-smmu sid=0) user-2M");
     console::nl();
     Ok(iova.0)
 }

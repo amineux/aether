@@ -33,16 +33,19 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
-pub use caps::{CapError, CapKind, CapRights, CapTable, Capability, CPtr};
+pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
 pub use color::{admit_wave, BankColor, ColorError};
-pub use iommu::{IommuMap, MapError, MapRequest, MappedRegion};
 pub use cut::{AffinityGraph, CutError, SpectralCut};
-pub use laplacian::AffinityLaplacian;
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
 pub use fence::{Fence, FenceId, Timeline};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
+pub use iommu::{
+    IommuMap, MapError, MapRequest, MappedRegion, StreamId, StreamState, DEFAULT_STREAM,
+    SOFT_SMMU_IOVA_BASE,
+};
+pub use laplacian::AffinityLaplacian;
 pub use observe::{EventKind, EventRing, KernelEvent};
 pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 pub use phase::Phase;

@@ -163,11 +163,13 @@ The kernel and `/init` are **separate Cargo projects** so
 
 ## What v0.1 is honest about
 
-- **Research prototype.** No hardware SMMU, no verified cap derivation tree, no real
-  silicon driver, no SMP.
+- **Research prototype.** Soft SMMU (software stream-ID IOVA map) is in
+  tree; there is no hardware SMMU, no verified cap derivation tree, no
+  real silicon driver, and no SMP.
 - **VirtIO-Accel is an in-kernel MMIO virtqueue**, not a tree in upstream QEMU.
   `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
-  path so the demo does not depend on a custom qemu. Identity IOVA only.
+  path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU
+  IOVAs (not identity); QEMU does not emulate a hardware SMMU.
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
   as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
   Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.

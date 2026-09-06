@@ -7,13 +7,14 @@
 
 use aether_core::accel::{AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
-use aether_core::iommu::{IommuMap, MapRequest};
+use aether_core::iommu::{IommuMap, MapError, MapRequest, DEFAULT_STREAM};
 use aether_core::types::PhysAddr;
 use aether_hal::{AccelDevice, AccelInfo, HalError};
 
 use crate::mmio::AccelMmio;
 
-/// Identity-mapped physical memory (kernel). Host tests use `SliceDma`.
+/// Kernel CPU view of guest RAM (trampoline identity map). Soft SMMU
+/// resolves device IOVAs back to these PAs before [`DmaView`] loads.
 pub struct IdentityDma;
 
 impl DmaView for IdentityDma {
@@ -92,15 +93,58 @@ impl<M: DmaView> SoftNpuDevice<M> {
         cap: &Capability,
         req: MapRequest,
     ) -> Result<PhysAddr, HalError> {
-        let region = self.iommu.map(cap, req).map_err(|e| match e {
-            aether_core::iommu::MapError::NoMemoryCap => HalError::NoMemoryCap,
-            aether_core::iommu::MapError::BadRange | aether_core::iommu::MapError::Overlap => {
-                HalError::BadArg
-            }
-            aether_core::iommu::MapError::TableFull => HalError::Busy,
-            _ => HalError::Fault,
-        })?;
+        let region = self.iommu.map(cap, req).map_err(map_hal_error)?;
         Ok(region.iova)
+    }
+
+    fn dma_guest_pa(&self, addr: PhysAddr) -> Option<PhysAddr> {
+        if self.iommu.is_empty() {
+            return Some(addr);
+        }
+        if let Some(pa) = self.iommu.resolve_stream(DEFAULT_STREAM, addr) {
+            return Some(pa);
+        }
+        // Submit path may still hold a guest PA (host tests / no rewrite).
+        if self.iommu.translate_stream(DEFAULT_STREAM, addr).is_some() {
+            return Some(addr);
+        }
+        None
+    }
+
+    fn job_to_iova(&self, job: &AccelJobDesc) -> AccelJobDesc {
+        let mut wired = *job;
+        if self.iommu.is_empty() {
+            return wired;
+        }
+        if let Some(a) = self.iommu.translate_stream(DEFAULT_STREAM, job.a) {
+            wired.a = a;
+        }
+        if let Some(b) = self.iommu.translate_stream(DEFAULT_STREAM, job.b) {
+            wired.b = b;
+        }
+        if let Some(c) = self.iommu.translate_stream(DEFAULT_STREAM, job.c) {
+            wired.c = c;
+        }
+        if job.bias.0 != 0 {
+            if let Some(bias) = self.iommu.translate_stream(DEFAULT_STREAM, job.bias) {
+                wired.bias = bias;
+            }
+        }
+        wired
+    }
+
+    fn job_from_iova(&self, job: AccelJobDesc) -> Option<AccelJobDesc> {
+        if self.iommu.is_empty() {
+            return Some(job);
+        }
+        let mut pa = job;
+        pa.a = self.dma_guest_pa(job.a)?;
+        pa.b = self.dma_guest_pa(job.b)?;
+        pa.c = self.dma_guest_pa(job.c)?;
+        if job.bias.0 != 0 {
+            pa.bias = self.dma_guest_pa(job.bias)?;
+        }
+        Some(pa)
     }
 
     pub fn doorbell_pending(&self) -> bool {
@@ -112,6 +156,7 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     /// Device-side: drain one kicked job into SoftNPU and raise used-ring IRQ.
+    /// Avail-ring addresses are Soft-SMMU IOVAs; resolve to guest PA for DMA.
     pub fn service(&mut self) -> Option<Completion> {
         let (token, job) = self.mmio.device_take_avail()?;
         if !self.buffers_mapped(&job) {
@@ -123,6 +168,15 @@ impl<M: DmaView> SoftNpuDevice<M> {
             self.mmio.device_complete(token, cpl);
             return Some(cpl);
         }
+        let Some(job) = self.job_from_iova(job) else {
+            let cpl = Completion {
+                job_seq: self.npu.seq,
+                status: -2,
+                cycles: 0,
+            };
+            self.mmio.device_complete(token, cpl);
+            return Some(cpl);
+        };
         match self.npu.execute(&job, &mut self.mem) {
             Ok(cpl) => {
                 self.mmio.device_complete(token, cpl);
@@ -148,9 +202,27 @@ impl<M: DmaView> SoftNpuDevice<M> {
         let a_bytes = 4u64.saturating_mul(job.elems_a() as u64);
         let b_bytes = 4u64.saturating_mul(job.elems_b() as u64);
         let c_bytes = 4u64.saturating_mul(job.elems_c() as u64);
-        self.iommu.covers(job.a, a_bytes.max(4))
-            && self.iommu.covers(job.b, b_bytes.max(4))
-            && self.iommu.covers(job.c, c_bytes.max(4))
+        self.dma_range_ok(job.a, a_bytes.max(4))
+            && self.dma_range_ok(job.b, b_bytes.max(4))
+            && self.dma_range_ok(job.c, c_bytes.max(4))
+    }
+
+    fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {
+        self.iommu.covers_iova(DEFAULT_STREAM, addr, len)
+            || self.iommu.covers_iova_any(addr, len)
+            || self.iommu.covers_stream(DEFAULT_STREAM, addr, len)
+    }
+}
+
+fn map_hal_error(e: MapError) -> HalError {
+    match e {
+        MapError::NoMemoryCap => HalError::NoMemoryCap,
+        MapError::BadRange | MapError::Overlap => HalError::BadArg,
+        MapError::TableFull => HalError::Busy,
+        MapError::NotMapped
+        | MapError::CrossTenant
+        | MapError::WrongStream
+        | MapError::StreamAbort => HalError::Fault,
     }
 }
 
@@ -163,7 +235,8 @@ impl<M: DmaView> AccelDevice for SoftNpuDevice<M> {
     }
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
-        self.mmio.driver_submit(job).map_err(|_| HalError::Busy)
+        let wired = self.job_to_iova(job);
+        self.mmio.driver_submit(&wired).map_err(|_| HalError::Busy)
     }
 
     fn poll(&mut self) -> Option<Completion> {
@@ -177,11 +250,18 @@ impl<M: DmaView> AccelDevice for SoftNpuDevice<M> {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu.unmap(iova).map(|_| ()).map_err(|_| HalError::Fault)
+        self.iommu
+            .unmap(iova)
+            .map(|_| ())
+            .map_err(|_| HalError::Fault)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
         self.iommu.translate(guest_pa)
+    }
+
+    fn translate_stream(&self, stream_id: u32, guest_pa: PhysAddr) -> Option<PhysAddr> {
+        self.iommu.translate_stream(stream_id, guest_pa)
     }
 
     fn name(&self) -> &'static str {
@@ -223,17 +303,28 @@ mod tests {
         };
         let mut dev = SoftNpuDevice::new(mem);
         assert!(dev.probe().is_ok());
-        assert_eq!(dev.map(MapRequest::pin(PhysAddr(0), 256)).unwrap_err(), HalError::NoMemoryCap);
+        assert_eq!(
+            dev.map(MapRequest::pin(PhysAddr(0), 256)).unwrap_err(),
+            HalError::NoMemoryCap
+        );
         let iova = dev
             .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
             .unwrap();
-        assert_eq!(iova.0, 0);
-        assert_eq!(dev.translate(PhysAddr(16)).unwrap().0, 16);
+        assert_ne!(iova.0, 0, "Soft SMMU IOVA is not identity");
+        assert_eq!(dev.translate(PhysAddr(16)).unwrap().0, iova.0 + 16);
+        assert_eq!(dev.iommu.resolve(PhysAddr(iova.0 + 16)).unwrap().0, 16);
 
         let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
         dev.submit(&job).unwrap();
+        // Avail ring carries Soft-SMMU IOVAs, not guest PAs.
+        let mut raw = [0u8; 8];
+        raw.copy_from_slice(&dev.mmio.as_bytes()[0x80 + 24..0x80 + 32]);
+        assert_eq!(u64::from_le_bytes(raw), iova.0);
         assert!(dev.doorbell_pending());
-        assert!(dev.poll().is_none(), "completions come from used ring / IRQ");
+        assert!(
+            dev.poll().is_none(),
+            "completions come from used ring / IRQ"
+        );
 
         let serviced = dev.service().unwrap();
         assert_eq!(serviced.status, 0);

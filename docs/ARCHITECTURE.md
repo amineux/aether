@@ -122,7 +122,7 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | `core/src/fabric.rs` | Endpoints and messages |
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
-| `core/src/iommu.rs` | Pin/translate table (identity IOVA) |
+| `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
 | `core/src/sched.rs` | Tile scheduler + color gate |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |

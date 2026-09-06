@@ -466,6 +466,7 @@
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
                 <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU)</li>
+                <li>Soft SMMU — per-stream non-identity IOVA (not hardware SMMU)</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
                 <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
                 <li>Diligence docs, deep-dive agenda, host-tested invariants</li>
@@ -479,7 +480,7 @@
               <h3>Partner-shaped device path</h3>
               <ul>
                 <li>Real virtio-accel QEMU device, or an MMIO partner path</li>
-                <li>IOMMU / SMMU hardening — stream IDs, not identity IOVA</li>
+                <li>Hardware SMMU — program a real SID / PT; Soft SMMU is software only</li>
                 <li>Bank QoS beyond admit/refuse</li>
                 <li>Second partner stub (still a sketch until someone implements it)</li>
               </ul>
@@ -566,7 +567,7 @@ CI: cargo test + qemu-ci + qemu-riscv-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (identity IOVA). No SMP. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). No SMP. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
               </div>
             </div>
             <div class="proof">
