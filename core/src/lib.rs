@@ -23,6 +23,7 @@ pub mod iommu;
 pub mod laplacian;
 pub mod mmap;
 pub mod observe;
+pub mod opkernel;
 pub mod partition;
 pub mod phase;
 pub mod preempt;
@@ -54,6 +55,7 @@ pub use mmap::{
     BOOT_RESERVE_FLOOR, FRAME_CAP_BYTES, MB1_BOOT_MAGIC, MB2_BOOT_MAGIC,
 };
 pub use observe::{EventKind, EventRing, KernelEvent};
+pub use opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
 pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};

@@ -34,6 +34,8 @@ pub enum CapKind {
     Activity = 7,
     /// Spatial slice + QoS + blast-radius profile.
     Partition = 8,
+    /// Compiled collective (tree / ring / torus) bound to a Hodge class.
+    OperatorKernel = 9,
 }
 
 impl CapKind {
@@ -48,6 +50,7 @@ impl CapKind {
             6 => Some(Self::FlowQuota),
             7 => Some(Self::Activity),
             8 => Some(Self::Partition),
+            9 => Some(Self::OperatorKernel),
             _ => None,
         }
     }
@@ -80,6 +83,8 @@ impl CapRights {
     pub const HODGE_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT);
     pub const ACTIVITY_FULL: Self = Self(Self::SUBMIT | Self::WAIT | Self::BIND | Self::GRANT);
     pub const PARTITION_FULL: Self = Self(Self::BIND | Self::SUBMIT | Self::GRANT);
+    /// Bind + inject a compiled collective; GRANT to derive / transfer.
+    pub const OPKERNEL_FULL: Self = Self(Self::READ | Self::BIND | Self::SUBMIT | Self::GRANT);
 
     pub const fn contains(self, bits: u16) -> bool {
         self.0 & bits == bits
@@ -531,6 +536,7 @@ mod tests {
         assert!(CapRights::ALL.contains(CapRights::UNIFIED));
         assert_eq!(CapKind::from_u8(7), Some(CapKind::Activity));
         assert_eq!(CapKind::from_u8(8), Some(CapKind::Partition));
+        assert_eq!(CapKind::from_u8(9), Some(CapKind::OperatorKernel));
     }
 
     #[test]

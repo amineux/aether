@@ -41,7 +41,8 @@ Supporting rules (implemented in types, not just prose):
    [ABI.md](ABI.md).
 8. **Cuts and Hodge classes remain capabilities.** A `SpectralCut` is a
    bound partition of the package graph; a `FlowClass` on every message
-   selects gradient / curl / harmonic policy. See [CUT.md](CUT.md).
+   selects gradient / curl / harmonic policy. An `OperatorKernelHandle`
+   binds a collective topology to one of those classes. See [CUT.md](CUT.md).
 
 What this document will not claim: a CUDA-style unified virtual address
 space; seL4-level formal proofs; wafer-scale marketing that hides SRAM-first
@@ -144,6 +145,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 walk |
 | `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
+| `core/src/opkernel.rs` | OperatorKernelHandle (collective × Hodge class) |
 | `core/src/space.rs` | Typed `MemorySpace` + `(place, local)` |
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
 | `core/src/partition.rs` | Spatial slice + QoS + blast radius |

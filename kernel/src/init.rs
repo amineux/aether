@@ -94,6 +94,10 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.revoke_ok));
     console::nl();
 
+    write_str("[opkernel] tree+gradient inject + harmonic-tree REFUSE  ");
+    write_str(flag(report.opkernel_ok));
+    console::nl();
+
     {
         let g = AffinityGraph::qemu_package();
         let lap = AffinityLaplacian::from_graph(&g);

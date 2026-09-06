@@ -351,11 +351,18 @@ pub fn enter_user() -> ! {
         }
         t.current = TID_USER;
     }
+    // Snapshot before arming: once `started` is true a PIT tick saves the
+    // interrupted frame over this slot. If that happens mid-println the
+    // user RIP is lost and iretq re-enters this function forever — /init
+    // never prints. A longer `run_boot_demo` (OperatorKernel) made the
+    // race reliable (self-check already at ~90 ticks).
+    let frame = t.threads[slot_index(t.current)].saved;
+    let _irq = irq::save_disable();
     t.started = true;
     apply_hw(t, 0, t.current);
     println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task CR3)");
     unsafe {
-        iretq_to(core::ptr::addr_of!(t.threads[slot_index(t.current)].saved));
+        iretq_to(core::ptr::addr_of!(frame));
     }
 }
 
