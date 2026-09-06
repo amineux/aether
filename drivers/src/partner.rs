@@ -84,8 +84,15 @@ impl PartnerNpuStub {
         cap: &Capability,
         req: MapRequest,
     ) -> Result<PhysAddr, HalError> {
-        // TODO: program SMMU / stream ID `req.stream_id` and the device PT.
-        let region = self.iommu.map(cap, req).map_err(|_| HalError::NoMemoryCap)?;
+        // Soft SMMU records `req.stream_id`. Hardware SMMU SID / PT is TODO.
+        let region = self.iommu.map(cap, req).map_err(|e| match e {
+            aether_core::iommu::MapError::NoMemoryCap => HalError::NoMemoryCap,
+            aether_core::iommu::MapError::BadRange | aether_core::iommu::MapError::Overlap => {
+                HalError::BadArg
+            }
+            aether_core::iommu::MapError::TableFull => HalError::Busy,
+            _ => HalError::Fault,
+        })?;
         Ok(region.iova)
     }
 
@@ -135,11 +142,18 @@ impl AccelDevice for PartnerNpuStub {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu.unmap(iova).map(|_| ()).map_err(|_| HalError::Fault)
+        self.iommu
+            .unmap(iova)
+            .map(|_| ())
+            .map_err(|_| HalError::Fault)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
         self.iommu.translate(guest_pa)
+    }
+
+    fn translate_stream(&self, stream_id: u32, guest_pa: PhysAddr) -> Option<PhysAddr> {
+        self.iommu.translate_stream(stream_id, guest_pa)
     }
 
     fn name(&self) -> &'static str {
@@ -177,14 +191,15 @@ mod tests {
     fn map_refuses_without_cap_then_translates() {
         let mut d = PartnerNpuStub::new();
         assert_eq!(
-            d.map(MapRequest::pin(PhysAddr(0x1000), 0x1000)).unwrap_err(),
+            d.map(MapRequest::pin(PhysAddr(0x1000), 0x1000))
+                .unwrap_err(),
             HalError::NoMemoryCap
         );
         let iova = d
             .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0x1000), 0x1000))
             .unwrap();
-        assert_eq!(iova.0, 0x1000);
-        assert_eq!(d.translate(PhysAddr(0x1400)).unwrap().0, 0x1400);
+        assert_ne!(iova.0, 0x1000);
+        assert_eq!(d.translate(PhysAddr(0x1400)).unwrap().0, iova.0 + 0x400);
     }
 
     #[test]
@@ -200,7 +215,8 @@ mod tests {
         assert_eq!(cmd.opcode, AccelOp::MatMul as u32);
         assert_eq!(cmd.dtype, DType::I32 as u8);
         assert_eq!(cmd.route_tile, 4);
-        assert_eq!(cmd.iova_a, 0);
+        assert_eq!(cmd.iova_a, d.translate(PhysAddr(0)).unwrap().0);
+        assert_ne!(cmd.iova_a, 0);
         let cpl = d.poll().unwrap();
         assert_eq!(cpl.status, 0);
     }

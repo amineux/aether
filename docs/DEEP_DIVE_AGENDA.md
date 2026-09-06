@@ -51,7 +51,7 @@ What to point at on the serial:
 2. `[fabric] IPC ok  arena ok … isolation ok`.
 3. `[cut] bind SpectralCut … CrossCut refuse`.
 4. `[hodge] … harmonic-tree REFUSE ok`.
-5. `[map] IOMMU identity pin + Memory-cap refuse ok`.
+5. `[map] Soft SMMU pin + Memory-cap refuse ok`.
 6. `[color] tenant/bank paint  Compute foreign refuse + Exchange ok`.
 7. `[laplace] L=D-A n=6 … chiplet-split=ok`.
 8. x86 only: `[init] ring-3 /init` then `RING-3 /init VIA SYSCALL/SYSRET`.

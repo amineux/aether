@@ -11,7 +11,7 @@ checklist, or a benchmark brief.
 | Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo}.rs` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
-| `IommuMap` pin/translate (identity IOVA) | Implemented, host-tested | `core/src/iommu.rs` |
+| `IommuMap` Soft SMMU (per-stream, non-identity IOVA) | Implemented, host-tested | `core/src/iommu.rs` |
 | Tile scheduler + SpectralCut refuse | Implemented (n≤8 enumerate) | `core/src/{sched,cut}.rs` |
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
@@ -32,7 +32,7 @@ gaps:
 
 | Gap | Honest reading |
 | --- | --- |
-| Hardware SMMU | `IommuMap` is identity IOVA; a real device can still DMA past it |
+| Hardware SMMU | Soft SMMU is software only; a real device can still DMA past it |
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
 | RISC-V is thin | kmain + UART + Sv39 + `aether_core` self-check. No ring-3, no PLIC virtio |
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
@@ -51,7 +51,8 @@ send/recv/map/accel. That is not stubbed on x86; it is stubbed on RISC-V.
 3. map(): program SMMU / stream IDs from a Memory cap walk. Refuse
    anything that did not come from the cap table. Refuse a silent
    remote (place, local) — aether_hal::map_fabric already does.
-   IommuMap is the software table; replace identity IOVA with stream IDs.
+   IommuMap is the Soft-SMMU table (per-stream IOVA). A hardware SMMU
+   is still required on silicon; do not treat this as one.
 4. submit(): translate AccelJobDesc (op, MxNxK, strides, dtype, place,
    phase, partition, fence) into the chip's command packet. Doorbell.
    The in-tree virtqueue BAR is the shape to match.
@@ -85,7 +86,8 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 
 Not enforced in hardware yet: SMMU stream IDs, RISC-V ring-3, revocation
 broadcast, measured boot. On x86, isolation is “cap tables + ring-3 +
-identity IOVA.” On RISC-V it is still “the cap tables do the right thing.”
+Soft SMMU.” Soft SMMU is a software table a real device can ignore.
+On RISC-V it is still “the cap tables do the right thing.”
 
 ## CI status
 
@@ -129,8 +131,9 @@ graph IR in the kernel. They want:
    The in-tree virtqueue BAR is the packet shape.
 2. **Isolation that is not ioctl folklore.** Weights and KV caches are
    Memory caps with tenants and a bank color. Cross-tenant mint is a
-   type error. Until SMMU lands the IOVA is identity — policy is
-   written down and tested; mechanism is incomplete.
+   type error. Soft SMMU gives per-stream non-identity IOVA in software
+   — policy and the software table are tested; a hardware SMMU is not
+   programmed.
 3. **Placement that names the package graph.** A SpectralCut is a
    capability. The Laplacian is a first-class `L = D − A`. Cross-die
    placement is refused because the cut said so, not because a hint

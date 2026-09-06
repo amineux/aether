@@ -23,8 +23,9 @@ product kernel.
 | --- | --- |
 | Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend) |
 | Custom QEMU `virtio-accel` device | not started — stock QEMU + in-tree emulator |
-| `IommuMap` pin/translate; refuse without Memory+MAP | **done** (identity IOVA) |
-| Hardware SMMU / stream IDs | not started (`MapRequest.stream_id` is a placeholder) |
+| `IommuMap` pin/translate; refuse without Memory+MAP | **done** (Soft SMMU; non-identity IOVA) |
+| Soft SMMU / software stream IDs | **done** (per-stream IOVA namespaces; not hardware) |
+| Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU) |
 | Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
 | Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership) |
 
@@ -57,6 +58,26 @@ Honest limits of this cut:
 - Nobody from a silicon team has reviewed this. The agenda is so they
   could.
 
+## Year-1 H1: Soft SMMU
+
+Landed (software only — **not** a hardware SMMU):
+
+- Per-stream Soft-SMMU block table in `core/src/iommu.rs`. Stream A and
+  stream B may pin the same guest PA to different IOVAs. Same-stream
+  guest-PA overlap is `Overlap` (or `CrossTenant` if another tenant
+  already holds the window).
+- Non-identity IOVA allocator: each SID gets a 256 MiB window above
+  4 GiB (`SOFT_SMMU_IOVA_BASE`). `iova != guest_pa` for the QEMU demo.
+- `translate` / `resolve` / `unmap` are stream-aware (`WrongStream`,
+  `NotMapped`, `CrossTenant`). Memory+MAP is still required to pin.
+- SoftNPU / virtqueue DMA writes IOVAs into the avail ring and resolves
+  them back to guest PA before `IdentityDma` / `SliceMem` loads.
+- Host tests cover stream A vs B, translate hit/miss, unmap, cap refuse,
+  and non-identity IOVA.
+
+Hardware SMMU (program a real SID / PT walk on an IOMMU) is still a
+stub. QEMU does not emulate an SMMU for this path.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -67,7 +88,7 @@ Search for `// STUB:` / `STUB` :
 | F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | Stop assuming 128 MiB @ 16 MiB |
 | Higher-half + KASLR | linker / trampoline | Standard kernel hardening |
-| Hardware SMMU | `core/src/iommu.rs` | Replace identity IOVA with stream IDs |
+| Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
 | Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
 | aarch64 | (none) | Not started; RISC-V was the HAL test |
@@ -88,8 +109,9 @@ kernel thread queue sleeps.
 
 1. **Custom QEMU virtio-accel** (or virtio-mmio) that DMA-reads the same
    BAR layout. SoftNPU can stay the executor behind the device.
-2. **SMMU page tables.** `IommuMap` already tracks windows; program a
-   real stream ID instead of identity IOVA.
+2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
+   program a real SMMU context / PT walk. Do not claim the software
+   table is silicon.
 3. **RISC-V userspace.** Same `aether-core`, `sret` + page-table isolate.
    Only worth it after the x86 ABI stays stable.
 4. **Per-task page tables.** Isolation becomes a hardware fact.

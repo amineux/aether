@@ -84,29 +84,37 @@ touching fabric or caps.
 
 The older `VirtioAccelQueue` helper remains as a host-tested ring model.
 
-## Map API (identity IOVA; future SMMU)
+## Map API (Soft SMMU; not hardware)
 
-`aether_core::iommu::IommuMap` is the pin/translate table:
+`aether_core::iommu::IommuMap` is a **software** stream-ID page table:
 
 ```text
-map(Memory cap + MAP, guest_pa, len) -> MappedRegion { iova == guest_pa }
-translate(guest_pa) -> iova
-covers(pa, len)     -> bool
-unmap(iova)
+map(Memory cap + MAP, guest_pa, len, stream_id) -> MappedRegion { iova != guest_pa }
+translate_stream(sid, guest_pa) -> iova
+resolve_stream(sid, iova)       -> guest_pa
+covers_stream(sid, pa, len)     -> bool
+unmap / unmap_stream / unmap_for
 ```
 
 Rules:
 
 1. Refuse unless `cap.kind == Memory` and `cap.rights` contains `MAP`.
-2. Track every mapped window (overlap and table-full are errors).
-3. QEMU UP identity-maps: `iova == guest_pa`. A later SMMU cut allocates
-   a real IOVA and programs stream IDs (`MapRequest.stream_id`).
-4. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
-   Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`.
+2. Each `stream_id` is its own IOVA namespace. Two streams may pin the
+   same guest PA to different IOVAs. Same-stream guest-PA overlap is
+   `Overlap` (or `CrossTenant` if another tenant holds the window).
+3. IOVAs come from a per-stream bump allocator above 4 GiB
+   (`SOFT_SMMU_IOVA_BASE`). This is not identity and not a hardware SMMU.
+4. Translate / unmap that name the wrong stream return `WrongStream`.
+   Unmap authorized by the wrong tenant is `CrossTenant`. Unmapped is
+   `NotMapped`.
+5. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
+   Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`. SoftNPU DMA
+   uses stream 0: submit writes IOVAs into the virtqueue; `service`
+   resolves IOVA → guest PA before the software engine loads.
 
-`SYS_MAP` walks the Memory cap, pins the arena through `IommuMap`, and
-sets USER on the 2 MiB page. `/init` tensors may live in the user image
-(also identity-pinned at boot) or in a mapped arena.
+`SYS_MAP` walks the Memory cap, pins the arena through Soft SMMU
+(stream 0), and sets USER on the 2 MiB page. `/init` tensors may live
+in the user image (also Soft-SMMU-pinned at boot) or in a mapped arena.
 
 Do **not** map “all of HBM” into the NPU. The arena + cap is the point.
 
@@ -144,7 +152,8 @@ packet (`PartnerCmd`). Then:
 1. PCI/MMIO probe; fill AccelInfo { backend: 2, vendor, device, ... }.
 2. On Memory cap + map(): program the IOMMU / SMMU and the device's
    page table / stream IDs. Refuse if the cap lacks MAP or the tenant
-   does not own the arena. Identity IOVA is only a QEMU stand-in.
+   does not own the arena. Soft SMMU is the software table; a real
+   device still needs a hardware SMMU.
 3. On submit(): PartnerCmd::from_job(job, &iommu) → chip command packet
    (opcode, dtype, route_chiplet/tile, IOVAs). Ring the doorbell.
    Do not execute in the syscall; wait for the used ring / IRQ.
@@ -155,8 +164,9 @@ packet (`PartnerCmd`). Then:
    caller transferred ownership or submitted Phase::Exchange.
 ```
 
-TODOs left in `PartnerNpuStub` on purpose: BAR probe, SMMU SID, MSI-X
-pop, partner opcode packing. This is not a vendor partnership.
+TODOs left in `PartnerNpuStub` on purpose: BAR probe, hardware SMMU SID,
+MSI-X pop, partner opcode packing. Soft SMMU already records
+`req.stream_id`. This is not a vendor partnership.
 
 ## Co-scheduling
 
@@ -173,7 +183,7 @@ A later cut should:
 
 - let a real device IRQ (not only kthread poll) complete the fence
 - meter HBM bandwidth as the partition QoS budget already names
-- replace identity IOVA with an SMMU page table
+- replace Soft SMMU with a hardware SMMU page table (program a real SID)
 
 Do not assume cache coherence across chiplets. SRAM on the tile is the
 honest first place; HBM and CXL are other typed spaces, not a wafer-scale

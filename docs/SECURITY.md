@@ -55,7 +55,7 @@ These are marked so a security review does not assume them:
 | --- | --- | --- |
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables — **landed**: `/init` is ring-3; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
-| Identity IOVA (no SMMU) | A real device DMA can ignore caps | `IommuMap` tracks pins and refuses maps without Memory+MAP; hardware SMMU is still open |
+| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks per-stream pins, allocates non-identity IOVA, and refuses maps without Memory+MAP; hardware SMMU is still open |
 | No revocation broadcast | A derived cap in another table survives revoke of the parent | seL4-style CNode / CDT |
 | Identity map | Kernel and “user” share one address space | Per-task PML4 |
 | No crypto / measured boot | Out of scope for v0.1 | — |
@@ -67,15 +67,18 @@ The intended story:
 - Tenant A's weights live in an arena minted to A.
 - The NPU queue receives a **derived** Memory cap (READ, maybe not GRANT).
 - Tenant B never receives a cap to that object. Knowing the physical
-  address (if it leaked) is not enough once an IOMMU is present; v0.1
-  still identity-maps, so this is **policy complete, mechanism incomplete**.
+  address (if it leaked) is not enough once a hardware IOMMU is present.
+  v0.1 has Soft SMMU (software stream-ID IOVA map). That is **policy
+  complete and software-mechanism present**; a real device can still
+  ignore it.
 
-Ring-3 is live; the map API refuses a pin without a Memory cap and
-tracks regions, but the translation is still identity. Treat isolation
-as “the cap tables + `IommuMap` do the right thing and user pages are
-the only USER-mapped window” — which is the part we can unit-test and
-boot-test today — not “the hardware cannot cheat.” The identity map
-still means a forged kernel pointer is a physical address.
+Ring-3 is live; the map API refuses a pin without a Memory cap, allocates
+a non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
+unmap. Treat isolation as “the cap tables + Soft SMMU do the right thing
+and user pages are the only USER-mapped window” — which is the part we
+can unit-test and boot-test today — not “the hardware cannot cheat.”
+The CPU trampoline is still an identity map: a forged kernel pointer is
+a physical address.
 
 ## Covert channels
 

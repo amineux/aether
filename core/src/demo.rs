@@ -7,11 +7,11 @@ use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
 use crate::color::{admit_arena_wave, ColorError};
-use crate::iommu::{IommuMap, MapError, MapRequest};
 use crate::cut::{bind_place, CutError, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
 use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
+use crate::iommu::{IommuMap, MapError, MapRequest};
 use crate::observe::{EventKind, EventRing};
 use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 use crate::phase::Phase;
@@ -61,9 +61,7 @@ impl DemoReport {
 }
 
 /// 4×4 identity @ known matrix. C must equal B.
-pub const DEMO_B: [i32; 16] = [
-    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
-];
+pub const DEMO_B: [i32; 16] = [2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53];
 
 pub fn run_boot_demo() -> DemoReport {
     let mut events = EventRing::new();
@@ -115,7 +113,11 @@ pub fn run_boot_demo() -> DemoReport {
         .unwrap();
     events.emit(EventKind::IpcSend, ep_b.0 as u64, 0xA3);
     let got = fabric.recv(ep_b).unwrap();
-    events.emit(EventKind::IpcRecv, got.header.badge, got.header.payload_len as u64);
+    events.emit(
+        EventKind::IpcRecv,
+        got.header.badge,
+        got.header.payload_len as u64,
+    );
     let ipc_ok = got.payload() == b"ping-fabric"
         && got.header.badge == 0xA3
         && got.header.route.tile == 0
@@ -170,7 +172,8 @@ pub fn run_boot_demo() -> DemoReport {
     };
     let map_refused = iommu.map(&no_map_cap, MapRequest::pin(PhysAddr(0x2000_0000), 0x1000))
         == Err(MapError::NoMemoryCap);
-    let map_ok = pin.iova == arena.base
+    let map_ok = pin.iova != arena.base
+        && iommu.translate(arena.base) == Some(pin.iova)
         && iommu.covers(arena.base, 64)
         && map_refused
         && IommuMap::check_cap(caps_a.lookup(mem_cap).unwrap()).is_ok();
@@ -181,7 +184,11 @@ pub fn run_boot_demo() -> DemoReport {
             .require(mem_cap, CapKind::Memory, CapRights::READ)
             .is_err();
     if isolation_ok {
-        events.emit(EventKind::IsolationDeny, tenant_b.0 as u64, arena.id.0 as u64);
+        events.emit(
+            EventKind::IsolationDeny,
+            tenant_b.0 as u64,
+            arena.id.0 as u64,
+        );
     }
 
     // Grant a read+map view to the NPU queue owner (still tenant A) — then
@@ -218,23 +225,8 @@ pub fn run_boot_demo() -> DemoReport {
         })
         .unwrap();
     events.emit(EventKind::CutBind, cut.id.0 as u64, cut.phi_milli as u64);
-    let place_ok = bind_place(
-        &caps_a,
-        cut_cap,
-        &cut,
-        &graph,
-        TileId(2),
-        Some(BankId(0)),
-    )
-    .is_ok();
-    let cross = bind_place(
-        &caps_a,
-        cut_cap,
-        &cut,
-        &graph,
-        TileId(1),
-        Some(BankId(0)),
-    );
+    let place_ok = bind_place(&caps_a, cut_cap, &cut, &graph, TileId(2), Some(BankId(0))).is_ok();
+    let cross = bind_place(&caps_a, cut_cap, &cut, &graph, TileId(1), Some(BankId(0)));
     let cut_refuse = cross == Err(CutError::CrossCut);
     if cut_refuse {
         events.emit(EventKind::CutRefuse, 1, 0);
@@ -256,10 +248,13 @@ pub fn run_boot_demo() -> DemoReport {
         },
     );
     let part_cap = part.mint(&mut caps_a).unwrap();
-    let act = Activity::new(ActivityId(1), ActivityKind::VirtAccel, ep_a)
-        .bind_partition(part.id);
+    let act = Activity::new(ActivityId(1), ActivityKind::VirtAccel, ep_a).bind_partition(part.id);
     let act_cap = act.publish(&mut caps_a).unwrap();
-    events.emit(EventKind::ActivityBind, act.id.0 as u64, act.endpoint.0 as u64);
+    events.emit(
+        EventKind::ActivityBind,
+        act.id.0 as u64,
+        act.endpoint.0 as u64,
+    );
     let activity_ok = caps_a
         .require(act_cap, CapKind::Activity, CapRights::SUBMIT)
         .is_ok()
@@ -320,9 +315,7 @@ pub fn run_boot_demo() -> DemoReport {
     // Backing store for the software NPU (host and kernel both use this path
     // when they do not have a real identity-mapped PA). 4×4 i32 × 3 matrices.
     let mut backing = [0u8; 256];
-    let ident = [
-        1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ];
+    let ident = [1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     for (i, v) in ident.iter().enumerate() {
         backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
     }
@@ -370,13 +363,26 @@ pub fn run_boot_demo() -> DemoReport {
     events.emit(EventKind::AccelSubmit, 4, 4);
     let mut npu = SoftNpu::new();
     let cpl = npu.execute(&job, &mut mem).unwrap();
-    events.emit(EventKind::AccelComplete, cpl.job_seq as u64, cpl.cycles as u64);
+    events.emit(
+        EventKind::AccelComplete,
+        cpl.job_seq as u64,
+        cpl.cycles as u64,
+    );
     let fence_done = timeline.complete(fence.id).unwrap();
     events.emit(EventKind::FenceComplete, fence_done.id.0, 1);
-    let color_ok = admit_arena_wave(tenant_a.0, Phase::Compute, arenas.get(arena.id).unwrap(), BankId(0))
-        .is_ok()
-        && admit_arena_wave(tenant_b.0, Phase::Compute, arenas.get(arena.id).unwrap(), BankId(0))
-            == Err(ColorError::ForeignTenant)
+    let color_ok = admit_arena_wave(
+        tenant_a.0,
+        Phase::Compute,
+        arenas.get(arena.id).unwrap(),
+        BankId(0),
+    )
+    .is_ok()
+        && admit_arena_wave(
+            tenant_b.0,
+            Phase::Compute,
+            arenas.get(arena.id).unwrap(),
+            BankId(0),
+        ) == Err(ColorError::ForeignTenant)
         && admit_arena_wave(
             tenant_a.0,
             Phase::Compute,
@@ -451,10 +457,14 @@ pub fn run_boot_demo() -> DemoReport {
     )
     .unwrap()
     .with_flow(FlowClass::Harmonic);
-    let harm_refused = fabric.send(harm_tree)
-        == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
+    let harm_refused =
+        fabric.send(harm_tree) == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
     events.emit(EventKind::HodgeRefuse, FlowClass::Harmonic as u64, 1);
-    let hodge_ok = hodge_grad && grad_ok && curl_ok && harm_refused && b_no_hodge
+    let hodge_ok = hodge_grad
+        && grad_ok
+        && curl_ok
+        && harm_refused
+        && b_no_hodge
         && authorize(
             &Capability {
                 kind: CapKind::FlowQuota,

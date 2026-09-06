@@ -61,7 +61,7 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.fence_ok));
     console::nl();
 
-    write_str("[map] IOMMU identity pin + Memory-cap refuse  ");
+    write_str("[map] Soft SMMU pin + Memory-cap refuse  ");
     write_str(flag(report.map_ok));
     console::nl();
 

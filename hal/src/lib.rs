@@ -43,11 +43,12 @@ pub trait AccelDevice {
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError>;
     /// Driver-side used-ring read. Does not service the device.
     fn poll(&mut self) -> Option<Completion>;
-    /// Pin a guest PA range the device may DMA. Returns the IOVA.
+    /// Pin a guest PA range the device may DMA. Returns the Soft-SMMU IOVA.
     ///
     /// Callers must have already walked a Memory cap with MAP (see
     /// [`aether_core::iommu::IommuMap::map`]). Implementations may still
-    /// refuse an unauthorized pin.
+    /// refuse an unauthorized pin. IOVA is not identity; `stream_id` selects
+    /// a software context. This is not a hardware SMMU.
     ///
     /// This is a *local* pin. Remote `(place, local)` addresses must go
     /// through [`map_fabric`] — never a silent coherent load.
@@ -56,10 +57,15 @@ pub trait AccelDevice {
         let _ = iova;
         Ok(())
     }
-    /// Translate a guest PA through the device's pin table. Identity on QEMU.
+    /// Translate a guest PA through the device's Soft-SMMU table (stream 0).
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
         let _ = guest_pa;
         None
+    }
+    /// Translate on an explicit software stream ID.
+    fn translate_stream(&self, stream_id: u32, guest_pa: PhysAddr) -> Option<PhysAddr> {
+        let _ = stream_id;
+        self.translate(guest_pa)
     }
     fn name(&self) -> &'static str;
 }
@@ -118,7 +124,10 @@ mod tests {
         assert_eq!(d.probe().unwrap().vendor, 0xAE7E);
         assert_eq!(d.name(), "dummy");
         let iova = d
-            .map(MapRequest::pin(aether_core::types::PhysAddr(0x1000), 0x1000))
+            .map(MapRequest::pin(
+                aether_core::types::PhysAddr(0x1000),
+                0x1000,
+            ))
             .unwrap();
         assert_eq!(iova.0, 0x1000);
     }
