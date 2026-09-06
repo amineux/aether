@@ -1,16 +1,57 @@
-//! Supervisor trap vector. Timer is the only handled interrupt.
+//! Supervisor trap vector. Timer + U-mode `ecall` are handled.
+//!
+//! `sscratch` is the kernel stack top in U-mode and 0 in S-mode, so a
+//! trap from user does not write the user stack (SUM is off).
 
 use core::arch::global_asm;
 
 use crate::arch::irq;
 use crate::arch::riscv64::timer;
 
+/// sstatus.SPP — previous privilege (1 = S, 0 = U).
+pub const SSTATUS_SPP: u64 = 1 << 8;
+/// sstatus.SPIE — previous SIE, restored by `sret`.
+pub const SSTATUS_SPIE: u64 = 1 << 5;
+
+const SCAUSE_U_ECALL: u64 = 8;
+
 #[repr(C)]
-pub struct TrapFrame {
+#[derive(Clone, Copy)]
+pub struct InterruptFrame {
+    /// x1 … x31
     pub regs: [u64; 31],
     pub sepc: u64,
     pub scause: u64,
     pub sstatus: u64,
+}
+
+impl InterruptFrame {
+    fn x(&self, n: usize) -> u64 {
+        self.regs[n - 1]
+    }
+
+    fn set_x(&mut self, n: usize, v: u64) {
+        self.regs[n - 1] = v;
+    }
+
+    pub fn syscall_nr(&self) -> u64 {
+        self.x(17)
+    }
+    pub fn arg0(&self) -> u64 {
+        self.x(10)
+    }
+    pub fn arg1(&self) -> u64 {
+        self.x(11)
+    }
+    pub fn arg2(&self) -> u64 {
+        self.x(12)
+    }
+    pub fn set_ret(&mut self, v: u64) {
+        self.set_x(10, v);
+    }
+    pub fn set_sp(&mut self, v: u64) {
+        self.set_x(2, v);
+    }
 }
 
 extern "C" {
@@ -21,20 +62,27 @@ pub fn init() {
     unsafe {
         core::arch::asm!(
             "csrw stvec, {0}",
+            "csrw sscratch, zero",
             in(reg) trap_vector as usize,
             options(nostack)
         );
     }
-    crate::println!("[boot] stvec set (direct); PLIC unused in this port");
+    crate::println!("[boot] stvec set (direct); U-mode ecall + sscratch (no PLIC)");
 }
 
 #[no_mangle]
-pub extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
+pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
     let interrupt = frame.scause >> 63 != 0;
     let code = frame.scause & 0xFF;
     if interrupt && code == 5 {
         irq::inc_ticks();
         timer::rearm();
+        crate::task::on_timer(frame);
+        return;
+    }
+    if !interrupt && code == SCAUSE_U_ECALL {
+        frame.sepc = frame.sepc.wrapping_add(4);
+        crate::syscall::from_user_trap(frame);
         return;
     }
     if !interrupt {
@@ -43,7 +91,8 @@ pub extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
         crate::console::write_str(" sepc=");
         crate::console::write_hex(frame.sepc);
         crate::console::nl();
-        if code == 2 || code == 1 || code == 5 || code == 7 {
+        if code == 2 || code == 1 || code == 5 || code == 7 || code == 12 || code == 13 || code == 15
+        {
             crate::arch::riscv64::idle();
         }
     }
@@ -54,19 +103,23 @@ global_asm!(
     .align 2
     .globl trap_vector
     trap_vector:
+        csrrw   sp, sscratch, sp
+        bnez    sp, .Lsave
+        csrrw   sp, sscratch, sp
+    .Lsave:
         addi    sp, sp, -272
-        sd      x1,   0(sp)
-        sd      x3,  16(sp)
-        sd      x4,  24(sp)
-        sd      x5,  32(sp)
-        sd      x6,  40(sp)
-        sd      x7,  48(sp)
-        sd      x8,  56(sp)
-        sd      x9,  64(sp)
-        sd      x10, 72(sp)
-        sd      x11, 80(sp)
-        sd      x12, 88(sp)
-        sd      x13, 96(sp)
+        sd      x1,    0(sp)
+        sd      x3,   16(sp)
+        sd      x4,   24(sp)
+        sd      x5,   32(sp)
+        sd      x6,   40(sp)
+        sd      x7,   48(sp)
+        sd      x8,   56(sp)
+        sd      x9,   64(sp)
+        sd      x10,  72(sp)
+        sd      x11,  80(sp)
+        sd      x12,  88(sp)
+        sd      x13,  96(sp)
         sd      x14, 104(sp)
         sd      x15, 112(sp)
         sd      x16, 120(sp)
@@ -85,6 +138,12 @@ global_asm!(
         sd      x29, 224(sp)
         sd      x30, 232(sp)
         sd      x31, 240(sp)
+        csrr    t0, sscratch
+        bnez    t0, 1f
+        addi    t0, sp, 272
+    1:
+        sd      t0, 8(sp)
+        csrw    sscratch, zero
         csrr    t0, sepc
         sd      t0, 248(sp)
         csrr    t0, scause
@@ -93,22 +152,31 @@ global_asm!(
         sd      t0, 264(sp)
         mv      a0, sp
         call    trap_dispatch
+        .globl trap_return
+    trap_return:
         ld      t0, 248(sp)
         csrw    sepc, t0
         ld      t0, 264(sp)
         csrw    sstatus, t0
-        ld      x1,   0(sp)
-        ld      x3,  16(sp)
-        ld      x4,  24(sp)
-        ld      x5,  32(sp)
-        ld      x6,  40(sp)
-        ld      x7,  48(sp)
-        ld      x8,  56(sp)
-        ld      x9,  64(sp)
-        ld      x10, 72(sp)
-        ld      x11, 80(sp)
-        ld      x12, 88(sp)
-        ld      x13, 96(sp)
+        andi    t1, t0, 0x100
+        bnez    t1, 2f
+        csrr    t1, sscratch
+        bnez    t1, 2f
+        addi    t1, sp, 272
+        csrw    sscratch, t1
+    2:
+        ld      x1,    0(sp)
+        ld      x3,   16(sp)
+        ld      x4,   24(sp)
+        ld      x5,   32(sp)
+        ld      x6,   40(sp)
+        ld      x7,   48(sp)
+        ld      x8,   56(sp)
+        ld      x9,   64(sp)
+        ld      x10,  72(sp)
+        ld      x11,  80(sp)
+        ld      x12,  88(sp)
+        ld      x13,  96(sp)
         ld      x14, 104(sp)
         ld      x15, 112(sp)
         ld      x16, 120(sp)
@@ -127,7 +195,7 @@ global_asm!(
         ld      x29, 224(sp)
         ld      x30, 232(sp)
         ld      x31, 240(sp)
-        addi    sp, sp, 272
+        ld      sp,    8(sp)
         sret
     "#
 );

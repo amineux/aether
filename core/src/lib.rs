@@ -38,7 +38,7 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
-pub use aspace::{IdentityAs, CR4_SMAP, CR4_SMEP};
+pub use aspace::{IdentityAs, Sv39As, CR4_SMAP, CR4_SMEP};
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
 pub use cut::{AffinityGraph, CutError, SpectralCut};
@@ -69,7 +69,8 @@ pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV, SYS_SEND,
     SYS_UNMAP, SYS_YIELD, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END,
-    USER_PROBE_STACK_TOP, USER_STACK_TOP,
+    USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_STACK_TOP,
+    USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 

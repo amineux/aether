@@ -174,3 +174,162 @@ mod tests {
         assert!(USER_PROBE_END - USER_PROBE_BASE == PAGE_2M);
     }
 }
+
+/// Sv39 PTE bits (privileged spec). U is only meaningful on a leaf.
+pub const SV39_V: u64 = 1;
+pub const SV39_R: u64 = 1 << 1;
+pub const SV39_W: u64 = 1 << 2;
+pub const SV39_X: u64 = 1 << 3;
+pub const SV39_U: u64 = 1 << 4;
+pub const SV39_G: u64 = 1 << 5;
+pub const SV39_A: u64 = 1 << 6;
+pub const SV39_D: u64 = 1 << 7;
+pub const SV39_LEAF: u64 = SV39_R;
+pub const PAGE_1G: u64 = 0x4000_0000;
+
+/// Software Sv39 identity map (4× 1 GiB root leaves). `clone_user`
+/// splits the 1 GiB that holds the user window into 2 MiB pages and
+/// sets U only there. Host-tested twin of the RISC-V kernel walk.
+#[derive(Clone, Debug)]
+pub struct Sv39As {
+    pub l2: [u64; 512],
+    pub l1: [u64; 512],
+    pub split_vpn2: usize,
+}
+
+impl Sv39As {
+    pub fn empty() -> Self {
+        Self {
+            l2: [0; 512],
+            l1: [0; 512],
+            split_vpn2: usize::MAX,
+        }
+    }
+
+    fn gig_pte(i: u64) -> u64 {
+        (i << 28) | SV39_V | SV39_R | SV39_W | SV39_X | SV39_G | SV39_A | SV39_D
+    }
+
+    fn meg_pte(phys: u64, user: bool) -> u64 {
+        let mut flags = SV39_V | SV39_R | SV39_W | SV39_X | SV39_A | SV39_D;
+        if user {
+            flags |= SV39_U;
+        } else {
+            flags |= SV39_G;
+        }
+        (phys >> 2) | flags
+    }
+
+    /// Trampoline-shaped kernel map: 4 GiB identity, no U bits.
+    pub fn kernel() -> Self {
+        let mut s = Self::empty();
+        for i in 0..4u64 {
+            s.l2[i as usize] = Self::gig_pte(i);
+        }
+        s
+    }
+
+    /// Clone the kernel map. U only on `[user_lo, user_hi)` 2 MiB
+    /// leaves. Each address in `unmap` has its 2 MiB V bit cleared.
+    pub fn clone_user(&self, user_lo: u64, user_hi: u64, unmap: &[u64]) -> Self {
+        let mut s = self.clone();
+        let vpn2 = ((user_lo >> 30) & 0x1FF) as usize;
+        s.split_vpn2 = vpn2;
+        let gphys = (vpn2 as u64) * PAGE_1G;
+        for j in 0..512u64 {
+            s.l1[j as usize] = Self::meg_pte(gphys + j * PAGE_2M, false);
+        }
+        s.l2[vpn2] = SV39_V;
+        let mut va = user_lo & !(PAGE_2M - 1);
+        while va < user_hi {
+            if ((va >> 30) & 0x1FF) as usize == vpn2 {
+                let i1 = ((va >> 21) & 0x1FF) as usize;
+                s.l1[i1] = Self::meg_pte(va & !(PAGE_2M - 1), true);
+            }
+            va += PAGE_2M;
+        }
+        for &u in unmap {
+            if ((u >> 30) & 0x1FF) as usize == vpn2 {
+                let i1 = ((u >> 21) & 0x1FF) as usize;
+                s.l1[i1] &= !SV39_V;
+            }
+        }
+        s
+    }
+
+    pub fn walk(&self, va: u64) -> Option<Walk> {
+        let i2 = ((va >> 30) & 0x1FF) as usize;
+        let pte2 = self.l2[i2];
+        if pte2 & SV39_V == 0 {
+            return None;
+        }
+        if pte2 & SV39_LEAF != 0 {
+            return Some(Walk {
+                pde: pte2,
+                phys: (pte2 << 2) & !0x3FFF_FFFF | (va & 0x3FFF_FFFF),
+                user: pte2 & SV39_U != 0,
+                present: true,
+                huge_2m: true,
+            });
+        }
+        if i2 != self.split_vpn2 {
+            return None;
+        }
+        let i1 = ((va >> 21) & 0x1FF) as usize;
+        let pte1 = self.l1[i1];
+        if pte1 & SV39_V == 0 {
+            return None;
+        }
+        Some(Walk {
+            pde: pte1,
+            phys: (pte1 << 2) & !0x1F_FFFF | (va & 0x1F_FFFF),
+            user: pte1 & SV39_U != 0,
+            present: true,
+            huge_2m: pte1 & SV39_LEAF != 0,
+        })
+    }
+
+    pub fn user_mapped(&self, va: u64) -> bool {
+        self.walk(va).map(|w| w.present && w.user).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod sv39_tests {
+    use super::*;
+    use crate::sysnr::{USER_RV_IMAGE_BASE, USER_RV_IMAGE_END};
+
+    #[test]
+    fn kernel_identity_has_no_u_leaves() {
+        let k = Sv39As::kernel();
+        let w = k.walk(USER_RV_IMAGE_BASE).unwrap();
+        assert!(w.present && w.huge_2m);
+        assert!(!w.user);
+        assert!(!k.user_mapped(USER_RV_IMAGE_BASE));
+        assert!(!k.user_mapped(0x8020_0000));
+        assert_eq!(k.walk(0x8020_0000).unwrap().phys, 0x8020_0000);
+        assert_eq!(k.walk(0x1000_0000).unwrap().phys, 0x1000_0000);
+    }
+
+    #[test]
+    fn user_leaves_are_task_local() {
+        let k = Sv39As::kernel();
+        let init = k.clone_user(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, &[]);
+
+        assert!(init.user_mapped(USER_RV_IMAGE_BASE));
+        assert!(init.user_mapped(USER_RV_IMAGE_END - 8));
+        assert!(!init.user_mapped(0x8020_0000));
+        assert!(init.walk(0x8020_0000).unwrap().present);
+        assert!(!init.walk(0x8020_0000).unwrap().user);
+        assert!(!init.user_mapped(0x1000_0000));
+        assert!(init.walk(0x1000_0000).unwrap().present);
+        assert!(!k.user_mapped(USER_RV_IMAGE_BASE));
+    }
+
+    #[test]
+    fn rv_window_is_2m_in_ram() {
+        assert_eq!(USER_RV_IMAGE_END - USER_RV_IMAGE_BASE, PAGE_2M);
+        assert!(USER_RV_IMAGE_BASE >= 0x8000_0000);
+        assert!(USER_RV_IMAGE_BASE < 0x8800_0000);
+    }
+}

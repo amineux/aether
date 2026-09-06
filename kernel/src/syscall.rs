@@ -1,6 +1,7 @@
 //! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`.
 //!
-//! Ring-3 enters here through `syscall` / `sysret`. Cap checks sit on
+//! User enters here through `syscall`/`sysret` (x86) or `ecall`/`sret`
+//! (RISC-V). Cap checks sit on
 //! send / recv / map / accel before any fabric or SoftNPU work.
 
 #![allow(dead_code)]
@@ -9,6 +10,7 @@ use aether_core::sysnr::{user_range_known, UserAccelJob, UserIpcMsg};
 use aether_core::CPtr;
 
 use crate::arch::idt::InterruptFrame;
+#[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::io::outb;
 use crate::task;
 use crate::world;
@@ -44,7 +46,10 @@ pub fn debug_print(bytes: &[u8]) {
 
 pub fn yield_now() {
     unsafe {
+        #[cfg(target_arch = "x86_64")]
         core::arch::asm!("pause");
+        #[cfg(target_arch = "riscv64")]
+        core::arch::asm!("nop");
     }
 }
 
@@ -75,18 +80,18 @@ pub fn copy_user_job(ptr: u64) -> Result<UserAccelJob, SysError> {
 
 pub fn from_user_trap(frame: &mut InterruptFrame) {
     task::clear_switched();
-    let nr = frame.rax;
-    let a0 = frame.rdi;
-    let a1 = frame.rsi;
-    let a2 = frame.rdx;
+    let nr = frame.syscall_nr();
+    let a0 = frame.arg0();
+    let a1 = frame.arg1();
+    let a2 = frame.arg2();
     let r = dispatch_trap(nr, a0, a1, a2, frame);
     if task::took_switch() {
         return;
     }
-    frame.rax = match r {
+    frame.set_ret(match r {
         Ok(v) => v,
         Err(e) => err_rax(e),
-    };
+    });
 }
 
 pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
@@ -132,7 +137,7 @@ fn dispatch_trap(
             Ok(0)
         }
         SYS_YIELD => {
-            frame.rax = 0;
+            frame.set_ret(0);
             task::resched_from_trap(frame, None, 0);
             Ok(0)
         }
@@ -147,10 +152,16 @@ fn dispatch_trap(
             crate::console::write_str("[sys] exit status=");
             crate::console::write_u64(a0);
             crate::console::nl();
+            #[cfg(target_arch = "x86_64")]
             outb(0xF4, a0 as u8);
+            #[cfg(target_arch = "riscv64")]
+            crate::arch::exit_qemu(a0 == 0);
             loop {
                 unsafe {
+                    #[cfg(target_arch = "x86_64")]
                     core::arch::asm!("hlt");
+                    #[cfg(target_arch = "riscv64")]
+                    core::arch::asm!("wfi");
                 }
             }
         }

@@ -42,9 +42,12 @@ fusion pass.
 
 ## Syscall numbers (frozen 0–8)
 
-Ring-3 uses the System V / Linux register convention: `rax` = number,
-`rdi,rsi,rdx` = args, `rcx`/`r11` clobbered by `syscall`. Negative
-`rax` is `-SysError`.
+Ring-3 / U-mode uses the same numbers on every arch. x86_64 is the
+System V / Linux register convention: `rax` = number, `rdi,rsi,rdx` =
+args, `rcx`/`r11` clobbered by `syscall`. Negative `rax` is `-SysError`.
+RISC-V U-mode uses the Linux RISC-V convention: `a7` = number,
+`a0,a1,a2` = args, return in `a0` (negative is `-SysError`). Entry is
+`ecall`; the kernel returns with `sret`.
 
 | nr | Name | Notes |
 | --- | --- | --- |
@@ -57,7 +60,7 @@ Ring-3 uses the System V / Linux register convention: `rax` = number,
 | 6 | `accel_submit(queue_cptr, job_ptr)` | `require(AccelQueue, SUBMIT)` |
 | 7 | `accel_wait(queue_cptr, cpl_out)` | `require(AccelQueue, WAIT)`; blocks |
 | 8 | `arena_alloc(size, flags, bank)` | Mints a Memory cap |
-| 9 | `exit(status)` | `isa-debug-exit` (additive; 0–8 unchanged) |
+| 9 | `exit(status)` | x86 `isa-debug-exit`; RISC-V sifive_test (additive; 0–8 unchanged) |
 
 User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 `core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1

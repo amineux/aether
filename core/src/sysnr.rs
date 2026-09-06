@@ -92,6 +92,13 @@ pub const USER_PROBE_BASE: u64 = 0x0240_0000;
 pub const USER_PROBE_END: u64 = 0x0260_0000;
 pub const USER_PROBE_STACK_TOP: u64 = USER_PROBE_END;
 
+/// RISC-V `/init` window. QEMU virt RAM starts at `0x8000_0000`; the
+/// x86 `0x0200_0000` hole is not RAM. Identity-mapped 2 MiB, U-bit
+/// only on this leaf in the task satp. Not a second ABI.
+pub const USER_RV_IMAGE_BASE: u64 = 0x8200_0000;
+pub const USER_RV_IMAGE_END: u64 = 0x8220_0000;
+pub const USER_RV_STACK_TOP: u64 = USER_RV_IMAGE_END;
+
 pub fn user_range_ok_in(lo: u64, hi: u64, ptr: u64, len: u64) -> bool {
     if ptr < lo {
         return false;
@@ -112,6 +119,7 @@ pub fn user_range_ok(ptr: u64, len: u64) -> bool {
 pub fn user_range_known(ptr: u64, len: u64) -> bool {
     user_range_ok(ptr, len)
         || user_range_ok_in(USER_PROBE_BASE, USER_PROBE_END, ptr, len)
+        || user_range_ok_in(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, ptr, len)
 }
 
 #[cfg(test)]
@@ -141,6 +149,9 @@ mod tests {
         assert!(user_range_known(USER_PROBE_BASE, 16));
         assert!(!user_range_ok(USER_PROBE_BASE, 16));
         assert!(!user_range_known(USER_IMAGE_END, 1));
+        assert!(user_range_known(USER_RV_IMAGE_BASE, 16));
+        assert!(!user_range_ok(USER_RV_IMAGE_BASE, 16));
+        assert!(!user_range_known(USER_RV_IMAGE_END, 1));
     }
 
     #[test]

@@ -4,13 +4,18 @@
 //! Switching copies an [`InterruptFrame`] so IRQ and syscall share one path.
 
 use aether_core::preempt::{CpuQueue, WaitWhy};
+#[cfg(target_arch = "x86_64")]
 use aether_core::{USER_IMAGE_BASE, USER_STACK_TOP};
+#[cfg(target_arch = "riscv64")]
+use aether_core::{USER_IMAGE_BASE, USER_RV_STACK_TOP};
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(target_arch = "x86_64")]
 use crate::arch::gdt::{self, KCODE, KDATA, USER_CS, USER_DS};
 use crate::arch::idt::InterruptFrame;
 use crate::arch::irq;
+#[cfg(target_arch = "x86_64")]
 use crate::arch::x86_64::syscall as sc;
 use crate::console::{self, write_str, write_u64};
 use crate::println;
@@ -55,6 +60,7 @@ struct Tasks {
     ping_sent: bool,
 }
 
+#[cfg(target_arch = "x86_64")]
 const EMPTY_FRAME: InterruptFrame = InterruptFrame {
     r15: 0,
     r14: 0,
@@ -78,6 +84,13 @@ const EMPTY_FRAME: InterruptFrame = InterruptFrame {
     rflags: 0,
     rsp: 0,
     ss: 0,
+};
+#[cfg(target_arch = "riscv64")]
+const EMPTY_FRAME: InterruptFrame = InterruptFrame {
+    regs: [0; 31],
+    sepc: 0,
+    scause: 0,
+    sstatus: 0,
 };
 
 fn empty_thread() -> Thread {
@@ -147,11 +160,20 @@ fn kstack_top(t: &Thread) -> u64 {
 
 fn apply_hw(t: &Tasks, from: u32, id: u32) {
     let th = &t.threads[slot_index(id)];
-    gdt::set_rsp0(th.kstack_top);
-    sc::set_kstack(th.kstack_top);
+    #[cfg(target_arch = "x86_64")]
+    {
+        gdt::set_rsp0(th.kstack_top);
+        sc::set_kstack(th.kstack_top);
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        let user = th.saved.sstatus & crate::arch::riscv64::idt::SSTATUS_SPP == 0;
+        crate::mm::paging::write_sscratch(if user { th.kstack_top } else { 0 });
+    }
     crate::mm::paging::switch_cr3(th.cr3, from, id);
 }
 
+#[cfg(target_arch = "x86_64")]
 fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
     let mut f = EMPTY_FRAME;
     f.rip = rip;
@@ -162,6 +184,16 @@ fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
     f
 }
 
+#[cfg(target_arch = "riscv64")]
+fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
+    let mut f = EMPTY_FRAME;
+    f.sepc = rip;
+    f.set_sp(rsp);
+    f.sstatus = crate::arch::riscv64::idt::SSTATUS_SPP | crate::arch::riscv64::idt::SSTATUS_SPIE;
+    f
+}
+
+#[cfg(target_arch = "x86_64")]
 fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
     let mut f = EMPTY_FRAME;
     f.rip = rip;
@@ -172,7 +204,17 @@ fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
     f
 }
 
-unsafe fn iretq_to(frame: *const InterruptFrame) -> ! {
+#[cfg(target_arch = "riscv64")]
+fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
+    let mut f = EMPTY_FRAME;
+    f.sepc = rip;
+    f.set_sp(rsp);
+    f.sstatus = crate::arch::riscv64::idt::SSTATUS_SPIE;
+    f
+}
+
+#[cfg(target_arch = "x86_64")]
+unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
     core::arch::asm!(
         "mov rsp, {f}",
         "pop r15",
@@ -193,6 +235,20 @@ unsafe fn iretq_to(frame: *const InterruptFrame) -> ! {
         "add rsp, 16",
         "iretq",
         f = in(reg) frame as u64,
+        options(noreturn)
+    );
+}
+
+#[cfg(target_arch = "riscv64")]
+unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
+    extern "C" {
+        fn trap_return();
+    }
+    core::arch::asm!(
+        "mv sp, {f}",
+        "j {ret}",
+        f = in(reg) frame as u64,
+        ret = sym trap_return,
         options(noreturn)
     );
 }
@@ -231,7 +287,10 @@ pub fn spawn_kthread() {
 }
 
 pub fn spawn_user(entry: u64, cr3: u64) {
+    #[cfg(target_arch = "x86_64")]
     spawn_user_task(TID_USER, entry, USER_STACK_TOP, cr3);
+    #[cfg(target_arch = "riscv64")]
+    spawn_user_task(TID_USER, entry, USER_RV_STACK_TOP, cr3);
     let _ = USER_IMAGE_BASE;
 }
 
@@ -311,7 +370,7 @@ pub fn take_user_buf(id: u32) -> u64 {
 }
 
 pub fn set_saved_rax(id: u32, rax: u64) {
-    tasks().threads[slot_index(id)].saved.rax = rax;
+    tasks().threads[slot_index(id)].saved.set_ret(rax);
 }
 
 pub fn blocked_recv_thread(ep: u32) -> Option<u32> {
@@ -360,9 +419,12 @@ pub fn enter_user() -> ! {
     let _irq = irq::save_disable();
     t.started = true;
     apply_hw(t, 0, t.current);
+    #[cfg(target_arch = "x86_64")]
     println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task CR3)");
+    #[cfg(target_arch = "riscv64")]
+    println!("[boot] dropping to U-mode /init (sret, timer armed, per-task satp)");
     unsafe {
-        iretq_to(core::ptr::addr_of!(frame));
+        resume_to(core::ptr::addr_of!(frame));
     }
 }
 
@@ -385,7 +447,10 @@ fn kthread_b() -> ! {
         }
         crate::world::run_pending_accel();
         unsafe {
+            #[cfg(target_arch = "x86_64")]
             core::arch::asm!("sti; hlt", options(nomem, nostack));
+            #[cfg(target_arch = "riscv64")]
+            core::arch::asm!("csrsi sstatus, 2; wfi", options(nomem, nostack));
         }
     }
 }

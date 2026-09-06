@@ -1,14 +1,19 @@
 //! Load embedded static ELF64 images into per-task user windows.
 
 use aether_core::elf::{loads_in_window, parse_elf64};
-use aether_core::{
-    USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END,
-};
+#[cfg(target_arch = "x86_64")]
+use aether_core::{USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END};
+#[cfg(target_arch = "riscv64")]
+use aether_core::{USER_RV_IMAGE_BASE, USER_RV_IMAGE_END};
 
 use crate::console::{self, write_hex, write_str, write_u64};
 use crate::mm::{frame, paging};
 
+#[cfg(target_arch = "x86_64")]
 pub static INIT_ELF: &[u8] = include_bytes!(env!("AETHER_INIT_ELF"));
+#[cfg(target_arch = "riscv64")]
+pub static INIT_ELF: &[u8] = include_bytes!(env!("AETHER_INIT_ELF_RISCV"));
+#[cfg(target_arch = "x86_64")]
 pub static PROBE_ELF: &[u8] = include_bytes!(env!("AETHER_PROBE_ELF"));
 
 pub struct LoadedImage {
@@ -52,12 +57,16 @@ fn load_into(elf: &[u8], base: u64, end: u64, name: &str) -> Result<u64, &'stati
 }
 
 pub fn load_init() -> Result<LoadedImage, &'static str> {
-    let entry = load_into(INIT_ELF, USER_IMAGE_BASE, USER_IMAGE_END, "/init")?;
-    let cr3 = paging::clone_user_aspace(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE])
-        .ok_or("PML4 clone failed for /init")?;
+    #[cfg(target_arch = "x86_64")]
+    let (base, end, unmap) = (USER_IMAGE_BASE, USER_IMAGE_END, [USER_PROBE_BASE]);
+    #[cfg(target_arch = "riscv64")]
+    let (base, end, unmap) = (USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, [0u64; 0]);
+    let entry = load_into(INIT_ELF, base, end, "/init")?;
+    let cr3 = paging::clone_user_aspace(base, end, &unmap).ok_or("aspace clone failed for /init")?;
     Ok(LoadedImage { entry, cr3 })
 }
 
+#[cfg(target_arch = "x86_64")]
 pub fn load_probe() -> Result<LoadedImage, &'static str> {
     let entry = load_into(PROBE_ELF, USER_PROBE_BASE, USER_PROBE_END, "/probe")?;
     let cr3 = paging::clone_user_aspace(USER_PROBE_BASE, USER_PROBE_END, &[USER_IMAGE_BASE])

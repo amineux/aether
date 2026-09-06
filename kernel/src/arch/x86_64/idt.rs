@@ -155,6 +155,24 @@ pub struct InterruptFrame {
     pub ss: u64,
 }
 
+impl InterruptFrame {
+    pub fn syscall_nr(&self) -> u64 {
+        self.rax
+    }
+    pub fn arg0(&self) -> u64 {
+        self.rdi
+    }
+    pub fn arg1(&self) -> u64 {
+        self.rsi
+    }
+    pub fn arg2(&self) -> u64 {
+        self.rdx
+    }
+    pub fn set_ret(&mut self, v: u64) {
+        self.rax = v;
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn isr_dispatch(frame: &mut InterruptFrame) {
     match frame.vec {

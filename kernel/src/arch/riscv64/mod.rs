@@ -1,7 +1,8 @@
 //! RISC-V S-mode HAL for QEMU virt (OpenSBI).
 //!
-//! Thin v0.1 port: UART0 console, SBI timer, stvec, Sv39 walk. No PLIC
-//! virtio, no ring-3, no SMP. `aether-core` is unchanged.
+//! S-mode kernel + U-mode `/init` via `sret` / `ecall`. Sv39 task
+//! isolate (U-bit on one 2 MiB window). SoftNPU is the in-kernel
+//! virtqueue — no PLIC, no real virtio-mmio. Extra harts stay parked.
 
 use core::arch::global_asm;
 

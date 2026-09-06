@@ -12,7 +12,13 @@ use aether_core::phase::Phase;
 use aether_core::preempt::WaitWhy;
 use aether_core::sysnr::{UserCompletion, UserIpcMsg};
 use aether_core::types::{BankId, ChipletId, PhysAddr, TenantId};
+#[cfg(target_arch = "x86_64")]
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_IMAGE_BASE, USER_IMAGE_END};
+#[cfg(target_arch = "riscv64")]
+use aether_core::{
+    INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_RV_IMAGE_BASE as USER_IMAGE_BASE,
+    USER_RV_IMAGE_END as USER_IMAGE_END,
+};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::SoftNpuDevice;
 use aether_hal::AccelDevice;
@@ -59,9 +65,14 @@ pub fn init() {
         .expect("q cap");
     assert_eq!(q.0, INIT_QUEUE_CPTR);
 
+    #[cfg(target_arch = "x86_64")]
+    let arena_bank0 = 0x0100_0000u64;
+    #[cfg(target_arch = "riscv64")]
+    let arena_bank0 = 0x8300_0000u64;
+    crate::mm::frame::reserve_range(arena_bank0, arena_bank0 + 16 * 1024 * 1024);
     let arenas = ArenaAllocator::new(&[
-        (BankId(0), PhysAddr(0x0100_0000), 8 * 1024 * 1024),
-        (BankId(1), PhysAddr(0x0180_0000), 8 * 1024 * 1024),
+        (BankId(0), PhysAddr(arena_bank0), 8 * 1024 * 1024),
+        (BankId(1), PhysAddr(arena_bank0 + 8 * 1024 * 1024), 8 * 1024 * 1024),
     ])
     .expect("arenas");
 
@@ -279,7 +290,7 @@ pub fn sys_recv(
             Ok(0)
         }
         Err(FabricError::WouldBlock) => {
-            frame.rax = 0;
+            frame.set_ret(0);
             task::resched_from_trap(frame, Some(WaitWhy::Recv(object)), out_ptr);
             Err(SysError::Again)
         }
@@ -433,7 +444,7 @@ pub fn sys_accel_wait(
         write_user_completion(out_ptr, cpl)?;
         return Ok(0);
     }
-    frame.rax = 0;
+    frame.set_ret(0);
     task::resched_from_trap(frame, Some(WaitWhy::Accel(1)), out_ptr);
     Err(SysError::Again)
 }

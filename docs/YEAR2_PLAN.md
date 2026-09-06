@@ -41,6 +41,9 @@ is **done** as a software model (`TimelineId` + seq / wait /
 complete; timeout is software; QEMU IRQ is still software; not a
 silicon fence). SoftNPU F16/F32 is **done** as software IEEE
 (`DType` 1/2; FTZ; not a tensor ISA; `UserAccelJob` still I32).
+RISC-V S-mode userspace is **done** as a documented subset
+(`sret`/`ecall` `/init` + Sv39 U-isolate + in-kernel SoftNPU; no
+PLIC; not product-class).
 
 ### KEEP / ACTIVE Y1
 
@@ -230,8 +233,9 @@ for new qemu/smp targets.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.
-6. **RISC-V / aarch64 temptation:** Do not block Y1 on `sret` / EL0
-   userspace; keep the thin HALs. Neither port is a second kernel.
+6. **RISC-V / aarch64 temptation:** RISC-V U-mode `/init` landed as a
+   subset; do not block Y1 on PLIC virtio or aarch64 EL0. Neither
+   port is a second kernel.
 
 ### PR order (SpecForge original)
 

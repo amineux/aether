@@ -22,6 +22,8 @@ QEMU_FLAGS  := -kernel $(LOADER_ELF) -serial stdio -display none \
 RV_TARGET   := riscv64gc-unknown-none-elf
 RV_KERNEL   := $(KERNEL_DIR)/target/$(RV_TARGET)/release/aether
 RV_ELF      := $(BUILD)/aether-riscv.elf
+RV_INIT_ELF := $(USER_DIR)/target/$(RV_TARGET)/release/aether-init
+RV_INIT_BLOB := $(BUILD)/init-riscv.elf
 QEMU_RV     := qemu-system-riscv64
 QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
                  -no-reboot -kernel $(RV_ELF)
@@ -36,7 +38,8 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
                  -nographic -no-reboot -nic none -kernel $(AA_ELF) \
                  -semihosting
 
-.PHONY: all kernel kernel-riscv kernel-aarch64 loader user-init user-probe \
+.PHONY: all kernel kernel-riscv kernel-aarch64 loader user-init user-init-riscv \
+        user-probe \
         qemu qemu-riscv qemu-aarch64 \
         qemu-debug qemu-ci qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         test test-host target target-riscv target-aarch64 clean help
@@ -47,12 +50,12 @@ help:
 	@echo "Aether targets:"
 	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
-	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
+	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init (no PLIC)"
 	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
-	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
+	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + fabric"
 	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps the fabric banner"
 	@echo "  make clean"
 
@@ -171,7 +174,15 @@ qemu-smp-ci: $(LOADER_ELF)
 	echo "qemu-smp-ci: SMP/demo banner missing (qemu exit $$ec)"; \
 	exit 1
 
-kernel-riscv: target-riscv
+user-init-riscv: target-riscv $(RV_INIT_BLOB)
+
+$(RV_INIT_BLOB): $(USER_DIR)/src/main.rs $(USER_DIR)/user-riscv.ld $(USER_DIR)/Cargo.toml
+	mkdir -p $(BUILD)
+	cd $(USER_DIR) && cargo build --release --target $(RV_TARGET)
+	cp $(RV_INIT_ELF) $(RV_INIT_BLOB)
+	@echo "init-riscv.elf $$(wc -c < $(RV_INIT_BLOB)) bytes (static non-PIE ELF64)"
+
+kernel-riscv: target-riscv $(RV_INIT_BLOB)
 	cd $(KERNEL_DIR) && cargo build --release --target $(RV_TARGET)
 	mkdir -p $(BUILD)
 	cp -f $(RV_KERNEL) $(RV_ELF)
@@ -189,7 +200,7 @@ qemu-riscv-ci: $(RV_ELF)
 	mkdir -p $(BUILD)
 	rm -f $(BUILD)/riscv-serial.log
 	set +e; \
-	timeout --signal=KILL 25s $(QEMU_RV) $(QEMU_RV_FLAGS) \
+	timeout --signal=KILL 45s $(QEMU_RV) $(QEMU_RV_FLAGS) \
 		> $(BUILD)/riscv-serial.log 2>&1; \
 	ec=$$?; \
 	set -e; \
@@ -199,11 +210,15 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
-	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log; then \
-		echo "qemu-riscv-ci: demo ok (qemu exit $$ec)"; \
+	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] U-mode /init" $(BUILD)/riscv-serial.log \
+	   && grep -q "ecall debug_print ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
+		echo "qemu-riscv-ci: U-mode /init + demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
-	echo "qemu-riscv-ci: demo banner missing (qemu exit $$ec)"; \
+	echo "qemu-riscv-ci: userspace/demo banner missing (qemu exit $$ec)"; \
 	exit 1
 
 kernel-aarch64: target-aarch64
