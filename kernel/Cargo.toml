@@ -1,0 +1,20 @@
+[workspace]
+
+[package]
+name = "aether-kernel"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+aether-core = { path = "../core" }
+aether-hal = { path = "../hal" }
+aether-drivers = { path = "../drivers" }
+
+[[bin]]
+name = "aether"
+path = "src/main.rs"
+test = false
+bench = false
+doctest = false

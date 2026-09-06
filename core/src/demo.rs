@@ -1,0 +1,490 @@
+//! Shared boot-demo: fabric IPC + tensor arena + SoftNPU matmul.
+//!
+//! The kernel prints this report; host tests assert the same path.
+
+use crate::accel::{AccelJobDesc, AccelOp, SliceMem, SoftNpu};
+use crate::activity::{Activity, ActivityId, ActivityKind};
+use crate::arena::{ArenaAllocator, ArenaRequest};
+use crate::caps::{CapKind, CapRights, CapTable, Capability};
+use crate::cut::{bind_place, CutError, SpectralCut};
+use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
+use crate::fence::Timeline;
+use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
+use crate::observe::{EventKind, EventRing};
+use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
+use crate::phase::Phase;
+use crate::sched::{Job, JobKind, TileKind, TileScheduler};
+use crate::space::{map_place, FabricAddr, MemorySpace, Place, SpaceError};
+use crate::types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DemoReport {
+    pub ipc_ok: bool,
+    pub arena_ok: bool,
+    pub accel_ok: bool,
+    pub isolation_ok: bool,
+    pub sched_ok: bool,
+    pub cut_ok: bool,
+    pub hodge_ok: bool,
+    pub space_ok: bool,
+    pub activity_ok: bool,
+    pub fence_ok: bool,
+    pub job_seq: u32,
+    pub c00: i32,
+    pub c11: i32,
+    pub arena_base: u64,
+    pub arena_bank: u8,
+    pub events: u32,
+    pub cut_phi_milli: u32,
+    pub fence_id: u64,
+}
+
+impl DemoReport {
+    pub fn all_ok(&self) -> bool {
+        self.ipc_ok
+            && self.arena_ok
+            && self.accel_ok
+            && self.isolation_ok
+            && self.sched_ok
+            && self.cut_ok
+            && self.hodge_ok
+            && self.space_ok
+            && self.activity_ok
+            && self.fence_ok
+    }
+}
+
+/// 4×4 identity @ known matrix. C must equal B.
+pub const DEMO_B: [i32; 16] = [
+    2, 3, 5, 7, 11, 13, 17, 19, 23, 29, 31, 37, 41, 43, 47, 53,
+];
+
+pub fn run_boot_demo() -> DemoReport {
+    let mut events = EventRing::new();
+    events.emit(EventKind::Boot, 1, 0);
+
+    let tenant_a = TenantId(1);
+    let tenant_b = TenantId(2);
+    let mut caps_a = CapTable::new(tenant_a);
+    let mut caps_b = CapTable::new(tenant_b);
+
+    let mut fabric = Fabric::new();
+    let ep_a = fabric.create_endpoint(tenant_a).unwrap();
+    let ep_b = fabric.create_endpoint(tenant_b).unwrap();
+
+    let ep_cap_a = caps_a
+        .mint(Capability {
+            kind: CapKind::Endpoint,
+            rights: CapRights::EP_FULL,
+            object: ep_a.0,
+            badge: 0xA3,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    let _ep_cap_b = caps_b
+        .mint(Capability {
+            kind: CapKind::Endpoint,
+            rights: CapRights::EP_FULL,
+            object: ep_b.0,
+            badge: 0xB7,
+            generation: 0,
+            tenant: tenant_b,
+        })
+        .unwrap();
+    events.emit(EventKind::CapMint, ep_a.0 as u64, ep_b.0 as u64);
+
+    fabric
+        .send(
+            Message::new(
+                ep_b,
+                0xA3,
+                MsgFlags(MsgFlags::ASYNC),
+                ChipletRoute::for_tile(TileId(0)),
+                tenant_a,
+                b"ping-fabric",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    events.emit(EventKind::IpcSend, ep_b.0 as u64, 0xA3);
+    let got = fabric.recv(ep_b).unwrap();
+    events.emit(EventKind::IpcRecv, got.header.badge, got.header.payload_len as u64);
+    let ipc_ok = got.payload() == b"ping-fabric"
+        && got.header.badge == 0xA3
+        && got.header.route.tile == 0
+        && caps_a
+            .require(ep_cap_a, CapKind::Endpoint, CapRights::WRITE)
+            .is_ok();
+
+    // Two banks: 16MiB @ 16MiB and 24MiB (demo window, not real DRAM map).
+    let mut arenas = ArenaAllocator::new(&[
+        (BankId(0), PhysAddr(0x0100_0000), 8 * 1024 * 1024),
+        (BankId(1), PhysAddr(0x0180_0000), 8 * 1024 * 1024),
+    ])
+    .unwrap();
+    let here = Place::new(ChipletId(0), MemorySpace::TileSram).with_tile(2);
+    let arena = arenas
+        .alloc(ArenaRequest::tensor(64 * 1024, Some(BankId(0))).in_space(MemorySpace::TileSram))
+        .unwrap();
+    events.emit(EventKind::ArenaAlloc, arena.base.0, arena.size);
+    arenas
+        .transfer_owner(arena.id, None, 2, tenant_a.0)
+        .unwrap();
+    events.emit(EventKind::ArenaXfer, arena.id.0 as u64, 2);
+
+    let mem_cap = caps_a
+        .mint(Capability {
+            kind: CapKind::Memory,
+            rights: CapRights::MEM_FULL,
+            object: arena.id.0,
+            badge: 0,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+
+    // Isolation: tenant B must not hold a cap to A's arena.
+    let isolation_ok = !caps_b.holds(CapKind::Memory, arena.id.0)
+        && caps_b
+            .require(mem_cap, CapKind::Memory, CapRights::READ)
+            .is_err();
+    if isolation_ok {
+        events.emit(EventKind::IsolationDeny, tenant_b.0 as u64, arena.id.0 as u64);
+    }
+
+    // Grant a read+map view to the NPU queue owner (still tenant A) — then
+    // move write into an accel-queue cap's world by transferring a derived cap.
+    let granted = caps_a
+        .derive(
+            mem_cap,
+            CapRights(CapRights::READ | CapRights::WRITE | CapRights::MAP),
+        )
+        .is_ok();
+    events.emit(EventKind::CapGrant, arena.id.0 as u64, granted as u64);
+    let remote = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x2000);
+    let silent = map_place(here, remote);
+    if silent == Err(SpaceError::SilentRemoteLoad) {
+        events.emit(EventKind::SpaceRefuse, 1, 0);
+    }
+    let local_ok = map_place(here, FabricAddr::new(here, arena.base.0)).is_ok();
+    let unified_default = CapRights::MEM_FULL.contains(CapRights::UNIFIED);
+    let arena_ok = arena.pinned && arena.dma && arena.bank == BankId(0) && granted;
+    let space_ok = arena.space == MemorySpace::TileSram
+        && silent == Err(SpaceError::SilentRemoteLoad)
+        && local_ok
+        && !unified_default;
+
+    let (graph, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
+    let cut_cap = caps_a
+        .mint(Capability {
+            kind: CapKind::SpectralCut,
+            rights: CapRights::CUT_FULL,
+            object: cut.id.0,
+            badge: 0,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    events.emit(EventKind::CutBind, cut.id.0 as u64, cut.phi_milli as u64);
+    let place_ok = bind_place(
+        &caps_a,
+        cut_cap,
+        &cut,
+        &graph,
+        TileId(2),
+        Some(BankId(0)),
+    )
+    .is_ok();
+    let cross = bind_place(
+        &caps_a,
+        cut_cap,
+        &cut,
+        &graph,
+        TileId(1),
+        Some(BankId(0)),
+    );
+    let cut_refuse = cross == Err(CutError::CrossCut);
+    if cut_refuse {
+        events.emit(EventKind::CutRefuse, 1, 0);
+    }
+    // Tenant B cannot bind A's cut (no cap).
+    let b_no_cut = !caps_b.holds(CapKind::SpectralCut, cut.id.0);
+    let cut_ok = place_ok && cut_refuse && b_no_cut && cut.phi_milli <= cut.bound_milli;
+
+    let part = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), (1 << 0) | (1 << 2), 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 2,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let part_cap = part.mint(&mut caps_a).unwrap();
+    let act = Activity::new(ActivityId(1), ActivityKind::VirtAccel, ep_a)
+        .bind_partition(part.id);
+    let act_cap = act.publish(&mut caps_a).unwrap();
+    events.emit(EventKind::ActivityBind, act.id.0 as u64, act.endpoint.0 as u64);
+    let activity_ok = caps_a
+        .require(act_cap, CapKind::Activity, CapRights::SUBMIT)
+        .is_ok()
+        && caps_a
+            .require(part_cap, CapKind::Partition, CapRights::BIND)
+            .is_ok()
+        && !caps_b.holds(CapKind::Activity, act.id.0)
+        && act.kind == ActivityKind::VirtAccel;
+
+    let mut timeline = Timeline::new(part.id);
+    let fence = timeline.submit(&part, None).unwrap();
+    events.emit(EventKind::FenceSubmit, fence.id.0, part.id.0 as u64);
+
+    let mut sched = TileScheduler::new();
+    sched.set_graph(graph);
+    sched.install_cut(cut);
+    sched.bind_partition(part);
+    sched.add_tile(TileId(0), TileKind::Cpu, BankId(0));
+    sched.add_tile(TileId(1), TileKind::Cpu, BankId(1));
+    sched.add_tile(TileId(2), TileKind::Npu, BankId(0));
+    sched.enqueue(Job {
+        id: 0,
+        kind: JobKind::Thread,
+        tile_hint: Some(TileId(0)),
+        bank_affinity: Some(BankId(0)),
+        priority: 3,
+        deadline_ticks: Some(1_000),
+        tenant: tenant_a.0,
+        cut_id: Some(cut.id.0),
+        phase: Phase::Compute,
+        partition_id: Some(part.id.0),
+        fence_id: Some(fence.id.0),
+    });
+    sched.enqueue(Job {
+        id: 0,
+        kind: JobKind::AccelWave,
+        tile_hint: Some(TileId(2)),
+        bank_affinity: Some(BankId(0)),
+        priority: 0,
+        deadline_ticks: Some(50),
+        tenant: tenant_a.0,
+        cut_id: Some(cut.id.0),
+        phase: Phase::Compute,
+        partition_id: Some(part.id.0),
+        fence_id: Some(fence.id.0),
+    });
+    let wave = sched.pick(TileId(2));
+    events.emit(
+        EventKind::SchedPick,
+        wave.map(|j| j.id).unwrap_or(0) as u64,
+        2,
+    );
+    let cpu = sched.pick(TileId(0));
+    let sched_ok = wave.is_some() && cpu.is_some();
+
+    // Backing store for the software NPU (host and kernel both use this path
+    // when they do not have a real identity-mapped PA). 4×4 i32 × 3 matrices.
+    let mut backing = [0u8; 256];
+    let ident = [
+        1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
+    ];
+    for (i, v) in ident.iter().enumerate() {
+        backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    for (i, v) in DEMO_B.iter().enumerate() {
+        backing[64 + i * 4..64 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    let mut mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut backing,
+    };
+    let job = AccelJobDesc {
+        op: AccelOp::MatMul,
+        flags: 0,
+        m: 4,
+        n: 4,
+        k: 4,
+        a: PhysAddr(0),
+        b: PhysAddr(64),
+        c: PhysAddr(128),
+        bias: PhysAddr(0),
+        a_stride: 4,
+        b_stride: 4,
+        c_stride: 4,
+        dtype: crate::accel::DType::I32,
+        tenant: tenant_a.0,
+        completion_ep: ep_a.0,
+        space: MemorySpace::TileSram,
+        place: here,
+        phase: Phase::Compute,
+        partition: part.id,
+        fence_id: fence.id.0,
+    };
+    let qcap = caps_a
+        .mint(Capability {
+            kind: CapKind::AccelQueue,
+            rights: CapRights::ACCEL_FULL,
+            object: 1,
+            badge: 0,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    let _ = caps_a.require(qcap, CapKind::AccelQueue, CapRights::SUBMIT);
+
+    events.emit(EventKind::AccelSubmit, 4, 4);
+    let mut npu = SoftNpu::new();
+    let cpl = npu.execute(&job, &mut mem).unwrap();
+    events.emit(EventKind::AccelComplete, cpl.job_seq as u64, cpl.cycles as u64);
+    let fence_done = timeline.complete(fence.id).unwrap();
+    events.emit(EventKind::FenceComplete, fence_done.id.0, 1);
+    let fence_ok = fence.submitted
+        && fence_done.completed
+        && !fence_done.timed_out
+        && job.phase == Phase::Compute
+        && job.space == MemorySpace::TileSram
+        && timeline.in_flight() == 0;
+
+    let hodge_cap = caps_a
+        .mint(Capability {
+            kind: CapKind::FlowQuota,
+            rights: CapRights::HODGE_FULL,
+            object: 1,
+            badge: CLASS_ALL,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    let hodge_grad = authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Gradient).is_ok();
+    // Tenant B has no FlowQuota cap: cannot authorize harmonic.
+    let b_no_hodge = !caps_b.holds(CapKind::FlowQuota, 1);
+
+    let grad_msg = Message::new(
+        ep_a,
+        0x11,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::TREE_OFFLOAD),
+        ChipletRoute::for_tile(TileId(0)),
+        tenant_a,
+        b"allreduce",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Gradient)
+    .with_phase(Phase::Exchange);
+    let grad_ok = fabric.send(grad_msg).is_ok();
+    events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 1);
+    let _ = fabric.recv(ep_a);
+
+    let curl_msg = Message::new(
+        ep_a,
+        0x22,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::RING_RESERVE),
+        ChipletRoute::for_tile(TileId(2)),
+        tenant_a,
+        b"ring",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Curl);
+    let curl_ok = fabric.send(curl_msg).is_ok()
+        && authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Curl).is_ok();
+    let _ = fabric.recv(ep_a);
+
+    let harm_tree = Message::new(
+        ep_a,
+        0x33,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::TREE_OFFLOAD),
+        ChipletRoute::LOCAL,
+        tenant_a,
+        b"cycle",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Harmonic);
+    let harm_refused = fabric.send(harm_tree)
+        == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
+    events.emit(EventKind::HodgeRefuse, FlowClass::Harmonic as u64, 1);
+    let hodge_ok = hodge_grad && grad_ok && curl_ok && harm_refused && b_no_hodge
+        && authorize(
+            &Capability {
+                kind: CapKind::FlowQuota,
+                rights: CapRights::HODGE_FULL,
+                object: 1,
+                badge: CLASS_GRADIENT | CLASS_CURL,
+                generation: 1,
+                tenant: tenant_b,
+            },
+            FlowClass::Harmonic,
+        )
+        .is_err();
+
+    fabric
+        .send(
+            Message::new(
+                ep_a,
+                cpl.job_seq as u64,
+                MsgFlags(MsgFlags::ASYNC | MsgFlags::REPLY),
+                ChipletRoute::for_tile(TileId(2)),
+                tenant_a,
+                b"accel-done",
+            )
+            .unwrap(),
+        )
+        .ok();
+
+    let done = fabric.recv(ep_a).unwrap();
+    let c00 = i32::from_le_bytes(backing[128..132].try_into().unwrap());
+    let c11 = i32::from_le_bytes(backing[128 + 20..128 + 24].try_into().unwrap());
+    let accel_ok = cpl.status == 0
+        && done.payload() == b"accel-done"
+        && c00 == DEMO_B[0]
+        && c11 == DEMO_B[5]
+        && npu.jobs_retired == 1
+        && job.fence_id == fence.id.0;
+
+    DemoReport {
+        ipc_ok,
+        arena_ok,
+        accel_ok,
+        isolation_ok,
+        sched_ok,
+        cut_ok,
+        hodge_ok,
+        space_ok,
+        activity_ok,
+        fence_ok,
+        job_seq: cpl.job_seq,
+        c00,
+        c11,
+        arena_base: arena.base.0,
+        arena_bank: arena.bank.0,
+        events: events.len() as u32,
+        cut_phi_milli: cut.phi_milli,
+        fence_id: fence.id.0,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn boot_demo_succeeds() {
+        let r = run_boot_demo();
+        assert!(r.ipc_ok, "ipc");
+        assert!(r.arena_ok, "arena");
+        assert!(r.accel_ok, "accel");
+        assert!(r.isolation_ok, "isolation");
+        assert!(r.sched_ok, "sched");
+        assert!(r.cut_ok, "cut");
+        assert!(r.hodge_ok, "hodge");
+        assert!(r.space_ok, "space");
+        assert!(r.activity_ok, "activity");
+        assert!(r.fence_ok, "fence");
+        assert!(r.all_ok());
+        assert!(r.fence_id > 0);
+        assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);
+        assert_eq!(r.c00, 2);
+        assert_eq!(r.c11, 13);
+        assert_eq!(r.arena_bank, 0);
+    }
+}

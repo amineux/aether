@@ -1,0 +1,18 @@
+[package]
+name = "aether-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host-testable fabric, capability, arena, and tile-scheduler logic for Aether"
+publish = false
+
+[lib]
+name = "aether_core"
+path = "src/lib.rs"
+
+[features]
+default = []
+std = []
+
+[lints]
+workspace = true

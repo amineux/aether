@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["core", "hal", "drivers"]
+default-members = ["core", "hal", "drivers"]
+exclude = ["kernel"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/amineux/aether"
+publish = false
+
+[workspace.lints.rust]
+unsafe_op_in_unsafe_fn = "warn"
