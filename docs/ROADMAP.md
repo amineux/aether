@@ -96,6 +96,13 @@ kernel thread queue sleeps.
 5. **Cap CDT / revoke.** Descendants die with the parent.
 6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
+## Two-year plan
+
+Sequenced acceptance criteria, file touch map, risks, and PR order live
+in [YEAR2_PLAN.md](YEAR2_PLAN.md) (SpecForge leave-behind, 2026-09-06).
+That plan does not mark Soft SMMU, bank QoS credits, virtio-accel QEMU,
+SMP, or the other stubs above as done.
+
 ## What we will not claim
 
 - Benchmarks vs Linux / seL4 / CUDA / any NPU SDK
