@@ -138,7 +138,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; IOMMU pin table; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; SoftCommandProcessor (`CpCmd`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → fence → complete |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected |
@@ -151,7 +151,7 @@ boot/x86_64/     multiboot1 trampoline (32-bit → long mode) + linker scripts
 boot/riscv64/    OpenSBI S-mode trampoline + Sv39 linker script
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
-drivers/         VirtIO-Accel queue + SoftNPU backend
+drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 thin port)
 user/init/       ring-3 `/init` (static ELF64, embedded into the kernel)
 docs/            architecture, fabric, accel, security, diligence, roadmap

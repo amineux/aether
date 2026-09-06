@@ -20,9 +20,18 @@ pub struct AccelInfo {
     pub device: u32,
     pub n_queues: u16,
     pub max_wave: u16,
-    /// 0 = software model, 1 = virtio, 2 = silicon.
+    /// Backend discriminator. See [`ACCEL_BACKEND_SOFTNPU`] and siblings.
     pub backend: u8,
 }
+
+/// In-process SoftNPU software model (Dummy / reference execute).
+pub const ACCEL_BACKEND_SOFTNPU: u8 = 0;
+/// SoftNPU behind the in-kernel virtqueue MMIO BAR (QEMU demo).
+pub const ACCEL_BACKEND_VIRTIO_SOFTNPU: u8 = 1;
+/// Documented no-op partner sketch. Not a working command processor.
+pub const ACCEL_BACKEND_PARTNER_STUB: u8 = 2;
+/// Software command processor: packed packet + Soft SMMU + IRQ/fence.
+pub const ACCEL_BACKEND_SOFT_CP: u8 = 3;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HalError {
@@ -98,7 +107,7 @@ mod tests {
                 device: 1,
                 n_queues: 1,
                 max_wave: 8,
-                backend: 0,
+                backend: ACCEL_BACKEND_SOFTNPU,
             })
         }
         fn submit(&mut self, _job: &AccelJobDesc) -> Result<u32, HalError> {

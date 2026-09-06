@@ -150,31 +150,81 @@ cover refuse (foreign bank / foreign tenant) and transfer-then-admit.
 It is a **model of a matmul/wave engine**, not a product NPU. The point is
 that job submit, ownership, and completion look like silicon.
 
-## How to plug a real NPU
+## How to plug a command processor
 
-Start from `aether_drivers::PartnerNpuStub` (no-op backend, `backend = 2`).
-That sketch shows how opcode / dtype / route fields become a command
-packet (`PartnerCmd`). Then:
+The worked example is `aether_drivers::SoftCommandProcessor`
+(`backend = 3`, name `soft-cp`). It is a **software model** of a
+silicon CP mailbox: it packs a 64-byte packet, translates through the
+Soft SMMU (`StreamId` + bind/abort), and completes on an IRQ/poll path
+into a fence. It is not SoftNPU (virtqueue BAR, `backend = 1`), not the
+in-process SoftNPU engine (`backend = 0`), and not the no-op
+`PartnerNpuStub` (`backend = 2`).
+
+`AccelInfo.backend` ids:
+
+| Id | Impl | Honest reading |
+| --- | --- | --- |
+| 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
+| 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
+| 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
+| 3 | `SoftCommandProcessor` | Packed CP packet + Soft SMMU + IRQ/fence |
+
+### `CpCmd` packet (64 bytes, little-endian)
 
 ```text
-1. PCI/MMIO probe; fill AccelInfo { backend: 2, vendor, device, ... }.
-2. On Memory cap + map(): program the IOMMU / SMMU and the device's
-   page table / stream IDs. Refuse if the cap lacks MAP or the tenant
-   does not own the arena. Soft SMMU is the software table; a real
-   device still needs a hardware SMMU.
-3. On submit(): PartnerCmd::from_job(job, &iommu) → chip command packet
-   (opcode, dtype, route_chiplet/tile, IOVAs). Ring the doorbell.
-   Do not execute in the syscall; wait for the used ring / IRQ.
-4. On IRQ: read completion, AccelDevice::poll equivalent, then
-   fabric.send(REPLY) to job.completion_ep.
-5. Never accept a PA that did not come from a cap walk + IommuMap pin.
-6. Honor BankColor: Compute waves stay on the painted bank unless the
-   caller transferred ownership or submitted Phase::Exchange.
+offset  type   field
+0x00    u32    magic        0xAE7E0C01
+0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2)
+0x05    u8     dtype        DType (I32=0)
+0x06    u8     space        MemorySpace
+0x07    u8     phase        Phase (Compute=0, Exchange=1, Barrier=2)
+0x08    u16    m
+0x0A    u16    n
+0x0C    u16    k
+0x0E    u16    flags        bit0 = HAS_BIAS
+0x10    u32    stream_id    StreamId: [31:24] chiplet | [23:8] tile | [7:0] ssid
+0x14    u16    chiplet      job.place.chiplet
+0x16    u16    tile         job.place.tile (0 if none)
+0x18    u64    iova_a
+0x20    u64    iova_b
+0x28    u64    iova_c
+0x30    u64    iova_bias    0 if no bias
+0x38    u64    fence_id
 ```
 
-TODOs left in `PartnerNpuStub` on purpose: BAR probe, hardware SMMU SID,
-MSI-X pop, partner opcode packing. Soft SMMU already records
-`req.stream_id`. This is not a vendor partnership.
+`CpCmd::pack` fills this from `AccelJobDesc` after
+`IommuMap::translate_result` on `StreamId::accel(chiplet, tile, CP_SSID)`
+(`ssid = 1`, distinct from SoftNPU's `DEFAULT_STREAM`). A silicon CP
+would DMA the same 64 bytes from a mailbox. `to_le_bytes()` is the wire
+image.
+
+### Driver steps (what SoftCommandProcessor already does)
+
+```text
+1. probe() → AccelInfo { backend: 3, vendor: 0xAE7E, device: 0x0003 }.
+2. bind_stream(Memory+MAP, sid) and/or map_with_cap(pin_accel(...)):
+   first authorized map captures+binds. Capture alone leaves the SID
+   aborting. map() without a cap walk returns NoMemoryCap.
+3. submit(): CpCmd::pack(job, &iommu) → mailbox, doorbell=1.
+   Unbound / captured / missing / partial / wrong-stream → Fault.
+   Does not execute. poll() is empty until service().
+4. service() (IRQ / kthread poll): resolve_stream each IOVA, run the
+   integer engine, write a Completion, raise IRQ.
+5. poll(): pop the completion and ack the IRQ. The job's fence_id
+   is retired (`completed_fence`); the caller Timeline::complete's it.
+6. Never accept a PA that did not come from a cap walk + IommuMap pin.
+7. Honor BankColor at the scheduler / SYS_ACCEL_SUBMIT layer (unchanged).
+```
+
+Swap `SoftCommandProcessor` for a real BAR + MSI-X by keeping this
+packet and replacing `service()` with a device IRQ. Do not invent a
+second IR. Do not start from `PartnerNpuStub` — that sketch is still
+in-tree as a labeled no-op, not progress.
+
+QEMU still demos SoftNPU (which already writes Soft-SMMU IOVAs into
+the avail ring). Soft-CP is host-contract tested; the kernel self-check
+only probes it so the backend id is visible on the serial log. No
+custom QEMU device is added here.
 
 ## Co-scheduling
 
