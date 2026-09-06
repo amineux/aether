@@ -60,6 +60,7 @@ boot/x86_64/trampoline.S
         ▼
 kernel::_start  (Rust, x86_64-unknown-none)
         │  stack in BSS, serial, frames, heap, IDT, GDT/TSS, SYSCALL, PIT
+        │  smp_start_aps: INIT-SIPI AP 1, per-CPU gs, IPI, work-steal smoke
         ▼
 init::run_kernel_selfcheck
         │  host-identical fabric + cut + hodge + SoftNPU
@@ -81,6 +82,7 @@ Physical sketch (128 MiB guest):
 | Range | Use |
 | --- | --- |
 | `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD) |
+| `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
 | `0x400000` | Kernel `.text` (after copy) |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB page) |
@@ -108,7 +110,7 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 
 | Path | Responsibility |
 | --- | --- |
-| `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs |
+| `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
 | `kernel/src/mm` | Frames, bump heap, page walk, USER bits |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
@@ -189,9 +191,27 @@ The fabric does not encode x86. aarch64 would repeat this recipe
 
 ## SMP
 
-`arch::irq::smp_start_aps` is a **STUB**. Per-CPU state is a single tick
-counter. Work-stealing is implemented in the scheduler data structure and
-exercised on the host; it is not yet driven by multiple hardware threads.
+Year-1 H2 **smoke**, not a product scheduler.
+
+`arch::irq::smp_start_aps` (x86_64) copies a 16-bit trampoline to
+`0x8000`, sends INIT-SIPI to APIC ID 1, and waits for `ap_entry`.
+QEMU `-smp 2` (`make qemu-smp`) brings the AP up; `make qemu` / `make qemu-ci`
+stay uniprocessor and time out cleanly ("UP only").
+
+What this cut does:
+
+- Per-CPU `PerCpu` via `IA32_GS_BASE` (`cpu_id` at `gs:0`, local tick).
+- Fixed IPI vector 48 increments the AP's local tick (APIC EOI).
+- BSP + AP drive `TileScheduler::pick` / `steal` on a shared ready pool
+  (APs prefer steal). Serial proof: `[smp] SMP smoke ok (2 harts)`.
+- Host test: `TileScheduler::drive_two_cpu_tiles`.
+
+What it does not do:
+
+- APs never enter ring-3. `/init` and `kthread-B` stay BSP-only.
+- No per-task PML4 / SMEP / SMAP (that is the next cut; same files).
+- No more than one AP (APIC ID 1). RISC-V extra harts stay parked.
+- Not a Linux-style CFS, not a coherence claim, not a benchmark.
 
 ## Userspace
 

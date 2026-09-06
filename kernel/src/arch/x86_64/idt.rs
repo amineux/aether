@@ -64,7 +64,18 @@ extern "C" {
     fn isr_stub_14();
     fn isr_stub_32();
     fn isr_stub_33();
+    fn isr_stub_48();
     fn isr_stub_generic();
+}
+
+pub fn load() {
+    unsafe {
+        let ptr = IdtPtr {
+            limit: (core::mem::size_of_val(&IDT) - 1) as u16,
+            base: IDT.as_ptr() as u64,
+        };
+        core::arch::asm!("lidt [{0}]", in(reg) &ptr, options(readonly, nostack, preserves_flags));
+    }
 }
 
 pub fn init() {
@@ -77,18 +88,12 @@ pub fn init() {
     set_gate(14, isr_stub_14, true);
     set_gate(32, isr_stub_32, false);
     set_gate(33, isr_stub_33, false);
+    set_gate(48, isr_stub_48, false);
 
     remap_pic();
-
-    unsafe {
-        let ptr = IdtPtr {
-            limit: (core::mem::size_of_val(&IDT) - 1) as u16,
-            base: IDT.as_ptr() as u64,
-        };
-        core::arch::asm!("lidt [{0}]", in(reg) &ptr, options(readonly, nostack, preserves_flags));
-    }
+    load();
     irq::enable();
-    crate::println!("[boot] IDT loaded, PIC remapped (IRQ0-15 -> 32-47)");
+    crate::println!("[boot] IDT loaded, PIC remapped (IRQ0-15 -> 32-47), IPI vec 48");
 }
 
 fn remap_pic() {
@@ -161,6 +166,10 @@ pub extern "C" fn isr_dispatch(frame: &mut InterruptFrame) {
         33 => {
             let _sc = inb(0x60);
             eoi(1);
+        }
+        48 => {
+            crate::arch::x86_64::cpu::inc_local_ticks();
+            crate::arch::x86_64::apic::eoi();
         }
         0..=31 => {
             FAULTS.fetch_add(1, Ordering::Relaxed);
@@ -268,6 +277,12 @@ global_asm!(
     isr_stub_33:
         push 0
         push 33
+        jmp isr_common
+
+    .global isr_stub_48
+    isr_stub_48:
+        push 0
+        push 48
         jmp isr_common
 
     isr_common:

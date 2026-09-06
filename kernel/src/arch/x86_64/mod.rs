@@ -1,7 +1,10 @@
+pub mod apic;
+pub mod cpu;
 pub mod gdt;
 pub mod idt;
 pub mod io;
 pub mod serial;
+pub mod smp;
 pub mod syscall;
 pub mod timer;
 

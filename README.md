@@ -15,6 +15,7 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
+make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # same aether_core self-check on QEMU virt (thin S-mode port)
 ```
 
@@ -165,7 +166,8 @@ The kernel and `/init` are **separate Cargo projects** so
 
 - **Research prototype.** Soft SMMU (software stream-ID IOVA map) is in
   tree; there is no hardware SMMU, no verified cap derivation tree, no
-  real silicon driver, and no SMP.
+  real silicon driver. SMP is a QEMU `-smp 2` smoke (INIT-SIPI, per-CPU
+  `gs`, two-hart work-steal); APs do not run `/init`.
 - **VirtIO-Accel is an in-kernel MMIO virtqueue**, not a tree in upstream QEMU.
   `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
   path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU
@@ -173,8 +175,9 @@ The kernel and `/init` are **separate Cargo projects** so
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
   as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
   Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
-- **Identity map, UP only.** User gets one USER 2 MiB page; a second core
-  does not. Preemption is PIT + a kernel companion thread.
+- **Identity map; SMP is kernel-only.** User gets one USER 2 MiB page
+  shared with the AP. `/init` and PIT preemption stay on the BSP.
+  `make qemu-smp` proves two harts; `make qemu` stays uniprocessor.
 - **RISC-V is a thin port.** `make qemu-riscv` reaches kmain and the
   fabric self-check. No ring-3, no PLIC virtio. aarch64 is not started.
 

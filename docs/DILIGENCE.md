@@ -37,7 +37,7 @@ gaps:
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
 | RISC-V is thin | kmain + UART + Sv39 + `aether_core` self-check. No ring-3, no PLIC virtio |
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
-| No SMP | Work-steal exists as a data structure |
+| SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only; no per-task PML4 |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | Descendants survive parent revoke |
 
@@ -100,6 +100,7 @@ On RISC-V it is still “the cap tables do the right thing.”
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, preempt |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; isa-debug-exit |
+| x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
 | RISC-V boot | `make qemu-riscv-ci` | OpenSBI S-mode + self-check banner on virt UART |
 
 x86_64 is the supported path. RISC-V CI greps the fabric success

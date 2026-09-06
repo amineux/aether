@@ -78,11 +78,20 @@ pub extern "C" fn kmain() -> ! {
 
     #[cfg(target_arch = "x86_64")]
     {
+        arch::irq::smp_start_aps();
         task::init();
         world::init();
     }
 
-    println!("[boot] UP timer armed (100 Hz); SMP AP bring-up is STUB");
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::console::write_str("[boot] PIT 100 Hz; ncpus=");
+        crate::console::write_u64(arch::irq::ncpus() as u64);
+        crate::console::write_str(" (APs kernel-only; no per-task PML4)");
+        crate::console::nl();
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    println!("[boot] UP timer armed (100 Hz); RISC-V extra harts stay parked");
     nl();
 
     init::run_kernel_selfcheck();
