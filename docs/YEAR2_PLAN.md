@@ -154,7 +154,7 @@ above override what Kernel actually sequences. Criteria below are
    UNIFIED; QEMU stub window OK — no claim of real CXL.mem.
 3. Cap CDT/revoke: revoke parent empties descendants across tables;
    host tests lock it; [SECURITY.md](SECURITY.md) gap table updated.
-   **Landed** as a small derivation tree (`cdt`/`parent`, `revoke_in`
+   **Landed** as a small derivation tree (`parent` + `(tenant, generation)`, `revoke_in`
    of named tables). Not a seL4 CNode/MDB. No `SYS_REVOKE`. Kernel
    World is still one shared `CapTable`. CXL / Laplacian items above
    are **not** done.

@@ -123,13 +123,16 @@ pub struct Capability {
     pub badge: u64,
     pub generation: u32,
     pub tenant: TenantId,
-    /// This slot's derivation identity. Assigned at [`CapTable::mint`].
-    pub cdt: CdtNode,
     /// Parent in the derivation tree. `None` = minted root.
     pub parent: Option<CdtNode>,
 }
 
 impl Capability {
+    /// Derivation identity: table owner at mint + generation.
+    pub const fn cdt(self) -> CdtNode {
+        CdtNode::new(self.tenant, self.generation)
+    }
+
     pub const fn new(kind: CapKind, rights: CapRights, object: u32, tenant: TenantId) -> Self {
         Self {
             kind,
@@ -138,7 +141,6 @@ impl Capability {
             badge: 0,
             generation: 0,
             tenant,
-            cdt: CdtNode::new(tenant, 0),
             parent: None,
         }
     }
@@ -242,7 +244,6 @@ impl CapTable {
         }
         let slot = self.alloc_slot()?;
         cap.generation = self.mint_gen;
-        cap.cdt = CdtNode::new(self.owner, self.mint_gen);
         self.mint_gen = self.mint_gen.wrapping_add(1);
         if self.mint_gen == 0 {
             self.mint_gen = 1;
@@ -309,7 +310,7 @@ impl CapTable {
     ) -> Result<Capability, CapError> {
         let cap = self.take_slot(cptr)?;
         let mut kill = KillSet::new();
-        kill.insert(cap.cdt);
+        kill.insert(cap.cdt());
         loop {
             let before = kill.len;
             self.collect_into(&mut kill);
@@ -331,7 +332,7 @@ impl CapTable {
         for cap in self.slots.iter().flatten() {
             if let Some(parent) = cap.parent {
                 if kill.contains(parent) {
-                    kill.insert(cap.cdt);
+                    kill.insert(cap.cdt());
                 }
             }
         }
@@ -340,7 +341,7 @@ impl CapTable {
     fn empty_killed(&mut self, kill: &KillSet) {
         for slot in self.slots.iter_mut() {
             if let Some(cap) = slot {
-                if kill.contains(cap.cdt) {
+                if kill.contains(cap.cdt()) {
                     *slot = None;
                 }
             }
@@ -371,7 +372,7 @@ impl CapTable {
             let _ = self.take_slot(src);
             Ok(cptr)
         } else {
-            minted.parent = Some(cap.cdt);
+            minted.parent = Some(cap.cdt());
             dest.mint(minted)
         }
     }
@@ -387,7 +388,7 @@ impl CapTable {
         }
         let mut child = cap;
         child.rights = new_rights;
-        child.parent = Some(cap.cdt);
+        child.parent = Some(cap.cdt());
         self.mint(child)
     }
 
@@ -540,9 +541,9 @@ mod tests {
         let child = tab.derive(parent, CapRights(CapRights::READ)).unwrap();
         let p = tab.lookup(parent).unwrap();
         let c = tab.lookup(child).unwrap();
-        assert_eq!(c.parent, Some(p.cdt));
-        assert_ne!(c.cdt, p.cdt);
-        assert!(c.cdt.is_set());
+        assert_eq!(c.parent, Some(p.cdt()));
+        assert_ne!(c.cdt(), p.cdt());
+        assert!(c.cdt().is_set());
     }
 
     #[test]

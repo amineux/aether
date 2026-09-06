@@ -133,7 +133,7 @@ tensors through the kernel identity map.
 Landed as a **small** derivation tree — inspired by seL4, **not** a
 CNode/MDB and **not** a proof claim:
 
-- `Capability` stores `cdt` (owner + node) and `parent`.
+- `Capability` stores `parent`; the node is `(tenant, generation)`.
 - `derive` and GRANT-copy set the parent edge; GRANT-move relocates a
   slot and does not walk descendants.
 - `revoke(parent)` empties the lineage in that table.

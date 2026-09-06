@@ -17,9 +17,9 @@ Each `Capability` stores:
 - `rights` — subset of READ/WRITE/GRANT/MAP/SUBMIT/WAIT/EXECUTE/BIND/UNIFIED
   (`UNIFIED` is never in `MEM_FULL`)
 - `object` — kernel object id
-- `generation` — bumped at mint
+- `generation` — bumped at mint; with `tenant` this is the derivation node
 - `tenant` — must match the table owner at lookup
-- `cdt` / `parent` — derivation node and parent edge (assigned at mint / derive / GRANT-copy)
+- `parent` — derivation edge (set on derive / GRANT-copy)
 
 ## Invariants (implemented and tested)
 
