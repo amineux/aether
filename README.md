@@ -14,7 +14,8 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
-make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
+make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
+make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
 make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
@@ -204,10 +205,11 @@ The kernel and `/init` are **separate Cargo projects** so
   path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU
   IOVAs (not identity); QEMU does not emulate a hardware SMMU.
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000`. Boot
-  embeds the blob (`build/init.elf`) and **seeds an in-kernel ramfs**;
-  the loader opens `/init` (and x86 `/probe`) by name. Not POSIX.
-  virtio-blk is still open. Ring-3 entry is `syscall`/`sysret`; cap
-  checks sit on send/recv/map/accel.
+  seeds an in-kernel ramfs from **virtio-blk** (`make qemu-blk` /
+  `qemu-blk-ci`, AETHFS01 image) or the embedded blob when no drive
+  is present (`make qemu-ci`). The loader opens `/init` (and x86
+  `/probe`) by name. Not POSIX. SoftNPU path B is unchanged.
+  Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
 - **Per-task PML4 + higher-half + KASLR are documented subsets.** Each
   ring-3 task has its own CR3; USER is only on that task's 2 MiB ELF
   window; SMEP/SMAP are on. The kernel is linked at

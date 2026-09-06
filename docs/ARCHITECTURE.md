@@ -75,7 +75,7 @@ init::run_kernel_selfcheck
         │  host-identical fabric + cut + hodge + SoftNPU
         ▼
 elfload::mount_boot_ramfs + load /init /probe
-        │  seed ramfs from embedded blobs; open named files
+        │  seed ramfs from virtio-blk or embedded blobs; open named files
         │  clone per-task PML4; SMEP/SMAP; CR3 switch
         ▼
 iretq → ring-3 /init
@@ -102,6 +102,7 @@ Physical sketch (128 MiB guest):
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
 | `0x0280_0000–0x0280_1000` | Shared COW template (USER 4 KiB, RO until write; same PA in `/init` + `/probe`) |
+| `0x02A0_0000–0x02C0_0000` | virtio-blk window (vring + AETHFS01 image; kernel identity only; reserved) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
 The boot path parses the Multiboot1 mmap (Multiboot2 parser is
@@ -150,7 +151,9 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait, `SYS_CLONE` |
 | `kernel/src/elfload.rs` | Static ELF64 loader (ramfs `open` `/init` / `/probe`) |
-| `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blobs) |
+| `kernel/src/virtio_blk.rs` | x86 legacy virtio-blk PCI I/O → AETHFS01 → ramfs seed |
+| `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
+| `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
 | `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
@@ -319,11 +322,13 @@ What it does not do:
 `/init` is a **static non-PIE ELF64** (`ET_EXEC`). On x86_64 it is
 `EM_X86_64` linked at `0x0200_0000`. On RISC-V it is `EM_RISCV`
 linked at `0x8200_0000` (QEMU virt RAM). An in-kernel **ramfs**
-holds named files (`/init`, optional `/probe`). Boot still embeds
-the ELF blobs (`include_bytes!`) and **seeds** those names; the
-loader `open`s `/init` from ramfs and copies `PT_LOAD` into the
-identity-mapped user window, then drops to user (`iretq` / `sret`).
-This is not POSIX and not virtio-blk.
+holds named files (`/init`, optional `/probe`). On x86, boot prefers
+a virtio-blk AETHFS01 drive (`make qemu-blk`) and **seeds** those
+names from the reserved window at `0x02A0_0000`; without a drive it
+seeds the embedded blobs (`include_bytes!`). The loader `open`s
+`/init` from ramfs and copies `PT_LOAD` into the identity-mapped
+user window, then drops to user (`iretq` / `sret`). This is not
+POSIX and not a general block layer. SoftNPU stays path B.
 
 An optional second static ELF, `/probe`, is linked at `0x0240_0000`
 (`user/probe`, `build/probe.elf`). It yields only and does not
@@ -376,4 +381,5 @@ Host proof of the aspace clone/walk contract lives in
 `core/src/aspace.rs` (`IdentityAs` for x86, `Sv39As` for RISC-V),
 including the shared-map case `SYS_CLONE` uses.
 QEMU prints `[mm] aspace isolate ok` after walking both CR3s
-and `[ramfs] open /init ok` after the boot ramfs mount.
+and `[ramfs] open /init ok` after the boot ramfs mount
+(`[blk] virtio-blk seed /init` when a drive is attached).

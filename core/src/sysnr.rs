@@ -112,6 +112,14 @@ pub const COW_TEMPLATE_WORD: u64 = 0xC0C0_0001;
 /// Word `/init` stores after the fault handler breaks the share.
 pub const COW_PRIVATE_WORD: u64 = 0xC0C0_BEEF;
 
+/// Reserved identity window for virtio-blk → ramfs seed (x86).
+///
+/// Queue + request header + AETHFS01 image. Not a user mapping.
+/// SoftNPU arenas stay at `0x0100_0000` (16 MiB). The in-kernel
+/// AccelMmio BAR is a software array — this window is ordinary RAM.
+pub const BLK_WINDOW_BASE: u64 = 0x02A0_0000;
+pub const BLK_WINDOW_END: u64 = 0x02C0_0000;
+
 /// RISC-V `/init` window. QEMU virt RAM starts at `0x8000_0000`; the
 /// x86 `0x0200_0000` hole is not RAM. Identity-mapped 2 MiB, U-bit
 /// only on this leaf in the task satp. Not a second ABI.
@@ -207,6 +215,10 @@ mod tests {
         assert!(!user_range_ok(USER_COW_BASE, 8));
         assert!(!user_range_known(USER_COW_END, 1));
         assert!(!user_clone_pair_ok(USER_COW_BASE, USER_COW_END));
+        assert!(BLK_WINDOW_BASE >= USER_COW_END);
+        assert_eq!(BLK_WINDOW_END - BLK_WINDOW_BASE, 0x20_0000);
+        assert!(BLK_WINDOW_BASE >= USER_PROBE_END);
+        assert!(!user_range_known(BLK_WINDOW_BASE, 8));
     }
 
     #[test]

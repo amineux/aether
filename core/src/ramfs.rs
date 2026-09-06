@@ -1,14 +1,14 @@
 //! In-kernel ramfs: named files over borrowed byte slices.
 //!
-//! Documented subset — **not** POSIX, **not** a block device, **not**
-//! virtio-blk. The kernel seeds `/init` (and optional `/probe`) from
-//! embedded ELF blobs at boot; the loader uses [`RamFs::open`] /
-//! [`RamFs::read`] on those names instead of calling `include_bytes!`
-//! at the load site. Host tests cover open/read. No user syscall
-//! (0–10 stay as documented in ABI.md).
+//! Documented subset — **not** POSIX, **not** a user `open`/`read`
+//! syscall. The kernel seeds `/init` (and optional `/probe`) from a
+//! virtio-blk AETHFS01 image when a drive is present, otherwise from
+//! embedded ELF blobs. The loader uses [`RamFs::open`] / [`RamFs::read`]
+//! on those names instead of calling `include_bytes!` at the load site.
+//! Host tests cover open/read. Numbers 0–10 stay as documented in ABI.md.
 //!
-//! Files are borrowed slices. A later virtio-blk cut can copy blocks
-//! into a reserved window and `seed` the same names.
+//! Files are borrowed slices (embedded `'static` blobs, or the reserved
+//! virtio-blk window).
 
 /// Flat namespace only. Enough for `/init`, `/probe`, and a few extras.
 pub const MAX_FILES: usize = 8;

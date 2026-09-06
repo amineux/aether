@@ -79,8 +79,10 @@ documented x86 subset. User-level threads via `SYS_CLONE` (nr 10) are
 **done** as a documented subset (share caller PML4/satp; `flags=0`;
 not Linux clone / fork; `SYS_EXIT` still guest-wide).
 In-kernel ramfs for `/init` (and x86 `/probe`) is **done** as a
-documented subset (seed from embedded blobs; loader `open`/`read`;
-not POSIX; no new syscall). virtio-blk is not.
+documented subset (seed from virtio-blk or embedded blobs; loader
+`open`/`read`; not POSIX; no new syscall). x86 virtio-blk → ramfs
+(legacy PCI I/O + AETHFS01; `make qemu-blk-ci`) is **done** as the
+follow-up; `make qemu-ci` stays on the embedded fallback.
 
 ### KEEP / ACTIVE Y1
 
@@ -128,8 +130,10 @@ After AccelDevice bites a real-shaped path — not before:
   trampoline only; not Meltdown-complete). PCID tagged TLB landed
   (CPUID-gated; stock `qemu64` often full-flushes). One-page COW
   landed (`USER_COW_BASE`; write fault copies; x86 only). In-kernel
-  ramfs for `/init` + `/probe` landed (seed from embedded blobs; no
-  user `open`/`read`). virtio-blk is still open. Per-task PML4 +
+  ramfs for `/init` + `/probe` landed (seed from virtio-blk or
+  embedded blobs; no user `open`/`read`). x86 virtio-blk (legacy
+  PCI I/O + AETHFS01) landed; modern virtio-mmio is still open.
+  Per-task PML4 +
   SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
   landed. Identity 4 GiB remains an intentional DMA window on the
   **kernel** CR3.

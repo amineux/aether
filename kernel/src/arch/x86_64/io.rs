@@ -17,6 +17,38 @@ pub fn inb(port: u16) -> u8 {
 }
 
 #[inline]
+pub fn outw(port: u16, val: u16) {
+    unsafe {
+        core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[inline]
+pub fn inw(port: u16) -> u16 {
+    let val: u16;
+    unsafe {
+        core::arch::asm!("in ax, dx", in("dx") port, out("ax") val, options(nomem, nostack, preserves_flags));
+    }
+    val
+}
+
+#[inline]
+pub fn outl(port: u16, val: u32) {
+    unsafe {
+        core::arch::asm!("out dx, eax", in("dx") port, in("eax") val, options(nomem, nostack, preserves_flags));
+    }
+}
+
+#[inline]
+pub fn inl(port: u16) -> u32 {
+    let val: u32;
+    unsafe {
+        core::arch::asm!("in eax, dx", in("dx") port, out("eax") val, options(nomem, nostack, preserves_flags));
+    }
+    val
+}
+
+#[inline]
 pub fn io_wait() {
     outb(0x80, 0);
 }
