@@ -453,7 +453,7 @@
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
             <h2>Research → partner-shaped HAL path → optional bring-up docs later.</h2>
-            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. We do not tape out chips. Soft SMMU, Soft-CP, and SMP smoke landed as research cuts. Manufacturing support is not a milestone.</p>
+            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. We do not tape out chips. Soft SMMU, Soft-CP, SMP smoke, per-task PML4, and a small cap CDT landed as research cuts. Manufacturing support is not a milestone.</p>
           </div>
           <div class="honest-pill" data-reveal>Active track · not a foundry calendar</div>
         </div>
@@ -468,7 +468,9 @@
                 <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU)</li>
                 <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
-                <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only; no per-task PML4</li>
+                <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
+                <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB); no higher-half / KPTI</li>
+                <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
                 <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
                 <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
@@ -491,12 +493,12 @@
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Deferred · after SMP</div>
-              <h3>Userspace isolation (not a product HAL)</h3>
+              <div class="tl-when">Deferred · after this subset</div>
+              <h3>Remaining isolation (not a product MM)</h3>
               <ul>
-                <li>Per-task PML4 / SMEP / SMAP — not started; sequenced after SMP, not mixed in</li>
-                <li>ELF userspace past a single embedded <code>/init</code></li>
-                <li>SMP smoke already landed as a QEMU slice — not a product scheduler</li>
+                <li>Higher-half / KPTI / KASLR — per-task PML4 still clones the identity 4 GiB</li>
+                <li>Per-task cap tables — World still shares one <code>CapTable</code>; no <code>SYS_REVOKE</code></li>
+                <li>ELF past this subset — <code>/probe</code> exists; no PIE, no ramfs</li>
               </ul>
             </div>
           </article>
@@ -534,7 +536,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
           <h2>What you can boot. What is stubbed.</h2>
-          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Soft SMMU, Soft-CP, and SMP smoke landed as research cuts. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Soft SMMU, Soft-CP, SMP smoke, per-task PML4, and a small cap CDT landed as research cuts. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -555,7 +557,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, x86 ring-3, SMP smoke, RISC-V thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V thin port.</p>
               </div>
             </div>
             <div class="proof">
@@ -569,7 +571,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is not started. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">
