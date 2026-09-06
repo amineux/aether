@@ -41,7 +41,7 @@ pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{IdentityAs, Sv39As, CR4_SMAP, CR4_SMEP};
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
-pub use cut::{AffinityGraph, CutError, SpectralCut};
+pub use cut::{AffinityGraph, CutError, CutId, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};

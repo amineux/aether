@@ -5,7 +5,8 @@
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
 
 use crate::color::{admit_wave, BankColor, ColorError};
-use crate::cut::{AffinityGraph, CutError, SpectralCut, MAX_CUTS_SCHED};
+use crate::cut::{vert_bit, AffinityGraph, CutError, CutId, SpectralCut, MAX_CUTS_SCHED};
+use crate::laplacian::AffinityLaplacian;
 use crate::partition::{PartitionError, PartitionProfile};
 use crate::phase::Phase;
 use crate::types::{BankId, TileId, MAX_TILES};
@@ -100,6 +101,8 @@ pub struct TileScheduler {
     steal_cursor: usize,
     now: u64,
     graph: AffinityGraph,
+    /// Cached Fiedler median-cut of `graph`. 0 if the graph is empty.
+    fiedler_mask: u32,
     cuts: [Option<SpectralCut>; MAX_CUTS_SCHED],
     partition: Option<PartitionProfile>,
 }
@@ -113,6 +116,7 @@ impl TileScheduler {
             steal_cursor: 0,
             now: 0,
             graph: AffinityGraph::empty(),
+            fiedler_mask: 0,
             cuts: [None; MAX_CUTS_SCHED],
             partition: None,
         }
@@ -123,7 +127,36 @@ impl TileScheduler {
     }
 
     pub fn set_graph(&mut self, g: AffinityGraph) {
+        self.fiedler_mask = if g.n >= 2 {
+            AffinityLaplacian::from_graph(&g).fiedler_mask()
+        } else {
+            0
+        };
         self.graph = g;
+    }
+
+    /// Install a SpectralCut built from the cached AffinityLaplacian
+    /// placement of the bound graph. This is the n≤32 path — not
+    /// enumeration. BIND is still required on the cap surface
+    /// ([`crate::cut::bind_place`]); this only mints the cut object
+    /// the scheduler scores against.
+    pub fn bind_laplacian_cut(
+        &mut self,
+        id: CutId,
+        bound_milli: u32,
+    ) -> Result<SpectralCut, CutError> {
+        if self.graph.n < 2 {
+            return Err(CutError::EmptyPart);
+        }
+        let cut = SpectralCut::from_placement(id, &self.graph, bound_milli)?;
+        if !self.install_cut(cut) {
+            return Err(CutError::NoCut);
+        }
+        Ok(cut)
+    }
+
+    pub fn fiedler_mask(&self) -> u32 {
+        self.fiedler_mask
     }
 
     pub fn install_cut(&mut self, cut: SpectralCut) -> bool {
@@ -226,12 +259,37 @@ impl TileScheduler {
         if job.bank_affinity == Some(tile.home_bank) {
             s += 25;
         }
+        s += self.laplacian_bonus(job, tile);
         if let Some(dl) = job.deadline_ticks {
             if dl <= self.now {
                 s += 80;
             }
         }
         s
+    }
+
+    /// Soft Fiedler-side hint: same-side tile/bank of the cached
+    /// laplacian placement. Refuse stays on the bound cut + BIND path.
+    fn laplacian_bonus(&self, job: &Job, tile: &Tile) -> i32 {
+        let Some(bank) = job.bank_affinity else {
+            return 0;
+        };
+        if self.graph.n < 2 || self.fiedler_mask == 0 {
+            return 0;
+        }
+        let Some(ti) = self.graph.find_tile(tile.id) else {
+            return 0;
+        };
+        let Some(bi) = self.graph.find_bank(bank) else {
+            return 0;
+        };
+        let t_left = self.fiedler_mask & vert_bit(ti) != 0;
+        let b_left = self.fiedler_mask & vert_bit(bi) != 0;
+        if t_left == b_left {
+            15
+        } else {
+            0
+        }
     }
 
     /// Pick the best ready job for `tile`.
@@ -261,7 +319,9 @@ impl TileScheduler {
         let n = MAX_TILES;
         for k in 0..n {
             let idx = (self.steal_cursor + k) % n;
-            let Some(victim) = self.tiles[idx] else { continue };
+            let Some(victim) = self.tiles[idx] else {
+                continue;
+            };
             if victim.id == thief {
                 continue;
             }
@@ -484,7 +544,10 @@ mod tests {
             });
         }
         let (c0, c1) = s.drive_two_cpu_tiles(TileId(0), TileId(1));
-        assert!(c0 >= 1 && c1 >= 1, "both CPU tiles must run work, got {c0}+{c1}");
+        assert!(
+            c0 >= 1 && c1 >= 1,
+            "both CPU tiles must run work, got {c0}+{c1}"
+        );
         assert_eq!(c0 + c1, 6);
         assert_eq!(s.ready_count(), 0);
     }
@@ -563,11 +626,7 @@ mod tests {
         let mut s = setup();
         let p = crate::partition::PartitionProfile::new(
             crate::partition::PartitionId(1),
-            crate::partition::SpatialSlice::single_chiplet(
-                crate::types::ChipletId(0),
-                1 << 0,
-                0b1,
-            ),
+            crate::partition::SpatialSlice::single_chiplet(crate::types::ChipletId(0), 1 << 0, 0b1),
             crate::partition::QosBudget {
                 bw_mbps: 100,
                 credits: 2,
@@ -666,10 +725,12 @@ mod tests {
         use crate::arena::{ArenaAllocator, ArenaRequest};
         use crate::types::PhysAddr;
 
-        let mut arenas = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * 1024 * 1024)])
-            .unwrap();
+        let mut arenas =
+            ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * 1024 * 1024)]).unwrap();
         let ar = arenas
-            .alloc(ArenaRequest::tensor(4096, Some(BankId(0))).for_tenant(crate::types::TenantId(2)))
+            .alloc(
+                ArenaRequest::tensor(4096, Some(BankId(0))).for_tenant(crate::types::TenantId(2)),
+            )
             .unwrap();
         assert_eq!(
             crate::color::admit_arena_wave(1, Phase::Compute, &ar, BankId(0)).unwrap_err(),
@@ -695,5 +756,83 @@ mod tests {
             arena_color: Some(painted.color),
         });
         assert_eq!(s.pick(TileId(2)).unwrap().id, 22);
+    }
+
+    fn mesh_sched(n: usize) -> (TileScheduler, crate::cut::SpectralCut, TileId, TileId) {
+        let g = crate::cut::AffinityGraph::two_chiplet_mesh(n);
+        let t0 = g.first_tile_on(0).unwrap();
+        let t1 = g.first_tile_on(1).unwrap();
+        let mut s = TileScheduler::new();
+        s.add_tile(t0, TileKind::Cpu, BankId(0));
+        s.add_tile(t1, TileKind::Cpu, BankId(1));
+        s.set_graph(g);
+        let cut = s
+            .bind_laplacian_cut(crate::cut::CutId(n as u32), 400)
+            .unwrap();
+        (s, cut, t0, t1)
+    }
+
+    fn thread_job(id: u32, bank: BankId, cut: Option<u32>) -> Job {
+        Job {
+            id,
+            kind: JobKind::Thread,
+            tile_hint: None,
+            bank_affinity: Some(bank),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: cut,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
+            arena_color: None,
+        }
+    }
+
+    #[test]
+    fn laplacian_bind_n16_refuses_cross_chiplet() {
+        let (mut s, cut, t0, t1) = mesh_sched(16);
+        assert_eq!(cut.left.count_ones(), 8);
+        let c0 = crate::cut::AffinityGraph::mesh_chiplet0_mask(16);
+        assert!(cut.left == c0 || cut.right == c0);
+        s.enqueue(thread_job(7, BankId(0), Some(cut.id.0)));
+        assert_eq!(
+            s.place_ok(s.ready.iter().flatten().next().unwrap(), t1)
+                .unwrap_err(),
+            CutError::CrossCut
+        );
+        assert!(s.pick(t1).is_none());
+        assert!(s.pick(t0).is_some());
+    }
+
+    #[test]
+    fn laplacian_bind_n32_refuses_cross_chiplet() {
+        let (mut s, cut, t0, t1) = mesh_sched(32);
+        assert_eq!(cut.left.count_ones(), 16);
+        let c0 = crate::cut::AffinityGraph::mesh_chiplet0_mask(32);
+        assert!(cut.left == c0 || cut.right == c0);
+        assert_eq!(s.fiedler_mask().count_ones(), 16);
+        s.enqueue(thread_job(8, BankId(0), Some(cut.id.0)));
+        assert!(s.pick(t1).is_none());
+        assert!(s.pick(t0).is_some());
+    }
+
+    #[test]
+    fn laplacian_soft_hint_prefers_same_side_without_cut() {
+        let g = crate::cut::AffinityGraph::two_chiplet_mesh(16);
+        let t0 = g.first_tile_on(0).unwrap();
+        let t1 = g.first_tile_on(1).unwrap();
+        let mut s = TileScheduler::new();
+        s.add_tile(t0, TileKind::Cpu, BankId(0));
+        s.add_tile(t1, TileKind::Cpu, BankId(1));
+        s.set_graph(g);
+        s.enqueue(thread_job(10, BankId(1), None));
+        s.enqueue(thread_job(11, BankId(0), None));
+        // No bound cut: both tiles can run either job, but Fiedler side
+        // + home bank should send bank0 to t0.
+        let j = s.pick(t0).unwrap();
+        assert_eq!(j.id, 11);
+        let j = s.pick(t1).unwrap();
+        assert_eq!(j.id, 10);
     }
 }
