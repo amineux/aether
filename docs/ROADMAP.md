@@ -96,6 +96,22 @@ kernel thread queue sleeps.
 5. **Cap CDT / revoke.** Descendants die with the parent.
 6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
+## Two-year plan
+
+[YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
+
+- **Active (Falsifier revision):** Soft SMMU SIDs on the AccelDevice
+  map path, one real-shaped second AccelDevice (concrete command packet
+  + fence/IRQ), ABI stay stable. Custom QEMU virtio-accel, SMP, ELF
+  beyond `/init`, Laplacian expansion, and aarch64 are deferred.
+- **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
+  Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
+  cap CDT-as-calendar, and a Y2 bring-up climax are killed as
+  milestones.
+
+Nothing in that file marks Soft SMMU, virtio-accel QEMU, SMP, or the
+other stubs above as done.
+
 ## What we will not claim
 
 - Benchmarks vs Linux / seL4 / CUDA / any NPU SDK
