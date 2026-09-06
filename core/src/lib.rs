@@ -21,6 +21,7 @@ pub mod fence;
 pub mod hodge;
 pub mod iommu;
 pub mod laplacian;
+pub mod mmap;
 pub mod observe;
 pub mod partition;
 pub mod phase;
@@ -48,6 +49,10 @@ pub use iommu::{
     SOFT_SMMU_IOVA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
+pub use mmap::{
+    parse_boot_mmap, plan_frames, span, MapSource, MemoryMap, MmapError, PhysRegion,
+    BOOT_RESERVE_FLOOR, FRAME_CAP_BYTES, MB1_BOOT_MAGIC, MB2_BOOT_MAGIC,
+};
 pub use observe::{EventKind, EventRing, KernelEvent};
 pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 pub use phase::Phase;

@@ -54,12 +54,13 @@ QEMU -kernel build/aether.elf
         │  multiboot1, 32-bit protected mode, paging off
         ▼
 boot/x86_64/trampoline.S
+        │  stash Multiboot EAX/EBX at 0x7000
         │  identity-map 4 GiB (2 MiB pages)
         │  enable PAE + EFER.LME + paging
         │  copy payload → 0x400000
         ▼
 kernel::_start  (Rust, x86_64-unknown-none)
-        │  stack in BSS, serial, frames, heap, IDT, GDT/TSS, SYSCALL, PIT
+        │  stack in BSS, serial, mmap → frames, heap, IDT, GDT/TSS, SYSCALL, PIT
         │  smp_start_aps: INIT-SIPI AP 1, per-CPU gs, IPI, work-steal smoke
         ▼
 init::run_kernel_selfcheck
@@ -88,9 +89,13 @@ Physical sketch (128 MiB guest):
 | `0x400000` | Kernel `.text` (after copy) |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
-| `0x0100_0000–0x0800_0000` | Frame allocator window (user images reserved) |
+| mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
-Higher-half, KASLR, and a real multiboot mmap parser are not in v0.1.
+The boot path parses the Multiboot1 mmap (Multiboot2 parser is
+host-tested). Type-1 regions below 16 MiB are printed then clipped so
+the trampoline / page tables / AP SIPI / kernel image stay out of the
+free pool. Missing mmap is an explicit arch-window fallback, not a
+silent 128 MiB map. Higher-half and KASLR are still not in v0.1.
 
 ## Crate graph
 
@@ -114,7 +119,8 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | Path | Responsibility |
 | --- | --- |
 | `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
-| `kernel/src/mm` | Frames, bump heap, per-task PML4 clone, SMEP/SMAP, USER bits |
+| `kernel/src/mm` | Multiboot mmap → frames, bump heap, per-task PML4 clone, SMEP/SMAP, USER bits |
+| `core/src/mmap.rs` | Host-tested Multiboot1 / Multiboot2 mmap parser + frame plan |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
 | `kernel/src/elfload.rs` | Static ELF64 loader (embedded `build/init.elf`) |
@@ -178,9 +184,10 @@ Physical sketch (128 MiB guest, RAM at `0x80000000`):
 | `0x00100000` | sifive_test finisher |
 | `0x10000000` | UART0 (16550) |
 | `0x80200000` | Kernel `.text` (OpenSBI payload) |
-| `0x81000000–0x88000000` | Frame allocator window |
+| `0x81000000–0x88000000` | Frame allocator window (arch fallback; no FDT mmap) |
 
-No PLIC virtio, no `sret` userspace, no FDT mmap parser.
+No PLIC virtio, no `sret` userspace, no FDT mmap parser. Serial
+prints `[mm] mmap: fallback (no Multiboot on this HAL)`.
 
 ## Boot (aarch64 / QEMU virt)
 
@@ -217,10 +224,10 @@ Physical sketch (128 MiB guest, RAM at `0x40000000`):
 | `0x08010000` | GICv2 CPU interface |
 | `0x09000000` | PL011 UART |
 | `0x40080000` | Kernel `.text` |
-| `0x41000000–0x48000000` | Frame allocator window |
+| `0x41000000–0x48000000` | Frame allocator window (arch fallback; no FDT mmap) |
 
 No EL0, no virtqueue, no GICv3, no FDT mmap parser. Extra PEs stay
-parked.
+parked. Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)`.
 
 ## HAL ports
 
