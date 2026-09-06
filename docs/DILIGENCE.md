@@ -2,7 +2,9 @@
 
 This is what a silicon OS team would receive before spending bring-up
 time on Aether. It is **not** a partnership announcement, a tape-out
-checklist, or a benchmark brief.
+checklist, or a benchmark brief. The public site (`site/`) is the same
+leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
+active track the site must match.
 
 ## What ships in this tree
 

@@ -1014,7 +1014,8 @@ section.band + section.band {
 /* ——— partners ——— */
 .disclaimer {
   display: flex;
-  gap: 12px;
+  flex-direction: column;
+  gap: 8px;
   align-items: flex-start;
   padding: 14px 16px;
   border-radius: 14px;
@@ -1026,6 +1027,10 @@ section.band + section.band {
 }
 
 .disclaimer strong {
+  color: var(--amber);
+}
+
+.disclaimer a {
   color: var(--amber);
 }
 
@@ -1057,6 +1062,7 @@ section.band + section.band {
   padding: 8px 12px;
   border-radius: 999px;
   white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .timeline {
@@ -1408,6 +1414,15 @@ footer {
 
   .disclaimer {
     flex-direction: column;
+  }
+
+  .road-intro {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .honest-pill {
+    white-space: normal;
   }
 
   section.band {

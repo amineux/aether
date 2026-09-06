@@ -207,6 +207,11 @@ per-task PML4 / SMEP / SMAP (PR #10), and cap CDT / revoke (this cut)
 are **done** as research-prototype slices. Custom QEMU virtio-accel
 and the other stubs above are still open.
 
+The public site (`site/`) is a research leave-behind, not a vendor
+pitch. Its HAL-path and roadmap copy should match this active track
+and [DILIGENCE.md](DILIGENCE.md) non-claims — no partnership, no
+booked silicon bring-up, no manufacturing climax.
+
 ## What we will not claim
 
 - Benchmarks vs Linux / seL4 / CUDA / any NPU SDK
