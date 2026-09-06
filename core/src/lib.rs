@@ -29,6 +29,7 @@ pub mod phase;
 pub mod preempt;
 pub mod sched;
 pub mod space;
+pub mod sparsify;
 pub mod sysnr;
 pub mod types;
 
@@ -61,6 +62,7 @@ pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};
 pub use sched::{Job, JobKind, TileKind, TileScheduler};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
+pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
 pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV, SYS_SEND,

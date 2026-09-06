@@ -206,7 +206,23 @@ collective ISA:
   `[opkernel] tree+gradient inject + harmonic-tree REFUSE`.
   No new syscall (0–8 frozen). No QEMU collective engine.
 
-`SparsifiedCollective` stays a stub.
+## SparsifiedCollective (this cut)
+
+Landed as a **research kernel surface**, not a spectral compiler and
+not an eigensolver:
+
+- `SparsifiedCollective` (`core/src/sparsify.rs`) wraps an
+  `OperatorKernelHandle` (or a FlowClass header) plus integer milli
+  energy and a threshold.
+- Hodge refuse still wins: Tree+Harmonic is `HarmonicTreeReduce`
+  even when energy is below the threshold (Drop does not skip policy).
+- Harmonic energy strictly below the threshold is dropped before
+  inject (no enqueue, quota untouched). At or above, inject as
+  Harmonic. Gradient and Curl pass through; their energy is ignored.
+- Caps stay on `CapKind::OperatorKernel`. No new syscall (0–8
+  frozen). No QEMU collective engine.
+- Host tests lock drop / keep / Gradient-Curl / refuse. Boot demo
+  + serial `[sparsify] below-threshold DROP + above KEEP + harmonic-tree REFUSE`.
 
 ## STUB markers in the tree
 
@@ -224,7 +240,7 @@ Search for `// STUB:` / `STUB` :
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
-| SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
+| SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | Software credits on QEMU; doorbell IRQ is now software |
@@ -257,9 +273,10 @@ kernel thread queue sleeps.
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
-  an aarch64 thin HAL, Multiboot mmap → frames, and
-  OperatorKernelHandle (this cut) are landed. ABI stays stable.
-  Custom QEMU virtio-accel and Laplacian expansion remain deferred.
+  an aarch64 thin HAL, Multiboot mmap → frames,
+  OperatorKernelHandle, and SparsifiedCollective (this cut) are
+  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
+  expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -268,10 +285,10 @@ kernel thread queue sleeps.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
-aarch64 thin HAL (PR #13), Multiboot mmap (PR #14), and
-OperatorKernelHandle (this cut) are **done** as research-prototype
-slices. Custom QEMU virtio-accel and the other stubs above are still
-open.
+  aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
+  OperatorKernelHandle (PR #15), and SparsifiedCollective (this cut)
+  are **done** as research-prototype slices. Custom QEMU virtio-accel
+  and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

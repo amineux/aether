@@ -51,6 +51,13 @@ Inject writes the handle's class and flags into the header; a
 mismatched class is refused before enqueue. This is a cap, not a
 compiler. See [CUT.md](CUT.md).
 
+`SparsifiedCollective` may wrap that handle (or a FlowClass header)
+with an integer milli energy and a threshold. Harmonic components
+strictly below the threshold are dropped before `Fabric::send`
+(quota untouched). Gradient and Curl are unchanged. Harmonic+TREE
+is still refused — Drop does not skip Hodge policy. Integer
+fixed-point only; not an eigensolve. See [CUT.md](CUT.md).
+
 ### Spectral cuts
 
 Placement is not only affinity hints. A `SpectralCut` cap binds a job to

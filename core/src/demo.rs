@@ -18,6 +18,7 @@ use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, Sp
 use crate::phase::Phase;
 use crate::sched::{Job, JobKind, TileKind, TileScheduler};
 use crate::space::{map_place, FabricAddr, MemorySpace, Place, SpaceError};
+use crate::sparsify::{decide_header, SparsifiedCollective, SparsifyAction};
 use crate::types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -36,6 +37,7 @@ pub struct DemoReport {
     pub color_ok: bool,
     pub revoke_ok: bool,
     pub opkernel_ok: bool,
+    pub sparsify_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -62,6 +64,7 @@ impl DemoReport {
             && self.color_ok
             && self.revoke_ok
             && self.opkernel_ok
+            && self.sparsify_ok
     }
 }
 
@@ -533,6 +536,47 @@ pub fn run_boot_demo() -> DemoReport {
         && torus_got.header.flow == FlowClass::Harmonic
         && !caps_b.holds(CapKind::OperatorKernel, 1);
 
+    // SparsifiedCollective: below-threshold harmonic is dropped; at-threshold
+    // is kept; Gradient energy is ignored; Harmonic+TREE still refuses.
+    let dropped =
+        torus
+            .sparsify(100, 500)
+            .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"tiny")
+            == Ok(SparsifyAction::Drop)
+            && fabric.pending(ep_a).unwrap() == 0;
+    let kept =
+        torus
+            .sparsify(500, 500)
+            .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"kept")
+            == Ok(SparsifyAction::Keep);
+    let keep_got = fabric.recv(ep_a).unwrap();
+    let grad_pass =
+        tree.sparsify(0, 9999)
+            .inject(&caps_a, tree_cap, &mut fabric, ep_a, tenant_a, b"grad")
+            == Ok(SparsifyAction::Keep);
+    let grad_got = fabric.recv(ep_a).unwrap();
+    let harm_tree_still = decide_header(CollectiveKind::Tree, FlowClass::Harmonic, 1, 500)
+        == Err(HodgeError::HarmonicTreeReduce);
+    let header_drop = SparsifiedCollective::from_header(
+        OpKernelId(11),
+        CollectiveKind::Torus,
+        FlowClass::Harmonic,
+        100,
+        500,
+    )
+    .unwrap()
+    .decide()
+        == Ok(SparsifyAction::Drop);
+    let sparsify_ok = dropped
+        && kept
+        && keep_got.header.flow == FlowClass::Harmonic
+        && !keep_got.header.flags.tree_offload()
+        && grad_pass
+        && grad_got.header.flow == FlowClass::Gradient
+        && grad_got.header.flags.tree_offload()
+        && harm_tree_still
+        && header_drop;
+
     fabric
         .send(
             Message::new(
@@ -572,6 +616,7 @@ pub fn run_boot_demo() -> DemoReport {
         color_ok,
         revoke_ok,
         opkernel_ok,
+        sparsify_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -604,6 +649,7 @@ mod tests {
         assert!(r.color_ok, "color");
         assert!(r.revoke_ok, "cdt revoke");
         assert!(r.opkernel_ok, "opkernel");
+        assert!(r.sparsify_ok, "sparsify");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);
