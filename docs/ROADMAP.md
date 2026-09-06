@@ -17,7 +17,7 @@ product kernel.
 | Per-task PML4 / SMEP / SMAP | not started |
 | User-level threads (clone) | not started — kthread-B + `/init` mix |
 
-## Month 3–4 (this cut)
+## Month 3–4
 
 | Item | Status |
 | --- | --- |
@@ -27,6 +27,35 @@ product kernel.
 | Hardware SMMU / stream IDs | not started (`MapRequest.stream_id` is a placeholder) |
 | Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
 | Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership) |
+
+## Month 5–6 (this cut): Portability & partners
+
+Landed:
+
+- **RISC-V virt bring-up.** `boot/riscv64` trampoline + Sv39 identity
+  map; `kernel/src/arch/riscv64` UART / SBI timer / stvec. `make qemu-riscv`
+  boots to `kmain`, prints serial hello, and runs the same
+  `aether_core` self-check as x86 (including map + bank-color).
+  `aether-core` / `aether-hal` unchanged. **No** `sret` / ELF `/init` on
+  this arch — that is v0.1 of the port.
+- **AffinityLaplacian.** First-class `L = D − A` in `core/src/laplacian.rs`
+  with integer Rayleigh, Fiedler-ish power iteration, heat-kernel and
+  commute-time helpers. Host tests. `SpectralCut::from_fiedler` is wired;
+  placement for n≤8 still enumerates.
+- **Diligence pack.** [DILIGENCE.md](DILIGENCE.md) — what ships, what is
+  stubbed, how to plug `AccelDevice`, security invariants, CI, non-claims,
+  and a design-win narrative that does not invent a partner.
+- **Deep-dive agenda.** [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) — a
+  60–90 min script for an NVIDIA / ASIC OS team. No meeting is claimed.
+
+Honest limits of this cut:
+
+- RISC-V is a **thin HAL test**, not a second full kernel. Ring-3, virtqueue
+  MMIO, and PIT preemption stay x86_64. A later cut would repeat that work
+  on `sret`.
+- Fiedler is integer power iteration on n≤8, not a production eigensolve.
+- Nobody from a silicon team has reviewed this. The agenda is so they
+  could.
 
 ## STUB markers in the tree
 
@@ -41,9 +70,9 @@ Search for `// STUB:` / `STUB` :
 | Hardware SMMU | `core/src/iommu.rs` | Replace identity IOVA with stream IDs |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
 | Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
-| RISC-V / aarch64 | `kernel/src/arch` | New boot + irq/timer/serial |
-| Fiedler eigensolve | `core/src/cut.rs` | Power iteration on `L=D−A`; v0.1 enumerates n≤8 |
-| AffinityLaplacian | (none) | First-class `L` object; heat-kernel / commute-time distances for placement |
+| aarch64 | (none) | Not started; RISC-V was the HAL test |
+| RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
+| Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
 | OperatorKernelHandle | (none) | Cap for a compiled collective (tree vs ring vs torus); binds a Hodge class |
 | SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
@@ -61,10 +90,11 @@ kernel thread queue sleeps.
    BAR layout. SoftNPU can stay the executor behind the device.
 2. **SMMU page tables.** `IommuMap` already tracks windows; program a
    real stream ID instead of identity IOVA.
-3. **RISC-V port.** Same `aether-core`, new trampoline. This is the test
-   that the HAL split is real.
+3. **RISC-V userspace.** Same `aether-core`, `sret` + page-table isolate.
+   Only worth it after the x86 ABI stays stable.
 4. **Per-task page tables.** Isolation becomes a hardware fact.
 5. **Cap CDT / revoke.** Descendants die with the parent.
+6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
 ## What we will not claim
 
@@ -76,8 +106,10 @@ kernel thread queue sleeps.
 - Readiness for tape-out or safety certification
 - Partnerships with silicon vendors (`PartnerNpuStub` is a sketch)
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
+- That the RISC-V port is a product-class second architecture
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
 `AccelJobDesc`, and `PartnerNpuStub`, then tell us which opcode/dtype/route
 fields your command processor already has. The rest of Aether is meant
-to stay out of your way.
+to stay out of your way. [DILIGENCE.md](DILIGENCE.md) is the leave-behind;
+[DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) is the meeting.

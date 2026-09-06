@@ -10,3 +10,13 @@ rustflags = [
     "-C", "link-arg=-zmax-page-size=0x1000",
     "-C", "link-arg=--no-pie",
 ]
+
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-C", "relocation-model=static",
+    "-C", "code-model=medium",
+    "-C", "link-arg=-T",
+    "-C", "link-arg=../boot/riscv64/kernel.ld",
+    "-C", "link-arg=-zmax-page-size=0x1000",
+    "-C", "link-arg=--no-pie",
+]
