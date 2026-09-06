@@ -79,7 +79,9 @@ COW subset (`USER_COW_BASE` RO in `/init` + `/probe` until a
 write fault; not `fork` / POSIX `mmap`) is **done** as the next
 documented x86 subset. User-level threads via `SYS_CLONE` (nr 10) are
 **done** as a documented subset (share caller PML4/satp; `flags=0`;
-not Linux clone / fork; `SYS_EXIT` still guest-wide).
+not Linux clone / fork; `SYS_EXIT` still guest-wide). Growable
+anonymous `SYS_MMAP` (nr 11) is **done** as a documented subset
+(4 KiB USER pages in a reserved window; not POSIX `mmap`).
 In-kernel ramfs for `/init` (and x86 `/probe`) is **done** as a
 documented subset (seed from virtio-blk or embedded blobs; loader
 `open`/`read`; not POSIX; no new syscall). x86 virtio-blk → ramfs
@@ -126,7 +128,8 @@ After AccelDevice bites a real-shaped path — not before:
   the canonical demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
   BAR behind the PLIC is still open. Path A stays optional later.
-- ELF beyond this subset (`fork` / growable `mmap`). Boot-time
+- ELF beyond this subset (`fork` / POSIX `mmap`). Growable anonymous
+  `SYS_MMAP=11` landed. Boot-time
   slide + dual-map + PIE `.rela.dyn` landed (16 MiB slots; unused
   alias unmapped). KPTI user CR3 landed (no HH / no identity DMA;
   trampoline only; not Meltdown-complete). PCID tagged TLB landed
@@ -137,8 +140,10 @@ After AccelDevice bites a real-shaped path — not before:
   PCI I/O + AETHFS01) landed; modern virtio-mmio is still open.
   Per-task PML4 +
   SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
-  landed. Identity 4 GiB remains an intentional DMA window on the
-  **kernel** CR3.
+  landed. Kernel identity 4 GiB is torn down except SIPI / mailbox /
+  trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH.
+  Growable `SYS_MMAP` at `0x02C0_0000` is user-only, not an identity
+  island.
 - aarch64 GICv3 / virtio-mmio (EL0 `/init` landed; virtqueue BAR is
   in-kernel, not a `-device`).
 

@@ -102,7 +102,8 @@ Physical sketch (128 MiB guest):
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
 | `0x0280_0000–0x0280_1000` | Shared COW template (USER 4 KiB, RO until write; same PA in `/init` + `/probe`) |
-| `0x02A0_0000–0x02C0_0000` | virtio-blk window (vring + AETHFS01 image; kernel identity only; reserved) |
+| `0x02A0_0000–0x02C0_0000` | virtio-blk window (vring + AETHFS01 image; kernel identity island; reserved) |
+| `0x02C0_0000–0x02C1_0000` | Growable `SYS_MMAP` window (anon 4 KiB USER on the task CR3; not identity) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
 The boot path parses the Multiboot1 mmap (Multiboot2 parser is
@@ -375,6 +376,10 @@ Linux `clone` and not `/probe` (a second ELF with its own aspace).
 The child prints `[init] user-thread share-aspace` and yields;
 `SYS_EXIT` is still guest-wide.
 
+`SYS_MMAP` (nr 11) grows that aspace with anonymous 4 KiB USER pages
+in a reserved window. That is **not** POSIX `mmap`: no file, no
+`MAP_SHARED`. SoftNPU stays on kernel CR3; Soft SMMU is unchanged.
+
 PIE / `ET_DYN` is rejected (no relocator). RISC-V has no `/probe` in
 this cut. SoftNPU on RISC-V is the same in-kernel virtqueue; used-ring
 completions are claimed on the PLIC (UART THRE doorbell), not a
@@ -382,7 +387,8 @@ virtio-mmio device.
 
 Host proof of the aspace clone/walk contract lives in
 `core/src/aspace.rs` (`IdentityAs` for x86, `Sv39As` for RISC-V),
-including the shared-map case `SYS_CLONE` uses.
+including the shared-map case `SYS_CLONE` uses and the anonymous
+grow `SYS_MMAP` adds.
 QEMU prints `[mm] aspace isolate ok` after walking both CR3s
 and `[ramfs] open /init ok` after the boot ramfs mount
 (`[blk] virtio-blk seed /init` when a drive is attached).

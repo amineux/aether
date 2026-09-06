@@ -65,7 +65,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID-or-fallback + COW + SMEP/SMAP + aspace greps; embedded ramfs)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID-or-fallback + COW + SMEP/SMAP + aspace greps; embedded ramfs)"
 	@echo "  make qemu-blk     - x86_64 + virtio-blk AETHFS01 drive (seeds /init /probe)"
 	@echo "  make qemu-blk-ci  - virtio-blk required; greps [blk] seed + SoftNPU /init"
 	@echo "  make qemu-pcid-ci - request -cpu qemu64,+pcid,+invpcid (TCG cannot advertise PCID; KVM may print pcid ok)"
@@ -169,8 +169,10 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs embedded + clone + mmap + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID + COW + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs embedded + clone + mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID + COW + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -193,6 +195,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
 		if grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log; then \
 			echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -222,6 +225,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] pcid fallback" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-nopcid-serial.log; then \
 		echo "qemu-nopcid-ci: full-flush fallback + SoftNPU /init ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -269,6 +273,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -308,6 +313,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-blk-serial.log; then \
 		echo "qemu-blk-ci: virtio-blk → ramfs + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -362,6 +368,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: U-mode /init + PLIC SoftNPU + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -413,6 +420,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "svc debug_print ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "EL0 /init VIA SVC/ERET" $(BUILD)/aarch64-serial.log; then \
 		echo "qemu-aarch64-ci: EL0 /init + aspace + clone + demo ok (qemu exit $$ec)"; \

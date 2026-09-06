@@ -1,7 +1,7 @@
 //! Syscall numbers and the ring-3 C ABI.
 //!
 //! Numbers 0–8 are frozen (kernel/src/syscall.rs). Additive slots:
-//! `SYS_EXIT` (9) and `SYS_CLONE` (10).
+//! `SYS_EXIT` (9), `SYS_CLONE` (10), and `SYS_MMAP` (11).
 
 /// Userspace message blob for `SYS_SEND` / `SYS_RECV`.
 /// Layout is the contract; the kernel copies it across the user/kernel cut.
@@ -87,6 +87,13 @@ pub const SYS_EXIT: u64 = 9;
 /// and `rsp`/`sp` = `stack`. Not Linux `clone`, not `fork`, no new
 /// address space, no TLS, no files.
 pub const SYS_CLONE: u64 = 10;
+/// Grow the caller's aspace with anonymous 4 KiB USER pages.
+///
+/// `mmap(addr, len, flags) → va`. `flags` must be 0 (anonymous, private,
+/// RW). `addr` 0 = first free page in the grow window; nonzero must be
+/// page-aligned and in that window. Not POSIX `mmap`: no file, no
+/// `MAP_SHARED`, no `PROT_*` / `MAP_*` theater. Additive; 0–10 unchanged.
+pub const SYS_MMAP: u64 = 11;
 
 /// Static non-PIE `/init` link address (identity-mapped, USER pages).
 pub const USER_IMAGE_BASE: u64 = 0x0200_0000;
@@ -120,6 +127,18 @@ pub const COW_PRIVATE_WORD: u64 = 0xC0C0_BEEF;
 pub const BLK_WINDOW_BASE: u64 = 0x02A0_0000;
 pub const BLK_WINDOW_END: u64 = 0x02C0_0000;
 
+/// Anonymous grow window (x86 documented subset).
+///
+/// After the virtio-blk identity window. 64 KiB (16 × 4 KiB). Kernel
+/// allocates frames and maps them USER in the caller's PML4 (KPTI user
+/// CR3). Not identity, not file-backed, not POSIX `mmap`. SoftNPU stays
+/// on kernel CR3; Soft SMMU is unchanged (these pages are not DMA-pinned).
+pub const USER_MMAP_BASE: u64 = 0x02C0_0000;
+pub const USER_MMAP_END: u64 = USER_MMAP_BASE + 0x1_0000;
+pub const USER_MMAP_MAX: u64 = USER_MMAP_END - USER_MMAP_BASE;
+/// Word `/init` stores after `SYS_MMAP` returns a writable page.
+pub const MMAP_GROW_WORD: u64 = 0xA110_C4ED;
+
 /// RISC-V `/init` window. QEMU virt RAM starts at `0x8000_0000`; the
 /// x86 `0x0200_0000` hole is not RAM. Identity-mapped 2 MiB, U-bit
 /// only on this leaf in the task satp. Not a second ABI.
@@ -133,6 +152,14 @@ pub const USER_RV_STACK_TOP: u64 = USER_RV_IMAGE_END;
 pub const USER_AA_IMAGE_BASE: u64 = 0x4200_0000;
 pub const USER_AA_IMAGE_END: u64 = 0x4220_0000;
 pub const USER_AA_STACK_TOP: u64 = USER_AA_IMAGE_END;
+
+/// Anonymous grow window after the RISC-V `/init` ELF (same 1 GiB).
+pub const USER_RV_MMAP_BASE: u64 = 0x8220_0000;
+pub const USER_RV_MMAP_END: u64 = USER_RV_MMAP_BASE + 0x1_0000;
+
+/// Anonymous grow window after the aarch64 `/init` ELF (same 1 GiB).
+pub const USER_AA_MMAP_BASE: u64 = 0x4220_0000;
+pub const USER_AA_MMAP_END: u64 = USER_AA_MMAP_BASE + 0x1_0000;
 
 pub fn user_range_ok_in(lo: u64, hi: u64, ptr: u64, len: u64) -> bool {
     if ptr < lo {
@@ -157,6 +184,58 @@ pub fn user_range_known(ptr: u64, len: u64) -> bool {
         || user_range_ok_in(USER_COW_BASE, USER_COW_END, ptr, len)
         || user_range_ok_in(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, ptr, len)
         || user_range_ok_in(USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, ptr, len)
+        || user_range_ok_in(USER_MMAP_BASE, USER_MMAP_END, ptr, len)
+        || user_range_ok_in(USER_RV_MMAP_BASE, USER_RV_MMAP_END, ptr, len)
+        || user_range_ok_in(USER_AA_MMAP_BASE, USER_AA_MMAP_END, ptr, len)
+}
+
+const MMAP_WINDOWS: [(u64, u64); 3] = [
+    (USER_MMAP_BASE, USER_MMAP_END),
+    (USER_RV_MMAP_BASE, USER_RV_MMAP_END),
+    (USER_AA_MMAP_BASE, USER_AA_MMAP_END),
+];
+
+/// `len` must be a non-zero 4 KiB multiple that fits one grow window.
+pub fn user_mmap_len_ok(len: u64) -> bool {
+    len > 0 && len & 0xFFF == 0 && len <= USER_MMAP_MAX
+}
+
+/// `addr == 0` (kernel picks) or a page-aligned range inside a grow window.
+pub fn user_mmap_ok(addr: u64, len: u64, flags: u64) -> bool {
+    if flags != 0 || !user_mmap_len_ok(len) {
+        return false;
+    }
+    if addr == 0 {
+        return true;
+    }
+    if addr & 0xFFF != 0 {
+        return false;
+    }
+    MMAP_WINDOWS
+        .iter()
+        .any(|&(lo, hi)| user_range_ok_in(lo, hi, addr, len))
+}
+
+/// First free `len` bytes in `[lo, hi)` that do not overlap `taken`.
+///
+/// `taken` is `(start, len)` already mapped. Host twin of the kernel
+/// bump: grow is first-fit, not POSIX `MAP_FIXED` replace.
+pub fn user_mmap_first_fit(lo: u64, hi: u64, len: u64, taken: &[(u64, u64)]) -> Option<u64> {
+    if !user_mmap_len_ok(len) || lo & 0xFFF != 0 {
+        return None;
+    }
+    let mut va = lo;
+    while let Some(end) = va.checked_add(len) {
+        if end > hi {
+            return None;
+        }
+        let overlap = taken.iter().any(|&(t, n)| va < t.saturating_add(n) && t < end);
+        if !overlap {
+            return Some(va);
+        }
+        va = va.saturating_add(0x1000);
+    }
+    None
 }
 
 const USER_WINDOWS: [(u64, u64); 4] = [
@@ -194,6 +273,7 @@ mod tests {
         assert_eq!(SYS_ARENA_ALLOC, 8);
         assert_eq!(SYS_EXIT, 9);
         assert_eq!(SYS_CLONE, 10);
+        assert_eq!(SYS_MMAP, 11);
     }
 
     #[test]
@@ -207,10 +287,10 @@ mod tests {
         assert!(!user_range_known(USER_IMAGE_END, 1));
         assert!(user_range_known(USER_RV_IMAGE_BASE, 16));
         assert!(!user_range_ok(USER_RV_IMAGE_BASE, 16));
-        assert!(!user_range_known(USER_RV_IMAGE_END, 1));
+        assert!(user_range_known(USER_RV_IMAGE_END, 1)); // mmap window
         assert!(user_range_known(USER_AA_IMAGE_BASE, 16));
         assert!(!user_range_ok(USER_AA_IMAGE_BASE, 16));
-        assert!(!user_range_known(USER_AA_IMAGE_END, 1));
+        assert!(user_range_known(USER_AA_IMAGE_END, 1)); // mmap window
         assert!(user_range_known(USER_COW_BASE, 8));
         assert!(!user_range_ok(USER_COW_BASE, 8));
         assert!(!user_range_known(USER_COW_END, 1));
@@ -219,6 +299,52 @@ mod tests {
         assert_eq!(BLK_WINDOW_END - BLK_WINDOW_BASE, 0x20_0000);
         assert!(BLK_WINDOW_BASE >= USER_PROBE_END);
         assert!(!user_range_known(BLK_WINDOW_BASE, 8));
+        assert!(USER_MMAP_BASE >= BLK_WINDOW_END);
+        assert_eq!(USER_MMAP_END - USER_MMAP_BASE, 0x1_0000);
+        assert!(user_range_known(USER_MMAP_BASE, 8));
+        assert!(!user_range_ok(USER_MMAP_BASE, 8));
+        assert!(!user_range_known(USER_MMAP_END, 1));
+        assert!(!user_clone_pair_ok(USER_MMAP_BASE, USER_MMAP_END));
+        assert!(user_range_known(USER_RV_MMAP_BASE, 8));
+        assert!(!user_range_known(USER_RV_MMAP_END, 1));
+        assert!(user_range_known(USER_AA_MMAP_BASE, 8));
+        assert!(!user_range_known(USER_AA_MMAP_END, 1));
+    }
+
+    #[test]
+    fn mmap_args_and_first_fit() {
+        assert!(user_mmap_ok(0, 0x1000, 0));
+        assert!(user_mmap_ok(USER_MMAP_BASE, 0x1000, 0));
+        assert!(user_mmap_ok(USER_RV_MMAP_BASE, 0x2000, 0));
+        assert!(user_mmap_ok(USER_AA_MMAP_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(0, 0, 0));
+        assert!(!user_mmap_ok(0, 0x1000, 1));
+        assert!(!user_mmap_ok(0, 0x800, 0));
+        assert!(!user_mmap_ok(USER_MMAP_BASE + 1, 0x1000, 0));
+        assert!(!user_mmap_ok(USER_IMAGE_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(BLK_WINDOW_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(USER_MMAP_END - 0x800, 0x1000, 0));
+
+        let a = user_mmap_first_fit(USER_MMAP_BASE, USER_MMAP_END, 0x1000, &[]).unwrap();
+        assert_eq!(a, USER_MMAP_BASE);
+        let b = user_mmap_first_fit(USER_MMAP_BASE, USER_MMAP_END, 0x1000, &[(a, 0x1000)]).unwrap();
+        assert_eq!(b, USER_MMAP_BASE + 0x1000);
+        let c = user_mmap_first_fit(
+            USER_MMAP_BASE,
+            USER_MMAP_END,
+            0x2000,
+            &[(a, 0x1000), (b, 0x1000)],
+        )
+        .unwrap();
+        assert_eq!(c, USER_MMAP_BASE + 0x2000);
+        assert!(user_mmap_first_fit(
+            USER_MMAP_BASE,
+            USER_MMAP_END,
+            USER_MMAP_MAX,
+            &[(a, 0x1000)]
+        )
+        .is_none());
+        assert!(user_mmap_first_fit(USER_MMAP_BASE, USER_MMAP_END, 0, &[]).is_none());
     }
 
     #[test]

@@ -37,6 +37,13 @@
 //!
 //! `SYS_CLONE` user threads share one of these maps; they do not get
 //! a second PML4. After a COW break they see the same private page.
+//!
+//! **Growable mmap subset:** [`IdentityAs::map_anon_rw`] (and the Sv39 /
+//! TTBR0 twins) map allocated 4 KiB USER+RW pages in a reserved grow
+//! window. Not POSIX `mmap`, not file-backed, not `MAP_SHARED`. Kernel
+//! CR3 / satp / TTBR0 stay supervisor on that VA. SoftNPU stays on
+//! kernel CR3 (`KernelDma` + Soft SMMU; the grow window is not an
+//! identity island).
 
 pub const PTE_P: u64 = 1;
 pub const PTE_RW: u64 = 1 << 1;
@@ -345,6 +352,10 @@ pub struct IdentityAs {
     pub cow_pt: Option<[u64; 512]>,
     /// PD index (`va >> 21`) that `cow_pt` covers, or `usize::MAX`.
     pub cow_i2: usize,
+    /// Optional 4 KiB PT for the anonymous grow window (`USER_MMAP_BASE`).
+    pub mmap_pt: Option<[u64; 512]>,
+    /// PD index (`va >> 21`) that `mmap_pt` covers, or `usize::MAX`.
+    pub mmap_i2: usize,
 }
 
 impl IdentityAs {
@@ -358,6 +369,8 @@ impl IdentityAs {
             tramp_pt: None,
             cow_pt: None,
             cow_i2: usize::MAX,
+            mmap_pt: None,
+            mmap_i2: usize::MAX,
         }
     }
 
@@ -524,8 +537,15 @@ impl IdentityAs {
                     });
                 }
             }
-            if i4 == 0 && i3 == 0 && i2 == self.cow_i2 {
-                if let Some(pt) = &self.cow_pt {
+            if i4 == 0 && i3 == 0 {
+                let pt = if i2 == self.cow_i2 {
+                    self.cow_pt.as_ref()
+                } else if i2 == self.mmap_i2 {
+                    self.mmap_pt.as_ref()
+                } else {
+                    None
+                };
+                if let Some(pt) = pt {
                     let i1 = ((va >> 12) & 0x1FF) as usize;
                     let pte = pt[i1];
                     if pte & PTE_P == 0 {
@@ -602,6 +622,38 @@ impl IdentityAs {
         let old = pte & 0x000F_FFFF_FFFF_F000;
         pt[i1] = (new_phys & !0xFFF) | PTE_P | PTE_RW | PTE_US;
         Some(old)
+    }
+
+    /// Map one 4 KiB USER+RW anonymous page at `va`. Splits the covering
+    /// 2 MiB slot into a PT. Host twin of kernel `map_anon_4k`.
+    pub fn map_anon_rw(&mut self, va: u64, phys: u64) -> bool {
+        if va & (PAGE_4K - 1) != 0 || phys & (PAGE_4K - 1) != 0 {
+            return false;
+        }
+        let i4 = ((va >> 39) & 0x1FF) as usize;
+        let i3 = ((va >> 30) & 0x1FF) as usize;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let i1 = ((va >> 12) & 0x1FF) as usize;
+        if i4 != 0 || i3 != 0 || i2 == 0 {
+            return false;
+        }
+        if self.walk(va).map(|w| w.present).unwrap_or(false) {
+            return false;
+        }
+        self.pml4[0] |= PTE_P | PTE_RW | PTE_US;
+        self.pdpt[0] |= PTE_P | PTE_RW | PTE_US;
+        let mut pt = if i2 == self.mmap_i2 {
+            self.mmap_pt.unwrap_or([0; 512])
+        } else if self.mmap_pt.is_none() {
+            [0; 512]
+        } else {
+            return false;
+        };
+        pt[i1] = (phys & !0xFFF) | PTE_P | PTE_RW | PTE_US;
+        self.mmap_pt = Some(pt);
+        self.mmap_i2 = i2;
+        self.pd[0][i2] = PTE_P | PTE_RW | PTE_US;
+        true
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
@@ -858,6 +910,7 @@ mod tests {
         assert!(identity_keep_pa(APIC_MMIO_BASE));
         assert!(!identity_keep_pa(0x0100_0000));
         assert!(!identity_keep_pa(USER_IMAGE_BASE));
+        assert!(!identity_keep_pa(crate::sysnr::USER_MMAP_BASE));
         assert!(!identity_keep_pa(KERNEL_LMA));
         assert_eq!(phys_to_kva(0x0100_0000), Some(KERNEL_VMA + 0x0100_0000));
         assert_eq!(phys_to_kva(APIC_MMIO_BASE), Some(APIC_MMIO_BASE));
@@ -877,6 +930,7 @@ mod tests {
         assert_eq!(k.walk(APIC_MMIO_BASE).unwrap().phys, APIC_MMIO_BASE);
         assert!(k.walk(0x0100_0000).is_none());
         assert!(k.walk(USER_IMAGE_BASE).is_none());
+        assert!(k.walk(crate::sysnr::USER_MMAP_BASE).is_none());
         assert!(k.walk(KERNEL_LMA).is_none());
         assert_eq!(k.walk(KERNEL_VMA + 0x0100_0000).unwrap().phys, 0x0100_0000);
         assert_eq!(
@@ -943,6 +997,59 @@ mod tests {
         assert!(shared.walk(USER_COW_BASE).unwrap().writable);
         assert!(shared.user_mapped(USER_IMAGE_END - 0x2000));
     }
+
+    #[test]
+    fn mmap_grows_user_anon_without_kpti_leak() {
+        use crate::sysnr::{USER_COW_BASE, USER_MMAP_BASE, USER_MMAP_END};
+
+        assert_eq!(USER_MMAP_END - USER_MMAP_BASE, 16 * PAGE_4K);
+        assert!(USER_MMAP_BASE >= crate::sysnr::BLK_WINDOW_END);
+        assert_ne!((USER_MMAP_BASE >> 21) & 0x1FF, 0);
+        assert_ne!((USER_MMAP_BASE >> 21) & 0x1FF, (USER_COW_BASE >> 21) & 0x1FF);
+
+        let slide = KASLR_SLIDE_STRIDE;
+        let k = IdentityAs::kernel_with_slide(slide);
+        let mut init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        let probe = k.clone_user(USER_PROBE_BASE, USER_PROBE_END, &[USER_IMAGE_BASE]);
+        let f0 = 0xB_0000u64;
+        let f1 = 0xB_1000u64;
+        assert!(init.map_anon_rw(USER_MMAP_BASE, f0));
+        assert!(init.map_anon_rw(USER_MMAP_BASE + PAGE_4K, f1));
+        assert!(!init.map_anon_rw(USER_MMAP_BASE, 0xC_0000));
+
+        let w0 = init.walk(USER_MMAP_BASE).unwrap();
+        let w1 = init.walk(USER_MMAP_BASE + PAGE_4K).unwrap();
+        assert!(w0.present && w0.user && w0.writable && !w0.huge_2m);
+        assert_eq!(w0.phys, f0);
+        assert!(w1.present && w1.user && w1.writable);
+        assert_eq!(w1.phys, f1);
+        assert!(init.walk(USER_MMAP_BASE + 2 * PAGE_4K).is_none());
+
+        assert!(!k.user_mapped(USER_MMAP_BASE));
+        assert!(init.user_mapped(USER_IMAGE_BASE));
+        assert!(init.walk(USER_PROBE_BASE).is_none());
+        assert!(init.walk(KERNEL_TEXT_VA).is_none());
+        assert!(init.walk(KERNEL_TEXT_VA + slide).is_none());
+        assert!(init.walk(0x0100_0000).is_none());
+        assert!(init.pml4[511] == 0);
+        assert!(probe.walk(USER_MMAP_BASE).is_none());
+        assert!(!probe.user_mapped(USER_MMAP_BASE));
+        let tw = init.walk(KPTI_TRAMP_VA).unwrap();
+        assert!(tw.present && !tw.user);
+    }
+
+    #[test]
+    fn clone_threads_share_mmap_grow() {
+        use crate::sysnr::USER_MMAP_BASE;
+
+        let k = IdentityAs::kernel();
+        let mut shared = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        assert!(shared.map_anon_rw(USER_MMAP_BASE, 0xB_0000));
+        assert!(shared.user_mapped(USER_MMAP_BASE));
+        assert!(shared.walk(USER_MMAP_BASE).unwrap().writable);
+        assert!(shared.user_mapped(USER_IMAGE_END - 0x2000));
+        assert!(shared.walk(USER_PROBE_BASE).is_none());
+    }
 }
 
 /// Sv39 PTE bits (privileged spec). U is only meaningful on a leaf.
@@ -965,6 +1072,9 @@ pub struct Sv39As {
     pub l2: [u64; 512],
     pub l1: [u64; 512],
     pub split_vpn2: usize,
+    /// 4 KiB PT for the anonymous grow slot (one 2 MiB leaf).
+    pub l0: [u64; 512],
+    pub mmap_vpn1: usize,
 }
 
 impl Sv39As {
@@ -973,6 +1083,8 @@ impl Sv39As {
             l2: [0; 512],
             l1: [0; 512],
             split_vpn2: usize::MAX,
+            l0: [0; 512],
+            mmap_vpn1: usize::MAX,
         }
     }
 
@@ -1051,6 +1163,24 @@ impl Sv39As {
         if pte1 & SV39_V == 0 {
             return None;
         }
+        if pte1 & SV39_LEAF == 0 {
+            if i1 != self.mmap_vpn1 {
+                return None;
+            }
+            let i0 = ((va >> 12) & 0x1FF) as usize;
+            let pte0 = self.l0[i0];
+            if pte0 & SV39_V == 0 {
+                return None;
+            }
+            return Some(Walk {
+                pde: pte0,
+                phys: (pte0 << 2) & !0xFFF | (va & 0xFFF),
+                user: pte0 & SV39_U != 0,
+                present: true,
+                huge_2m: false,
+                writable: pte0 & SV39_W != 0,
+            });
+        }
         Some(Walk {
             pde: pte1,
             phys: (pte1 << 2) & !0x1F_FFFF | (va & 0x1F_FFFF),
@@ -1059,6 +1189,36 @@ impl Sv39As {
             huge_2m: pte1 & SV39_LEAF != 0,
             writable: pte1 & SV39_W != 0,
         })
+    }
+
+    /// Map one 4 KiB U+RW anonymous page. Splits the covering 2 MiB leaf.
+    pub fn map_anon_rw(&mut self, va: u64, phys: u64) -> bool {
+        if va & (PAGE_4K - 1) != 0 || phys & (PAGE_4K - 1) != 0 {
+            return false;
+        }
+        let vpn2 = ((va >> 30) & 0x1FF) as usize;
+        let vpn1 = ((va >> 21) & 0x1FF) as usize;
+        let vpn0 = ((va >> 12) & 0x1FF) as usize;
+        if vpn2 != self.split_vpn2 {
+            return false;
+        }
+        if self.mmap_vpn1 != usize::MAX && self.mmap_vpn1 != vpn1 {
+            return false;
+        }
+        if self.walk(va).map(|w| w.user).unwrap_or(false) {
+            return false;
+        }
+        let pte1 = self.l1[vpn1];
+        if pte1 & SV39_V != 0 && pte1 & SV39_LEAF != 0 && pte1 & SV39_U != 0 {
+            return false;
+        }
+        if self.mmap_vpn1 == usize::MAX {
+            self.l0 = [0; 512];
+            self.mmap_vpn1 = vpn1;
+            self.l1[vpn1] = SV39_V;
+        }
+        self.l0[vpn0] = (phys >> 2) | SV39_V | SV39_R | SV39_W | SV39_U | SV39_A | SV39_D;
+        true
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
@@ -1114,6 +1274,32 @@ mod sv39_tests {
         assert!(shared.user_mapped(USER_RV_IMAGE_END - 0x2000));
         assert!(!shared.user_mapped(0x8020_0000));
     }
+
+    #[test]
+    fn mmap_grows_sv39_anon() {
+        use crate::sysnr::{USER_RV_MMAP_BASE, USER_RV_MMAP_END};
+
+        assert_eq!(USER_RV_MMAP_END - USER_RV_MMAP_BASE, 16 * PAGE_4K);
+        assert_eq!(USER_RV_MMAP_BASE, USER_RV_IMAGE_END);
+
+        let k = Sv39As::kernel();
+        let mut init = k.clone_user(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, &[]);
+        assert!(init.map_anon_rw(USER_RV_MMAP_BASE, 0x8400_0000));
+        assert!(init.map_anon_rw(USER_RV_MMAP_BASE + PAGE_4K, 0x8400_1000));
+        assert!(!init.map_anon_rw(USER_RV_MMAP_BASE, 0x8500_0000));
+
+        let w = init.walk(USER_RV_MMAP_BASE).unwrap();
+        assert!(w.present && w.user && w.writable && !w.huge_2m);
+        assert_eq!(w.phys, 0x8400_0000);
+        assert_eq!(
+            init.walk(USER_RV_MMAP_BASE + PAGE_4K).unwrap().phys,
+            0x8400_1000
+        );
+        assert!(init.user_mapped(USER_RV_IMAGE_BASE));
+        assert!(!init.user_mapped(0x8020_0000));
+        assert!(!k.user_mapped(USER_RV_MMAP_BASE));
+        assert!(init.walk(USER_RV_MMAP_BASE + 2 * PAGE_4K).is_none());
+    }
 }
 
 /// AArch64 4K / T0SZ=25 descriptor bits (ARM ARM D5). AP[2:1] = 01
@@ -1136,6 +1322,9 @@ pub struct Ttbr0As {
     pub l1: [u64; 512],
     pub l2: [u64; 512],
     pub split_i1: usize,
+    /// 4 KiB table for the anonymous grow slot (one 2 MiB block).
+    pub l3: [u64; 512],
+    pub mmap_i2: usize,
 }
 
 impl Ttbr0As {
@@ -1144,6 +1333,8 @@ impl Ttbr0As {
             l1: [0; 512],
             l2: [0; 512],
             split_i1: usize::MAX,
+            l3: [0; 512],
+            mmap_i2: usize::MAX,
         }
     }
 
@@ -1231,6 +1422,24 @@ impl Ttbr0As {
         if pte2 & AA_VALID == 0 {
             return None;
         }
+        if pte2 & AA_TABLE != 0 {
+            if i2 != self.mmap_i2 {
+                return None;
+            }
+            let i3 = ((va >> 12) & 0x1FF) as usize;
+            let pte3 = self.l3[i3];
+            if pte3 & AA_VALID == 0 {
+                return None;
+            }
+            return Some(Walk {
+                pde: pte3,
+                phys: (pte3 & 0x0000_FFFF_FFFF_F000) | (va & 0xFFF),
+                user: Self::is_user(pte3),
+                present: true,
+                huge_2m: false,
+                writable: pte3 & (1 << 7) == 0,
+            });
+        }
         Some(Walk {
             pde: pte2,
             phys: (pte2 & 0x0000_FFFF_FFE0_0000) | (va & 0x1F_FFFF),
@@ -1239,6 +1448,47 @@ impl Ttbr0As {
             huge_2m: pte2 & AA_TABLE == 0,
             writable: pte2 & (1 << 7) == 0,
         })
+    }
+
+    fn page_4k(phys: u64) -> u64 {
+        AA_VALID
+            | AA_TABLE
+            | AA_AF
+            | AA_ATTR_NORMAL
+            | AA_SH_ISH
+            | AA_AP_EL0
+            | AA_PXN
+            | (phys & !0xFFF)
+    }
+
+    /// Map one 4 KiB EL0+RW anonymous page. Splits the covering 2 MiB block.
+    pub fn map_anon_rw(&mut self, va: u64, phys: u64) -> bool {
+        if va & (PAGE_4K - 1) != 0 || phys & (PAGE_4K - 1) != 0 {
+            return false;
+        }
+        let i1 = ((va >> 30) & 0x1FF) as usize;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let i3 = ((va >> 12) & 0x1FF) as usize;
+        if i1 != self.split_i1 {
+            return false;
+        }
+        if self.mmap_i2 != usize::MAX && self.mmap_i2 != i2 {
+            return false;
+        }
+        if self.walk(va).map(|w| w.user).unwrap_or(false) {
+            return false;
+        }
+        let pte2 = self.l2[i2];
+        if pte2 & AA_VALID != 0 && pte2 & AA_TABLE == 0 && Self::is_user(pte2) {
+            return false;
+        }
+        if self.mmap_i2 == usize::MAX {
+            self.l3 = [0; 512];
+            self.mmap_i2 = i2;
+            self.l2[i2] = AA_VALID | AA_TABLE;
+        }
+        self.l3[i3] = Self::page_4k(phys);
+        true
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
@@ -1293,5 +1543,31 @@ mod ttbr0_tests {
         assert!(shared.user_mapped(USER_AA_IMAGE_END - 16));
         assert!(shared.user_mapped(USER_AA_IMAGE_END - 0x2000));
         assert!(!shared.user_mapped(0x4008_0000));
+    }
+
+    #[test]
+    fn mmap_grows_ttbr0_anon() {
+        use crate::sysnr::{USER_AA_MMAP_BASE, USER_AA_MMAP_END};
+
+        assert_eq!(USER_AA_MMAP_END - USER_AA_MMAP_BASE, 16 * PAGE_4K);
+        assert_eq!(USER_AA_MMAP_BASE, USER_AA_IMAGE_END);
+
+        let k = Ttbr0As::kernel();
+        let mut init = k.clone_user(USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, &[]);
+        assert!(init.map_anon_rw(USER_AA_MMAP_BASE, 0x4400_0000));
+        assert!(init.map_anon_rw(USER_AA_MMAP_BASE + PAGE_4K, 0x4400_1000));
+        assert!(!init.map_anon_rw(USER_AA_MMAP_BASE, 0x4500_0000));
+
+        let w = init.walk(USER_AA_MMAP_BASE).unwrap();
+        assert!(w.present && w.user && w.writable && !w.huge_2m);
+        assert_eq!(w.phys, 0x4400_0000);
+        assert_eq!(
+            init.walk(USER_AA_MMAP_BASE + PAGE_4K).unwrap().phys,
+            0x4400_1000
+        );
+        assert!(init.user_mapped(USER_AA_IMAGE_BASE));
+        assert!(!init.user_mapped(0x4008_0000));
+        assert!(!k.user_mapped(USER_AA_MMAP_BASE));
+        assert!(init.walk(USER_AA_MMAP_BASE + 2 * PAGE_4K).is_none());
     }
 }

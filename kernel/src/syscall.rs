@@ -1,4 +1,5 @@
-//! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is `SYS_CLONE`.
+//! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is
+//! `SYS_CLONE`; 11 is `SYS_MMAP`.
 //!
 //! User enters here through `syscall`/`sysret` (x86), `ecall`/`sret`
 //! (RISC-V), or `svc`/`eret` (aarch64). Cap checks sit on
@@ -6,7 +7,9 @@
 
 #![allow(dead_code)]
 
-use aether_core::sysnr::{user_clone_pair_ok, user_range_known, UserAccelJob, UserIpcMsg};
+use aether_core::sysnr::{
+    user_clone_pair_ok, user_mmap_ok, user_range_known, UserAccelJob, UserIpcMsg,
+};
 use aether_core::CPtr;
 
 use crate::arch::idt::InterruptFrame;
@@ -26,6 +29,7 @@ pub const SYS_ACCEL_WAIT: u64 = 7;
 pub const SYS_ARENA_ALLOC: u64 = 8;
 pub const SYS_EXIT: u64 = 9;
 pub const SYS_CLONE: u64 = 10;
+pub const SYS_MMAP: u64 = 11;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SysError {
@@ -163,6 +167,7 @@ fn dispatch_trap(
             }
             task::clone_user(a0, a1).ok_or(SysError::Again)
         }
+        SYS_MMAP => sys_mmap(a0, a1, a2),
         SYS_EXIT => {
             crate::console::write_str("[sys] exit status=");
             crate::console::write_u64(a0);
@@ -187,4 +192,61 @@ fn dispatch_trap(
             Err(SysError::Inval)
         }
     }
+}
+
+fn mmap_window() -> (u64, u64) {
+    #[cfg(target_arch = "x86_64")]
+    {
+        (aether_core::USER_MMAP_BASE, aether_core::USER_MMAP_END)
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        (aether_core::USER_RV_MMAP_BASE, aether_core::USER_RV_MMAP_END)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (aether_core::USER_AA_MMAP_BASE, aether_core::USER_AA_MMAP_END)
+    }
+}
+
+fn mmap_first_fit(root: u64, len: u64) -> Option<u64> {
+    use aether_core::sysnr::user_mmap_first_fit;
+    let (lo, hi) = mmap_window();
+    let mut taken = [(0u64, 0u64); 16];
+    let mut n = 0usize;
+    let mut p = lo;
+    while p < hi && n < taken.len() {
+        if crate::mm::paging::user_mapped(root, p) {
+            taken[n] = (p, 0x1000);
+            n += 1;
+        }
+        p += 0x1000;
+    }
+    user_mmap_first_fit(lo, hi, len, &taken[..n])
+}
+
+fn sys_mmap(addr: u64, len: u64, flags: u64) -> Result<u64, SysError> {
+    if !user_mmap_ok(addr, len, flags) {
+        return Err(SysError::Inval);
+    }
+    let Some(root) = task::current_user_root() else {
+        return Err(SysError::Fault);
+    };
+    let (lo, hi) = mmap_window();
+    let va = if addr == 0 {
+        mmap_first_fit(root, len).ok_or(SysError::Again)?
+    } else {
+        if !aether_core::sysnr::user_range_ok_in(lo, hi, addr, len) {
+            return Err(SysError::Fault);
+        }
+        let mut p = addr;
+        while p < addr + len {
+            if crate::mm::paging::user_mapped(root, p) {
+                return Err(SysError::Fault);
+            }
+            p += 0x1000;
+        }
+        addr
+    };
+    crate::mm::paging::map_anon_pages(root, va, len)
 }

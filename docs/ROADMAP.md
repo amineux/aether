@@ -16,6 +16,7 @@ product kernel.
 | ramfs / virtio-blk for `/init` | **done** (in-kernel ramfs; seed from virtio-blk or embedded blobs) |
 | Per-task PML4 / SMEP / SMAP | **done** (x86 subset: CR3 switch + USER-local 2 MiB windows) |
 | User-level threads (clone) | **done** (additive `SYS_CLONE=10`; share caller's PML4/satp; not Linux clone) |
+| Growable user `mmap` | **done** (additive `SYS_MMAP=11`; anonymous 4 KiB USER pages; not POSIX) |
 
 ## Month 3–4
 
@@ -580,10 +581,12 @@ identity):
   - virtio-blk DMA window `0x02A00000–0x02C00000`.
   - APIC MMIO `0xFEE00000` (above the HH 2 GiB window).
 - Torn down: user ELF `0x2000000` / `0x2400000`, SoftNPU arena
-  `0x01000000`, kernel LMA `0x400000`, and the rest of RAM.
-  Page-table walks and ELF / COW / user copies use `phys_va`
-  (HH). User buffers are walked in the task CR3, then loaded
-  via HH.
+  `0x01000000`, kernel LMA `0x400000`, growable `SYS_MMAP`
+  window `0x02C00000`, and the rest of RAM. Page-table walks
+  and ELF / COW / mmap / user copies use `phys_va` (HH). User
+  buffers are walked in the task CR3, then loaded via HH.
+  `USER_MMAP_BASE` is a KPTI user-only 4 KiB grow window, not
+  an identity island.
 - Host tests: `identity_keep_islands_and_kva`,
   `teardown_drops_ram_keeps_islands`,
   `service_refuses_guest_pa_when_smmu_bound`. QEMU:
@@ -746,7 +749,7 @@ Search for `// STUB:` / `STUB` :
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
-| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault). `fork` / growable `mmap` still stub |
+| Higher-half + KASLR / KPTI / PCID / COW / mmap | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault) + growable anon `SYS_MMAP=11`. `fork` still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
@@ -759,6 +762,7 @@ Search for `// STUB:` / `STUB` :
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
+| Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
@@ -778,10 +782,10 @@ kernel thread queue sleeps.
 3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.
-4. **Growable `mmap` / `fork`.** PIE-reloc KASLR + one-page COW +
-   KPTI + PCID landed (tagged TLB when CPUID advertises PCID; full
-   flush otherwise). Do not claim Meltdown-complete, a secret slide,
-   or a POSIX MM.
+4. **`fork` / POSIX `mmap`.** Growable anonymous `SYS_MMAP=11` landed
+   (64 KiB window; first-fit; not file-backed). PIE-reloc KASLR +
+   one-page COW + KPTI + PCID landed. Do not claim Meltdown-complete,
+   a secret slide, or POSIX `mmap` / `fork`.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
@@ -811,8 +815,8 @@ kernel thread queue sleeps.
   in-kernel ramfs for `/init`, x86 virtio-blk → ramfs seed,
   RISC-V PLIC + SoftNPU software
   doorbell, and aarch64 EL0 `/init` are landed. ABI stays stable
-  (0–10 unchanged). Custom QEMU virtio-accel (path A),
-  `fork` / growable `mmap` remain deferred.
+  (0–10 unchanged; `SYS_MMAP=11` additive). Custom QEMU virtio-accel
+  (path A) and `fork` remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -836,8 +840,8 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   (PR #31), and x86 virtio-blk → ramfs
   (this cut)
   are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), `fork` /
-  growable `mmap`, and the other stubs above are still open.
+  Custom QEMU virtio-accel (path A), `fork`, and the other stubs
+  above are still open. Growable anonymous `SYS_MMAP` landed.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

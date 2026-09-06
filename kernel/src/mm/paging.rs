@@ -26,8 +26,11 @@
 //! documented PCID subset (CR4.PCIDE when CPUID.1:ECX[17]; INVPCID
 //! when CPUID.7:EBX[10]; else full-flush `mov cr3`). Documented COW
 //! subset: one shared 4 KiB USER page at `USER_COW_BASE`, read-only
-//! until a write fault copies the frame. Not Meltdown-complete, not
-//! POSIX `mmap` / `fork`.
+//! until a write fault copies the frame. Documented growable mmap:
+//! `SYS_MMAP` allocates anonymous 4 KiB USER+RW pages in a reserved
+//! window on the **user** CR3 / satp / TTBR0. SoftNPU stays on kernel
+//! CR3. Soft SMMU is unchanged. Not Meltdown-complete, not POSIX
+//! `mmap` / `fork`.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -42,8 +45,8 @@ use aether_core::{
     cr3_tagged, identity_keep_2m, kaslr_slide_valid, kernel_text_va_slid, phys_to_kva,
     APIC_MMIO_BASE, CR4_PCIDE, INVPCID_SINGLE, KASLR_KERNEL_SPAN, KASLR_MAILBOX_RELOCS,
     KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA,
-    PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE, USER_IMAGE_BASE, USER_PROBE_BASE,
-    COW_TEMPLATE_WORD,
+    PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE, USER_IMAGE_BASE, USER_MMAP_BASE,
+    USER_PROBE_BASE, COW_TEMPLATE_WORD,
 };
 #[cfg(target_arch = "x86_64")]
 use aether_core::sysnr::BLK_WINDOW_BASE;
@@ -54,6 +57,8 @@ use crate::console::{self, write_hex, write_str, write_u64};
 use crate::mm::frame;
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::println;
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
+use crate::syscall::SysError;
 
 #[cfg(target_arch = "x86_64")]
 const P: u64 = 1;
@@ -602,6 +607,50 @@ fn map_cow_4k(root: u64, va: u64, phys: u64) -> bool {
     true
 }
 
+/// Map one USER + present + RW 4 KiB anonymous page at `va` in `root`.
+/// KPTI: user CR3 only. Does not touch the kernel identity map.
+#[cfg(target_arch = "x86_64")]
+fn map_anon_4k(root: u64, va: u64, phys: u64) -> bool {
+    let root = root & !0xFFF;
+    let i3 = ((va >> 30) & 0x1FF) as usize;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let i1 = ((va >> 12) & 0x1FF) as usize;
+    if i3 != 0 || i2 == 0 {
+        return false;
+    }
+    let pml4e = read64(root);
+    if pml4e & P == 0 {
+        return false;
+    }
+    write64(root, pml4e | US);
+    let pdpt = pml4e & 0x000F_FFFF_FFFF_F000;
+    let pdpte = read64(pdpt);
+    if pdpte & P == 0 || pdpte & PS != 0 {
+        return false;
+    }
+    write64(pdpt, pdpte | US);
+    let pd = pdpte & 0x000F_FFFF_FFFF_F000;
+    let pde = read64(pd + i2 as u64 * 8);
+    let pt = if pde & P != 0 && pde & PS == 0 {
+        pde & 0x000F_FFFF_FFFF_F000
+    } else if pde & P != 0 && pde & PS != 0 {
+        return false;
+    } else {
+        let Some(pt) = alloc_zeroed_page() else {
+            return false;
+        };
+        write64(pd + i2 as u64 * 8, (pt & !0xFFF) | P | RW | US);
+        pt
+    };
+    let slot = pt + i1 as u64 * 8;
+    if read64(slot) & P != 0 {
+        return false;
+    }
+    write64(slot, (phys & !0xFFF) | P | RW | US);
+    invalidate_aspace(root);
+    true
+}
+
 /// Shared 4 KiB template in `/init` and optional `/probe`. Same PA,
 /// USER + RO, until a write fault. SoftNPU stays on kernel CR3.
 #[cfg(target_arch = "x86_64")]
@@ -1113,6 +1162,7 @@ pub fn prove_identity_teardown() -> bool {
         .unwrap_or(false);
     let no_arena_id = unsafe { walk(0x0100_0000) }.is_none();
     let no_user_id = unsafe { walk(USER_IMAGE_BASE) }.is_none();
+    let no_mmap_id = unsafe { walk(USER_MMAP_BASE) }.is_none();
     let no_lma_id = unsafe { walk(KERNEL_LMA) }.is_none();
     let arena_hh = unsafe { walk(KERNEL_VMA + 0x0100_0000) }
         .map(|w| w.phys.0 == 0x0100_0000 && !w.user)
@@ -1127,6 +1177,7 @@ pub fn prove_identity_teardown() -> bool {
         && apic
         && no_arena_id
         && no_user_id
+        && no_mmap_id
         && no_lma_id
         && arena_hh
         && lma_hh;
@@ -1400,6 +1451,44 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
     Some(new_l2)
 }
 
+/// Map one U+RW 4 KiB anonymous page. Splits a 2 MiB leaf if needed.
+#[cfg(target_arch = "riscv64")]
+fn map_anon_4k(root: u64, va: u64, phys: u64) -> bool {
+    let root = root & !0xFFF;
+    let i2 = ((va >> 30) & 0x1FF) as usize;
+    let i1 = ((va >> 21) & 0x1FF) as usize;
+    let i0 = ((va >> 12) & 0x1FF) as usize;
+    let pte2 = read64(root + i2 as u64 * 8);
+    if pte2 & PTE_V == 0 || pte2 & PTE_LEAF != 0 {
+        return false;
+    }
+    let l1 = ((pte2 >> 10) & 0x0FFF_FFFF_FFFF) << 12;
+    let pte1 = read64(l1 + i1 as u64 * 8);
+    let l0 = if pte1 & PTE_V != 0 && pte1 & PTE_LEAF == 0 {
+        ((pte1 >> 10) & 0x0FFF_FFFF_FFFF) << 12
+    } else if pte1 & PTE_V != 0 && pte1 & PTE_U != 0 {
+        return false;
+    } else {
+        let Some(l0) = alloc_zeroed_page() else {
+            return false;
+        };
+        write64(l1 + i1 as u64 * 8, ((l0 >> 12) << 10) | PTE_V);
+        l0
+    };
+    let slot = l0 + i0 as u64 * 8;
+    if read64(slot) & PTE_V != 0 {
+        return false;
+    }
+    write64(
+        slot,
+        (phys >> 2) | PTE_V | PTE_R | PTE_W | PTE_U | PTE_A | PTE_D,
+    );
+    unsafe {
+        core::arch::asm!("sfence.vma", options(nostack));
+    }
+    true
+}
+
 /// Mark the 2 MiB page covering `va` user-accessible (current satp).
 #[cfg(target_arch = "riscv64")]
 pub fn allow_user_2m(va: u64) {
@@ -1650,7 +1739,22 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             writable: pte2 & (1 << 7) == 0,
         });
     }
-    None
+    let l3 = (pte2 & 0x0000_FFFF_FFFF_F000) as *const u64;
+    let i3 = ((va >> 12) & 0x1FF) as usize;
+    let pte3 = core::ptr::read_volatile(l3.add(i3));
+    if pte3 & PTE_VALID == 0 {
+        return None;
+    }
+    let phys = (pte3 & 0x0000_FFFF_FFFF_F000) | (va & 0xFFF);
+    Some(Walk {
+        pml4e: pte1,
+        pdpte: pte2,
+        pde: pte3,
+        phys: PhysAddr(phys),
+        huge_2m: false,
+        user: is_el0(pte3),
+        writable: pte3 & (1 << 7) == 0,
+    })
 }
 
 /// 4K / T0SZ=25 walk. A 1 GiB L1 or 2 MiB L2 identity block is
@@ -1711,6 +1815,57 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
     }
     write64(new_l1 + i1 as u64 * 8, (l2 & 0x0000_FFFF_FFFF_F000) | PTE_VALID | PTE_TABLE);
     Some(new_l1)
+}
+
+/// Map one EL0+RW 4 KiB anonymous page. Splits a 2 MiB block if needed.
+#[cfg(target_arch = "aarch64")]
+fn map_anon_4k(root: u64, va: u64, phys: u64) -> bool {
+    let root = root & 0x0000_FFFF_FFFF_F000;
+    let i1 = ((va >> 30) & 0x1FF) as usize;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let i3 = ((va >> 12) & 0x1FF) as usize;
+    let pte1 = read64(root + i1 as u64 * 8);
+    if pte1 & PTE_VALID == 0 || pte1 & PTE_TABLE == 0 {
+        return false;
+    }
+    let l2 = pte1 & 0x0000_FFFF_FFFF_F000;
+    let pte2 = read64(l2 + i2 as u64 * 8);
+    let l3 = if pte2 & PTE_VALID != 0 && pte2 & PTE_TABLE != 0 {
+        pte2 & 0x0000_FFFF_FFFF_F000
+    } else if pte2 & PTE_VALID != 0 && is_el0(pte2) {
+        return false;
+    } else {
+        let Some(l3) = alloc_zeroed_page() else {
+            return false;
+        };
+        write64(l2 + i2 as u64 * 8, (l3 & 0x0000_FFFF_FFFF_F000) | PTE_VALID | PTE_TABLE);
+        l3
+    };
+    let slot = l3 + i3 as u64 * 8;
+    if read64(slot) & PTE_VALID != 0 {
+        return false;
+    }
+    write64(
+        slot,
+        PTE_VALID
+            | PTE_TABLE
+            | PTE_AF
+            | PTE_ATTR_NORMAL
+            | PTE_SH_ISH
+            | PTE_AP_EL0
+            | PTE_PXN
+            | (phys & !0xFFF),
+    );
+    unsafe {
+        core::arch::asm!(
+            "dsb sy",
+            "tlbi vmalle1",
+            "dsb sy",
+            "isb",
+            options(nostack)
+        );
+    }
+    true
 }
 
 /// Mark the 2 MiB page covering `va` EL0-accessible (current TTBR0).
@@ -1793,4 +1948,48 @@ pub fn prove_aspace(init_root: u64, _probe: Option<u64>) -> bool {
         println!("[mm] aspace isolate FAIL");
     }
     ok
+}
+
+/// Allocate frames and map `[va, va+len)` USER+RW in `root`.
+/// SoftNPU / kernel CR3 are not rewritten. Soft SMMU is unchanged.
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
+pub fn map_anon_pages(root: u64, va: u64, len: u64) -> Result<u64, SysError> {
+    if va & 0xFFF != 0 || len & 0xFFF != 0 || len == 0 {
+        return Err(SysError::Inval);
+    }
+    let ie = crate::arch::irq::save_disable();
+    let mut off = 0u64;
+    while off < len {
+        let Some(pa) = alloc_zeroed_page() else {
+            crate::arch::irq::restore(ie);
+            return Err(SysError::Again);
+        };
+        if !map_anon_4k(root, va + off, pa) {
+            frame::free(PhysAddr(pa));
+            crate::arch::irq::restore(ie);
+            return Err(SysError::Fault);
+        }
+        off += 0x1000;
+    }
+    crate::arch::irq::restore(ie);
+    let w = unsafe { walk_in(root, va) };
+    let user_ok = w
+        .as_ref()
+        .map(|w| w.user && w.writable && !w.huge_2m)
+        .unwrap_or(false);
+    let k = kernel_cr3();
+    let k_ok = !user_mapped(k, va);
+    write_str("[mm] mmap grow va=");
+    write_hex(va);
+    write_str(" pages=");
+    write_u64(len / 0x1000);
+    if user_ok && k_ok {
+        write_str(" user (anon RW; kernel CR3 no USER; not POSIX)");
+        console::nl();
+        Ok(va)
+    } else {
+        write_str(" FAIL");
+        console::nl();
+        Err(SysError::Fault)
+    }
 }
