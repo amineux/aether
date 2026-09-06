@@ -465,7 +465,7 @@
               <h3>Working vertical slice</h3>
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
-                <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU); I32 plus software F16/F32 (not a tensor ISA)</li>
+                <li>SoftNPU virtqueue path B (in-kernel BAR is the canonical demo; golden MMIO trace; stock QEMU); I32 plus software F16/F32 (not a tensor ISA)</li>
                 <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
@@ -487,7 +487,7 @@
               <h3>If a silicon team implements AccelDevice</h3>
               <ul>
                 <li>Hardware SMMU — program a real SID / PT; Soft SMMU is software only</li>
-                <li>Optional custom QEMU virtio-accel (deferred; in-kernel BAR remains the demo)</li>
+                <li>Optional custom QEMU virtio-accel (path A; deferred). Path B landed: in-kernel BAR + golden MMIO trace</li>
                 <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen</li>
                 <li>Not a signed vendor path. <code>PartnerNpuStub</code> stays a labeled sketch — no second-stub enrichment theater</li>
               </ul>
@@ -560,7 +560,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
               </div>
             </div>
             <div class="proof">
@@ -574,7 +574,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V U-mode /init is a documented subset (no PLIC). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (no PLIC). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">

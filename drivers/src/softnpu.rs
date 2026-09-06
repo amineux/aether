@@ -1,9 +1,10 @@
 //! Software NPU tile bound to the VirtIO-Accel MMIO virtqueue.
 //!
-//! The kernel driver talks the MMIO + virtqueue ABI (`submit` kicks the
-//! doorbell; `poll` reads the used ring). SoftNPU is the device-side
-//! executor: [`SoftNpuDevice::service`] drains the avail ring on
-//! poll/IRQ. No custom QEMU device is required.
+//! SpecForge Y1H1 path B: this is the canonical demo behind the
+//! in-kernel BAR. The kernel driver talks the MMIO + virtqueue ABI
+//! (`submit` kicks the doorbell; `poll` reads the used ring). SoftNPU
+//! is the device-side executor: [`SoftNpuDevice::service`] drains the
+//! avail ring on poll/IRQ. No custom QEMU device is required.
 
 use aether_core::accel::{AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
@@ -381,6 +382,42 @@ mod tests {
         let c = dev.poll().unwrap();
         assert_eq!(c.status, 0);
         assert!(!dev.irq_pending());
+        let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn golden_mmio_trace_softnpu_submit_complete() {
+        use crate::mmio::GOLDEN_SOFTNPU_SUBMIT_COMPLETE;
+
+        let mut backing = [0u8; 256];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        // Map does not poke the BAR; leave extra observers out of the
+        // golden so the sequence is probe → submit → service → poll
+        // against the frozen layout.
+        assert!(dev.probe().is_ok());
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        dev.submit(&job).unwrap();
+        let serviced = dev.service().unwrap();
+        assert_eq!(serviced.status, 0);
+        assert_eq!(serviced.job_seq, 1);
+        let c = dev.poll().unwrap();
+        assert_eq!(c.status, 0);
+        assert_eq!(c.cycles, 8);
+        assert_eq!(
+            dev.mmio.golden_cfg_trace().as_slice(),
+            GOLDEN_SOFTNPU_SUBMIT_COMPLETE
+        );
         let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(out0, 19);
     }

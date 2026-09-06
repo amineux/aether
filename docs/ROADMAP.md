@@ -21,8 +21,8 @@ product kernel.
 
 | Item | Status |
 | --- | --- |
-| Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend) |
-| Custom QEMU `virtio-accel` device | not started — stock QEMU + in-tree emulator |
+| Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend; path B canonical) |
+| Custom QEMU `virtio-accel` device | deferred (path A optional later; golden MMIO trace locks the BAR) |
 | `IommuMap` pin/translate; refuse without Memory+MAP | **done** (Soft SMMU; non-identity IOVA) |
 | Soft SMMU / software stream IDs | **done** (per-stream IOVA namespaces; not hardware) |
 | Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU) |
@@ -284,7 +284,23 @@ architecture, not a PLIC virtio port, not `/probe` on this HAL:
 Still stubbed: PLIC, real virtio-mmio, FDT mmap, extra-hart SMP,
 `/probe`, product-class second kernel. aarch64 stays EL1-only.
 
-## AffinityLaplacian n≤32 placement (this cut)
+## SpecForge virtio path B (this cut)
+
+Landed as the Y1H1 virtio **path B** decision — **not** a QEMU
+`-device`, **not** an upstream virtio device:
+
+- [ACCEL.md](ACCEL.md) ADR: path A (custom QEMU virtio-accel) vs path B
+  (in-kernel BAR is the canonical demo). **B chosen.** Path A stays
+  optional later.
+- BAR layout is **frozen** (`magic`, `version`, `status`, `qsize`,
+  `doorbell`, `used_idx`). SoftNPU behind `AccelMmio` remains what
+  `make qemu` runs. Stock QEMU only.
+- Host golden MMIO trace records cfg / doorbell / used-ring accesses
+  for one SoftNPU submit/complete
+  (`drivers/src/{mmio,softnpu,virtio_accel}.rs`).
+- No new QEMU device C code. No vendor claim.
+
+## AffinityLaplacian n≤32 placement
 
 Landed as a **prototype eigensolve** — **not** GiFt-Placer, **not** a
 production package solver, **not** an EDA replacement:
@@ -312,7 +328,7 @@ Search for `// STUB:` / `STUB` :
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
 | Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
-| VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
+| VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** (U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU; no PLIC / virtio-mmio) |
@@ -330,8 +346,9 @@ kernel thread queue sleeps.
 
 ## Suggested next cuts (technical, not calendar)
 
-1. **Custom QEMU virtio-accel** (or virtio-mmio) that DMA-reads the same
-   BAR layout. SoftNPU can stay the executor behind the device. Deferred;
+1. **Custom QEMU virtio-accel** (path A) that DMA-reads the frozen BAR.
+   SoftNPU can stay the executor behind the device. Optional later;
+   path B (in-kernel BAR + golden MMIO trace) is the canonical demo.
    Soft-CP already covers a second AccelDevice path on the host.
 2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
    program a real SMMU context / PT walk. Do not claim the software
@@ -354,9 +371,10 @@ kernel thread queue sleeps.
   an aarch64 thin HAL, Multiboot mmap → frames,
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
-  userspace, and AffinityLaplacian n≤32 placement (this cut) are
-  landed. ABI stays stable. Custom QEMU virtio-accel and RISC-V
-  PLIC remain deferred.
+  userspace, AffinityLaplacian n≤32 placement, and the SpecForge
+  virtio path-B ADR + golden MMIO trace (this cut) are landed. ABI
+  stays stable. Custom QEMU virtio-accel (path A) and RISC-V PLIC
+  remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -368,10 +386,11 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
   the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
-  software IEEE (PR #18), RISC-V S-mode userspace (PR #19), and
-  AffinityLaplacian n≤32 placement (this cut) are **done** as
-  research-prototype slices. Custom QEMU virtio-accel, RISC-V PLIC,
-  and the other stubs above are still open.
+  software IEEE (PR #18), RISC-V S-mode userspace (PR #19),
+  AffinityLaplacian n≤32 placement (PR #20), and SpecForge virtio
+  path B (this cut) are **done** as research-prototype slices.
+  Custom QEMU virtio-accel (path A), RISC-V PLIC, and the other
+  stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

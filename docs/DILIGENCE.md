@@ -43,7 +43,7 @@ gaps:
 | Gap | Honest reading |
 | --- | --- |
 | Hardware SMMU | Soft SMMU is software only (chiplet SIDs + capture/bind); a real device can still DMA past it |
-| Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
+| Custom QEMU virtio-accel | Path B landed: in-kernel BAR is canonical + golden MMIO trace. Path A optional later. Stock QEMU demos SoftNPU |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. No PLIC / virtio-mmio |
 | aarch64 is thin | kmain + PL011 + TTBR + GICv2/CNTV + `aether_core` self-check. No EL0, no virtio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
