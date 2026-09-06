@@ -12,8 +12,9 @@ const IA32_LSTAR: u32 = 0xC000_0082;
 const IA32_FMASK: u32 = 0xC000_0084;
 const EFER_SCE: u64 = 1;
 
-/// IF | DF — syscalls run with interrupts disabled (preempt at user/kthread).
-const SFMASK: u64 = (1 << 9) | (1 << 10);
+/// IF | DF | AC — syscalls run with interrupts disabled and SMAP armed
+/// (RFLAGS.AC cleared; STAC only around copy_from/to_user).
+const SFMASK: u64 = (1 << 9) | (1 << 10) | (1 << 18);
 
 /// Per-CPU (UP) slots the syscall trampoline uses. Updated on every switch.
 #[no_mangle]

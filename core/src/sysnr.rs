@@ -83,14 +83,31 @@ pub const USER_IMAGE_BASE: u64 = 0x0200_0000;
 pub const USER_IMAGE_END: u64 = 0x0220_0000;
 pub const USER_STACK_TOP: u64 = USER_IMAGE_END;
 
-pub fn user_range_ok(ptr: u64, len: u64) -> bool {
-    if ptr < USER_IMAGE_BASE {
+/// Optional second static ELF (`/probe`), own 2 MiB window + own PML4.
+pub const USER_PROBE_BASE: u64 = 0x0240_0000;
+pub const USER_PROBE_END: u64 = 0x0260_0000;
+pub const USER_PROBE_STACK_TOP: u64 = USER_PROBE_END;
+
+pub fn user_range_ok_in(lo: u64, hi: u64, ptr: u64, len: u64) -> bool {
+    if ptr < lo {
         return false;
     }
     match ptr.checked_add(len) {
-        Some(end) => end <= USER_IMAGE_END,
+        Some(end) => end <= hi,
         None => false,
     }
+}
+
+pub fn user_range_ok(ptr: u64, len: u64) -> bool {
+    user_range_ok_in(USER_IMAGE_BASE, USER_IMAGE_END, ptr, len)
+}
+
+/// Software range check across known user windows. Hardware USER leaves
+/// are still task-local; a VA that passes this but is unmapped in the
+/// current PML4 will #PF.
+pub fn user_range_known(ptr: u64, len: u64) -> bool {
+    user_range_ok(ptr, len)
+        || user_range_ok_in(USER_PROBE_BASE, USER_PROBE_END, ptr, len)
 }
 
 #[cfg(test)]
@@ -117,6 +134,9 @@ mod tests {
         assert!(!user_range_ok(USER_IMAGE_BASE - 1, 1));
         assert!(!user_range_ok(USER_IMAGE_END - 8, 16));
         assert!(user_range_ok(USER_IMAGE_END - 8, 8));
+        assert!(user_range_known(USER_PROBE_BASE, 16));
+        assert!(!user_range_ok(USER_PROBE_BASE, 16));
+        assert!(!user_range_known(USER_IMAGE_END, 1));
     }
 
     #[test]

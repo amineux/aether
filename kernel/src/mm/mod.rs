@@ -14,6 +14,8 @@ pub fn init() {
     let (lo, hi) = crate::arch::frame_window();
     frame::init(lo, hi);
     heap::init();
+    #[cfg(target_arch = "x86_64")]
+    paging::capture_kernel_cr3();
     let Some(f) = frame::alloc() else {
         println!("[boot] frame allocator empty");
         return;

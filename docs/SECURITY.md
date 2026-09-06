@@ -57,7 +57,7 @@ These are marked so a security review does not assume them:
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
 | No revocation broadcast | A derived cap in another table survives revoke of the parent | seL4-style CNode / CDT |
-| Identity map | Kernel and “user” share one address space | Per-task PML4 |
+| Identity map / no higher-half | Kernel CR3 still names every PA; user isolation is USER-local 2 MiB windows | Higher-half + KPTI |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
 ## Multi-tenant weights / KV
@@ -72,13 +72,15 @@ The intended story:
   complete and software-mechanism present**; a real device can still
   ignore it.
 
-Ring-3 is live; the map API refuses a pin without a Memory cap, allocates
-a non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
-unmap. Treat isolation as “the cap tables + Soft SMMU do the right thing
-and user pages are the only USER-mapped window” — which is the part we
-can unit-test and boot-test today — not “the hardware cannot cheat.”
-The CPU trampoline is still an identity map: a forged kernel pointer is
-a physical address.
+Ring-3 is live; each user task has its own PML4 with USER only on its
+2 MiB ELF window (the other user window is unmapped). CR4.SMEP/SMAP
+are on. The map API refuses a pin without a Memory cap, allocates a
+non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
+unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
+USER leaves do the right thing” — which is the part we can unit-test
+and boot-test today — not “the hardware cannot cheat.” The kernel
+trampoline is still an identity map: a forged kernel pointer is a
+physical address.
 
 ## Covert channels
 

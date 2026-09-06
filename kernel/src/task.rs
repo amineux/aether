@@ -31,6 +31,7 @@ fn mark_switched() {
 
 pub const TID_KTHREAD: u32 = 1;
 pub const TID_USER: u32 = 2;
+pub const TID_PROBE: u32 = 3;
 const KSTACK_SIZE: usize = 16 * 1024;
 const MAX: usize = 4;
 
@@ -42,6 +43,7 @@ struct Thread {
     kstack: KStack,
     kstack_top: u64,
     user_buf: u64,
+    cr3: u64,
     used: bool,
 }
 
@@ -84,6 +86,7 @@ fn empty_thread() -> Thread {
         kstack: KStack([0; KSTACK_SIZE]),
         kstack_top: 0,
         user_buf: 0,
+        cr3: 0,
         used: false,
     }
 }
@@ -96,6 +99,7 @@ static mut TASKS: Tasks = Tasks {
             kstack: KStack([0; KSTACK_SIZE]),
             kstack_top: 0,
             user_buf: 0,
+            cr3: 0,
             used: false,
         },
         Thread {
@@ -103,6 +107,7 @@ static mut TASKS: Tasks = Tasks {
             kstack: KStack([0; KSTACK_SIZE]),
             kstack_top: 0,
             user_buf: 0,
+            cr3: 0,
             used: false,
         },
         Thread {
@@ -110,6 +115,7 @@ static mut TASKS: Tasks = Tasks {
             kstack: KStack([0; KSTACK_SIZE]),
             kstack_top: 0,
             user_buf: 0,
+            cr3: 0,
             used: false,
         },
         Thread {
@@ -117,6 +123,7 @@ static mut TASKS: Tasks = Tasks {
             kstack: KStack([0; KSTACK_SIZE]),
             kstack_top: 0,
             user_buf: 0,
+            cr3: 0,
             used: false,
         },
     ],
@@ -138,10 +145,11 @@ fn kstack_top(t: &Thread) -> u64 {
     p & !0xF
 }
 
-fn apply_hw(t: &Tasks, id: u32) {
+fn apply_hw(t: &Tasks, from: u32, id: u32) {
     let th = &t.threads[slot_index(id)];
     gdt::set_rsp0(th.kstack_top);
     sc::set_kstack(th.kstack_top);
+    crate::mm::paging::switch_cr3(th.cr3, from, id);
 }
 
 fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
@@ -207,6 +215,9 @@ fn install(id: u32, frame: InterruptFrame) {
     t.threads[i].kstack_top = kstack_top(&t.threads[i]);
     t.threads[i].used = true;
     t.threads[i].user_buf = 0;
+    if t.threads[i].cr3 == 0 {
+        t.threads[i].cr3 = crate::mm::paging::kernel_cr3();
+    }
     let _ = t.queue.spawn(id);
 }
 
@@ -219,12 +230,17 @@ pub fn spawn_kthread() {
     install(TID_KTHREAD, kernel_frame(rip, rsp));
 }
 
-pub fn spawn_user(entry: u64) {
-    let t = tasks();
-    let i = slot_index(TID_USER);
-    t.threads[i].kstack = KStack([0; KSTACK_SIZE]);
-    install(TID_USER, user_frame(entry, USER_STACK_TOP));
+pub fn spawn_user(entry: u64, cr3: u64) {
+    spawn_user_task(TID_USER, entry, USER_STACK_TOP, cr3);
     let _ = USER_IMAGE_BASE;
+}
+
+pub fn spawn_user_task(id: u32, entry: u64, stack: u64, cr3: u64) {
+    let t = tasks();
+    let i = slot_index(id);
+    t.threads[i].kstack = KStack([0; KSTACK_SIZE]);
+    t.threads[i].cr3 = cr3;
+    install(id, user_frame(entry, stack));
 }
 
 pub fn current_id() -> u32 {
@@ -246,7 +262,7 @@ pub fn on_timer(frame: &mut InterruptFrame) {
     if let Some(next) = t.queue.tick() {
         if next != cur {
             t.current = next;
-            apply_hw(t, next);
+            apply_hw(t, cur, next);
             *frame = t.threads[slot_index(next)].saved;
         }
     }
@@ -269,7 +285,7 @@ pub fn resched_from_trap(frame: &mut InterruptFrame, block: Option<WaitWhy>, use
     if let Some(next) = next {
         if next != cur {
             t.current = next;
-            apply_hw(t, next);
+            apply_hw(t, cur, next);
             *frame = t.threads[slot_index(next)].saved;
             mark_switched();
         }
@@ -336,8 +352,8 @@ pub fn enter_user() -> ! {
         t.current = TID_USER;
     }
     t.started = true;
-    apply_hw(t, t.current);
-    println!("[boot] dropping to ring-3 /init (PIT preemption armed)");
+    apply_hw(t, 0, t.current);
+    println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task CR3)");
     unsafe {
         iretq_to(core::ptr::addr_of!(t.threads[slot_index(t.current)].saved));
     }

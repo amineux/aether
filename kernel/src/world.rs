@@ -192,17 +192,17 @@ fn copy_ipc_out(dst: u64, badge: u64, flags: u16, payload: &[u8]) -> Result<(), 
     m.badge = badge;
     m.flags = flags;
     let _ = m.set_payload(payload);
-    unsafe {
+    crate::mm::paging::with_user_access(|| unsafe {
         core::ptr::write_volatile(dst as *mut UserIpcMsg, m);
-    }
+    });
     Ok(())
 }
 
 fn write_user_completion(dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
     crate::syscall::copy_to_user(dst, core::mem::size_of::<UserCompletion>() as u64)?;
-    unsafe {
+    crate::mm::paging::with_user_access(|| unsafe {
         core::ptr::write_volatile(dst as *mut UserCompletion, cpl);
-    }
+    });
     Ok(())
 }
 
@@ -339,7 +339,7 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
 }
 
 fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
-    aether_core::sysnr::user_range_ok(ptr, len) || w.npu.iommu.covers(PhysAddr(ptr), len)
+    aether_core::sysnr::user_range_known(ptr, len) || w.npu.iommu.covers(PhysAddr(ptr), len)
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
