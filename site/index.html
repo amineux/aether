@@ -470,6 +470,7 @@
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
                 <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
+                <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
                 <li>Higher-half kernel map — <code>ffffffff80000000+PA</code> on x86; identity 4 GiB kept for SoftNPU DMA (not KASLR / KPTI / PCID / COW)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>

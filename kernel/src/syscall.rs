@@ -1,4 +1,4 @@
-//! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`.
+//! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is `SYS_CLONE`.
 //!
 //! User enters here through `syscall`/`sysret` (x86) or `ecall`/`sret`
 //! (RISC-V). Cap checks sit on
@@ -6,7 +6,7 @@
 
 #![allow(dead_code)]
 
-use aether_core::sysnr::{user_range_known, UserAccelJob, UserIpcMsg};
+use aether_core::sysnr::{user_clone_pair_ok, user_range_known, UserAccelJob, UserIpcMsg};
 use aether_core::CPtr;
 
 use crate::arch::idt::InterruptFrame;
@@ -25,6 +25,7 @@ pub const SYS_ACCEL_SUBMIT: u64 = 6;
 pub const SYS_ACCEL_WAIT: u64 = 7;
 pub const SYS_ARENA_ALLOC: u64 = 8;
 pub const SYS_EXIT: u64 = 9;
+pub const SYS_CLONE: u64 = 10;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SysError {
@@ -148,6 +149,16 @@ fn dispatch_trap(
         SYS_ACCEL_SUBMIT => world::sys_accel_submit(a0, a1),
         SYS_ACCEL_WAIT => world::sys_accel_wait(a0, a1, frame),
         SYS_ARENA_ALLOC => world::sys_arena_alloc(a0, a1, a2),
+        SYS_CLONE => {
+            // flags must be 0 (documented subset: share aspace, no TLS).
+            if a2 != 0 {
+                return Err(SysError::Inval);
+            }
+            if !user_clone_pair_ok(a0, a1) {
+                return Err(SysError::Fault);
+            }
+            task::clone_user(a0, a1).ok_or(SysError::Again)
+        }
         SYS_EXIT => {
             crate::console::write_str("[sys] exit status=");
             crate::console::write_u64(a0);

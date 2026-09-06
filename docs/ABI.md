@@ -40,7 +40,7 @@ then submits `AccelJobDesc` records through an `Activity` endpoint.
 `Wave` in v0.1 is a software stand-in for one compiled dispatch, not a
 fusion pass.
 
-## Syscall numbers (frozen 0–8)
+## Syscall numbers (frozen 0–8; 9 = exit; 10 = clone)
 
 Ring-3 / U-mode uses the same numbers on every arch. x86_64 is the
 System V / Linux register convention: `rax` = number, `rdi,rsi,rdx` =
@@ -61,6 +61,15 @@ RISC-V U-mode uses the Linux RISC-V convention: `a7` = number,
 | 7 | `accel_wait(queue_cptr, cpl_out)` | `require(AccelQueue, WAIT)`; blocks |
 | 8 | `arena_alloc(size, flags, bank)` | Mints a Memory cap |
 | 9 | `exit(status)` | x86 `isa-debug-exit`; RISC-V sifive_test (additive; 0–8 unchanged) |
+| 10 | `clone(entry, stack, flags)` | User thread on the caller's PML4 / satp. `flags` must be 0. Returns child tid. Child starts at `entry` with arg0 = tid and `rsp`/`sp` = `stack`. Additive; 0–9 unchanged. |
+
+`SYS_CLONE` is a **documented subset**, not Linux `clone` and not
+`fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
+`entry` and `stack` must sit in the same known user window (16-byte
+aligned stack). `SYS_EXIT` is still guest-wide (isa-debug-exit /
+sifive_test), so the child must not call it. World still has one
+shared `CapTable`. `/probe` remains a second ELF with its own PML4
+— that is not this syscall.
 
 User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 `core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1

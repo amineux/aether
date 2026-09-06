@@ -1,7 +1,8 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` (numbers 0–9). Well-known
-//! CPtrs 0 (endpoint) and 1 (accel queue) are minted before the drop.
+//! Talks to the kernel only through `syscall` / `ecall` (numbers 0–10).
+//! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
+//! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
 #![no_std]
 #![no_main]
@@ -9,8 +10,8 @@
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
-    SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV, SYS_SEND,
-    SYS_YIELD,
+    SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV,
+    SYS_SEND, SYS_YIELD,
 };
 
 fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
@@ -64,6 +65,37 @@ fn exit(code: u64) -> ! {
     }
 }
 
+/// Second user thread: same PML4/satp as `/init`, own stack. Does not
+/// `SYS_EXIT` (that would take the guest down) and does not `SYS_RECV`
+/// (one waiter on the fabric ping is enough).
+#[inline(never)]
+extern "C" fn user_thread(_tid: u64) -> ! {
+    debug_print(b"[init] user-thread share-aspace\r\n");
+    loop {
+        yield_now();
+    }
+}
+
+#[repr(align(16))]
+#[allow(dead_code)]
+struct ChildStack([u8; 8192]);
+
+static mut CHILD_STACK: ChildStack = ChildStack([0; 8192]);
+
+fn spawn_user_thread() -> bool {
+    let stack = unsafe {
+        (core::ptr::addr_of_mut!(CHILD_STACK) as *mut u8)
+            .add(core::mem::size_of::<ChildStack>()) as u64
+    };
+    let tid = sys(SYS_CLONE, user_thread as usize as u64, stack, 0);
+    if tid < 0 {
+        debug_print(b"[init] clone FAIL\r\n");
+        return false;
+    }
+    debug_print(b"[init] clone ok (shared aspace)\r\n");
+    true
+}
+
 #[link_section = ".text.boot"]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -76,7 +108,16 @@ pub extern "C" fn _start() -> ! {
     #[cfg(target_arch = "riscv64")]
     debug_print(b"[init] ecall debug_print ok\r\n");
 
-    // Recv first: empty inbox → block until kthread-B sends ping-fabric.
+    if !spawn_user_thread() {
+        exit(1);
+    }
+    // Give the sibling a few slices before we block on recv so the
+    // serial proof is not a race with kthread-B's ping.
+    for _ in 0..4 {
+        yield_now();
+    }
+
+    // Recv: empty inbox → block until kthread-B sends ping-fabric.
     debug_print(b"[init] recv inbox (blocks until kthread-B send)\r\n");
     let mut msg = UserIpcMsg::empty();
     let rc = sys(

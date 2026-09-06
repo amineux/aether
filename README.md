@@ -67,6 +67,8 @@ host-identical fabric demo, then ring-3 `/init` over `syscall`:
 
 ```
 [init] ring-3 /init (static ELF64 non-PIE @ 0x2000000)
+[init] clone ok (shared aspace)
+[init] user-thread share-aspace
 [sched] kthread-B tick=…
 FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
   CUT BIND + HODGE FLOW CLASS ENFORCED

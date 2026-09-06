@@ -11,7 +11,7 @@ revision 2026-09-06. Filed on main via PR.
 - No fake NVIDIA partnership, no FLOP benchmarks, no tape-out / readiness
   claims.
 - [`docs/ABI.md`](ABI.md) syscall 0–8 stay frozen; additive only
-  (`exit=9` already additive).
+  (`exit=9`, `clone=10`).
 - Prefer extending `aether_hal::AccelDevice` + `AccelJobDesc` over
   inventing a second IR.
 
@@ -55,7 +55,9 @@ virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
 trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
 x86 higher-half kernel map is **done** as a documented subset
 (`ffffffff80000000+PA`; identity 4 GiB kept for DMA; not KASLR /
-KPTI / PCID / COW).
+KPTI / PCID / COW). User-level threads via `SYS_CLONE` (nr 10) are
+**done** as a documented subset (share caller PML4/satp; `flags=0`;
+not Linux clone / fork; `SYS_EXIT` still guest-wide).
 
 ### KEEP / ACTIVE Y1
 

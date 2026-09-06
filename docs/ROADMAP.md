@@ -15,7 +15,7 @@ product kernel.
 | CI: `cargo test --workspace` + `make qemu` (isa-debug-exit) | **done** |
 | ramfs / virtio-blk for `/init` | not started (blob is enough) |
 | Per-task PML4 / SMEP / SMAP | **done** (x86 subset: CR3 switch + USER-local 2 MiB windows) |
-| User-level threads (clone) | not started — kthread-B + `/init` mix |
+| User-level threads (clone) | **done** (additive `SYS_CLONE=10`; share caller's PML4/satp; not Linux clone) |
 
 ## Month 3–4
 
@@ -270,7 +270,7 @@ architecture, not a PLIC virtio port, not `/probe` on this HAL:
 
 - `sret` into a static non-PIE riscv64 `/init` at `0x8200_0000`
   (RAM lives at `0x8000_0000`; the x86 `0x0200_0000` hole is not RAM).
-  Syscall via `ecall` (`a7` = number; numbers 0–9 match [ABI.md](ABI.md)).
+  Syscall via `ecall` (`a7` = number; numbers 0–10 match [ABI.md](ABI.md)).
 - Per-task Sv39: clone the trampoline identity map, split the RAM 1 GiB
   leaf into 2 MiB pages, U-bit only on that task's window. Host twin in
   `core/src/aspace.rs` (`Sv39As`). `sstatus.SUM` wraps user copies.
@@ -346,6 +346,33 @@ not COW, not a POSIX MM:
 Still stubbed: KASLR (slide the image), KPTI (separate user CR3
 without kernel HH), PCID, COW, tearing down the identity window.
 
+## User-level threads / `SYS_CLONE` (this cut)
+
+Landed as a **documented subset**, not Linux `clone`, not `fork`,
+not POSIX pthreads, not per-thread cap tables:
+
+- Additive syscall **10** (`clone(entry, stack, flags)`). Numbers
+  0–9 are unchanged. `flags` must be 0. Documented in [ABI.md](ABI.md).
+- Child shares the caller's PML4 / satp (same 2 MiB USER window).
+  Own kernel stack, own `InterruptFrame`, own user stack. Context
+  switch skips CR3/satp when the root is unchanged.
+- Child does not return from clone: it starts at `entry` with
+  arg0 = tid. `/init` carves an 8 KiB BSS stack and prints
+  `[init] user-thread share-aspace`. Parent prints
+  `[init] clone ok (shared aspace)`.
+- Scheduler already had a ready pool (`CpuQueue`, `MAX_THREADS=8`).
+  The task table grew to 8 slots so `/init` + `/probe` + clone +
+  `kthread-B` all stay runnable. `SYS_EXIT` is still guest-wide.
+- Host tests: `user_clone_pair_ok`, shared-aspace walk, four-thread
+  RR. QEMU: those two `/init` lines plus `[sched] clone tid=`.
+  `make qemu-ci` / `qemu-riscv-ci` / `qemu-smp-ci` grep them.
+- AccelDevice / `UserAccelJob` / SoftNPU / HH identity DMA / SMEP
+  / SMAP / RISC-V U-mode / enter_user PIT snapshot unchanged.
+
+Still stubbed: `CLONE_*` flags, TLS, per-thread exit, a new aspace
+(`fork`), per-task cap tables. `/probe` is still a second ELF with
+its own PML4 — that is not `SYS_CLONE`.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -366,6 +393,7 @@ Search for `// STUB:` / `STUB` :
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
+| User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 `SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / used-ring
@@ -390,6 +418,9 @@ kernel thread queue sleeps.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 EL0.** Thin HAL landed (`make qemu-aarch64`). Repeat the
    x86 userspace + virtqueue cut only after the x86 ABI stays stable.
+7. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
+   with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
+   that does not kill the guest are still open.
 
 ## Two-year plan
 
@@ -401,8 +432,9 @@ kernel thread queue sleeps.
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
-  virtio path-B ADR + golden MMIO trace, and the x86 higher-half
-  kernel map (this cut) are landed. ABI stays stable. Custom QEMU
+  virtio path-B ADR + golden MMIO trace, the x86 higher-half
+  kernel map, and user-level threads via `SYS_CLONE` (this cut)
+  are landed. ABI stays stable (0–9 unchanged; 10 additive). Custom QEMU
   virtio-accel (path A), RISC-V PLIC, KPTI / KASLR remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
@@ -417,7 +449,8 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
   software IEEE (PR #18), RISC-V S-mode userspace (PR #19),
   AffinityLaplacian n≤32 placement (PR #20), SpecForge virtio
-  path B (PR #21), and the x86 higher-half kernel map (this cut)
+  path B (PR #21), the x86 higher-half kernel map (PR #22), and
+  user-level threads / `SYS_CLONE` (this cut)
   are **done** as research-prototype slices.
   Custom QEMU virtio-accel (path A), RISC-V PLIC, KPTI / KASLR,
   and the other stubs above are still open.

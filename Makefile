@@ -138,8 +138,10 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + mmap + HH + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + clone + mmap + HH + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -174,6 +176,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -221,8 +225,10 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] U-mode /init" $(BUILD)/riscv-serial.log \
 	   && grep -q "ecall debug_print ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
 	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
-		echo "qemu-riscv-ci: U-mode /init + demo ok (qemu exit $$ec)"; \
+		echo "qemu-riscv-ci: U-mode /init + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-riscv-ci: userspace/demo banner missing (qemu exit $$ec)"; \
