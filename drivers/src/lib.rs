@@ -17,5 +17,5 @@ pub use mmio::{
     REG_MAGIC, REG_QSIZE, REG_STATUS, REG_USED_IDX, REG_VERSION,
 };
 pub use partner::{PartnerCmd, PartnerNpuStub};
-pub use softnpu::SoftNpuDevice;
+pub use softnpu::{IdentityDma, KernelDma, SoftNpuDevice};
 pub use virtio_accel::{VirtioAccelQueue, VIRTIO_ACCEL_MAGIC, VIRTIO_ACCEL_VERSION};

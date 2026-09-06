@@ -6,7 +6,7 @@
 //! is the device-side executor: [`SoftNpuDevice::service`] drains the
 //! avail ring on poll/IRQ. No custom QEMU device is required.
 
-use aether_core::accel::{AccelJobDesc, Completion, DmaView, SoftNpu};
+use aether_core::accel::{AccelError, AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
 use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, DEFAULT_STREAM};
@@ -16,42 +16,61 @@ use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_VIRTIO_SOFTNPU}
 
 use crate::mmio::AccelMmio;
 
-/// Kernel CPU view of guest RAM (intentional trampoline identity map).
-/// Soft SMMU resolves device IOVAs back to these PAs before [`DmaView`]
-/// loads. Higher-half kernel VAs are not used here — DMA stays PA.
+/// Kernel CPU view of guest RAM after Soft SMMU resolve.
+///
+/// On x86 this is the higher-half alias (`KERNEL_VMA + PA`), not the
+/// trampoline identity map. RISC-V / aarch64 still use PA=VA (their
+/// kernel map *is* identity). SoftNPU must resolve IOVAs first —
+/// this view never treats a Soft-SMMU IOVA as a load address.
+pub struct KernelDma;
+
+/// PA=VA DMA. Host tests and RISC-V / aarch64 kernel maps.
+/// x86 SoftNPU uses [`KernelDma`] (HH) so identity 4 GiB can come down.
 pub struct IdentityDma;
 
-impl DmaView for IdentityDma {
-    fn load_i32(&self, addr: PhysAddr) -> Result<i32, aether_core::accel::AccelError> {
-        let p = addr.0 as *const i32;
-        // SAFETY: caller mapped + owns the arena (cap + transfer).
-        Ok(unsafe { core::ptr::read_volatile(p) })
+fn dma_kva(pa: u64) -> Result<u64, AccelError> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        aether_core::phys_to_kva(pa).ok_or(AccelError::Overflow)
     }
-    fn store_i32(
-        &mut self,
-        addr: PhysAddr,
-        val: i32,
-    ) -> Result<(), aether_core::accel::AccelError> {
-        let p = addr.0 as *mut i32;
-        unsafe { core::ptr::write_volatile(p, val) };
-        Ok(())
-    }
-
-    fn load_u16(&self, addr: PhysAddr) -> Result<u16, aether_core::accel::AccelError> {
-        let p = addr.0 as *const u16;
-        // SAFETY: caller mapped + owns the arena (cap + transfer).
-        Ok(unsafe { core::ptr::read_volatile(p) })
-    }
-    fn store_u16(
-        &mut self,
-        addr: PhysAddr,
-        val: u16,
-    ) -> Result<(), aether_core::accel::AccelError> {
-        let p = addr.0 as *mut u16;
-        unsafe { core::ptr::write_volatile(p, val) };
-        Ok(())
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Ok(pa)
     }
 }
+
+macro_rules! impl_pa_dma {
+    ($ty:ty, $va:ident) => {
+        impl DmaView for $ty {
+            fn load_i32(&self, addr: PhysAddr) -> Result<i32, AccelError> {
+                let p = $va(addr.0)? as *const i32;
+                // SAFETY: caller mapped + owns the arena (cap + Soft SMMU).
+                Ok(unsafe { core::ptr::read_volatile(p) })
+            }
+            fn store_i32(&mut self, addr: PhysAddr, val: i32) -> Result<(), AccelError> {
+                let p = $va(addr.0)? as *mut i32;
+                unsafe { core::ptr::write_volatile(p, val) };
+                Ok(())
+            }
+            fn load_u16(&self, addr: PhysAddr) -> Result<u16, AccelError> {
+                let p = $va(addr.0)? as *const u16;
+                Ok(unsafe { core::ptr::read_volatile(p) })
+            }
+            fn store_u16(&mut self, addr: PhysAddr, val: u16) -> Result<(), AccelError> {
+                let p = $va(addr.0)? as *mut u16;
+                unsafe { core::ptr::write_volatile(p, val) };
+                Ok(())
+            }
+        }
+    };
+}
+
+fn identity_va(pa: u64) -> Result<u64, AccelError> {
+    Ok(pa)
+}
+
+impl_pa_dma!(KernelDma, dma_kva);
+impl_pa_dma!(IdentityDma, identity_va);
 
 /// DMA through a caller-provided buffer (demo / tests).
 pub struct FnDma<L, S>
@@ -137,18 +156,15 @@ impl<M: DmaView> SoftNpuDevice<M> {
         Ok(region.iova)
     }
 
+    /// IOVA → guest PA only. No guest-PA identity shortcut when Soft SMMU
+    /// is populated — tensors must arrive as Soft-SMMU IOVAs.
     fn dma_guest_pa(&self, addr: PhysAddr) -> Option<PhysAddr> {
         if self.iommu.is_empty() {
             return Some(addr);
         }
-        if let Some(pa) = self.iommu.resolve_stream(DEFAULT_STREAM, addr) {
-            return Some(pa);
-        }
-        // Submit path may still hold a guest PA (host tests / no rewrite).
-        if self.iommu.translate_stream(DEFAULT_STREAM, addr).is_some() {
-            return Some(addr);
-        }
-        None
+        self.iommu
+            .resolve_stream(DEFAULT_STREAM, addr)
+            .or_else(|| self.iommu.resolve(addr))
     }
 
     fn job_to_iova(&self, job: &AccelJobDesc) -> AccelJobDesc {
@@ -262,7 +278,6 @@ impl<M: DmaView> SoftNpuDevice<M> {
     fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {
         self.iommu.covers_iova(DEFAULT_STREAM, addr, len)
             || self.iommu.covers_iova_any(addr, len)
-            || self.iommu.covers_stream(DEFAULT_STREAM, addr, len)
     }
 }
 
@@ -385,6 +400,32 @@ mod tests {
         assert!(!dev.irq_pending());
         let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn service_refuses_guest_pa_when_smmu_bound() {
+        let mut backing = [0u8; 256];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        assert!(dev.probe().is_ok());
+        let _ = dev
+            .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        dev.submit(&job).unwrap();
+        // Guest PA in the avail ring is not a Soft-SMMU IOVA.
+        dev.mmio.poke_avail_a(0, 0);
+        let serviced = dev.service().unwrap();
+        assert_eq!(serviced.status, -2);
     }
 
     #[test]

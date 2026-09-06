@@ -1,11 +1,13 @@
 //! x86_64 KPTI subset: user CR3 has no kernel HH and no identity DMA.
 //!
-//! Kernel CR3 keeps the trampoline identity 4 GiB + higher-half so
-//! SoftNPU `IdentityDma`, AP SIPI, Multiboot, and page-table PA walks
-//! stay valid. User CR3 maps the task ELF window (USER) plus four
-//! supervisor 4 KiB pages at [`KPTI_TRAMP_VA`] (syscall/IRQ trampoline,
-//! shadow IDT, entry stack). CR3 switches to the kernel map on enter
-//! and back on exit. SoftNPU kthread-B stays on kernel CR3.
+//! Kernel CR3 keeps identity *islands* (low 2 MiB SIPI / mailbox /
+//! trampoline, virtio-blk, APIC) plus higher-half. SoftNPU uses
+//! `KernelDma` + Soft SMMU (IOVA → PA → HH), not a 4 GiB identity
+//! window. Page-table walks use `phys_va`. User CR3 maps the task
+//! ELF window (USER) plus four supervisor 4 KiB pages at
+//! [`KPTI_TRAMP_VA`] (syscall/IRQ trampoline, shadow IDT, entry
+//! stack). CR3 switches to the kernel map on enter and back on
+//! exit. SoftNPU kthread-B stays on kernel CR3.
 //!
 //! Not Meltdown-complete (trampoline pages remain mapped). The unused
 //! KASLR canonical alias is unmapped on the kernel map after PIE

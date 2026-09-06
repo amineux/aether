@@ -302,6 +302,14 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             };
             return Some(self.complete(cmd.fence_id, cpl));
         }
+        let Some(job) = self.job_from_cmd(&cmd, job) else {
+            let cpl = Completion {
+                job_seq: self.npu.seq,
+                status: -2,
+                cycles: 0,
+            };
+            return Some(self.complete(cmd.fence_id, cpl));
+        };
         match self.npu.execute(&job, &mut self.mem) {
             Ok(cpl) => Some(self.complete(cmd.fence_id, cpl)),
             Err(_) => {
@@ -313,6 +321,29 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 Some(self.complete(cmd.fence_id, cpl))
             }
         }
+    }
+
+    /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
+    fn job_from_cmd(&self, cmd: &CpCmd, job: AccelJobDesc) -> Option<AccelJobDesc> {
+        if self.iommu.is_empty() || job.op == AccelOp::Nop {
+            return Some(job);
+        }
+        let mut pa = job;
+        pa.a = self
+            .iommu
+            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_a))?;
+        pa.b = self
+            .iommu
+            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_b))?;
+        pa.c = self
+            .iommu
+            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_c))?;
+        if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
+            pa.bias = self
+                .iommu
+                .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_bias))?;
+        }
+        Some(pa)
     }
 
     fn smmu_walk(&self, cmd: &CpCmd) -> Result<(), HalError> {

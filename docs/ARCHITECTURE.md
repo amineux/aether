@@ -102,7 +102,8 @@ Physical sketch (128 MiB guest):
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
 | `0x0280_0000–0x0280_1000` | Shared COW template (USER 4 KiB, RO until write; same PA in `/init` + `/probe`) |
-| `0x02A0_0000–0x02C0_0000` | virtio-blk window (vring + AETHFS01 image; kernel identity only; reserved) |
+| `0x02A0_0000–0x02C0_0000` | virtio-blk window (vring + AETHFS01 image; kernel identity island; reserved) |
+| `0x02C0_0000–0x02C1_0000` | Growable `SYS_MMAP` window (anon 4 KiB USER on the task CR3; not identity) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
 The boot path parses the Multiboot1 mmap (Multiboot2 parser is
@@ -121,8 +122,9 @@ advertise `+pcid` (`make qemu-pcid-ci` requests it and accepts
 the TCG warning + fallback; KVM may print `[mm] pcid ok`).
 `make qemu-nopcid-ci` forces `-pcid`. A documented COW subset maps
 one shared 4 KiB USER page at `0x0280_0000` into `/init` and
-`/probe`; a write fault copies the frame. The identity 4 GiB stays
-on the **kernel** CR3 for DMA / SIPI.
+`/probe`; a write fault copies the frame. Kernel CR3 identity is
+torn down except SIPI / mailbox / trampoline / virtio-blk / APIC
+islands. SoftNPU DMA goes Soft SMMU IOVA → guest PA → HH.
 
 ## Crate graph
 
@@ -338,8 +340,10 @@ Each ring-3 task has its **own KPTI PML4**: USER is set only on that
 task's 2 MiB window, the other user window is unmapped, `PML4[511]`
 is empty (no kernel HH), and the identity 4 GiB is not present.
 Four supervisor 4 KiB pages at `0x73000` are the syscall/IRQ
-trampoline. The kernel CR3 (boot tables at `0x1000`) keeps identity
-+ HH so SoftNPU `IdentityDma` and AP SIPI keep working. Context
+trampoline. The kernel CR3 (boot tables at `0x1000`) keeps HH plus
+identity *islands* (low 2 MiB SIPI / mailbox / trampoline, virtio-blk,
+APIC). SoftNPU uses `KernelDma` + Soft SMMU, not a 4 GiB identity
+window. Context
 switch stays on kernel CR3 while in the kernel; the trampoline
 loads the user CR3 just before `iretq`. CR4.SMEP and CR4.SMAP are
 enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and

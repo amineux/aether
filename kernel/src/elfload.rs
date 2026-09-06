@@ -93,10 +93,10 @@ fn load_into(elf: &[u8], base: u64, end: u64, name: &str) -> Result<u64, &'stati
     }
     frame::reserve_range(base, end);
     unsafe {
-        core::ptr::write_bytes(base as *mut u8, 0, (end - base) as usize);
+        core::ptr::write_bytes(paging::phys_va(base) as *mut u8, 0, (end - base) as usize);
     }
     for seg in image.loads() {
-        let dst = seg.vaddr as *mut u8;
+        let dst = paging::phys_va(seg.vaddr) as *mut u8;
         let src_off = seg.offset as usize;
         let n = seg.filesz as usize;
         if n > 0 {

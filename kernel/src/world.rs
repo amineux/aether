@@ -24,7 +24,7 @@ use aether_core::{
     INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_AA_IMAGE_BASE as USER_IMAGE_BASE,
     USER_AA_IMAGE_END as USER_IMAGE_END,
 };
-use aether_drivers::softnpu::IdentityDma;
+use aether_drivers::softnpu::KernelDma;
 use aether_drivers::SoftNpuDevice;
 use aether_hal::AccelDevice;
 
@@ -39,7 +39,7 @@ struct Inner {
     caps: CapTable,
     fabric: Fabric,
     arenas: ArenaAllocator,
-    npu: SoftNpuDevice<IdentityDma>,
+    npu: SoftNpuDevice<KernelDma>,
     ep: EndpointId,
     pending: bool,
     completion: Option<UserCompletion>,
@@ -83,7 +83,7 @@ pub fn init() {
     ])
     .expect("arenas");
 
-    let mut npu = SoftNpuDevice::new(IdentityDma);
+    let mut npu = SoftNpuDevice::new(KernelDma);
     let _ = npu.probe();
     // Soft-SMMU pin the /init image so stack tensors remain legal DMA targets.
     let user_mem = caps
@@ -161,7 +161,7 @@ pub fn kernel_send_ping() -> bool {
         if let Some(tid) = task::blocked_recv_thread(ep.0) {
             let buf = task::take_user_buf(tid);
             if buf != 0 {
-                let _ = copy_ipc_out(buf, 0xA3, 2, b"ping-fabric");
+                let _ = copy_ipc_out_in(task::thread_cr3(tid), buf, 0xA3, 2, b"ping-fabric");
                 task::set_saved_rax(tid, 0);
             }
             task::wake_recv(ep.0);
@@ -181,9 +181,9 @@ pub fn run_pending_accel() {
         if !w.pending && !w.npu.doorbell_pending() && !w.npu.irq_pending() {
             return;
         }
-        // x86: KPTI entry already switched to kernel CR3; IdentityDma
-        // is PA=VA on that map. RISC-V IRQ may fire on a user satp —
-        // IdentityDma is PA=VA through the trampoline map; U-bit / SMAP
+        // x86: KPTI entry already switched to kernel CR3; KernelDma
+        // loads guest PAs via HH (`phys_to_kva`). RISC-V IRQ may fire
+        // on a user satp — KernelDma is PA=VA there; U-bit / SMAP
         // leaves need SUM / STAC.
         crate::mm::paging::with_user_access(|| {
             let _ = w.npu.service();
@@ -223,7 +223,8 @@ pub fn run_pending_accel() {
     if let Some(tid) = task::blocked_accel_thread(1) {
         let buf = task::take_user_buf(tid);
         if buf != 0 {
-            let _ = write_user_completion(
+            let _ = write_user_completion_in(
+                task::thread_cr3(tid),
                 buf,
                 UserCompletion {
                     job_seq: cpl.job_seq,
@@ -238,21 +239,47 @@ pub fn run_pending_accel() {
 }
 
 fn copy_ipc_out(dst: u64, badge: u64, flags: u16, payload: &[u8]) -> Result<(), SysError> {
+    copy_ipc_out_in(0, dst, badge, flags, payload)
+}
+
+fn copy_ipc_out_in(
+    root: u64,
+    dst: u64,
+    badge: u64,
+    flags: u16,
+    payload: &[u8],
+) -> Result<(), SysError> {
     crate::syscall::copy_to_user(dst, core::mem::size_of::<UserIpcMsg>() as u64)?;
     let mut m = UserIpcMsg::empty();
     m.badge = badge;
     m.flags = flags;
     let _ = m.set_payload(payload);
-    crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::write_volatile(dst as *mut UserIpcMsg, m);
+    let kva = if root != 0 {
+        paging::user_kva_in(root, dst)
+    } else {
+        paging::user_kva(dst)
+    }
+    .ok_or(SysError::Fault)?;
+    paging::with_user_access(|| unsafe {
+        core::ptr::write_volatile(kva as *mut UserIpcMsg, m);
     });
     Ok(())
 }
 
 fn write_user_completion(dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
+    write_user_completion_in(0, dst, cpl)
+}
+
+fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
     crate::syscall::copy_to_user(dst, core::mem::size_of::<UserCompletion>() as u64)?;
-    crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::write_volatile(dst as *mut UserCompletion, cpl);
+    let kva = if root != 0 {
+        paging::user_kva_in(root, dst)
+    } else {
+        paging::user_kva(dst)
+    }
+    .ok_or(SysError::Fault)?;
+    paging::with_user_access(|| unsafe {
+        core::ptr::write_volatile(kva as *mut UserCompletion, cpl);
     });
     Ok(())
 }
@@ -282,7 +309,7 @@ pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     if let Some(tid) = task::blocked_recv_thread(dest.0) {
         let buf = task::take_user_buf(tid);
         if buf != 0 {
-            let _ = copy_ipc_out(buf, m.badge, m.flags, m.payload());
+            let _ = copy_ipc_out_in(task::thread_cr3(tid), buf, m.badge, m.flags, m.payload());
             task::set_saved_rax(tid, 0);
         }
         task::wake_recv(dest.0);

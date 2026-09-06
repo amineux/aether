@@ -7,16 +7,19 @@
 //! and `_start` runs at that RIP. The kernel is a static-PIE
 //! (`relocation-model=pic`); the trampoline applies `.rela.dyn` and
 //! unmaps the unused canonical alias when the slide is non-zero.
-//! The identity 4 GiB stays mapped on purpose: SoftNPU DMA, page-table
-//! walks (tables are still addressed by PA), AP SIPI, Multiboot
-//! mailbox, and user ELF windows. That table stays the **kernel CR3**
-//! (supervisor-only). Each ring-3 task gets a cloned PML4: same
-//! identity + HH kernel mappings. Each ring-3 task gets a **KPTI**
-//! PML4: USER only on that task's 2 MiB ELF window, no `PML4[511]`
-//! (no kernel HH), no identity 4 GiB, plus four supervisor 4 KiB
-//! trampoline pages for syscall/IRQ entry. CR3 switches to the kernel
-//! map on enter and back on exit. SoftNPU kthread-B stays on kernel
-//! CR3 so `IdentityDma` still sees the intentional 4 GiB window.
+//! After `prove_higher_half`, `teardown_identity` drops the bulk of
+//! the identity 4 GiB. Remaining islands: low 2 MiB (boot PTs,
+//! Multiboot, AP SIPI, KPTI trampoline), virtio-blk DMA window,
+//! APIC MMIO. SoftNPU / Soft-CP DMA goes through Soft SMMU IOVAs;
+//! CPU tensor access uses `phys_to_kva` (HH), not identity. Dynamic
+//! page tables are walked via HH (`phys_va`). That table stays the
+//! **kernel CR3** (supervisor-only). Each ring-3 task gets a cloned
+//! PML4: same identity islands + HH kernel mappings. Each ring-3
+//! task gets a **KPTI** PML4: USER only on that task's 2 MiB ELF
+//! window, no `PML4[511]` (no kernel HH), no identity, plus four
+//! supervisor 4 KiB trampoline pages for syscall/IRQ entry. CR3
+//! switches to the kernel map on enter and back on exit. SoftNPU
+//! kthread-B stays on kernel CR3 and uses `KernelDma` + Soft SMMU.
 //!
 //! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy)
 //! plus PIE reloc + unused-alias unmap, documented KPTI subset, plus
@@ -39,11 +42,14 @@ use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
 use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{
-    cr3_tagged, kaslr_slide_valid, kernel_text_va_slid, CR4_PCIDE, INVPCID_SINGLE,
-    KASLR_KERNEL_SPAN, KASLR_MAILBOX_RELOCS, KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA,
-    KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE,
-    USER_IMAGE_BASE, USER_PROBE_BASE, COW_TEMPLATE_WORD,
+    cr3_tagged, identity_keep_2m, kaslr_slide_valid, kernel_text_va_slid, phys_to_kva,
+    APIC_MMIO_BASE, CR4_PCIDE, INVPCID_SINGLE, KASLR_KERNEL_SPAN, KASLR_MAILBOX_RELOCS,
+    KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA,
+    PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE, USER_IMAGE_BASE, USER_MMAP_BASE,
+    USER_PROBE_BASE, COW_TEMPLATE_WORD,
 };
+#[cfg(target_arch = "x86_64")]
+use aether_core::sysnr::BLK_WINDOW_BASE;
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::console::{self, write_hex, write_str, write_u64};
@@ -258,23 +264,68 @@ pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
     }
 }
 
+/// CPU VA for a physical address after identity teardown.
+///
+/// x86: higher-half `KERNEL_VMA + PA` (or identity keep islands).
+/// RISC-V / aarch64: identity (that *is* the kernel map).
+#[inline]
+pub fn phys_va(pa: u64) -> u64 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        phys_to_kva(pa).unwrap_or(pa)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        pa
+    }
+}
+
+/// User VA → kernel load address via that aspace's walk, then [`phys_va`].
+/// RISC-V / aarch64 keep identity, so `va` is already the load address.
+pub fn user_kva_in(root: u64, va: u64) -> Option<u64> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        if root & !0xFFF == 0 {
+            return None;
+        }
+        unsafe { walk_in(root, va).map(|w| phys_va(w.phys.0)) }
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        let _ = root;
+        Some(va)
+    }
+}
+
+/// [`user_kva_in`] for the current CPU's user CR3 (KPTI slot).
+pub fn user_kva(va: u64) -> Option<u64> {
+    #[cfg(target_arch = "x86_64")]
+    {
+        user_kva_in(crate::arch::x86_64::kpti::user_cr3(), va)
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        Some(va)
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 fn read64(pa: u64) -> u64 {
-    unsafe { core::ptr::read_volatile(pa as *const u64) }
+    unsafe { core::ptr::read_volatile(phys_va(pa) as *const u64) }
 }
 
 #[cfg(target_arch = "x86_64")]
 fn write64(pa: u64, v: u64) {
     unsafe {
-        core::ptr::write_volatile(pa as *mut u64, v);
+        core::ptr::write_volatile(phys_va(pa) as *mut u64, v);
     }
 }
 
-/// Walk `va` in `root` (identity-mapped tables). USER requires US at
+/// Walk `va` in `root` (tables via [`phys_va`] / HH). USER requires US at
 /// every level of the walk.
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
-    let pml4 = (root & !0xFFF) as *const u64;
+    let pml4 = phys_va(root & !0xFFF) as *const u64;
     let i4 = ((va >> 39) & 0x1FF) as usize;
     let i3 = ((va >> 30) & 0x1FF) as usize;
     let i2 = ((va >> 21) & 0x1FF) as usize;
@@ -282,7 +333,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
     if pml4e & P == 0 {
         return None;
     }
-    let pdpt = (pml4e & 0x000F_FFFF_FFFF_F000) as *const u64;
+    let pdpt = phys_va(pml4e & 0x000F_FFFF_FFFF_F000) as *const u64;
     let pdpte = core::ptr::read_volatile(pdpt.add(i3));
     if pdpte & P == 0 {
         return None;
@@ -299,7 +350,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             writable: pml4e & RW != 0 && pdpte & RW != 0,
         });
     }
-    let pd = (pdpte & 0x000F_FFFF_FFFF_F000) as *const u64;
+    let pd = phys_va(pdpte & 0x000F_FFFF_FFFF_F000) as *const u64;
     let pde = core::ptr::read_volatile(pd.add(i2));
     if pde & P == 0 {
         return None;
@@ -317,7 +368,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
         });
     }
     let i1 = ((va >> 12) & 0x1FF) as usize;
-    let pt = (pde & 0x000F_FFFF_FFFF_F000) as *const u64;
+    let pt = phys_va(pde & 0x000F_FFFF_FFFF_F000) as *const u64;
     let pte = core::ptr::read_volatile(pt.add(i1));
     if pte & P == 0 {
         return None;
@@ -334,7 +385,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
     })
 }
 
-/// Walk `va` in the current address space (identity-mapped tables).
+/// Walk `va` in the current address space (tables via [`phys_va`]).
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn walk(va: u64) -> Option<Walk> {
     walk_in(cr3(), va)
@@ -404,10 +455,10 @@ pub fn invalidate_aspace(cr3_pa: u64) {
 #[cfg(target_arch = "x86_64")]
 pub fn allow_user_walk_low() {
     unsafe {
-        let pml4 = (cr3() & !0xFFF) as *mut u64;
+        let pml4 = phys_va(cr3() & !0xFFF) as *mut u64;
         let pml4e = core::ptr::read_volatile(pml4);
         core::ptr::write_volatile(pml4, pml4e | US);
-        let pdpt = (pml4e & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let pdpt = phys_va(pml4e & 0x000F_FFFF_FFFF_F000) as *mut u64;
         let pdpte = core::ptr::read_volatile(pdpt);
         core::ptr::write_volatile(pdpt, pdpte | US);
     }
@@ -444,7 +495,7 @@ pub fn allow_user_2m(va: u64) {
 fn alloc_zeroed_page() -> Option<u64> {
     let p = frame::alloc()?;
     unsafe {
-        core::ptr::write_bytes(p.0 as *mut u8, 0, 4096);
+        core::ptr::write_bytes(phys_va(p.0) as *mut u8, 0, 4096);
     }
     Some(p.0)
 }
@@ -491,7 +542,7 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
 }
 
 /// PTE address of the 4 KiB leaf at `va`, or `None` if the walk is a
-/// huge page / missing. Tables are identity-mapped on kernel CR3.
+/// huge page / missing. Tables are reached via [`phys_va`] (HH).
 #[cfg(target_arch = "x86_64")]
 fn cow_pte_pa(root: u64, va: u64) -> Option<u64> {
     let root = root & !0xFFF;
@@ -609,7 +660,7 @@ pub fn install_shared_cow(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         return false;
     };
     unsafe {
-        core::ptr::write_volatile(pa as *mut u64, COW_TEMPLATE_WORD);
+        core::ptr::write_volatile(phys_va(pa) as *mut u64, COW_TEMPLATE_WORD);
     }
     if !map_cow_4k(init_cr3, USER_COW_BASE, pa) {
         println!("[mm] cow FAIL (map /init)");
@@ -665,7 +716,7 @@ fn handle_cow_fault(root: u64, va: u64) -> bool {
         return false;
     };
     unsafe {
-        core::ptr::copy_nonoverlapping(old as *const u8, new as *mut u8, 4096);
+        core::ptr::copy_nonoverlapping(phys_va(old) as *const u8, phys_va(new) as *mut u8, 4096);
     }
     write64(slot, (new & !0xFFF) | P | RW | US);
     invalidate_aspace(root);
@@ -698,7 +749,7 @@ fn prove_cow(broken_root: u64, old: u64, new: u64) -> bool {
             .map(|w| w.user && !w.writable && w.phys.0 == template && w.phys.0 == old)
             .unwrap_or(false)
     };
-    let word_ok = unsafe { core::ptr::read_volatile(new as *const u64) } == COW_TEMPLATE_WORD;
+    let word_ok = unsafe { core::ptr::read_volatile(phys_va(new) as *const u64) } == COW_TEMPLATE_WORD;
     let k = kernel_cr3();
     let k_ok = !user_mapped(k, USER_COW_BASE);
     if init_ok && probe_ok && word_ok && k_ok {
@@ -909,7 +960,7 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     let k = kernel_cr3();
     write_str("[mm] kernel CR3=");
     write_hex(k);
-    write_str(" (supervisor identity+HH, no USER leaves)");
+    write_str(" (supervisor identity islands+HH, no USER leaves)");
     console::nl();
 
     write_str("[mm] /init  CR3=");
@@ -930,8 +981,13 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         .as_ref()
         .map(|w| w.phys.0 == KPTI_TRAMP_VA && !w.user)
         .unwrap_or(false);
-    let k_keeps_dma = unsafe { walk_in(k, KERNEL_LMA) }
-        .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
+    let k_keeps_sipi = unsafe { walk_in(k, 0x8000) }
+        .map(|w| w.phys.0 == 0x8000 && !w.user)
+        .unwrap_or(false);
+    let k_no_lma_id = unsafe { walk_in(k, KERNEL_LMA) }.is_none();
+    let k_no_arena_id = unsafe { walk_in(k, 0x0100_0000) }.is_none();
+    let k_arena_hh = unsafe { walk_in(k, KERNEL_VMA + 0x0100_0000) }
+        .map(|w| w.phys.0 == 0x0100_0000 && !w.user)
         .unwrap_or(false);
     let k_keeps_hh = unsafe { walk_in(k, slid) }
         .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
@@ -954,7 +1010,10 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         && !lma_in_user
         && !dma_in_user
         && tramp_ok
-        && k_keeps_dma
+        && k_keeps_sipi
+        && k_no_lma_id
+        && k_no_arena_id
+        && k_arena_hh
         && k_keeps_hh;
 
     let probe_ok = if let Some(p) = probe_cr3 {
@@ -992,7 +1051,7 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
 }
 
 /// Serial proof: RIP is at the slid HH text; unused link VA is gone
-/// when slide != 0; identity still names the LMA.
+/// when slide != 0; identity still names the LMA (pre-teardown).
 #[cfg(target_arch = "x86_64")]
 pub fn prove_higher_half() -> bool {
     let rip: u64;
@@ -1031,7 +1090,7 @@ pub fn prove_higher_half() -> bool {
     write_hex(slide);
     write_str(" idx=");
     write_u64(slide / aether_core::KASLR_SLIDE_STRIDE);
-    write_str(" (PIE + dual-map HH; identity 4 GiB kept)");
+    write_str(" (PIE + dual-map HH; identity still up pre-teardown)");
     console::nl();
     if slide == 0 {
         println!("[mm] kaslr unused alias kept (slide=0; link VA is the map)");
@@ -1051,13 +1110,85 @@ pub fn prove_higher_half() -> bool {
     console::nl();
     if hh_ok && canon_ok && id_ok && rip_ok && reloc_ok {
         println!(
-            "[mm] higher-half ok (ffffffff80000000+PA + slide; unused alias unmapped; identity 4 GiB kept for DMA)"
+            "[mm] higher-half ok (ffffffff80000000+PA + slide; unused alias unmapped; identity still up pre-teardown)"
         );
         true
     } else {
         println!("[mm] higher-half FAIL");
         false
     }
+}
+
+/// Drop identity 2 MiB leaves except SIPI / mailbox / trampoline,
+/// virtio-blk, and APIC. HH PDs stay; SoftNPU / PT walks use [`phys_va`].
+#[cfg(target_arch = "x86_64")]
+pub fn teardown_identity() {
+    const PDS: [u64; 4] = [0x3000, 0x4000, 0x5000, 0x6000];
+    for i in 0..4u64 {
+        let pd = PDS[i as usize];
+        for j in 0..512u64 {
+            let phys = i * 0x4000_0000 + j * 0x20_0000;
+            if identity_keep_2m(phys) {
+                continue;
+            }
+            write64(pd + j * 8, 0);
+            invlpg(phys);
+        }
+    }
+    let k = kernel_cr3();
+    if k != 0 {
+        load_cr3(tagged_cr3(k));
+    }
+}
+
+/// Serial proof: identity islands remain; SoftNPU arena / user ELF /
+/// kernel LMA are HH-only.
+#[cfg(target_arch = "x86_64")]
+pub fn prove_identity_teardown() -> bool {
+    let sipi = unsafe { walk(0x8000) }
+        .map(|w| w.phys.0 == 0x8000 && !w.user)
+        .unwrap_or(false);
+    let mailbox = unsafe { walk(0x7000) }
+        .map(|w| w.phys.0 == 0x7000 && !w.user)
+        .unwrap_or(false);
+    let tramp = unsafe { walk(KPTI_TRAMP_VA) }
+        .map(|w| w.phys.0 == KPTI_TRAMP_VA && !w.user)
+        .unwrap_or(false);
+    let blk = unsafe { walk(BLK_WINDOW_BASE) }
+        .map(|w| w.phys.0 == BLK_WINDOW_BASE && !w.user)
+        .unwrap_or(false);
+    let apic = unsafe { walk(APIC_MMIO_BASE) }
+        .map(|w| w.phys.0 == APIC_MMIO_BASE && !w.user)
+        .unwrap_or(false);
+    let no_arena_id = unsafe { walk(0x0100_0000) }.is_none();
+    let no_user_id = unsafe { walk(USER_IMAGE_BASE) }.is_none();
+    let no_mmap_id = unsafe { walk(USER_MMAP_BASE) }.is_none();
+    let no_lma_id = unsafe { walk(KERNEL_LMA) }.is_none();
+    let arena_hh = unsafe { walk(KERNEL_VMA + 0x0100_0000) }
+        .map(|w| w.phys.0 == 0x0100_0000 && !w.user)
+        .unwrap_or(false);
+    let lma_hh = unsafe { walk(kernel_text_va()) }
+        .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
+        .unwrap_or(false);
+    let ok = sipi
+        && mailbox
+        && tramp
+        && blk
+        && apic
+        && no_arena_id
+        && no_user_id
+        && no_mmap_id
+        && no_lma_id
+        && arena_hh
+        && lma_hh;
+    if ok {
+        println!(
+            "[mm] identity teardown ok (islands: low 2MiB + virtio-blk + APIC; SoftNPU via Soft SMMU + HH)"
+        );
+    } else {
+        println!("[mm] identity teardown FAIL");
+    }
+    ok
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -1179,7 +1310,7 @@ fn write64(pa: u64, v: u64) {
 fn alloc_zeroed_page() -> Option<u64> {
     let p = frame::alloc()?;
     unsafe {
-        core::ptr::write_bytes(p.0 as *mut u8, 0, 4096);
+        core::ptr::write_bytes(phys_va(p.0) as *mut u8, 0, 4096);
     }
     Some(p.0)
 }
@@ -1548,7 +1679,7 @@ fn write64(pa: u64, v: u64) {
 fn alloc_zeroed_page() -> Option<u64> {
     let p = frame::alloc()?;
     unsafe {
-        core::ptr::write_bytes(p.0 as *mut u8, 0, 4096);
+        core::ptr::write_bytes(phys_va(p.0) as *mut u8, 0, 4096);
     }
     Some(p.0)
 }

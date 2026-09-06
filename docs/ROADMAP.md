@@ -100,7 +100,8 @@ Landed (software only — **not** a hardware SMMU, **not** an SMMUv3 emulator):
   `NotMapped`, `CrossTenant`, `StreamAbort`). Memory+MAP is still
   required to pin or bind.
 - SoftNPU / virtqueue DMA writes IOVAs into the avail ring and resolves
-  them back to guest PA before `IdentityDma` / `SliceMem` loads.
+  them back to guest PA before `KernelDma` / `SliceMem` loads. No
+  IdentityDma shortcut when Soft SMMU is populated.
 - Host tests cover stream A vs B, chiplet SIDs, abort-until-bound,
   translate hit/miss, unmap, cap refuse, and non-identity IOVA.
 
@@ -337,11 +338,11 @@ not COW, not a POSIX MM:
 - `PML4[511]` aliases the first 2 GiB of the identity PDs into that
   window (`PDPT[510/511] → PD0/PD1`). QEMU `-m 128M` and the kernel
   image fit. `code-model=kernel`.
-- **Identity 4 GiB stays mapped on purpose.** SoftNPU `IdentityDma`,
-  page-table walks (tables addressed by PA), AP SIPI @ `0x8000`,
-  Multiboot mailbox @ `0x7000`, and user ELF windows (`0x2000000` /
-  `0x2400000`) still use the low map. Do not treat the leftover
-  identity window as a bug.
+- The HH cut kept identity 4 GiB for SoftNPU `IdentityDma`, PT walks,
+  AP SIPI @ `0x8000`, Multiboot @ `0x7000`, and user ELF windows.
+  The later **identity teardown** cut unmaps the bulk of that window
+  (SoftNPU now uses Soft SMMU + HH). Do not treat leftover *islands*
+  as a bug.
 - Per-task PML4 clones copy `PML4[511]`, so syscall/IRQ handlers
   remain reachable after CR3 switch. USER bits stay off on HH.
 - Host test: `core/src/aspace.rs` walks the HH alias. QEMU:
@@ -351,8 +352,8 @@ not COW, not a POSIX MM:
   `AccelDevice` unchanged.
 
 Still stubbed at the HH cut: KASLR (later subset), KPTI (separate
-user CR3 without kernel HH), PCID, COW, tearing down the identity
-window.
+user CR3 without kernel HH), PCID, COW. Identity teardown is a
+later subset.
 
 ## KASLR boot-time slide (this cut)
 
@@ -367,9 +368,9 @@ KPTI, not PCID, not COW, not Meltdown unmap:
   `make qemu-ci` / `qemu-smp-ci` pass `-append kaslr=1` so the
   16 MiB slot is deterministic.
 - HH PDs are **cloned** (`0x71000` / `0x72000`). Identity PDs at
-  `0x3000…` never move. SoftNPU `IdentityDma`, AP SIPI @ `0x8000`,
-  Multiboot mailbox @ `0x7000`, and user ELF windows stay on the
-  low map.
+  `0x3000…` never move. SoftNPU later moved off identity DMA
+  (Soft SMMU + HH). AP SIPI @ `0x8000` and Multiboot mailbox @
+  `0x7000` stay on the low-2 MiB identity island.
 - An 8 MiB kernel span is dual-mapped at `KERNEL_VMA + slide + PA`.
   The trampoline jumps to `0xffffffff80400000 + slide`. RIP is the
   slid VA. The KASLR cut left the canonical alias mapped so
@@ -396,8 +397,8 @@ Sequenced follow-ups (do not claim them here):
    **Landed** as a later one-page subset.
 
 Still stubbed at the KASLR cut: PIE / unmap of the unused alias
-(later subset), KPTI (later subset), PCID, COW, tearing down the
-identity 4 GiB.
+(later subset), KPTI (later subset), PCID, COW. Identity teardown
+is a later subset.
 
 ## KPTI user CR3 (this cut)
 
@@ -408,10 +409,10 @@ PCID, not PIE / reloc, not COW:
   supervisor 4 KiB pages at `0x73000` (syscall/IRQ trampoline, shadow
   IDT, entry stack). `PML4[511]` is empty — no kernel higher-half.
   The identity 4 GiB is **not** in the user map.
-- Kernel CR3 keeps identity 4 GiB + HH + the KASLR dual-map.
-  SoftNPU `IdentityDma`, AP SIPI @ `0x8000`, Multiboot mailbox,
-  and page-table PA walks stay on that map. SoftNPU kthread-B
-  always runs on kernel CR3.
+- Kernel CR3 keeps HH + the KASLR dual-map. The KPTI cut still had
+  identity 4 GiB for SoftNPU `IdentityDma`; the later teardown cut
+  left only SIPI / mailbox / trampoline / virtio-blk / APIC islands.
+  SoftNPU kthread-B always runs on kernel CR3 (`KernelDma` + Soft SMMU).
 - Syscall / IRQ from ring-3 land in the identity trampoline, switch
   CR3 to the kernel map, then jump to the higher-half handler.
   Return copies the `iretq` frame onto the trampoline stack and
@@ -434,8 +435,8 @@ Sequenced follow-ups: PIE + reloc (unmap unused alias; **landed**),
 PCID (next), COW / growable `mmap`.
 
 Still stubbed at the KPTI cut: PIE / unmap of the unused alias
-(later subset), PCID (later subset), COW, tearing down the kernel
-identity 4 GiB.
+(later subset), PCID (later subset), COW. Identity teardown is a
+later subset.
 
 ## PCID tagged TLB (this cut)
 
@@ -472,11 +473,11 @@ Honest limits (do not market these as done):
 - PCIDs are a handful of boot aspaces, not a recycled 12-bit
   allocator under fork load.
 - Unused KASLR alias is unmapped by the later PIE cut. Identity
-  4 GiB stays on the kernel CR3 for DMA.
+  4 GiB stayed on the kernel CR3 at this cut (teardown is later).
 
 Still stubbed at the PCID cut: PIE / unmap of the unused alias
-(later subset), COW (later subset), tearing down the kernel
-identity 4 GiB.
+(later subset), COW (later subset). Identity teardown is a later
+subset.
 
 ## Copy-on-write page subset (this cut)
 
@@ -487,7 +488,8 @@ not a general writable-share, not RISC-V / aarch64:
   fills a template word (`COW_TEMPLATE_WORD`) and maps the **same
   PA** read-only into `/init` and `/probe` (separate KPTI PML4s).
   The rest of that 2 MiB slot stays unmapped. SoftNPU kthread-B
-  stays on kernel CR3 (`IdentityDma` / identity 4 GiB untouched).
+  stays on kernel CR3 (`KernelDma` + Soft SMMU; identity 4 GiB
+  later torn down).
 - A ring-3 write is a present + write + user `#PF`. The handler
   (after the KPTI trampoline has already loaded kernel CR3)
   allocates a private frame, copies 4 KiB, sets RW on **that**
@@ -508,11 +510,11 @@ Honest limits (do not market these as done):
 - One page, one template, x86 only. Not file-backed COW, not
   `fork` of the whole aspace, not growable `mmap`.
 - Unused KASLR alias is unmapped by the later PIE cut. Identity
-  4 GiB stays on the kernel CR3 for DMA.
+  teardown is a later subset.
 
 Sequenced follow-ups: PIE + reloc (unmap unused alias; **landed**),
-growable `mmap` / `fork`-shaped aspace clone, tearing down the
-kernel identity 4 GiB.
+identity teardown (**landed**), growable `mmap` / `fork`-shaped
+aspace clone.
 
 ## PIE + reloc table (this cut)
 
@@ -535,8 +537,8 @@ Meltdown-complete, not a user-ELF relocator:
 - After apply, HH PD0 indices 2..5 (the 8 MiB link-time span) are
   zeroed when `slide != 0` and CR3 is reloaded. The unused
   canonical alias (`0xffffffff80400000`) is not present. Slide 0
-  keeps that map — it *is* the running window. Identity 4 GiB is
-  untouched (SoftNPU `IdentityDma`, AP SIPI, Multiboot, user ELF).
+  keeps that map — it *is* the running window. Identity 4 GiB was
+  still mapped at this cut (teardown is later).
 - Host tests: `core/src/reloc.rs` (addend+slide, trailer, refuse
   non-RELATIVE / OOB) and `core/src/aspace.rs`
   (`pie_unmaps_unused_canonical_alias`). QEMU:
@@ -552,12 +554,60 @@ Honest limits (do not market these as done):
 - Three 16 MiB slots, cmdline / TSC / RDRAND. Not a secret ASLR
   entropy claim. An attacker who can read the slide mailbox or
   RIP still knows the map.
-- Identity 4 GiB stays on the kernel CR3 (intentional DMA window).
 - User `/init` is still a static non-PIE ELF (`core::elf` rejects
   `ET_DYN`). Not `fork`, not growable `mmap`.
 
-Still stubbed: tearing down the kernel identity 4 GiB, a recycled
-PCID allocator, Meltdown-complete trampoline unmap, POSIX MM.
+Still stubbed at the PIE cut: a recycled PCID allocator,
+Meltdown-complete trampoline unmap, POSIX MM. Identity teardown
+is a later subset.
+
+## Identity teardown (this cut)
+
+Landed as a **documented subset**, not a complete low-memory unmap,
+not Meltdown-complete, not RISC-V / aarch64 (those maps *are*
+identity):
+
+- After `[mm] higher-half ok`, `teardown_identity` clears identity
+  2 MiB PD leaves except keep islands. SoftNPU / Soft-CP DMA
+  resolves **only** through Soft SMMU (`resolve_stream` /
+  `resolve`). Empty-iommu passthrough remains for host golden
+  MMIO tests that skip pin. CPU tensor access is `KernelDma` →
+  `phys_to_kva` (HH on x86). No IdentityDma shortcut for tensors
+  when Soft SMMU is populated.
+- **Remaining identity islands** (2 MiB leaves, supervisor-only):
+  - `[0, 2 MiB)` — boot PTs, Multiboot mailbox @ `0x7000`, AP
+    SIPI @ `0x8000`, KPTI trampoline @ `0x73000`, HH PDs @
+    `0x71000`.
+  - virtio-blk DMA window `0x02A00000–0x02C00000`.
+  - APIC MMIO `0xFEE00000` (above the HH 2 GiB window).
+- Torn down: user ELF `0x2000000` / `0x2400000`, SoftNPU arena
+  `0x01000000`, kernel LMA `0x400000`, growable `SYS_MMAP`
+  window `0x02C00000`, and the rest of RAM. Page-table walks
+  and ELF / COW / mmap / user copies use `phys_va` (HH). User
+  buffers are walked in the task CR3, then loaded via HH.
+  `USER_MMAP_BASE` is a KPTI user-only 4 KiB grow window, not
+  an identity island.
+- Host tests: `identity_keep_islands_and_kva`,
+  `teardown_drops_ram_keeps_islands`,
+  `service_refuses_guest_pa_when_smmu_bound`. QEMU:
+  `[mm] identity teardown ok (islands: low 2MiB + virtio-blk +
+  APIC; SoftNPU via Soft SMMU + HH)` plus existing SoftNPU /
+  KPTI / PCID / COW / PIE / blk greps. `make qemu-ci` /
+  `qemu-smp-ci` / `qemu-blk-ci` grep that line.
+- RISC-V / aarch64 keep identity (kernel map). `KernelDma` is
+  PA=VA there. No new syscall. KPTI / PCID / COW / PIE / virtio-blk
+  contracts are unchanged except SoftNPU no longer needs the
+  4 GiB window.
+
+Honest limits (do not market these as done):
+
+- Islands remain on purpose. A forged kernel pointer into the
+  low 2 MiB, virtio-blk window, or APIC leaf still hits identity.
+- Not a complete Meltdown unmap (KPTI trampoline pages stay
+  mapped in user CR3). Not POSIX `mmap`. Not hardware SMMU.
+
+Still stubbed: a recycled PCID allocator, Meltdown-complete
+trampoline unmap, POSIX MM, hardware SMMU.
 
 ## User-level threads / `SYS_CLONE` (this cut)
 

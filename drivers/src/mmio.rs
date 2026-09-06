@@ -313,6 +313,13 @@ impl AccelMmio {
         &self.bytes
     }
 
+    /// Test helper: overwrite avail-ring `a` with a raw guest PA.
+    #[cfg(test)]
+    pub fn poke_avail_a(&mut self, slot: usize, guest_pa: u64) {
+        let off = AVAIL_BASE + slot * JOB_WIRE_SIZE + 24;
+        self.bytes[off..off + 8].copy_from_slice(&guest_pa.to_le_bytes());
+    }
+
     fn load_u32(&self, off: usize) -> u32 {
         if off + 4 > ACCEL_MMIO_SIZE {
             return 0;

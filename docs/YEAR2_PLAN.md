@@ -28,12 +28,13 @@ virtio path B (in-kernel BAR canonical + golden MMIO trace) is
 remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows).
 The higher-half kernel map (`ffffffff80000000+PA`) is **done** as
-a documented subset (identity 4 GiB kept for SoftNPU DMA). A
+a documented subset (identity torn down except SIPI / mailbox /
+trampoline / virtio-blk / APIC islands; SoftNPU via Soft SMMU + HH). A
 boot-time KASLR slide (0 / 16 / 32 MiB dual-map; cmdline / entropy)
 plus PIE `.rela.dyn` apply and unused-alias unmap is **done** as a
 documented subset. A KPTI
 user-CR3 subset (no HH / no identity DMA in user CR3; 4 KiB
-trampoline; kernel CR3 keeps DMA; not Meltdown-complete) is
+trampoline; kernel CR3 keeps identity islands + HH; not Meltdown-complete) is
 **done** as a documented subset. A PCID tagged-TLB subset
 (CR4.PCIDE when CPUID.PCID; kernel PCID 1 / per-aspace user PCIDs;
 INVPCID on remap; full-flush fallback) is **done** as a
@@ -67,11 +68,12 @@ path. Neither is product-class. AffinityLaplacian n≤32 placement is
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
 trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
 x86 higher-half kernel map is **done** as a documented subset
-(`ffffffff80000000+PA`; identity 4 GiB kept for DMA). The KASLR
+(`ffffffff80000000+PA`; identity torn down except documented islands). The KASLR
 boot-time slide is **done** as a documented subset (16 MiB slots,
 dual-map). PIE-reloc + unused-alias unmap is **done**. The KPTI user-CR3 subset is
-**done** (trampoline entry; identity DMA stays on kernel CR3; not
-Meltdown-complete). The PCID tagged-TLB subset is **done**
+**done** (trampoline entry; kernel CR3 keeps identity islands + HH; not
+Meltdown-complete). Identity teardown is **done** (SoftNPU via Soft
+SMMU + HH). The PCID tagged-TLB subset is **done**
 (CPUID-gated `mov cr3`; fallback is a full flush). A one-page
 COW subset (`USER_COW_BASE` RO in `/init` + `/probe` until a
 write fault; not `fork` / POSIX `mmap`) is **done** as the next
@@ -138,8 +140,10 @@ After AccelDevice bites a real-shaped path — not before:
   PCI I/O + AETHFS01) landed; modern virtio-mmio is still open.
   Per-task PML4 +
   SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
-  landed. Identity 4 GiB remains an intentional DMA window on the
-  **kernel** CR3.
+  landed. Kernel identity 4 GiB is torn down except SIPI / mailbox /
+  trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH.
+  Growable `SYS_MMAP` at `0x02C0_0000` is user-only, not an identity
+  island.
 - aarch64 GICv3 / virtio-mmio (EL0 `/init` landed; virtqueue BAR is
   in-kernel, not a `-device`).
 

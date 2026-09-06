@@ -5,7 +5,7 @@
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
-use aether_drivers::softnpu::IdentityDma;
+use aether_drivers::softnpu::KernelDma;
 use aether_drivers::SoftCommandProcessor;
 use aether_hal::AccelDevice;
 
@@ -70,7 +70,7 @@ pub fn run_kernel_selfcheck() {
     console::nl();
 
     {
-        let mut cp = SoftCommandProcessor::new(IdentityDma);
+        let mut cp = SoftCommandProcessor::new(KernelDma);
         match cp.probe() {
             Ok(info) => {
                 write_str("[accel] SoftCommandProcessor probe backend=");

@@ -68,9 +68,9 @@ These are marked so a security review does not assume them:
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
-| Identity 4 GiB kept on kernel CR3 | Kernel CR3 still names every low PA (intentional DMA / SIPI window). User CR3 does not (KPTI subset). HH is `ffffffff80000000+PA` plus a slid map; unused link-time alias is unmapped | Tear down the kernel identity 4 GiB |
+| Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
-| `SYS_MMAP` is a 64 KiB anon window | First-fit 4 KiB USER pages in a reserved grow window; no file / no `MAP_SHARED` / no `munmap` | POSIX `mmap` / file-backed / `MAP_SHARED` |
+| `SYS_MMAP` is a 64 KiB anon window | First-fit 4 KiB USER pages at `0x02C0_0000` (after virtio-blk); no file / no `MAP_SHARED` / no `munmap` | POSIX `mmap` / file-backed / `MAP_SHARED` |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
 ## Multi-tenant weights / KV
@@ -95,7 +95,9 @@ USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel
 is linked at `0xffffffff80400000` and may run at a 16/32 MiB slide
 after PIE `.rela.dyn` apply; the unused HH alias is unmapped. The
-trampoline identity 4 GiB is kept on the **kernel** CR3 for DMA.
+trampoline identity 4 GiB is torn down on the **kernel** CR3 except
+SIPI / mailbox / trampoline / virtio-blk / APIC islands. SoftNPU
+DMA is Soft SMMU + HH (`KernelDma`).
 User CR3 maps only the
 ELF window plus a 4 KiB supervisor trampoline — a forged low kernel
 pointer is not present there. That is a KPTI subset, not
