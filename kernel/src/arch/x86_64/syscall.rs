@@ -91,7 +91,7 @@ global_asm!(
 
     .global syscall_entry
     syscall_entry:
-        mov rsp, [SYSCALL_KSTACK]
+        mov rsp, [rip + SYSCALL_KSTACK]
         push {user_ss}
         push qword ptr [{slot_ursp}]
         push r11

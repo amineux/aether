@@ -7,9 +7,10 @@
 //! 2 GiB at the classic `-2 GiB` kernel map (`KERNEL_VMA + PA`). A
 //! boot-time KASLR slide dual-maps an 8 MiB kernel span at
 //! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
-//! SIPI / user windows do not move. The kernel is still linked at
-//! `KERNEL_TEXT_VA` (`code-model=kernel`); the unused alias stays so
-//! absolute symbols keep working. This is not PIE / reloc, not a
+//! SIPI / user windows do not move. The kernel is a static-PIE
+//! (`relocation-model=pic`, `code-model=small`); the trampoline
+//! applies `.rela.dyn` `R_X86_64_RELATIVE` and unmaps the unused
+//! canonical alias when the slide is non-zero. This is not a
 //! POSIX `mmap`. A documented **COW subset** maps one shared 4 KiB
 //! USER page (`USER_COW_BASE`) read-only in `/init` and `/probe`; a
 //! write fault copies the frame and sets RW on that aspace only.
@@ -46,8 +47,9 @@ pub const KERNEL_TEXT_VA: u64 = KERNEL_VMA + KERNEL_LMA;
 pub const KERNEL_HH_SPAN: u64 = 0x8000_0000;
 
 /// Boot-time slide stride. Three slots: 0, 16 MiB, 32 MiB.
-/// All stay inside the last 2 GiB so `code-model=kernel` 32-bit
-/// signed addresses still resolve on the canonical alias.
+/// All stay inside the last 2 GiB. PIC is RIP-relative
+/// (`code-model=small`); the unused canonical alias is unmapped
+/// after `.rela.dyn` is applied.
 pub const KASLR_SLIDE_STRIDE: u64 = 0x0100_0000;
 /// Number of legal slide indices (`kaslr=0|1|2`).
 pub const KASLR_SLIDE_COUNT: u32 = 3;
@@ -58,6 +60,8 @@ pub const KASLR_KERNEL_SPAN: u64 = 0x80_0000;
 pub const KASLR_MAILBOX: u64 = 0x7000;
 /// Slide bytes written by the trampoline (u32).
 pub const KASLR_MAILBOX_SLIDE: u64 = KASLR_MAILBOX + 8;
+/// PIE reloc count written by the trampoline (u32).
+pub const KASLR_MAILBOX_RELOCS: u64 = KASLR_MAILBOX + 12;
 /// Dedicated HH PD0 (identity PDs stay at `0x3000`…).
 pub const KASLR_HH_PD0: u64 = 0x7_1000;
 /// Dedicated HH PD1.
@@ -341,6 +345,29 @@ impl IdentityAs {
                 }
             }
         }
+        s
+    }
+
+    /// Drop the unused link-time HH kernel span after a non-zero slide.
+    /// Identity PDs are untouched (SoftNPU DMA / SIPI). Slide 0 keeps
+    /// the canonical map — it *is* the running window.
+    pub fn unmap_unused_kaslr_alias(&mut self) {
+        if self.slide == 0 {
+            return;
+        }
+        let src = (KERNEL_LMA / PAGE_2M) as usize;
+        let n = (KASLR_KERNEL_SPAN / PAGE_2M) as usize;
+        for i in 0..n {
+            if src + i < 512 {
+                self.hh_pd[0][src + i] = 0;
+            }
+        }
+    }
+
+    /// Post-boot kernel map: dual-map + unused canonical alias gone.
+    pub fn kernel_with_pie_slide(slide: u64) -> Self {
+        let mut s = Self::kernel_with_slide(slide);
+        s.unmap_unused_kaslr_alias();
         s
     }
 
@@ -638,6 +665,23 @@ mod tests {
     }
 
     #[test]
+    fn pie_unmaps_unused_canonical_alias() {
+        let slide = KASLR_SLIDE_STRIDE;
+        let k = IdentityAs::kernel_with_pie_slide(slide);
+        assert!(k.walk(KERNEL_TEXT_VA).is_none());
+        assert_eq!(k.walk(KERNEL_TEXT_VA + slide).unwrap().phys, KERNEL_LMA);
+        assert!(!k.user_mapped(KERNEL_TEXT_VA + slide));
+        assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
+        let id_va = KERNEL_LMA + slide;
+        assert_eq!(k.walk(id_va).unwrap().phys, id_va);
+        // Dual-map destination stays (that *is* the running window).
+        assert_eq!(k.walk(KERNEL_VMA + id_va).unwrap().phys, KERNEL_LMA);
+        // Slide 0: the link VA is the map — do not unmap it.
+        let z = IdentityAs::kernel_with_pie_slide(0);
+        assert_eq!(z.walk(KERNEL_TEXT_VA).unwrap().phys, KERNEL_LMA);
+    }
+
+    #[test]
     fn kaslr_dual_map_keeps_identity() {
         let slide = KASLR_SLIDE_STRIDE;
         let k = IdentityAs::kernel_with_slide(slide);
@@ -711,10 +755,11 @@ mod tests {
     #[test]
     fn kpti_user_has_no_hh_or_identity_dma() {
         let slide = KASLR_SLIDE_STRIDE;
-        let k = IdentityAs::kernel_with_slide(slide);
+        let k = IdentityAs::kernel_with_pie_slide(slide);
         let u = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
 
-        assert!(k.walk(KERNEL_TEXT_VA).is_some());
+        assert!(k.walk(KERNEL_TEXT_VA).is_none());
+        assert_eq!(k.walk(KERNEL_TEXT_VA + slide).unwrap().phys, KERNEL_LMA);
         assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
         assert_eq!(k.walk(0x0100_0000).unwrap().phys, 0x0100_0000);
         assert_eq!(k.walk(0x8000).unwrap().phys, 0x8000);

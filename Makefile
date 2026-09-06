@@ -64,7 +64,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + KPTI + PCID-or-fallback + COW + SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + PIE-reloc + KPTI + PCID-or-fallback + COW + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-pcid-ci - request -cpu qemu64,+pcid,+invpcid (TCG cannot advertise PCID; KVM may print pcid ok)"
 	@echo "  make qemu-nopcid-ci - force -cpu qemu64,-pcid (full-flush fallback)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
@@ -108,15 +108,16 @@ kernel: target $(INIT_BLOB) $(PROBE_BLOB)
 
 $(KERNEL_ELF): kernel
 
-$(KERNEL_BIN): $(KERNEL_ELF)
+$(KERNEL_BIN): $(KERNEL_ELF) scripts/pack_kernel_relocs.py
 	mkdir -p $(BUILD)
 	objcopy -O binary $(KERNEL_ELF) $(KERNEL_BIN)
+	python3 scripts/pack_kernel_relocs.py $(KERNEL_ELF) $(KERNEL_BIN)
 	@sz=$$(wc -c < $(KERNEL_BIN)); \
 	if [ $$sz -gt 16777216 ]; then \
 		echo "kernel.bin $$sz bytes — HH VMA gap? objcopy produced a huge image"; \
 		exit 1; \
 	fi
-	@echo "kernel.bin $$(wc -c < $(KERNEL_BIN)) bytes"
+	@echo "kernel.bin $$(wc -c < $(KERNEL_BIN)) bytes (PIE + .rela.dyn trailer)"
 
 $(BUILD)/trampoline.o: boot/x86_64/trampoline.S $(KERNEL_BIN) boot/x86_64/trampoline.ld
 	as --32 -o $@ boot/x86_64/trampoline.S
@@ -146,6 +147,8 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] frames mmap clip=16MiB cap=128MiB" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] SMEP+SMAP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] pie reloc n=" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] kaslr unused alias unmapped" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-serial.log \
@@ -162,7 +165,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + KPTI + PCID + COW + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + PIE-reloc + KPTI + PCID + COW + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -245,6 +248,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[smp\\] SMP smoke ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] mmap: multiboot1" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] pie reloc n=" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] kaslr unused alias unmapped" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/smp-serial.log \

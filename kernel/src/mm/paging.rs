@@ -4,11 +4,12 @@
 //! 0x1000) and aliases the first 2 GiB at the classic `-2 GiB` kernel
 //! map (`KERNEL_VMA + PA`) on dedicated HH PDs. A boot-time KASLR
 //! slide dual-maps an 8 MiB kernel span at `KERNEL_VMA + slide + PA`
-//! and `_start` runs at that RIP. The canonical alias stays so
-//! `code-model=kernel` absolute symbols still resolve. The identity
-//! 4 GiB stays mapped on purpose: SoftNPU DMA, page-table walks
-//! (tables are still addressed by PA), AP SIPI, Multiboot mailbox,
-//! and user ELF windows. That table stays the **kernel CR3**
+//! and `_start` runs at that RIP. The kernel is a static-PIE
+//! (`relocation-model=pic`); the trampoline applies `.rela.dyn` and
+//! unmaps the unused canonical alias when the slide is non-zero.
+//! The identity 4 GiB stays mapped on purpose: SoftNPU DMA, page-table
+//! walks (tables are still addressed by PA), AP SIPI, Multiboot
+//! mailbox, and user ELF windows. That table stays the **kernel CR3**
 //! (supervisor-only). Each ring-3 task gets a cloned PML4: same
 //! identity + HH kernel mappings. Each ring-3 task gets a **KPTI**
 //! PML4: USER only on that task's 2 MiB ELF window, no `PML4[511]`
@@ -18,11 +19,12 @@
 //! CR3 so `IdentityDma` still sees the intentional 4 GiB window.
 //!
 //! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy)
-//! plus documented KPTI subset plus documented PCID subset (CR4.PCIDE
-//! when CPUID.1:ECX[17]; INVPCID when CPUID.7:EBX[10]; else full-flush
-//! `mov cr3`). Documented COW subset: one shared 4 KiB USER page at
-//! `USER_COW_BASE`, read-only until a write fault copies the frame.
-//! Not PIE / reloc, not Meltdown-complete, not POSIX `mmap` / `fork`.
+//! plus PIE reloc + unused-alias unmap, documented KPTI subset, plus
+//! documented PCID subset (CR4.PCIDE when CPUID.1:ECX[17]; INVPCID
+//! when CPUID.7:EBX[10]; else full-flush `mov cr3`). Documented COW
+//! subset: one shared 4 KiB USER page at `USER_COW_BASE`, read-only
+//! until a write fault copies the frame. Not Meltdown-complete, not
+//! POSIX `mmap` / `fork`.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -35,9 +37,9 @@ use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{
     cr3_tagged, kaslr_slide_valid, kernel_text_va_slid, CR4_PCIDE, INVPCID_SINGLE,
-    KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS,
-    KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE, USER_IMAGE_BASE, USER_PROBE_BASE,
-    COW_TEMPLATE_WORD,
+    KASLR_KERNEL_SPAN, KASLR_MAILBOX_RELOCS, KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA,
+    KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE,
+    USER_IMAGE_BASE, USER_PROBE_BASE, COW_TEMPLATE_WORD,
 };
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
@@ -940,7 +942,8 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     ok
 }
 
-/// Serial proof: RIP is at the slid HH text; identity still names the LMA.
+/// Serial proof: RIP is at the slid HH text; unused link VA is gone
+/// when slide != 0; identity still names the LMA.
 #[cfg(target_arch = "x86_64")]
 pub fn prove_higher_half() -> bool {
     let rip: u64;
@@ -949,6 +952,7 @@ pub fn prove_higher_half() -> bool {
     }
     let slide = kaslr_slide();
     let slid_text = kernel_text_va();
+    let relocs = unsafe { core::ptr::read_volatile(KASLR_MAILBOX_RELOCS as *const u32) } as u64;
     let w_hh = unsafe { walk(slid_text) };
     let w_canon = unsafe { walk(KERNEL_TEXT_VA) };
     let w_id = unsafe { walk(KERNEL_LMA) };
@@ -956,21 +960,35 @@ pub fn prove_higher_half() -> bool {
         .as_ref()
         .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
         .unwrap_or(false);
-    let canon_ok = w_canon
-        .as_ref()
-        .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
-        .unwrap_or(false);
+    let canon_ok = if slide == 0 {
+        w_canon
+            .as_ref()
+            .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
+            .unwrap_or(false)
+    } else {
+        w_canon.is_none()
+    };
     let id_ok = w_id
         .as_ref()
         .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
         .unwrap_or(false);
     let rip_ok = rip >= slid_text && rip < slid_text + KASLR_KERNEL_SPAN && rip >= KERNEL_VMA;
+    let reloc_ok = relocs > 0;
+    write_str("[mm] pie reloc n=");
+    write_u64(relocs);
+    write_str(" applied (R_X86_64_RELATIVE)");
+    console::nl();
     write_str("[mm] kaslr slide=");
     write_hex(slide);
     write_str(" idx=");
     write_u64(slide / aether_core::KASLR_SLIDE_STRIDE);
-    write_str(" (dual-map HH; identity 4 GiB kept)");
+    write_str(" (PIE + dual-map HH; identity 4 GiB kept)");
     console::nl();
+    if slide == 0 {
+        println!("[mm] kaslr unused alias kept (slide=0; link VA is the map)");
+    } else {
+        println!("[mm] kaslr unused alias unmapped (link VA not usable)");
+    }
     write_str("[mm] higher-half kernel VA=");
     write_hex(slid_text);
     write_str(" linked=");
@@ -982,9 +1000,9 @@ pub fn prove_higher_half() -> bool {
     write_str(" identity=");
     write_hex(KERNEL_LMA);
     console::nl();
-    if hh_ok && canon_ok && id_ok && rip_ok {
+    if hh_ok && canon_ok && id_ok && rip_ok && reloc_ok {
         println!(
-            "[mm] higher-half ok (ffffffff80000000+PA + slide; identity 4 GiB kept for DMA)"
+            "[mm] higher-half ok (ffffffff80000000+PA + slide; unused alias unmapped; identity 4 GiB kept for DMA)"
         );
         true
     } else {

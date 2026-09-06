@@ -7,10 +7,11 @@
 //! shadow IDT, entry stack). CR3 switches to the kernel map on enter
 //! and back on exit. SoftNPU kthread-B stays on kernel CR3.
 //!
-//! Not Meltdown-complete (trampoline pages remain mapped; unused
-//! KASLR alias stays on the kernel map). PCID tags the KPTI `mov cr3`
-//! when CPUID advertises it; otherwise each switch is still a full
-//! flush. RISC-V / aarch64 are unchanged.
+//! Not Meltdown-complete (trampoline pages remain mapped). The unused
+//! KASLR canonical alias is unmapped on the kernel map after PIE
+//! relocs. PCID tags the KPTI `mov cr3` when CPUID advertises it;
+//! otherwise each switch is still a full flush. RISC-V / aarch64 are
+//! unchanged.
 
 use core::arch::global_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};

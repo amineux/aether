@@ -68,7 +68,7 @@ These are marked so a security review does not assume them:
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
-| Identity 4 GiB kept on kernel CR3 | Kernel CR3 still names every low PA (intentional DMA / SIPI window). User CR3 does not (KPTI subset). HH is `ffffffff80000000+PA` plus a dual-mapped slide | PIE-reloc KASLR (unmap unused alias) |
+| Identity 4 GiB kept on kernel CR3 | Kernel CR3 still names every low PA (intentional DMA / SIPI window). User CR3 does not (KPTI subset). HH is `ffffffff80000000+PA` plus a slid map; unused link-time alias is unmapped | Tear down the kernel identity 4 GiB |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone / growable `mmap` |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
@@ -92,9 +92,10 @@ non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel
-is linked at `0xffffffff80400000` and may run at a 16/32 MiB slide,
-but the trampoline identity 4 GiB is kept on the **kernel** CR3 for
-DMA and the unused HH alias stays (not PIE). User CR3 maps only the
+is linked at `0xffffffff80400000` and may run at a 16/32 MiB slide
+after PIE `.rela.dyn` apply; the unused HH alias is unmapped. The
+trampoline identity 4 GiB is kept on the **kernel** CR3 for DMA.
+User CR3 maps only the
 ELF window plus a 4 KiB supervisor trampoline — a forged low kernel
 pointer is not present there. That is a KPTI subset, not
 Meltdown-complete (trampoline pages remain mapped). PCID tags

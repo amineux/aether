@@ -213,14 +213,15 @@ The kernel and `/init` are **separate Cargo projects** so
   window; SMEP/SMAP are on. The kernel is linked at
   `0xffffffff80400000` (classic `-2 GiB` map). The trampoline picks a
   0 / 16 / 32 MiB slide (`-append kaslr=1` in CI), dual-maps an 8 MiB
-  kernel span, and runs at the slid RIP. The identity 4 GiB stays
-  mapped on the **kernel** CR3 on purpose (SoftNPU DMA, AP SIPI).
-  User CR3 is a KPTI subset: ELF window + 4 KiB supervisor trampoline,
-  no HH, no identity DMA. PCID tags those CR3 switches when the CPU
-  advertises it (`-cpu qemu64,+pcid,+invpcid`); otherwise `mov cr3`
-  still full-flushes. One shared 4 KiB COW page (`0x0280_0000`) is
-  read-only in `/init` and `/probe` until a write fault. Not
-  Meltdown-complete / PIE / POSIX `mmap`.
+  kernel span, applies `.rela.dyn` (`R_X86_64_RELATIVE`), unmaps the
+  unused link-time alias, and runs at the slid RIP. The identity
+  4 GiB stays mapped on the **kernel** CR3 on purpose (SoftNPU DMA,
+  AP SIPI). User CR3 is a KPTI subset: ELF window + 4 KiB supervisor
+  trampoline, no HH, no identity DMA. PCID tags those CR3 switches
+  when the CPU advertises it (`-cpu qemu64,+pcid,+invpcid`);
+  otherwise `mov cr3` still full-flushes. One shared 4 KiB COW page
+  (`0x0280_0000`) is read-only in `/init` and `/probe` until a write
+  fault. Not Meltdown-complete / a secret slide / POSIX `mmap`.
   SMP is a QEMU `-smp 2` smoke; APs do not run `/init`.
   `make qemu-smp` proves two harts; `make qemu` stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`

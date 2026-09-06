@@ -29,8 +29,9 @@ remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done*
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows).
 The higher-half kernel map (`ffffffff80000000+PA`) is **done** as
 a documented subset (identity 4 GiB kept for SoftNPU DMA). A
-boot-time KASLR slide (0 / 16 / 32 MiB dual-map; cmdline / entropy;
-not PIE) is **done** as a documented subset. A KPTI
+boot-time KASLR slide (0 / 16 / 32 MiB dual-map; cmdline / entropy)
+plus PIE `.rela.dyn` apply and unused-alias unmap is **done** as a
+documented subset. A KPTI
 user-CR3 subset (no HH / no identity DMA in user CR3; 4 KiB
 trampoline; kernel CR3 keeps DMA; not Meltdown-complete) is
 **done** as a documented subset. A PCID tagged-TLB subset
@@ -68,7 +69,7 @@ trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
 x86 higher-half kernel map is **done** as a documented subset
 (`ffffffff80000000+PA`; identity 4 GiB kept for DMA). The KASLR
 boot-time slide is **done** as a documented subset (16 MiB slots,
-dual-map; not PIE / COW). The KPTI user-CR3 subset is
+dual-map). PIE-reloc + unused-alias unmap is **done**. The KPTI user-CR3 subset is
 **done** (trampoline entry; identity DMA stays on kernel CR3; not
 Meltdown-complete). The PCID tagged-TLB subset is **done**
 (CPUID-gated `mov cr3`; fallback is a full flush). A one-page
@@ -121,9 +122,9 @@ After AccelDevice bites a real-shaped path — not before:
   the canonical demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
   BAR behind the PLIC is still open. Path A stays optional later.
-- ELF beyond this subset (PIE-reloc KASLR / `fork` / growable
-  `mmap`). Boot-time slide + dual-map landed (16 MiB slots; unused
-  alias stays). KPTI user CR3 landed (no HH / no identity DMA;
+- ELF beyond this subset (`fork` / growable `mmap`). Boot-time
+  slide + dual-map + PIE `.rela.dyn` landed (16 MiB slots; unused
+  alias unmapped). KPTI user CR3 landed (no HH / no identity DMA;
   trampoline only; not Meltdown-complete). PCID tagged TLB landed
   (CPUID-gated; stock `qemu64` often full-flushes). One-page COW
   landed (`USER_COW_BASE`; write fault copies; x86 only). In-kernel
@@ -232,9 +233,10 @@ above override what Kernel actually sequences. Criteria below are
    SMEP/SMAP on x86; `/init` still static ELF; optional second user
    binary; no PIE required. **Landed** as the documented subset
    (per-user CR3, USER-local 2 MiB windows, `/probe`). Higher-half
-   (`ffffffff80000000+PA`) plus a boot-time KASLR slide (dual-map)
-   and a KPTI user-CR3 subset (trampoline; identity DMA on kernel
-   CR3) landed as later documented subsets.
+   (`ffffffff80000000+PA`) plus a boot-time KASLR slide (dual-map),
+   PIE `.rela.dyn` + unused-alias unmap, and a KPTI user-CR3 subset
+   (trampoline; identity DMA on kernel CR3) landed as later
+   documented subsets.
 
 ### Y2H1 — Package scale + revoke
 

@@ -28,6 +28,7 @@ pub mod partition;
 pub mod phase;
 pub mod preempt;
 pub mod ramfs;
+pub mod reloc;
 pub mod sched;
 pub mod softfloat;
 pub mod space;
@@ -44,9 +45,9 @@ pub use aspace::{
     parse_kaslr_cmdline, phys_to_hh, phys_to_hh_slid, IdentityAs, PcidAlloc, Sv39As, Ttbr0As,
     CR3_NOFLUSH, CR3_PCID_MASK, CR4_PCIDE, CR4_SMAP, CR4_SMEP, INVPCID_ALL, INVPCID_ALL_GLOBAL,
     INVPCID_INDIV, INVPCID_SINGLE, KASLR_HH_PD0, KASLR_HH_PD1, KASLR_KERNEL_SPAN, KASLR_MAILBOX,
-    KASLR_MAILBOX_SLIDE, KASLR_SLIDE_COUNT, KASLR_SLIDE_STRIDE, KERNEL_HH_SPAN, KERNEL_LMA,
-    KERNEL_TEXT_VA, KERNEL_VMA, KPTI_SLOT_BASE, KPTI_TRAMP_IDT, KPTI_TRAMP_PAS, KPTI_TRAMP_STACK,
-    KPTI_TRAMP_STACK_TOP, KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE,
+    KASLR_MAILBOX_RELOCS, KASLR_MAILBOX_SLIDE, KASLR_SLIDE_COUNT, KASLR_SLIDE_STRIDE, KERNEL_HH_SPAN,
+    KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_SLOT_BASE, KPTI_TRAMP_IDT, KPTI_TRAMP_PAS,
+    KPTI_TRAMP_STACK, KPTI_TRAMP_STACK_TOP, KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
@@ -71,6 +72,10 @@ pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, Spati
 pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};
 pub use ramfs::{RamFd, RamFs, RamFsError, RamHandle, INIT_PATH, PROBE_PATH};
+pub use reloc::{
+    apply_pie_image, apply_rela_bytes, apply_rela_dyn, parse_pie_trailer, parse_rela64, Rela64,
+    RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
+};
 pub use sched::{Job, JobKind, TileKind, TileScheduler};
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};

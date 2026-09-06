@@ -3,12 +3,14 @@ target = "x86_64-unknown-none"
 
 [target.x86_64-unknown-none]
 rustflags = [
-    "-C", "relocation-model=static",
-    "-C", "code-model=kernel",
+    "-C", "relocation-model=pic",
+    "-C", "code-model=small",
     "-C", "link-arg=-T",
     "-C", "link-arg=../boot/x86_64/kernel.ld",
     "-C", "link-arg=-zmax-page-size=0x1000",
-    "-C", "link-arg=--no-pie",
+    "-C", "link-arg=-pie",
+    "-C", "link-arg=--no-dynamic-linker",
+    "-C", "link-arg=-znorelro",
 ]
 
 [target.riscv64gc-unknown-none-elf]
