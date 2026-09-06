@@ -27,6 +27,7 @@ pub mod opkernel;
 pub mod partition;
 pub mod phase;
 pub mod preempt;
+pub mod ramfs;
 pub mod sched;
 pub mod softfloat;
 pub mod space;
@@ -64,6 +65,7 @@ pub use opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHand
 pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};
+pub use ramfs::{RamFd, RamFs, RamFsError, RamHandle, INIT_PATH, PROBE_PATH};
 pub use sched::{Job, JobKind, TileKind, TileScheduler};
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
@@ -72,8 +74,8 @@ pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV,
     SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE,
-    USER_PROBE_END, USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END,
-    USER_RV_STACK_TOP, USER_STACK_TOP,
+    USER_PROBE_END, USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_STACK_TOP,
+    USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 

@@ -40,7 +40,7 @@ then submits `AccelJobDesc` records through an `Activity` endpoint.
 `Wave` in v0.1 is a software stand-in for one compiled dispatch, not a
 fusion pass.
 
-## Syscall numbers (frozen 0–8; 9 = exit; 10 = clone)
+## Syscall numbers (frozen 0–10)
 
 Ring-3 / U-mode uses the same numbers on every arch. x86_64 is the
 System V / Linux register convention: `rax` = number, `rdi,rsi,rdx` =
@@ -80,3 +80,12 @@ submits I32. Additive `DType` values on `AccelJobDesc` / `CpCmd` /
 `AccelJobWire`: `I32=0`, `F16=1`, `F32=2`. Documented in
 [ACCEL.md](ACCEL.md). Do not reshape `UserAccelJob` without a version
 bump there.
+
+## Boot ramfs (kernel-internal)
+
+The ELF loader opens `/init` (and optional `/probe`) from an
+in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
+Boot seeds those names from the embedded ELF blobs. This is **not**
+a user syscall: numbers **0–10 stay frozen** as the table above.
+No `SYS_OPEN` / `SYS_READ` in this cut. virtio-blk is a later
+optional path and must not disturb SoftNPU (in-kernel BAR).

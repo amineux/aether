@@ -197,9 +197,11 @@ The kernel and `/init` are **separate Cargo projects** so
   `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
   path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU
   IOVAs (not identity); QEMU does not emulate a hardware SMMU.
-- **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
-  as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
-  Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
+- **`/init` is a static non-PIE ELF64** linked at `0x0200_0000`. Boot
+  embeds the blob (`build/init.elf`) and **seeds an in-kernel ramfs**;
+  the loader opens `/init` (and x86 `/probe`) by name. Not POSIX.
+  virtio-blk is still open. Ring-3 entry is `syscall`/`sysret`; cap
+  checks sit on send/recv/map/accel.
 - **Per-task PML4 + higher-half are documented subsets.** Each
   ring-3 task has its own CR3; USER is only on that task's 2 MiB ELF
   window; SMEP/SMAP are on. The kernel is linked at

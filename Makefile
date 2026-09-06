@@ -48,7 +48,7 @@ all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf)"
+	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init (no PLIC)"
 	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
@@ -138,10 +138,11 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + clone + mmap + HH + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs + clone + mmap + HH + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -176,6 +177,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
@@ -223,6 +225,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] U-mode /init" $(BUILD)/riscv-serial.log \
 	   && grep -q "ecall debug_print ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \

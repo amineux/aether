@@ -11,7 +11,7 @@ revision 2026-09-06. Filed on main via PR.
 - No fake NVIDIA partnership, no FLOP benchmarks, no tape-out / readiness
   claims.
 - [`docs/ABI.md`](ABI.md) syscall 0–8 stay frozen; additive only
-  (`exit=9`, `clone=10`).
+  (`exit=9`, `clone=10`). In-kernel ramfs adds no user syscall.
 - Prefer extending `aether_hal::AccelDevice` + `AccelJobDesc` over
   inventing a second IR.
 
@@ -58,6 +58,9 @@ x86 higher-half kernel map is **done** as a documented subset
 KPTI / PCID / COW). User-level threads via `SYS_CLONE` (nr 10) are
 **done** as a documented subset (share caller PML4/satp; `flags=0`;
 not Linux clone / fork; `SYS_EXIT` still guest-wide).
+In-kernel ramfs for `/init` (and x86 `/probe`) is **done** as a
+documented subset (seed from embedded blobs; loader `open`/`read`;
+not POSIX; no new syscall). virtio-blk is not.
 
 ### KEEP / ACTIVE Y1
 
@@ -97,7 +100,9 @@ After AccelDevice bites a real-shaped path — not before:
 - Custom QEMU virtio-accel (path A: `-device` / virtio-mmio DMA of the
   frozen [ACCEL.md](ACCEL.md) BAR). Path B landed: in-kernel BAR is
   the canonical demo + golden MMIO trace. Path A stays optional later.
-- ELF beyond this subset (KASLR / KPTI / PIE, ramfs). Per-task PML4 +
+- ELF beyond this subset (KASLR / KPTI / PIE). In-kernel ramfs for
+  `/init` + `/probe` landed (seed from embedded blobs; no user
+  `open`/`read`). virtio-blk is still open. Per-task PML4 +
   SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
   landed. Identity 4 GiB remains an intentional DMA window.
 - aarch64 EL0 / GICv3 / virtio (thin HAL landed; userspace is later).

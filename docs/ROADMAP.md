@@ -13,7 +13,7 @@ product kernel.
 | ELF64 static non-PIE loader; `/init` embedded blob | **done** |
 | Preemptive threads on PIT; `SYS_YIELD` / blocking wait | **done** |
 | CI: `cargo test --workspace` + `make qemu` (isa-debug-exit) | **done** |
-| ramfs / virtio-blk for `/init` | not started (blob is enough) |
+| ramfs / virtio-blk for `/init` | **done** (in-kernel ramfs; seed from blobs; virtio-blk deferred) |
 | Per-task PML4 / SMEP / SMAP | **done** (x86 subset: CR3 switch + USER-local 2 MiB windows) |
 | User-level threads (clone) | **done** (additive `SYS_CLONE=10`; share caller's PML4/satp; not Linux clone) |
 
@@ -373,6 +373,32 @@ Still stubbed: `CLONE_*` flags, TLS, per-thread exit, a new aspace
 (`fork`), per-task cap tables. `/probe` is still a second ELF with
 its own PML4 — that is not `SYS_CLONE`.
 
+## In-kernel ramfs for `/init` (this cut)
+
+Landed as a **documented subset**, not POSIX, not a block device,
+not virtio-blk:
+
+- `RamFs` in `core/src/ramfs.rs`: flat named files over borrowed
+  slices. `seed` / `open` / `read` / `bytes`. Host tests cover
+  `/init` + `/probe`, chunked read, missing/duplicate/bad names.
+- Boot seeds `/init` (and x86 `/probe`) from the existing embedded
+  ELF blobs. The loader **opens those names** and copies `PT_LOAD`
+  from the ramfs bytes — it does not call `include_bytes!` at the
+  load site.
+- QEMU: `[ramfs] open /init ok` (plus `/probe` on x86) and
+  `[boot] loaded /init … (static non-PIE, ramfs)`.
+  `make qemu-ci` / `qemu-smp-ci` / `qemu-riscv-ci` grep the open line.
+- No new syscall. Numbers 0–10 stay as in [ABI.md](ABI.md).
+  User `open`/`read` is not this cut.
+- SoftNPU path B, Soft SMMU, higher-half identity DMA, RISC-V
+  U-mode, `SYS_CLONE`, and the enter_user PIT snapshot are
+  unchanged.
+
+**virtio-blk** is a follow-up: a QEMU `-drive` plus a virtio-blk
+driver on x86 would be a larger cut and must not disturb the
+in-kernel SoftNPU BAR. A later cut can copy blocks into a reserved
+window and `seed` the same `/init` / `/probe` names.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -394,6 +420,7 @@ Search for `// STUB:` / `STUB` :
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
+| ramfs / virtio-blk for `/init` | `core/src/ramfs.rs`, `kernel/src/elfload.rs` | **done** as in-kernel ramfs (seed from blobs; open `/init` + `/probe`). virtio-blk still stub |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 `SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / used-ring
@@ -421,6 +448,9 @@ kernel thread queue sleeps.
 7. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
    with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
    that does not kill the guest are still open.
+8. **virtio-blk for `/init`.** In-kernel ramfs landed (seed from
+   embedded blobs). A QEMU drive + virtio-blk driver is still open
+   and must not break SoftNPU path B.
 
 ## Two-year plan
 
@@ -433,9 +463,10 @@ kernel thread queue sleeps.
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
-  kernel map, and user-level threads via `SYS_CLONE` (this cut)
-  are landed. ABI stays stable (0–9 unchanged; 10 additive). Custom QEMU
-  virtio-accel (path A), RISC-V PLIC, KPTI / KASLR remain deferred.
+  kernel map, user-level threads via `SYS_CLONE`, and in-kernel
+  ramfs for `/init` (this cut) are landed. ABI stays stable
+  (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
+  RISC-V PLIC, KPTI / KASLR remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -449,11 +480,11 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
   software IEEE (PR #18), RISC-V S-mode userspace (PR #19),
   AffinityLaplacian n≤32 placement (PR #20), SpecForge virtio
-  path B (PR #21), the x86 higher-half kernel map (PR #22), and
-  user-level threads / `SYS_CLONE` (this cut)
-  are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), RISC-V PLIC, KPTI / KASLR,
-  and the other stubs above are still open.
+  path B (PR #21), the x86 higher-half kernel map (PR #22),
+  user-level threads / `SYS_CLONE` (PR #23), and in-kernel ramfs
+  for `/init` (this cut) are **done** as research-prototype slices.
+  Custom QEMU virtio-accel (path A), virtio-blk, RISC-V PLIC,
+  KPTI / KASLR, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track
