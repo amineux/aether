@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aether — fabric kernel for AI silicon</title>
-  <meta name="description" content="Aether is an accelerator-first fabric kernel: a research prototype for operating systems on chiplet packages of CPU, NPU, GPU, and custom ASIC tiles.">
+  <meta name="description" content="Aether is an accelerator-first fabric kernel for chiplet packages of CPU, NPU, GPU, and custom ASIC tiles. Accelerators are activities on a capability fabric, not ioctl endpoints.">
   <meta name="theme-color" content="#070809">
   <link rel="canonical" href="https://amineux.github.io/aether/">
   <meta property="og:title" content="Aether — fabric kernel for AI silicon">
-  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. A research kernel for chiplet packages.">
+  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. A fabric kernel for chiplet packages.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://amineux.github.io/aether/">
   <meta name="twitter:card" content="summary">
@@ -45,7 +45,7 @@
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="wrap hero-inner">
         <div>
-          <p class="eyebrow"><i></i> Research prototype · v0.1 · not production silicon</p>
+          <p class="eyebrow"><i></i> Capability fabric · chiplet packages</p>
           <h1><span>Aether</span></h1>
           <p class="one-liner">Fabric kernel for AI silicon.</p>
           <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
@@ -54,9 +54,9 @@
             <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Read the docs</a>
           </div>
           <div class="hero-meta">
-            <span><strong>make qemu</strong> · x86_64 ring-3</span>
+            <span><strong>make qemu</strong> · x86_64 · RISC-V · aarch64</span>
             <span><strong>MIT OR Apache-2.0</strong></span>
-            <span><strong>No vendor partnership claimed</strong></span>
+            <span><strong>QEMU vertical slice</strong></span>
           </div>
         </div>
 
@@ -452,8 +452,8 @@
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
-            <h2>Research → partner-shaped HAL path → optional bring-up docs later.</h2>
-            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. We do not tape out chips. Soft SMMU, Soft-CP, SMP smoke, per-task PML4, and a small cap CDT landed as research cuts. Manufacturing support is not a milestone.</p>
+            <h2>Year-1 and hardening landed. Partner-shaped HAL path stays open.</h2>
+            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack are done. We do not tape out chips. Manufacturing support is not a milestone.</p>
           </div>
           <div class="honest-pill" data-reveal>Active track · not a foundry calendar</div>
         </div>
@@ -461,7 +461,7 @@
           <article class="tl now" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Now · research cuts landed</div>
+              <div class="tl-when">Done · Year-1</div>
               <h3>Working vertical slice</h3>
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
@@ -473,14 +473,31 @@
                 <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
                 <li>Growable user <code>mmap</code> — additive <code>SYS_MMAP=11</code> anonymous 4 KiB USER pages (not POSIX <code>mmap</code>; no file / no <code>MAP_SHARED</code>)</li>
                 <li>In-kernel ramfs — loader <code>open</code>s <code>/init</code> (and x86 <code>/probe</code>); seeded from x86 virtio-blk (AETHFS01) or embedded blobs; not POSIX</li>
-                <li>Higher-half + KASLR slide + PIE reloc + KPTI + PCID + one-page COW + identity teardown — <code>ffffffff80000000+PA</code> plus 0/16/32 MiB dual-map on x86; <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped. User CR3 has no HH / no identity DMA (4 KiB trampoline). PCID tags KPTI <code>mov cr3</code> when CPUID advertises it (else full flush). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH (not a secret slide / Meltdown-complete / POSIX <code>mmap</code>)</li>
+                <li>Multiboot mmap → frames — documented x86 subset (clip + bitmap cap; RISC-V / aarch64 take the explicit fallback)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
+                <li>AffinityLaplacian n≤32 — prototype eigensolve in sched (not GiFt-Placer)</li>
                 <li>RISC-V U-mode <code>/init</code> over <code>ecall</code> / <code>sret</code> (Sv39 isolate; in-kernel SoftNPU; PLIC software doorbell, not virtio-mmio; not product-class)</li>
                 <li>aarch64 EL0 <code>/init</code> over <code>svc</code> / <code>eret</code> (TTBR0 isolate; in-kernel SoftNPU; not GICv3 / virtio-mmio; not product-class)</li>
                 <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Hardening</div>
+              <h3>x86 map, slide, and isolate</h3>
+              <ul>
+                <li>Higher-half kernel — <code>ffffffff80000000+PA</code>; trampoline still copies to physical <code>0x400000</code></li>
+                <li>KASLR boot-time slide — 0 / 16 / 32 MiB dual-map; cmdline / entropy; not a secret-slide claim</li>
+                <li>PIE reloc — <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped</li>
+                <li>KPTI user CR3 — no HH / no identity DMA in user map (4 KiB trampoline; not Meltdown-complete)</li>
+                <li>PCID tagged TLB — tags KPTI <code>mov cr3</code> when CPUID advertises it; stock <code>qemu64</code> often full-flushes</li>
+                <li>One-page COW — <code>/init</code> and <code>/probe</code> share a RO template until write fault (not <code>fork</code>)</li>
+                <li>Identity teardown — kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH</li>
               </ul>
             </div>
           </article>
@@ -515,7 +532,7 @@
               <div class="tl-when">Later · research</div>
               <h3>Package topology as a solver input</h3>
               <ul>
-                <li>AffinityLaplacian n≤32 placement is a prototype eigensolve in sched — not GiFt-Placer, not an EDA package solver</li>
+                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver</li>
                 <li>CXL stays a typed place — no pin/map productization, no CXL.mem claim</li>
                 <li>Formal subset of caps — inspired by seL4, not a proof claim</li>
               </ul>
@@ -542,8 +559,8 @@
       <div class="wrap">
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
-          <h2>What you can boot. What is stubbed.</h2>
-          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Soft SMMU, Soft-CP, SMP smoke, per-task PML4, and a small cap CDT landed as research cuts. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <h2>What you can boot. What is still open.</h2>
+          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1 and the x86 hardening stack have landed. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -556,15 +573,15 @@
   TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
   RING-3 /init VIA SYSCALL/SYSRET</span>
 
-Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span> · <span class="cmd">make qemu-aarch64</span>
-CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
+Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span> · <span class="cmd">make qemu-aarch64</span> · <span class="cmd">make accel-test</span>
+CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
           </div>
           <div class="proof-list" data-reveal data-d="2">
             <div class="proof">
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SMP smoke, per-task PML4, small cap CDT.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP, Soft SMMU (STE→CD→S1/S2 + ATS invalidate), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
               </div>
             </div>
             <div class="proof">
@@ -601,7 +618,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
           <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#10131a"/><path d="M20 44 L32 16 L44 44" stroke="#3DDC97" stroke-width="3.2" fill="none" stroke-linejoin="round"/><path d="M24.6 34.2 H39.4" stroke="#6AA8FF" stroke-width="2.2"/><circle cx="32" cy="16" r="2.4" fill="#6AA8FF"/></svg>
           Aether
         </a>
-        <p>Accelerator-first fabric kernel. Research prototype. Dual-licensed MIT OR Apache-2.0. Contact via GitHub issues or the repo owner.</p>
+        <p>Accelerator-first fabric kernel. Dual-licensed MIT OR Apache-2.0. Contact via GitHub issues or the repo owner.</p>
       </div>
       <div class="foot-links">
         <a href="https://github.com/amineux/aether">GitHub</a>
