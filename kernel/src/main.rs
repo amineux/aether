@@ -25,7 +25,9 @@ use aether_core::{NAME, VERSION};
 use crate::console::{nl, write_str, write_u64};
 
 #[cfg(target_arch = "x86_64")]
-const KERNEL_STACK_SIZE: usize = 64 * 1024;
+// Fabric + CapTable + SoftNPU live on this stack in world::init /
+    // run_boot_demo. Capability grew a cdt/parent edge; 64 KiB overflowed.
+    const KERNEL_STACK_SIZE: usize = 128 * 1024;
 #[cfg(target_arch = "x86_64")]
 #[repr(align(16))]
 struct Stack([u8; KERNEL_STACK_SIZE]);

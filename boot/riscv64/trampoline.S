@@ -93,6 +93,7 @@ boot_pagetable:
     .skip   4096
 
     .align  4
-    .skip   65536
+    /* run_boot_demo holds Fabric + two CapTables; cdt/parent grew Capability. */
+    .skip   131072
     .globl  boot_stack_top
 boot_stack_top:
