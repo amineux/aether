@@ -58,12 +58,13 @@ QEMU -kernel build/aether.elf
         │  multiboot1, 32-bit protected mode, paging off
         ▼
 boot/x86_64/trampoline.S
-        │  stash Multiboot EAX/EBX at 0x7000
+        │  stash Multiboot EAX/EBX + KASLR slide at 0x7000
         │  identity-map 4 GiB (2 MiB pages)
         │  PML4[511] aliases first 2 GiB at 0xffffffff80000000
+        │    (dedicated HH PDs; dual-map 8 MiB at +slide)
         │  enable PAE + EFER.LME + paging
         │  copy payload → LMA 0x400000
-        │  jump to VA 0xffffffff80400000
+        │  jump to VA 0xffffffff80400000+slide
         ▼
 kernel::_start  (Rust, x86_64-unknown-none, higher-half)
         │  stack in BSS, serial, mmap → frames, heap, IDT, GDT/TSS, SYSCALL, PIT
@@ -90,10 +91,12 @@ Physical sketch (128 MiB guest):
 
 | Range | Use |
 | --- | --- |
-| `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD) |
+| `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD identity) |
+| `0x7000–0x700B` | Multiboot mailbox + KASLR slide bytes |
+| `0x71000–0x72FFF` | Dedicated HH PD0/PD1 (KASLR dual-map; identity PDs untouched) |
 | `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
-| `0x400000` | Kernel `.text` LMA (after copy); VMA `0xffffffff80400000` |
+| `0x400000` | Kernel `.text` LMA (after copy); VMA `0xffffffff80400000+slide` |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
@@ -102,8 +105,10 @@ The boot path parses the Multiboot1 mmap (Multiboot2 parser is
 host-tested). Type-1 regions below 16 MiB are printed then clipped so
 the trampoline / page tables / AP SIPI / kernel image stay out of the
 free pool. Missing mmap is an explicit arch-window fallback, not a
-silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) is landed;
-KASLR / KPTI / PCID / COW are still not. The identity 4 GiB is an
+silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) plus a
+boot-time KASLR slide (0 / 16 / 32 MiB dual-map; CI forces
+`kaslr=1`) is landed. The unused HH alias stays (not PIE / reloc).
+KPTI / PCID / COW are still not. The identity 4 GiB is an
 intentional DMA / SIPI / user-window.
 
 ## Crate graph
@@ -318,9 +323,10 @@ on that task's 2 MiB window, and the other user window is unmapped.
 The kernel CR3 (boot tables at `0x1000`) stays supervisor-only.
 Context switch writes CR3. CR4.SMEP and CR4.SMAP are enabled on the
 BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and `STAC`/`CLAC` wrap
-user copies. Kernel `.text` runs at `0xffffffff80400000`. This is
-**not** KPTI, KASLR, PCID, COW, or a POSIX MM. The identity 4 GiB
-stays mapped so SoftNPU DMA and the AP trampoline keep working.
+user copies. Kernel `.text` is linked at `0xffffffff80400000` and
+runs at that VA plus a boot-time slide. This is **not** KPTI, PIE
+KASLR, PCID, COW, or a POSIX MM. The identity 4 GiB stays mapped so
+SoftNPU DMA and the AP trampoline keep working.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V

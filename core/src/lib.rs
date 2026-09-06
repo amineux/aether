@@ -40,8 +40,10 @@ pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftN
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{
-    hh_to_phys, phys_to_hh, IdentityAs, Sv39As, Ttbr0As, CR4_SMAP, CR4_SMEP, KERNEL_HH_SPAN,
-    KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA,
+    hh_to_phys, kaslr_slide, kaslr_slide_valid, kernel_text_va_slid, parse_kaslr_cmdline,
+    phys_to_hh, phys_to_hh_slid, IdentityAs, Sv39As, Ttbr0As, CR4_SMAP, CR4_SMEP,
+    KASLR_HH_PD0, KASLR_HH_PD1, KASLR_KERNEL_SPAN, KASLR_MAILBOX, KASLR_MAILBOX_SLIDE,
+    KASLR_SLIDE_COUNT, KASLR_SLIDE_STRIDE, KERNEL_HH_SPAN, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};

@@ -10,6 +10,8 @@ pub const MB2_BOOT_MAGIC: u32 = 0x36D7_6289;
 
 /// Multiboot1 info `flags` bit 0: `mem_lower` / `mem_upper` present.
 pub const MB1_FLAG_MEM: u32 = 1 << 0;
+/// Multiboot1 info `flags` bit 2: cmdline physical pointer present.
+pub const MB1_FLAG_CMDLINE: u32 = 1 << 2;
 /// Multiboot1 info `flags` bit 6: mmap present.
 pub const MB1_FLAG_MMAP: u32 = 1 << 6;
 
