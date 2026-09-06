@@ -1,7 +1,8 @@
 //! VirtIO-Accel: a virtio-inspired job/completion ring.
 //!
-//! This is **not** a shipped QEMU virtio device (none exists yet). It is the
-//! queue ABI we would ask a QEMU/device team to implement:
+//! Host-tested ring model. The live QEMU path uses [`crate::mmio::AccelMmio`]
+//! (doorbell + used-ring IRQ). This module keeps the same ABI in Rust
+//! structs so unit tests do not need a byte BAR.
 //!
 //! ```text
 //! MMIO cfg @ BAR0

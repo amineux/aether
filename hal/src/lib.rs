@@ -10,6 +10,7 @@
 #![cfg_attr(not(test), no_std)]
 
 use aether_core::accel::{AccelJobDesc, Completion};
+use aether_core::iommu::MapRequest;
 use aether_core::space::{map_place, FabricAddr, Place, SpaceError};
 use aether_core::types::PhysAddr;
 
@@ -30,19 +31,36 @@ pub enum HalError {
     BadArg,
     Fault,
     Unsupported,
+    /// Map refused: no Memory cap walk, or the pin was never authorized.
+    NoMemoryCap,
 }
 
 /// Accelerator doorbell / IRQ contract.
 pub trait AccelDevice {
     fn probe(&mut self) -> Result<AccelInfo, HalError>;
+    /// Write a job into the avail ring and kick the doorbell. Does not
+    /// execute the job; completions arrive on the used ring / IRQ.
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError>;
+    /// Driver-side used-ring read. Does not service the device.
     fn poll(&mut self) -> Option<Completion>;
-    /// Pin a physical range the device may DMA. Ownership must already
-    /// have been transferred via the fabric (arena + cap).
+    /// Pin a guest PA range the device may DMA. Returns the IOVA.
+    ///
+    /// Callers must have already walked a Memory cap with MAP (see
+    /// [`aether_core::iommu::IommuMap::map`]). Implementations may still
+    /// refuse an unauthorized pin.
     ///
     /// This is a *local* pin. Remote `(place, local)` addresses must go
     /// through [`map_fabric`] — never a silent coherent load.
-    fn map(&mut self, base: PhysAddr, size: u64) -> Result<(), HalError>;
+    fn map(&mut self, req: MapRequest) -> Result<PhysAddr, HalError>;
+    fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
+        let _ = iova;
+        Ok(())
+    }
+    /// Translate a guest PA through the device's pin table. Identity on QEMU.
+    fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
+        let _ = guest_pa;
+        None
+    }
     fn name(&self) -> &'static str;
 }
 
@@ -64,6 +82,7 @@ pub trait Timer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_core::iommu::MapRequest;
 
     struct Dummy;
     impl AccelDevice for Dummy {
@@ -82,8 +101,11 @@ mod tests {
         fn poll(&mut self) -> Option<Completion> {
             None
         }
-        fn map(&mut self, _base: PhysAddr, _size: u64) -> Result<(), HalError> {
-            Ok(())
+        fn map(&mut self, req: MapRequest) -> Result<PhysAddr, HalError> {
+            if req.len == 0 {
+                return Err(HalError::BadArg);
+            }
+            Ok(req.guest_pa)
         }
         fn name(&self) -> &'static str {
             "dummy"
@@ -95,6 +117,10 @@ mod tests {
         let mut d = Dummy;
         assert_eq!(d.probe().unwrap().vendor, 0xAE7E);
         assert_eq!(d.name(), "dummy");
+        let iova = d
+            .map(MapRequest::pin(aether_core::types::PhysAddr(0x1000), 0x1000))
+            .unwrap();
+        assert_eq!(iova.0, 0x1000);
     }
 
     #[test]

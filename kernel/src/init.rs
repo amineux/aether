@@ -59,6 +59,14 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.fence_ok));
     console::nl();
 
+    write_str("[map] IOMMU identity pin + Memory-cap refuse  ");
+    write_str(flag(report.map_ok));
+    console::nl();
+
+    write_str("[color] tenant/bank paint  Compute foreign refuse + Exchange ok  ");
+    write_str(flag(report.color_ok));
+    console::nl();
+
     write_str("[fabric] SoftNPU job#");
     write_u64(report.job_seq as u64);
     write_str(" C[0,0]=");

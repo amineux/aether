@@ -168,6 +168,7 @@ pub extern "C" fn _start() -> ! {
     debug_print(b"  CUT BIND + HODGE FLOW CLASS ENFORCED\r\n");
     debug_print(b"  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB\r\n");
     debug_print(b"  RING-3 /init VIA SYSCALL/SYSRET\r\n");
+    debug_print(b"  VIRTQUEUE MMIO + IOMMU MAP + BANK COLOR\r\n");
     debug_print(b"====================================================\r\n");
 
     yield_now();

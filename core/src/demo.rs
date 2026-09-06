@@ -6,6 +6,8 @@ use crate::accel::{AccelJobDesc, AccelOp, SliceMem, SoftNpu};
 use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
+use crate::color::{admit_arena_wave, ColorError};
+use crate::iommu::{IommuMap, MapError, MapRequest};
 use crate::cut::{bind_place, CutError, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
 use crate::fence::Timeline;
@@ -29,6 +31,8 @@ pub struct DemoReport {
     pub space_ok: bool,
     pub activity_ok: bool,
     pub fence_ok: bool,
+    pub map_ok: bool,
+    pub color_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -51,6 +55,8 @@ impl DemoReport {
             && self.space_ok
             && self.activity_ok
             && self.fence_ok
+            && self.map_ok
+            && self.color_ok
     }
 }
 
@@ -125,7 +131,11 @@ pub fn run_boot_demo() -> DemoReport {
     .unwrap();
     let here = Place::new(ChipletId(0), MemorySpace::TileSram).with_tile(2);
     let arena = arenas
-        .alloc(ArenaRequest::tensor(64 * 1024, Some(BankId(0))).in_space(MemorySpace::TileSram))
+        .alloc(
+            ArenaRequest::tensor(64 * 1024, Some(BankId(0)))
+                .in_space(MemorySpace::TileSram)
+                .for_tenant(tenant_a),
+        )
         .unwrap();
     events.emit(EventKind::ArenaAlloc, arena.base.0, arena.size);
     arenas
@@ -143,6 +153,27 @@ pub fn run_boot_demo() -> DemoReport {
             tenant: tenant_a,
         })
         .unwrap();
+    let mut iommu = IommuMap::new();
+    let pin = iommu
+        .map(
+            caps_a.lookup(mem_cap).unwrap(),
+            MapRequest::pin(arena.base, arena.size),
+        )
+        .unwrap();
+    let no_map_cap = Capability {
+        kind: CapKind::Memory,
+        rights: CapRights(CapRights::READ | CapRights::WRITE),
+        object: arena.id.0,
+        badge: 0,
+        generation: 1,
+        tenant: tenant_a,
+    };
+    let map_refused = iommu.map(&no_map_cap, MapRequest::pin(PhysAddr(0x2000_0000), 0x1000))
+        == Err(MapError::NoMemoryCap);
+    let map_ok = pin.iova == arena.base
+        && iommu.covers(arena.base, 64)
+        && map_refused
+        && IommuMap::check_cap(caps_a.lookup(mem_cap).unwrap()).is_ok();
 
     // Isolation: tenant B must not hold a cap to A's arena.
     let isolation_ok = !caps_b.holds(CapKind::Memory, arena.id.0)
@@ -261,6 +292,7 @@ pub fn run_boot_demo() -> DemoReport {
         phase: Phase::Compute,
         partition_id: Some(part.id.0),
         fence_id: Some(fence.id.0),
+        arena_color: Some(arena.color),
     });
     sched.enqueue(Job {
         id: 0,
@@ -274,6 +306,7 @@ pub fn run_boot_demo() -> DemoReport {
         phase: Phase::Compute,
         partition_id: Some(part.id.0),
         fence_id: Some(fence.id.0),
+        arena_color: Some(arena.color),
     });
     let wave = sched.pick(TileId(2));
     events.emit(
@@ -340,6 +373,24 @@ pub fn run_boot_demo() -> DemoReport {
     events.emit(EventKind::AccelComplete, cpl.job_seq as u64, cpl.cycles as u64);
     let fence_done = timeline.complete(fence.id).unwrap();
     events.emit(EventKind::FenceComplete, fence_done.id.0, 1);
+    let color_ok = admit_arena_wave(tenant_a.0, Phase::Compute, arenas.get(arena.id).unwrap(), BankId(0))
+        .is_ok()
+        && admit_arena_wave(tenant_b.0, Phase::Compute, arenas.get(arena.id).unwrap(), BankId(0))
+            == Err(ColorError::ForeignTenant)
+        && admit_arena_wave(
+            tenant_a.0,
+            Phase::Compute,
+            arenas.get(arena.id).unwrap(),
+            BankId(1),
+        ) == Err(ColorError::ForeignBank)
+        && admit_arena_wave(
+            tenant_a.0,
+            Phase::Exchange,
+            arenas.get(arena.id).unwrap(),
+            BankId(1),
+        )
+        .is_ok();
+
     let fence_ok = fence.submitted
         && fence_done.completed
         && !fence_done.timed_out
@@ -452,6 +503,8 @@ pub fn run_boot_demo() -> DemoReport {
         space_ok,
         activity_ok,
         fence_ok,
+        map_ok,
+        color_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -480,6 +533,8 @@ mod tests {
         assert!(r.space_ok, "space");
         assert!(r.activity_ok, "activity");
         assert!(r.fence_ok, "fence");
+        assert!(r.map_ok, "map");
+        assert!(r.color_ok, "color");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);
