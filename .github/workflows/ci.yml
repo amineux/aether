@@ -29,6 +29,9 @@ jobs:
       - name: QEMU demo (isa-debug-exit success)
         run: make qemu-ci
 
+      - name: QEMU virtio-blk → ramfs (requires -drive)
+        run: make qemu-blk-ci
+
       - name: QEMU PCID request (-cpu +pcid,+invpcid; TCG falls back)
         run: make qemu-pcid-ci
 

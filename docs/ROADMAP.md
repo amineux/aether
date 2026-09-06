@@ -13,7 +13,7 @@ product kernel.
 | ELF64 static non-PIE loader; `/init` embedded blob | **done** |
 | Preemptive threads on PIT; `SYS_YIELD` / blocking wait | **done** |
 | CI: `cargo test --workspace` + `make qemu` (isa-debug-exit) | **done** |
-| ramfs / virtio-blk for `/init` | **done** (in-kernel ramfs; seed from blobs; virtio-blk deferred) |
+| ramfs / virtio-blk for `/init` | **done** (in-kernel ramfs; seed from virtio-blk or embedded blobs) |
 | Per-task PML4 / SMEP / SMAP | **done** (x86 subset: CR3 switch + USER-local 2 MiB windows) |
 | User-level threads (clone) | **done** (additive `SYS_CLONE=10`; share caller's PML4/satp; not Linux clone) |
 
@@ -587,29 +587,57 @@ its own PML4 — that is not `SYS_CLONE`.
 
 ## In-kernel ramfs for `/init` (this cut)
 
-Landed as a **documented subset**, not POSIX, not a block device,
-not virtio-blk:
+Landed as a **documented subset**, not POSIX, not a user `open` /
+`read` syscall:
 
 - `RamFs` in `core/src/ramfs.rs`: flat named files over borrowed
   slices. `seed` / `open` / `read` / `bytes`. Host tests cover
   `/init` + `/probe`, chunked read, missing/duplicate/bad names.
-- Boot seeds `/init` (and x86 `/probe`) from the existing embedded
-  ELF blobs. The loader **opens those names** and copies `PT_LOAD`
-  from the ramfs bytes — it does not call `include_bytes!` at the
-  load site.
+- Boot seeds `/init` (and x86 `/probe`) from virtio-blk when a
+  drive is present (below), otherwise from the embedded ELF blobs.
+  The loader **opens those names** and copies `PT_LOAD` from the
+  ramfs bytes — it does not call `include_bytes!` at the load site.
 - QEMU: `[ramfs] open /init ok` (plus `/probe` on x86) and
   `[boot] loaded /init … (static non-PIE, ramfs)`.
-  `make qemu-ci` / `qemu-smp-ci` / `qemu-riscv-ci` grep the open line.
+  `make qemu-ci` / `qemu-smp-ci` grep `[ramfs] seed embedded`
+  (no drive). `qemu-riscv-ci` greps the open line.
 - No new syscall. Numbers 0–10 stay as in [ABI.md](ABI.md).
   User `open`/`read` is not this cut.
 - SoftNPU path B, Soft SMMU, higher-half identity DMA, RISC-V
   U-mode, `SYS_CLONE`, and the enter_user PIT snapshot are
   unchanged.
 
-**virtio-blk** is a follow-up: a QEMU `-drive` plus a virtio-blk
-driver on x86 would be a larger cut and must not disturb the
-in-kernel SoftNPU BAR. A later cut can copy blocks into a reserved
-window and `seed` the same `/init` / `/probe` names.
+## virtio-blk → ramfs (this cut)
+
+Landed as a **documented x86 subset**, not a block layer, not
+virtio 1.0 modern MMIO, not RISC-V / aarch64:
+
+- QEMU `-drive file=build/bootfs.img,if=none,format=raw,id=bootfs`
+  plus `-device virtio-blk-pci,drive=bootfs,disable-legacy=off`.
+  Image is **AETHFS01** (`core/src/bootfs.rs` / `scripts/mkbootfs.py`):
+  a flat named-file pack, not FAT/GPT.
+- Legacy virtio-pci I/O (`kernel/src/virtio_blk.rs`): PCI scan for
+  vendor `0x1AF4` / device `0x1001`, BAR0 I/O, poll the used ring
+  (no IRQ). Blocks DMA into `BLK_WINDOW_BASE` (`0x02A0_0000`, 2 MiB
+  identity). SoftNPU arenas stay at `0x0100_0000`. The AccelMmio
+  BAR is a software array — this path does not touch it.
+- On success: `ramfs::seed` `/init` and `/probe` from the window.
+  Loader still `open`s those names. Serial:
+  `[blk] virtio-blk seed /init ok` (+ `/probe`).
+- **Fallback:** no device (or probe/parse fail) → seed the
+  embedded blobs and print `[ramfs] seed embedded`. `make qemu-ci`
+  / `qemu-smp-ci` stay drive-less. `make qemu-blk-ci` requires the
+  drive and greps the `[blk]` seed lines plus SoftNPU / `/init`.
+- Host tests: `core/src/bootfs.rs` (pack/parse/seed, refuse bad
+  magic/OOB/dup). No new syscall (0–10 frozen).
+- RISC-V / aarch64 keep embedded seed. SoftNPU path B, KPTI, PCID,
+  COW, PIE, SMP, `SYS_CLONE` unchanged.
+
+Honest limits (do not market these as done):
+
+- Legacy I/O virtqueue only. No modern virtio-pci MMIO, no
+  virtio-mmio, no MSI-X, no write path, no general FS.
+- One boot-time read. Not a user block device.
 
 ## RISC-V PLIC + SoftNPU doorbell (this cut)
 
@@ -683,7 +711,7 @@ Search for `// STUB:` / `STUB` :
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
-| ramfs / virtio-blk for `/init` | `core/src/ramfs.rs`, `kernel/src/elfload.rs` | **done** as in-kernel ramfs (seed from blobs; open `/init` + `/probe`). virtio-blk still stub |
+| ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 `SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / used-ring
@@ -713,9 +741,10 @@ kernel thread queue sleeps.
 7. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
    with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
    that does not kill the guest are still open.
-8. **virtio-blk for `/init`.** In-kernel ramfs landed (seed from
-   embedded blobs). A QEMU drive + virtio-blk driver is still open
-   and must not break SoftNPU path B.
+8. **Modern virtio-blk / virtio-mmio.** Legacy PCI I/O + AETHFS01
+   seed landed on x86 (`make qemu-blk-ci`). A virtio 1.0 MMIO BAR,
+   RISC-V / aarch64 virtio-mmio, and a user block device are still
+   open. SoftNPU path B stays the in-kernel BAR.
 
 ## Two-year plan
 
@@ -731,9 +760,10 @@ kernel thread queue sleeps.
   kernel map, the KASLR boot-time slide, the PIE-reloc / unused-alias
   unmap, the KPTI user-CR3 subset, the PCID tagged-TLB subset, the
   one-page COW subset, user-level threads via `SYS_CLONE`, and
-  in-kernel ramfs for `/init`, RISC-V PLIC + SoftNPU software
+  in-kernel ramfs for `/init`, x86 virtio-blk → ramfs seed,
+  RISC-V PLIC + SoftNPU software
   doorbell, and aarch64 EL0 `/init` are landed. ABI stays stable
-  (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
+  (0–10 unchanged). Custom QEMU virtio-accel (path A),
   `fork` / growable `mmap` remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
@@ -754,10 +784,11 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 EL0 `/init` (PR #26), the x86 KASLR boot-time
   slide (PR #27), the x86 KPTI user-CR3 subset (PR #28), the
   x86 PCID tagged-TLB subset (PR #29), the one-page COW
-  subset (PR #30), and the x86 PIE-reloc / unused-alias unmap
+  subset (PR #30), the x86 PIE-reloc / unused-alias unmap
+  (PR #31), and x86 virtio-blk → ramfs
   (this cut)
   are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), virtio-blk, `fork` /
+  Custom QEMU virtio-accel (path A), `fork` /
   growable `mmap`, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor

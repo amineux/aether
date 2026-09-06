@@ -11,6 +11,7 @@ pub mod accel;
 pub mod activity;
 pub mod arena;
 pub mod aspace;
+pub mod bootfs;
 pub mod caps;
 pub mod color;
 pub mod cut;
@@ -40,6 +41,10 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
+pub use bootfs::{
+    parse_bootfs, pack_bootfs, BootFs, BootFsError, BootFsFile, BOOTFS_ENT, BOOTFS_HDR,
+    BOOTFS_MAGIC, BOOTFS_MAX_FILES, BOOTFS_NAME, BOOTFS_SECTOR,
+};
 pub use aspace::{
     cr3_pa, cr3_pcid, cr3_tagged, hh_to_phys, kaslr_slide, kaslr_slide_valid, kernel_text_va_slid,
     parse_kaslr_cmdline, phys_to_hh, phys_to_hh_slid, IdentityAs, PcidAlloc, Sv39As, Ttbr0As,
@@ -86,7 +91,7 @@ pub use sysnr::{
     SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, USER_AA_STACK_TOP,
     USER_COW_BASE, USER_COW_END, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END,
     USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_STACK_TOP, USER_STACK_TOP,
-    COW_PRIVATE_WORD, COW_TEMPLATE_WORD,
+    BLK_WINDOW_BASE, BLK_WINDOW_END, COW_PRIVATE_WORD, COW_TEMPLATE_WORD,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 

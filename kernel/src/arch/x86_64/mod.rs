@@ -3,6 +3,7 @@ pub mod cpu;
 pub mod gdt;
 pub mod idt;
 pub mod io;
+pub mod pci;
 pub mod kpti;
 pub mod serial;
 pub mod smp;

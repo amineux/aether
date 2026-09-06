@@ -94,7 +94,7 @@ bump there.
 
 The ELF loader opens `/init` (and optional `/probe`) from an
 in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
-Boot seeds those names from the embedded ELF blobs. This is **not**
-a user syscall: numbers **0–10 stay frozen** as the table above.
-No `SYS_OPEN` / `SYS_READ` in this cut. virtio-blk is a later
-optional path and must not disturb SoftNPU (in-kernel BAR).
+Boot seeds those names from an x86 virtio-blk AETHFS01 image when
+a drive is present, otherwise from the embedded ELF blobs. This is
+**not** a user syscall: numbers **0–10 stay frozen** as the table
+above. No `SYS_OPEN` / `SYS_READ`. SoftNPU stays the in-kernel BAR.

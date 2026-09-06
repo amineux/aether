@@ -1,8 +1,10 @@
 //! Load static ELF64 images from the boot ramfs into per-task user windows.
 //!
-//! The ramfs is seeded from the embedded blobs (`include_bytes!` of
-//! `build/init.elf` / `probe.elf`). The loader [`RamFs::open`]s `/init`
-//! (and `/probe`) rather than touching those blobs at the load site.
+//! The ramfs is seeded from virtio-blk (x86, AETHFS01 image) when a
+//! drive is present, otherwise from the embedded blobs (`include_bytes!`
+//! of `build/init.elf` / `probe.elf`). The loader [`RamFs::open`]s
+//! `/init` (and `/probe`) rather than touching those blobs at the load
+//! site.
 
 use aether_core::elf::{loads_in_window, parse_elf64};
 #[cfg(target_arch = "x86_64")]
@@ -32,19 +34,30 @@ pub struct LoadedImage {
     pub cr3: u64,
 }
 
-/// Seed `/init` (and x86 `/probe`) from the embedded blobs, then prove
-/// `open` + `read` on those names. virtio-blk is not this cut.
+/// Seed `/init` (and x86 `/probe`) from virtio-blk when present, else
+/// the embedded blobs, then prove `open` + `read` on those names.
 pub fn mount_boot_ramfs() -> Result<RamFs<'static>, &'static str> {
     let mut fs = RamFs::new();
-    if INIT_ELF.is_empty() {
-        return Err("user ELF missing (build user/ first)");
-    }
-    fs.seed(INIT_PATH, INIT_ELF)
-        .map_err(|_| "ramfs seed /init failed")?;
     #[cfg(target_arch = "x86_64")]
-    if !PROBE_ELF.is_empty() {
-        fs.seed(PROBE_PATH, PROBE_ELF)
-            .map_err(|_| "ramfs seed /probe failed")?;
+    let from_blk = crate::virtio_blk::try_seed_ramfs(&mut fs);
+    #[cfg(not(target_arch = "x86_64"))]
+    let from_blk = false;
+
+    if !from_blk {
+        if INIT_ELF.is_empty() {
+            return Err("user ELF missing (build user/ first)");
+        }
+        write_str("[ramfs] seed embedded");
+        #[cfg(target_arch = "x86_64")]
+        write_str(" (no virtio-blk)");
+        console::nl();
+        fs.seed(INIT_PATH, INIT_ELF)
+            .map_err(|_| "ramfs seed /init failed")?;
+        #[cfg(target_arch = "x86_64")]
+        if !PROBE_ELF.is_empty() {
+            fs.seed(PROBE_PATH, PROBE_ELF)
+                .map_err(|_| "ramfs seed /probe failed")?;
+        }
     }
     prove_open(&fs, INIT_PATH)?;
     #[cfg(target_arch = "x86_64")]

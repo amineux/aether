@@ -12,6 +12,8 @@ mod mm;
 mod sync;
 mod syscall;
 mod task;
+#[cfg(target_arch = "x86_64")]
+mod virtio_blk;
 mod world;
 
 use core::panic::PanicInfo;

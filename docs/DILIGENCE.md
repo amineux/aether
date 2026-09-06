@@ -27,7 +27,7 @@ active track the site must match.
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
-| In-kernel ramfs for `/init` | Named files; seed from blobs; not POSIX / virtio-blk | `core/src/ramfs.rs`, `kernel/src/elfload.rs` |
+| In-kernel ramfs for `/init` | Named files; seed from virtio-blk or blobs; not POSIX | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` |
 | RISC-V virt boot | S-mode + U-mode `/init` + PLIC SoftNPU doorbell | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
 | aarch64 virt boot | EL1 + EL0 `/init` + TTBR0 isolate + in-kernel SoftNPU | `boot/aarch64/`, `user/init/`, `make qemu-aarch64` |
 | Multiboot mmap → frames | Documented x86 subset (clip 16 MiB, cap 128 MiB); HAL fallback | `core/src/mmap.rs`, `kernel/src/mm/` |
@@ -128,8 +128,9 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, mmap, opkernel, sparsify |
-| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` |
+| Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
+| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
+| x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
 | x86_64 PCID off | `make qemu-nopcid-ci` | `-cpu qemu64,-pcid`; greps `[mm] pcid fallback` |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
