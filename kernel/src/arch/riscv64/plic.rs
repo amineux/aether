@@ -99,12 +99,10 @@ pub fn complete(irq: u32) {
     }
 }
 
-/// Kick a PLIC-visible line (UART THRE) plus SSIP. Call after AccelMmio doorbell.
+/// Kick a PLIC-visible line (UART THRE). Call after AccelMmio doorbell.
+/// SSIP is not raised here: the SEI claim is the SoftNPU completion path.
 pub fn raise_softnpu_doorbell() {
     uart_write8(UART_IER, UART_IER_THREI);
-    unsafe {
-        core::arch::asm!("csrs sip, {0}", in(reg) SIP_SSIP, options(nostack));
-    }
 }
 
 /// Drop the UART THRE line so PLIC source 10 goes idle.
