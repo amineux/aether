@@ -177,7 +177,11 @@ pick_kaslr:
     movl    16(%ebx), %esi            /* cmdline PA */
     testl   %esi, %esi
     jz      .kaslr_entropy
+    movl    $256, %ecx                /* bound: no NUL → entropy */
 .kaslr_scan:
+    testl   %ecx, %ecx
+    jz      .kaslr_entropy
+    decl    %ecx
     movb    (%esi), %al
     testb   %al, %al
     jz      .kaslr_entropy
@@ -219,9 +223,17 @@ pick_kaslr:
     incl    %esi
     jmp     .kaslr_scan
 .kaslr_entropy:
-    /* rdrand eax; CF=1 on success. .byte so as --32 accepts it. */
-    .byte   0x0f, 0xc7, 0xf0
+    /* RDRAND #UDs if CPUID.1:ECX[30] is clear (stock qemu64). */
+    pushq   %rbx
+    movl    $1, %eax
+    xorl    %ecx, %ecx
+    cpuid
+    testl   $(1 << 30), %ecx
+    popq    %rbx
+    jz      .kaslr_tsc
+    .byte   0x0f, 0xc7, 0xf0          /* rdrand %eax */
     jc      .kaslr_mod3
+.kaslr_tsc:
     rdtsc
 .kaslr_mod3:
     andl    $3, %eax
