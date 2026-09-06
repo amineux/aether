@@ -66,16 +66,20 @@ fn read_u32(addr: u64) -> u32 {
     unsafe { core::ptr::read_volatile(addr as *const u32) }
 }
 
-fn spin_wait(mut pred: impl FnMut() -> bool, iters: u64) -> bool {
-    let mut n = 0u64;
-    while n < iters {
+/// Wait for `pred`, bounded by PIT ticks so UP `qemu-ci` does not sit for seconds.
+fn wait_ticks(mut pred: impl FnMut() -> bool, max_ticks: u64) -> bool {
+    let start = irq::ticks();
+    let mut spins = 0u64;
+    loop {
         if pred() {
             return true;
         }
+        if irq::ticks().saturating_sub(start) >= max_ticks || spins > 8_000_000 {
+            return pred();
+        }
         core::hint::spin_loop();
-        n += 1;
+        spins += 1;
     }
-    pred()
 }
 
 fn install_trampoline() -> bool {
@@ -156,7 +160,7 @@ fn hart_step(cpu: u32) -> bool {
 
 fn drain_work(cpu: u32) {
     HARTS_READY.fetch_add(1, Ordering::Release);
-    let _ = spin_wait(|| HARTS_READY.load(Ordering::Acquire) >= 2, 20_000_000);
+    let _ = wait_ticks(|| HARTS_READY.load(Ordering::Acquire) >= 2, 10);
     let mut idle = 0u32;
     while idle < 256 {
         if hart_step(cpu) {
@@ -180,7 +184,7 @@ fn run_work_steal_smoke() {
 
     drain_work(0);
 
-    let _ = spin_wait(|| WORK_DONE.load(Ordering::Acquire) >= 2, 20_000_000);
+    let _ = wait_ticks(|| WORK_DONE.load(Ordering::Acquire) >= 2, 20);
 
     let c0 = CPU_JOBS[0].load(Ordering::Relaxed);
     let c1 = CPU_JOBS[1].load(Ordering::Relaxed);
@@ -212,7 +216,7 @@ pub extern "C" fn ap_entry() -> ! {
     AP_ONLINE.store(true, Ordering::Release);
     irq::enable();
 
-    let _ = spin_wait(|| WORK_GO.load(Ordering::Acquire), 80_000_000);
+    let _ = wait_ticks(|| WORK_GO.load(Ordering::Acquire), 50);
     if WORK_GO.load(Ordering::Acquire) {
         drain_work(1);
     }
@@ -242,9 +246,9 @@ pub fn start_aps() {
     apic::init_sipi(APIC_ID_AP, AP_TRAMP_PHYS);
     println!("[smp] INIT-SIPI sent to APIC ID 1 (vector 8 @ 0x8000)");
 
-    let online = spin_wait(
+    let online = wait_ticks(
         || AP_ONLINE.load(Ordering::Acquire) || read_u32(AP_MAIL_SIG) == AP_SIG_LIVE,
-        80_000_000,
+        10,
     );
 
     if !AP_ONLINE.load(Ordering::Acquire) {
@@ -261,7 +265,7 @@ pub fn start_aps() {
 
     let before = cpu::local_ticks_of(1);
     apic::ipi(APIC_ID_AP, apic::IPI_VECTOR);
-    let ipi_ok = spin_wait(|| cpu::local_ticks_of(1) > before, 8_000_000);
+    let ipi_ok = wait_ticks(|| cpu::local_ticks_of(1) > before, 10);
     crate::console::write_str("[smp] IPI ");
     crate::console::write_str(if ipi_ok { "ok" } else { "FAIL" });
     crate::console::write_str(" (ap ticks=");

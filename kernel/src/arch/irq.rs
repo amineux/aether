@@ -68,11 +68,13 @@ pub fn inc_ticks() -> u64 {
 
 /// Bring up APIC ID 1 via INIT-SIPI when QEMU `-smp 2` (or more) is present.
 /// Times out and stays UP otherwise. RISC-V extra harts stay parked.
+#[allow(dead_code)]
 pub fn smp_start_aps() {
     #[cfg(target_arch = "x86_64")]
     crate::arch::x86_64::smp::start_aps();
 }
 
+#[allow(dead_code)]
 pub fn ncpus() -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
