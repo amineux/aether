@@ -25,10 +25,12 @@ active track the site must match.
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | RISC-V virt boot | Thin S-mode port | `boot/riscv64/`, `make qemu-riscv` |
 | aarch64 virt boot | Thin EL1 port (no EL0) | `boot/aarch64/`, `make qemu-aarch64` |
+| Multiboot mmap → frames | Documented x86 subset (clip 16 MiB, cap 128 MiB); HAL fallback | `core/src/mmap.rs`, `kernel/src/mm/` |
 
 The portable specification is `aether-core`. Host tests execute the same
-`run_boot_demo()` the kernels print (caps, fabric, map, color, cut). The
-RISC-V and aarch64 ports did not change `aether-core` or `aether-hal`.
+`run_boot_demo()` the kernels print (caps, fabric, map, color, cut), plus
+the Multiboot mmap parser. The RISC-V and aarch64 ports did not change
+`aether-hal` or the syscall / AccelDevice ABI.
 
 ## What is stubbed
 
@@ -44,6 +46,7 @@ gaps:
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No higher-half / KPTI | Per-task PML4 clones the identity 4 GiB; kernel can still name every PA |
+| No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 
@@ -111,11 +114,11 @@ the right thing.”
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, preempt |
-| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps SMEP/SMAP + aspace isolate |
+| Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, mmap, preempt |
+| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
-| RISC-V boot | `make qemu-riscv-ci` | OpenSBI S-mode + self-check banner on virt UART |
-| aarch64 boot | `make qemu-aarch64-ci` | QEMU virt EL1 + self-check banner on PL011 |
+| RISC-V boot | `make qemu-riscv-ci` | OpenSBI S-mode + self-check banner; greps mmap fallback |
+| aarch64 boot | `make qemu-aarch64-ci` | QEMU virt EL1 + self-check banner; greps mmap fallback |
 
 x86_64 is the supported path. RISC-V and aarch64 CI grep the fabric
 success banner. They are bring-up tests, not second-architecture

@@ -49,7 +49,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
 	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
@@ -120,12 +120,14 @@ qemu-ci: $(LOADER_ELF)
 	set -e; \
 	cat $(BUILD)/qemu-serial.log; \
 	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
+	   && grep -q "\\[mm\\] mmap: multiboot1" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] frames mmap clip=16MiB cap=128MiB" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] SMEP+SMAP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + mmap + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -153,6 +155,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	cat $(BUILD)/smp-serial.log; \
 	if grep -q "\\[smp\\] AP 1 online" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[smp\\] SMP smoke ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] mmap: multiboot1" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
@@ -186,6 +189,7 @@ qemu-riscv-ci: $(RV_ELF)
 	set -e; \
 	cat $(BUILD)/riscv-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -217,6 +221,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	set -e; \
 	cat $(BUILD)/aarch64-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log; then \
 		echo "qemu-aarch64-ci: demo ok (qemu exit $$ec)"; \

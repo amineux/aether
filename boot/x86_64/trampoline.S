@@ -1,7 +1,9 @@
 /* Aether multiboot1 trampoline: 32-bit PM → long mode → kernel @ 4 MiB.
  *
- * QEMU -kernel loads this ELF32 with paging off. We identity-map 4 GiB
- * with 2 MiB pages, copy the embedded kernel blob to 0x400000, and jump.
+ * QEMU -kernel loads this ELF32 with paging off. We stash the Multiboot
+ * EAX/EBX mailbox at 0x7000 so the kernel can parse the mmap, identity-
+ * map 4 GiB with 2 MiB pages, copy the embedded kernel blob to 0x400000,
+ * and jump.
  */
     .set ALIGN,    1
     .set MEMINFO,  2
@@ -20,6 +22,10 @@
     .global _start
 _start:
     cli
+    /* Mailbox at 0x7000 (after boot PDs, before AP SIPI @ 0x8000).
+     * EAX = Multiboot magic, EBX = info physical address. */
+    movl    %eax, 0x7000
+    movl    %ebx, 0x7004
     movl    $0x80000, %esp
 
     /* COM1 115200 8N1 so we can see boot progress if the kernel never runs. */

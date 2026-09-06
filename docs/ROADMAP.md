@@ -166,6 +166,25 @@ CNode/MDB and **not** a proof claim:
 Do not treat this as the SpecForge Y2H1 calendar (CXL objects and
 Laplacian-in-sched stay unscheduled).
 
+## Multiboot mmap (this cut)
+
+Landed as a **documented subset**, not a general physical MM:
+
+- x86_64 trampoline stashes Multiboot EAX/EBX at `0x7000`. `mm::init`
+  parses the mmap (Multiboot1 on `make qemu`; Multiboot2 parser is
+  host-tested for a future loader). Type-1 regions feed the bitmap.
+- Usable RAM below 16 MiB is printed, then clipped (boot page tables,
+  AP SIPI, trampoline, kernel image). Regions above the 4 GiB identity
+  map are ignored. Bitmap cap remains 128 MiB of frames.
+- Missing / empty mmap is an explicit serial fallback to the arch
+  window — not a silent 128 MiB @ 16 MiB lie. RISC-V / aarch64 have
+  no Multiboot and take that fallback (no FDT parser).
+- Host tests in `core/src/mmap.rs`. QEMU: `[mm] mmap: multiboot1` plus
+  the planned window. `make qemu-ci` greps the parse line.
+
+Still stubbed: higher-half / KASLR, hotplug, FDT, managing RAM past
+the identity 4 GiB.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -173,7 +192,7 @@ Search for `// STUB:` / `STUB` :
 | Item | Where | Intent |
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
-| Multiboot mmap | `kernel/src/mm/mod.rs` | Stop assuming 128 MiB @ 16 MiB |
+| Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
 | Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
@@ -215,8 +234,9 @@ kernel thread queue sleeps.
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
-  and an aarch64 thin HAL (this cut) are landed. ABI stays stable.
-  Custom QEMU virtio-accel and Laplacian expansion remain deferred.
+  an aarch64 thin HAL, and Multiboot mmap → frames (this cut) are
+  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
+  expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -224,10 +244,10 @@ kernel thread queue sleeps.
   Y2H1 security work, not a SpecForge clock.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
-per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), and
-the aarch64 thin HAL (this cut) are **done** as research-prototype
-slices. Custom QEMU virtio-accel and the other stubs above are still
-open.
+per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
+aarch64 thin HAL (PR #13), and Multiboot mmap (this cut) are **done**
+as research-prototype slices. Custom QEMU virtio-accel and the other
+stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track
