@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` (numbers 0–9). Well-known
+//! Talks to the kernel only through `syscall` / `ecall` (numbers 0–9). Well-known
 //! CPtrs 0 (endpoint) and 1 (accel queue) are minted before the drop.
 
 #![no_std]
@@ -16,16 +16,30 @@ use aether_core::sysnr::{
 fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
     let ret: i64;
     unsafe {
-        core::arch::asm!(
-            "syscall",
-            inout("rax") nr => ret,
-            in("rdi") a0,
-            in("rsi") a1,
-            in("rdx") a2,
-            out("rcx") _,
-            out("r11") _,
-            options(nostack)
-        );
+        #[cfg(target_arch = "x86_64")]
+        {
+            core::arch::asm!(
+                "syscall",
+                inout("rax") nr => ret,
+                in("rdi") a0,
+                in("rsi") a1,
+                in("rdx") a2,
+                out("rcx") _,
+                out("r11") _,
+                options(nostack)
+            );
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            core::arch::asm!(
+                "ecall",
+                in("a7") nr,
+                inout("a0") a0 => ret,
+                in("a1") a1,
+                in("a2") a2,
+                options(nostack)
+            );
+        }
     }
     ret
 }
@@ -42,7 +56,10 @@ fn exit(code: u64) -> ! {
     let _ = sys(SYS_EXIT, code, 0, 0);
     loop {
         unsafe {
+            #[cfg(target_arch = "x86_64")]
             core::arch::asm!("hlt");
+            #[cfg(target_arch = "riscv64")]
+            core::arch::asm!("wfi");
         }
     }
 }
@@ -50,8 +67,14 @@ fn exit(code: u64) -> ! {
 #[link_section = ".text.boot"]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
+    #[cfg(target_arch = "x86_64")]
     debug_print(b"[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000, own PML4)\r\n");
+    #[cfg(target_arch = "riscv64")]
+    debug_print(b"[init] U-mode /init (static ELF64 non-PIE @ 0x82000000, own satp)\r\n");
+    #[cfg(target_arch = "x86_64")]
     debug_print(b"[init] syscall debug_print ok\r\n");
+    #[cfg(target_arch = "riscv64")]
+    debug_print(b"[init] ecall debug_print ok\r\n");
 
     // Recv first: empty inbox → block until kthread-B sends ping-fabric.
     debug_print(b"[init] recv inbox (blocks until kthread-B send)\r\n");
@@ -167,7 +190,10 @@ pub extern "C" fn _start() -> ! {
     debug_print(b"  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE\r\n");
     debug_print(b"  CUT BIND + HODGE FLOW CLASS ENFORCED\r\n");
     debug_print(b"  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB\r\n");
+    #[cfg(target_arch = "x86_64")]
     debug_print(b"  RING-3 /init VIA SYSCALL/SYSRET\r\n");
+    #[cfg(target_arch = "riscv64")]
+    debug_print(b"  U-MODE /init VIA ECALL/SRET\r\n");
     debug_print(b"  VIRTQUEUE MMIO + IOMMU MAP + BANK COLOR\r\n");
     debug_print(b"====================================================\r\n");
 

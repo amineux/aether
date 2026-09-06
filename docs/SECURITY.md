@@ -63,7 +63,7 @@ These are marked so a security review does not assume them:
 
 | Gap | Risk | Roadmap |
 | --- | --- | --- |
-| Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables — **landed**: `/init` is ring-3; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
+| Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode + user page tables — **landed** on x86 and RISC-V: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. aarch64 stays EL1. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |

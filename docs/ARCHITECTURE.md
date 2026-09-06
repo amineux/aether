@@ -110,8 +110,8 @@ aether-hal      AccelDevice / Console / Timer
      ▲
 aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + PartnerNpuStub
      ▲
-aether-kernel   arch, mm, syscall/sysret, ELF loader, tasks
-user/init       static non-PIE ELF64 `/init` (embedded blob)
+aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
+user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
 user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 ```
 
@@ -145,7 +145,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
 | `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`) |
-| `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 walk |
+| `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 isolate, `sret`/`ecall` |
 | `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/opkernel.rs` | OperatorKernelHandle (collective × Hodge class) |
@@ -159,8 +159,10 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 
 ## Boot (RISC-V / QEMU virt)
 
-Thin v0.1 of the port — **kmain + serial + `aether_core` self-check**, not
-ring-3. Same fabric, map API, and bank-color checks. New trampoline only.
+Documented subset — **S-mode kernel + U-mode `/init`**, not a
+product-class second kernel. Same `aether_core` self-check, then
+`sret` into a static ELF. SoftNPU is the in-kernel virtqueue (no
+PLIC). Extra harts stay parked.
 
 ```
 QEMU -machine virt -kernel build/aether-riscv.elf
@@ -171,12 +173,17 @@ boot/riscv64/trampoline.S
         │  Sv39 identity-map 4 GiB (1 GiB leaves)
         ▼
 kernel::kmain  (Rust, riscv64gc-unknown-none-elf)
-        │  UART, frames, heap, stvec, SBI timer
+        │  UART, frames, heap, stvec, SBI timer, World
         ▼
 init::run_kernel_selfcheck   (same aether_core path as x86)
-        │  sifive_test 0x5555 on success
         ▼
-wfi idle
+elfload::load_init  (embedded riscv64 static ELF @ 0x82000000)
+        │  clone per-task satp; U only on the 2 MiB window
+        ▼
+sret → U-mode /init
+        │  ecall: debug_print, recv, yield, send, map, accel_*
+        ▼
+SYS_EXIT → sifive_test 0x5555
 ```
 
 ```
@@ -191,9 +198,12 @@ Physical sketch (128 MiB guest, RAM at `0x80000000`):
 | `0x10000000` | UART0 (16550) |
 | `0x80200000` | Kernel `.text` (OpenSBI payload) |
 | `0x81000000–0x88000000` | Frame allocator window (arch fallback; no FDT mmap) |
+| `0x8200_0000–0x8220_0000` | `/init` ELF + user stack (U-bit 2 MiB in task satp) |
+| `0x8300_0000–0x8400_0000` | SoftNPU arena banks (identity; reserved) |
 
-No PLIC virtio, no `sret` userspace, no FDT mmap parser. Serial
-prints `[mm] mmap: fallback (no Multiboot on this HAL)`.
+No PLIC, no virtio-mmio device, no `/probe`, no FDT mmap parser.
+Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)` and
+`[init] U-mode /init`.
 
 ## Boot (aarch64 / QEMU virt)
 
@@ -243,9 +253,10 @@ RISC-V and aarch64 are the HAL-split test:
 2. Implement `kernel/src/arch/<arch>`: console, timer, irq ack, page tables.
 3. Keep `aether-core` / `aether-hal` unchanged.
 
-The fabric does not encode x86. aarch64 repeated the RISC-V recipe
-(PL011 + GIC timer + TTBR). Ring-3 / virtqueue stay x86 until a later
-cut. Neither thin port is product-class.
+The fabric does not encode x86. aarch64 repeated the original RISC-V
+recipe (PL011 + GIC timer + TTBR) and stays EL1-only. RISC-V now also
+has U-mode `/init` + in-kernel SoftNPU (no PLIC). Neither port is
+product-class.
 
 ## SMP
 
@@ -273,11 +284,13 @@ What it does not do:
 
 ## Userspace
 
-`/init` is a **static non-PIE ELF64** (`ET_EXEC`, `EM_X86_64`) linked at
-`0x0200_0000`. There is no ramfs or virtio-blk in this cut: `make qemu`
-builds `user/init`, copies the ELF to `build/init.elf`, and the kernel
-`include_bytes!` the blob. The loader copies `PT_LOAD` segments into the
-identity-mapped user window and `iretq`s to `e_entry` with CS=`0x23`.
+`/init` is a **static non-PIE ELF64** (`ET_EXEC`). On x86_64 it is
+`EM_X86_64` linked at `0x0200_0000`. On RISC-V it is `EM_RISCV`
+linked at `0x8200_0000` (QEMU virt RAM). There is no ramfs or
+virtio-blk in this cut: `make qemu` / `make qemu-riscv` build
+`user/init` and the kernel `include_bytes!` the blob. The loader
+copies `PT_LOAD` segments into the identity-mapped user window and
+drops to user (`iretq` / `sret`).
 
 An optional second static ELF, `/probe`, is linked at `0x0240_0000`
 (`user/probe`, `build/probe.elf`). It yields only and does not
@@ -291,18 +304,22 @@ enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
 `STAC`/`CLAC` wrap user copies. This is **not** higher-half, KPTI,
 KASLR, or a POSIX MM.
 
-Entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread return
-is `sysretq`; a context switch returns via `iretq`. Well-known CPtrs
+x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
+return is `sysretq`; a context switch returns via `iretq`. RISC-V
+entry is `ecall` (`a7` = number); return is `sret`. Well-known CPtrs
 minted before the drop: `0` = fabric endpoint, `1` = accel queue.
 `SYS_SEND` / `SYS_RECV` / `SYS_MAP` / `SYS_ACCEL_*` `require()` the cap
 before touching the object.
 
-A kernel companion thread (`kthread-B`) shares the PIT quantum with
+A kernel companion thread (`kthread-B`) shares the timer quantum with
 `/init` so preemption is visible on the serial log. `SYS_RECV` on an
 empty endpoint and `SYS_ACCEL_WAIT` before the SoftNPU runs actually
 block and reschedule.
 
-PIE / `ET_DYN` is rejected (no relocator).
+PIE / `ET_DYN` is rejected (no relocator). RISC-V has no `/probe` in
+this cut. SoftNPU on RISC-V is the same in-kernel virtqueue; there is
+no PLIC.
 
-Host proof of the clone/walk contract lives in `core/src/aspace.rs`.
+Host proof of the clone/walk contract lives in `core/src/aspace.rs`
+(`IdentityAs` for x86, `Sv39As` for RISC-V).
 QEMU prints `[mm] aspace isolate ok` after walking both CR3s.

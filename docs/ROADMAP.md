@@ -35,11 +35,8 @@ product kernel.
 Landed:
 
 - **RISC-V virt bring-up.** `boot/riscv64` trampoline + Sv39 identity
-  map; `kernel/src/arch/riscv64` UART / SBI timer / stvec. `make qemu-riscv`
-  boots to `kmain`, prints serial hello, and runs the same
-  `aether_core` self-check as x86 (including map + bank-color).
-  `aether-core` / `aether-hal` unchanged. **No** `sret` / ELF `/init` on
-  this arch — that is v0.1 of the port.
+  map; `kernel/src/arch/riscv64` UART / SBI timer / stvec. The later
+  S-mode userspace cut (below) adds `sret` / `ecall` `/init`.
 - **AffinityLaplacian.** First-class `L = D − A` in `core/src/laplacian.rs`
   with integer Rayleigh, Fiedler-ish power iteration, heat-kernel and
   commute-time helpers. Host tests. `SpectralCut::from_fiedler` is wired;
@@ -52,9 +49,8 @@ Landed:
 
 Honest limits of this cut:
 
-- RISC-V is a **thin HAL test**, not a second full kernel. Ring-3, virtqueue
-  MMIO, and PIT preemption stay x86_64. A later cut would repeat that work
-  on `sret`.
+- RISC-V userspace is a **documented subset**, not a second product
+  kernel. See the S-mode userspace section.
 - Fiedler is integer power iteration on n≤8, not a production eigensolve.
 - Nobody from a silicon team has reviewed this. The agenda is so they
   could.
@@ -267,6 +263,27 @@ libm, **not** a hard-float HAL, **not** a FLOP benchmark:
 
 A real tile ISA is still a compiler concern.
 
+## RISC-V S-mode userspace (this cut)
+
+Landed as a **documented subset**, not a product-class second
+architecture, not a PLIC virtio port, not `/probe` on this HAL:
+
+- `sret` into a static non-PIE riscv64 `/init` at `0x8200_0000`
+  (RAM lives at `0x8000_0000`; the x86 `0x0200_0000` hole is not RAM).
+  Syscall via `ecall` (`a7` = number; numbers 0–9 match [ABI.md](ABI.md)).
+- Per-task Sv39: clone the trampoline identity map, split the RAM 1 GiB
+  leaf into 2 MiB pages, U-bit only on that task's window. Host twin in
+  `core/src/aspace.rs` (`Sv39As`). `sstatus.SUM` wraps user copies.
+- SoftNPU / virtqueue is the **in-kernel BAR** (same as x86). No PLIC,
+  no virtio-mmio device, no FDT mmap. Extra harts stay parked. No
+  `/probe` ELF on this arch.
+- `make qemu-riscv` / `make qemu-riscv-ci` greps
+  `[init] U-mode /init`, `ecall debug_print ok`,
+  `U-MODE /init VIA ECALL/SRET`, and aspace isolate.
+
+Still stubbed: PLIC, real virtio-mmio, FDT mmap, extra-hart SMP,
+`/probe`, product-class second kernel. aarch64 stays EL1-only.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -280,7 +297,7 @@ Search for `// STUB:` / `STUB` :
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
-| RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
+| RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** (U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU; no PLIC / virtio-mmio) |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
@@ -301,8 +318,8 @@ kernel thread queue sleeps.
 2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
    program a real SMMU context / PT walk. Do not claim the software
    table is silicon.
-3. **RISC-V userspace.** Same `aether-core`, `sret` + page-table isolate.
-   Only worth it after the x86 ABI stays stable.
+3. **RISC-V PLIC + virtio-mmio.** U-mode `/init` + in-kernel SoftNPU
+   landed; a real virtio-mmio BAR behind the PLIC is still open.
 4. **Higher-half + KPTI.** Per-task PML4 + SMEP/SMAP landed; kernel
    mappings are still the trampoline identity 4 GiB.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
@@ -318,9 +335,9 @@ kernel thread queue sleeps.
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
-  fence/timeline, and SoftNPU F16/F32 software IEEE (this cut) are
-  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
-  expansion remain deferred.
+  fence/timeline, SoftNPU F16/F32 software IEEE, and RISC-V S-mode
+  userspace (this cut) are landed. ABI stays stable. Custom QEMU
+  virtio-accel, RISC-V PLIC, and Laplacian expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -331,10 +348,10 @@ Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
-  the hardware-shaped fence/timeline (PR #17), and SoftNPU F16/F32
-  software IEEE (this cut) are **done** as research-prototype
-  slices. Custom QEMU virtio-accel and the other stubs above are
-  still open.
+  the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
+  software IEEE (PR #18), and RISC-V S-mode userspace (this cut)
+  are **done** as research-prototype slices. Custom QEMU virtio-accel,
+  RISC-V PLIC, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

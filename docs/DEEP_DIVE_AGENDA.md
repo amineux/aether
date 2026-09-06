@@ -42,7 +42,7 @@ cargo test --workspace
 # 2. x86_64 vertical slice: kernel self-check, then ring-3 /init.
 make qemu
 
-# 3. RISC-V thin port. Same self-check; OpenSBI chatter first. No /init.
+# 3. RISC-V S-mode + U-mode /init. OpenSBI chatter first, then ecall.
 make qemu-riscv
 
 # 4. aarch64 thin port. Same self-check; QEMU virt EL1. No EL0.
@@ -59,8 +59,10 @@ What to point at on the serial:
 5. `[map] Soft SMMU pin + Memory-cap refuse ok`.
 6. `[color] tenant/bank paint  Compute foreign refuse + Exchange ok`.
 7. `[laplace] L=D-A n=6 … chiplet-split=ok`.
-8. x86 only: `[mm] SMEP+SMAP` + `[mm] aspace isolate ok`, then
+8. x86: `[mm] SMEP+SMAP` + `[mm] aspace isolate ok`, then
    `[init] ring-3 /init` and `RING-3 /init VIA SYSCALL/SYSRET`.
+   RISC-V: `[mm] aspace isolate ok`, `[init] U-mode /init`,
+   `U-MODE /init VIA ECALL/SRET`.
 9. `FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE`.
 
 If QEMU is blocked, `cargo test -p aether-core laplacian -- --nocapture`
@@ -135,7 +137,8 @@ Questions to ask *them* while the board is up:
 ## What we will not say in the room
 
 - That we have a design win, a joint roadmap, or a shared customer.
-- That RISC-V ring-3 or aarch64 EL0 is done.
+- That RISC-V U-mode `/init` is a product-class second kernel, or
+  that aarch64 EL0 is done.
 - That SoftNPU predicts their silicon latency.
 - That seL4 proofs are “in progress.”
 

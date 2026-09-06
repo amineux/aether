@@ -26,7 +26,7 @@ active track the site must match.
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
-| RISC-V virt boot | Thin S-mode port | `boot/riscv64/`, `make qemu-riscv` |
+| RISC-V virt boot | S-mode + U-mode `/init` (no PLIC) | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
 | aarch64 virt boot | Thin EL1 port (no EL0) | `boot/aarch64/`, `make qemu-aarch64` |
 | Multiboot mmap → frames | Documented x86 subset (clip 16 MiB, cap 128 MiB); HAL fallback | `core/src/mmap.rs`, `kernel/src/mm/` |
 
@@ -44,7 +44,7 @@ gaps:
 | --- | --- |
 | Hardware SMMU | Soft SMMU is software only (chiplet SIDs + capture/bind); a real device can still DMA past it |
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
-| RISC-V is thin | kmain + UART + Sv39 + `aether_core` self-check. No ring-3, no PLIC virtio |
+| RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. No PLIC / virtio-mmio |
 | aarch64 is thin | kmain + PL011 + TTBR + GICv2/CNTV + `aether_core` self-check. No EL0, no virtio |
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
@@ -55,8 +55,9 @@ gaps:
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
-send/recv/map/accel. That is not stubbed on x86; it is stubbed on RISC-V
-and aarch64.
+send/recv/map/accel. RISC-V now has the same syscall numbers over
+`ecall`/`sret` (U-mode `/init`, in-kernel SoftNPU, no PLIC). aarch64
+is still EL1-only.
 
 ## How a silicon team plugs `AccelDevice`
 
@@ -106,14 +107,15 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 11. Revoke of a parent empties derived children in that table;
     `revoke_in` empties GRANT-children in named tables. Unrelated caps live.
 
-Not enforced in hardware yet: SMMU stream IDs, RISC-V ring-3, aarch64
+Not enforced in hardware yet: SMMU stream IDs, RISC-V PLIC, aarch64
 EL0, measured boot. Revoke descendants is host-tested (`revoke` /
 `revoke_in`); there is no `SYS_REVOKE` and no kernel-global CNode walk.
 On x86, isolation is “cap tables + ring-3 + per-task USER leaves +
-SMEP/SMAP + Soft SMMU.” Soft SMMU is a software table a real device can
-ignore. The kernel identity map still lets a forged kernel pointer name
-a physical address. On RISC-V / aarch64 it is still “the cap tables do
-the right thing.”
+SMEP/SMAP + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
+task-local U leaves + SUM off + Soft SMMU.” Soft SMMU is a software
+table a real device can ignore. The kernel identity map still lets a
+forged kernel pointer name a physical address. aarch64 is still “the
+cap tables do the right thing.”
 
 ## CI status
 
@@ -122,12 +124,12 @@ the right thing.”
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, mmap, opkernel, sparsify |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
-| RISC-V boot | `make qemu-riscv-ci` | OpenSBI S-mode + self-check banner; greps mmap fallback |
+| RISC-V boot | `make qemu-riscv-ci` | U-mode `/init` + `ecall` + aspace isolate + fabric banner |
 | aarch64 boot | `make qemu-aarch64-ci` | QEMU virt EL1 + self-check banner; greps mmap fallback |
 
-x86_64 is the supported path. RISC-V and aarch64 CI grep the fabric
-success banner. They are bring-up tests, not second-architecture
-products.
+x86_64 is the supported path. RISC-V CI now also greps U-mode `/init`.
+aarch64 CI greps the fabric banner. Neither is a second-architecture
+product.
 
 ## Non-claims
 
@@ -140,7 +142,7 @@ We will not claim:
 - Cache coherence across chiplets
 - Wafer-scale marketing; tile SRAM is the honest first place
 - Readiness for tape-out or safety certification
-- That the RISC-V or aarch64 port is a full userspace kernel
+- That the RISC-V or aarch64 port is a product-class second architecture
 - That `AffinityLaplacian` is a production eigensolver
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That `SoftCommandProcessor` is a silicon driver
@@ -171,8 +173,8 @@ graph IR in the kernel. They want:
    PJRT / the vendor stack. The host ABI is shaped like those runtimes
    on purpose.
 5. **A HAL split that is real.** The same `aether_core` demo runs on
-   the host, on x86_64 QEMU (then ring-3 `/init`), and on RISC-V /
-   aarch64 virt.
+   the host, on x86_64 QEMU (then ring-3 `/init`), on RISC-V virt
+   (then U-mode `/init`), and on aarch64 virt (kmain only).
    Porting was a trampoline + UART + timer + page tables. The fabric
    does not encode x86.
 

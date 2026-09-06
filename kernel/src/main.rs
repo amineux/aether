@@ -1,21 +1,21 @@
-//! Aether kernel entry. x86_64 loads `/init` and drops to ring-3.
-//! RISC-V / aarch64 are thin ports: self-check + serial, no userspace.
+//! Aether kernel entry. x86_64 / RISC-V load `/init` and drop to user.
+//! aarch64 is a thin port: self-check + serial, no EL0.
 
 #![no_std]
 #![no_main]
 
 mod arch;
 mod console;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod elfload;
 mod init;
 mod mm;
 mod sync;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod syscall;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod task;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 mod world;
 
 use core::panic::PanicInfo;
@@ -78,8 +78,9 @@ pub extern "C" fn kmain() -> ! {
 
     arch::timer::init();
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     {
+        #[cfg(target_arch = "x86_64")]
         arch::irq::smp_start_aps();
         task::init();
         world::init();
@@ -94,22 +95,26 @@ pub extern "C" fn kmain() -> ! {
         crate::mm::paging::enable_smep_smap();
     }
     #[cfg(target_arch = "riscv64")]
-    println!("[boot] UP timer armed (100 Hz); RISC-V extra harts stay parked");
+    println!("[boot] UP timer armed (100 Hz); extra harts parked; U-mode /init");
     #[cfg(target_arch = "aarch64")]
     println!("[boot] UP timer armed (100 Hz); extra PEs stay parked");
     nl();
 
     init::run_kernel_selfcheck();
 
-    #[cfg(target_arch = "x86_64")]
+    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     {
         match elfload::load_init() {
             Ok(init) => {
+                #[cfg(target_arch = "x86_64")]
                 let probe = elfload::load_probe().ok();
+                #[cfg(target_arch = "riscv64")]
+                let probe: Option<elfload::LoadedImage> = None;
                 let probe_cr3 = probe.as_ref().map(|p| p.cr3);
                 crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
                 task::spawn_kthread();
                 task::spawn_user(init.entry, init.cr3);
+                #[cfg(target_arch = "x86_64")]
                 if let Some(p) = probe {
                     task::spawn_user_task(
                         task::TID_PROBE,
@@ -130,7 +135,7 @@ pub extern "C" fn kmain() -> ! {
         }
     }
 
-    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
+    #[cfg(target_arch = "aarch64")]
     {
         // Thin port: no ELF /init. The self-check *is* the demo.
         nl();
@@ -138,9 +143,6 @@ pub extern "C" fn kmain() -> ! {
         println!("  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE");
         println!("  CUT BIND + HODGE FLOW CLASS ENFORCED");
         println!("  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB");
-        #[cfg(target_arch = "riscv64")]
-        println!("  RISC-V v0.1: kmain + serial (no ring-3)");
-        #[cfg(target_arch = "aarch64")]
         println!("  aarch64 v0.1: kmain + serial (no EL0)");
         println!("====================================================");
         arch::exit_qemu(true);

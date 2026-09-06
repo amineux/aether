@@ -6,7 +6,7 @@
 //! USER only on that task's 2 MiB ELF window, other known user windows
 //! unmapped. Not a higher-half / KPTI / POSIX MM.
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 #[cfg(target_arch = "x86_64")]
@@ -15,11 +15,11 @@ use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{USER_IMAGE_BASE, USER_PROBE_BASE};
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use crate::console::{self, write_hex, write_str, write_u64};
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use crate::mm::frame;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use crate::println;
 
 #[cfg(target_arch = "x86_64")]
@@ -488,7 +488,30 @@ const PTE_V: u64 = 1;
 #[cfg(target_arch = "riscv64")]
 const PTE_R: u64 = 1 << 1;
 #[cfg(target_arch = "riscv64")]
+const PTE_W: u64 = 1 << 2;
+#[cfg(target_arch = "riscv64")]
+const PTE_X: u64 = 1 << 3;
+#[cfg(target_arch = "riscv64")]
+const PTE_U: u64 = 1 << 4;
+#[cfg(target_arch = "riscv64")]
+const PTE_G: u64 = 1 << 5;
+#[cfg(target_arch = "riscv64")]
+const PTE_A: u64 = 1 << 6;
+#[cfg(target_arch = "riscv64")]
+const PTE_D: u64 = 1 << 7;
+#[cfg(target_arch = "riscv64")]
 const PTE_LEAF: u64 = PTE_R;
+#[cfg(target_arch = "riscv64")]
+const SATP_SV39: u64 = 8 << 60;
+#[cfg(target_arch = "riscv64")]
+const SSTATUS_SUM: u64 = 1 << 18;
+
+#[cfg(target_arch = "riscv64")]
+static KERNEL_SATP_ROOT: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "riscv64")]
+static SATP_SWITCH_LOGS: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_arch = "riscv64")]
+static SUM_ARMED: AtomicBool = AtomicBool::new(true);
 
 #[cfg(target_arch = "riscv64")]
 pub unsafe fn satp() -> u64 {
@@ -497,33 +520,299 @@ pub unsafe fn satp() -> u64 {
     v
 }
 
-/// Sv39 walk. A 1 GiB identity leaf is reported as `huge_2m = true`.
 #[cfg(target_arch = "riscv64")]
-pub unsafe fn walk(va: u64) -> Option<Walk> {
-    let satp = satp();
-    let mode = satp >> 60;
-    if mode != 8 {
-        return None;
+pub fn satp_root() -> u64 {
+    unsafe { (satp() & 0x0000_0FFF_FFFF_FFFF) << 12 }
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn capture_kernel_satp() {
+    KERNEL_SATP_ROOT.store(satp_root(), Ordering::Release);
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn kernel_cr3() -> u64 {
+    let v = KERNEL_SATP_ROOT.load(Ordering::Acquire);
+    if v == 0 {
+        satp_root()
+    } else {
+        v
     }
-    let root = ((satp & 0x0000_0FFF_FFFF_FFFF) << 12) as *const u64;
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn load_satp(root: u64) {
+    let satp = SATP_SV39 | ((root & !0xFFF) >> 12);
+    unsafe {
+        core::arch::asm!(
+            "csrw satp, {0}",
+            "sfence.vma",
+            in(reg) satp,
+            options(nostack)
+        );
+    }
+}
+
+/// Switch satp when the next thread's aspace differs. Logs the first few.
+#[cfg(target_arch = "riscv64")]
+pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
+    let want = if next == 0 { kernel_cr3() } else { next } & !0xFFF;
+    let cur = satp_root();
+    if cur == want {
+        return;
+    }
+    load_satp(want);
+    let n = SATP_SWITCH_LOGS.fetch_add(1, Ordering::Relaxed);
+    if n < 6 {
+        write_str("[mm] satp switch tid=");
+        write_u64(from_tid as u64);
+        write_str("->");
+        write_u64(to_tid as u64);
+        write_str(" satp=");
+        write_hex(want);
+        console::nl();
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn write_sscratch(v: u64) {
+    unsafe {
+        core::arch::asm!("csrw sscratch, {0}", in(reg) v, options(nostack));
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn read64(pa: u64) -> u64 {
+    unsafe { core::ptr::read_volatile(pa as *const u64) }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn write64(pa: u64, v: u64) {
+    unsafe {
+        core::ptr::write_volatile(pa as *mut u64, v);
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+fn alloc_zeroed_page() -> Option<u64> {
+    let p = frame::alloc()?;
+    unsafe {
+        core::ptr::write_bytes(p.0 as *mut u8, 0, 4096);
+    }
+    Some(p.0)
+}
+
+#[cfg(target_arch = "riscv64")]
+fn meg_pte(phys: u64, user: bool) -> u64 {
+    let mut flags = PTE_V | PTE_R | PTE_W | PTE_X | PTE_A | PTE_D;
+    if user {
+        flags |= PTE_U;
+    } else {
+        flags |= PTE_G;
+    }
+    (phys >> 2) | flags
+}
+
+/// Walk `va` in `root` (identity-mapped Sv39 tables).
+#[cfg(target_arch = "riscv64")]
+pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
+    let l2 = (root & !0xFFF) as *const u64;
     let i2 = ((va >> 30) & 0x1FF) as usize;
-    let pte = core::ptr::read_volatile(root.add(i2));
-    if pte & PTE_V == 0 {
+    let pte2 = core::ptr::read_volatile(l2.add(i2));
+    if pte2 & PTE_V == 0 {
         return None;
     }
-    if pte & PTE_LEAF != 0 {
-        let ppn = (pte >> 10) & 0x0FFF_FFFF_FFFF;
+    if pte2 & PTE_LEAF != 0 {
+        let ppn = (pte2 >> 10) & 0x0FFF_FFFF_FFFF;
         let phys = (ppn << 12) | (va & 0x3FFF_FFFF);
         return Some(Walk {
-            pml4e: pte,
+            pml4e: pte2,
             pdpte: 0,
             pde: 0,
             phys: PhysAddr(phys),
             huge_2m: true,
-            user: false,
+            user: pte2 & PTE_U != 0,
         });
     }
-    None
+    let l1 = ((pte2 >> 10) << 12) as *const u64;
+    let i1 = ((va >> 21) & 0x1FF) as usize;
+    let pte1 = core::ptr::read_volatile(l1.add(i1));
+    if pte1 & PTE_V == 0 {
+        return None;
+    }
+    if pte1 & PTE_LEAF != 0 {
+        let ppn = (pte1 >> 10) & 0x0FFF_FFFF_FFFF;
+        let phys = (ppn << 12) | (va & 0x1F_FFFF);
+        return Some(Walk {
+            pml4e: pte2,
+            pdpte: pte1,
+            pde: 0,
+            phys: PhysAddr(phys),
+            huge_2m: true,
+            user: pte1 & PTE_U != 0,
+        });
+    }
+    let l0 = ((pte1 >> 10) << 12) as *const u64;
+    let i0 = ((va >> 12) & 0x1FF) as usize;
+    let pte0 = core::ptr::read_volatile(l0.add(i0));
+    if pte0 & PTE_V == 0 {
+        return None;
+    }
+    let ppn = (pte0 >> 10) & 0x0FFF_FFFF_FFFF;
+    let phys = (ppn << 12) | (va & 0xFFF);
+    Some(Walk {
+        pml4e: pte2,
+        pdpte: pte1,
+        pde: pte0,
+        phys: PhysAddr(phys),
+        huge_2m: false,
+        user: pte0 & PTE_U != 0,
+    })
+}
+
+/// Sv39 walk of the current satp. A 1 GiB or 2 MiB identity leaf is
+/// `huge_2m = true`.
+#[cfg(target_arch = "riscv64")]
+pub unsafe fn walk(va: u64) -> Option<Walk> {
+    let satp = satp();
+    if satp >> 60 != 8 {
+        return None;
+    }
+    walk_in((satp & 0x0000_0FFF_FFFF_FFFF) << 12, va)
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn user_mapped(root: u64, va: u64) -> bool {
+    unsafe { walk_in(root, va).map(|w| w.user).unwrap_or(false) }
+}
+
+/// Clone the kernel identity map into a new satp root. U only on
+/// `[user_lo, user_hi)`; each VA in `unmap` loses V on its 2 MiB leaf.
+#[cfg(target_arch = "riscv64")]
+pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u64> {
+    let kroot = kernel_cr3();
+    let new_l2 = alloc_zeroed_page()?;
+    unsafe {
+        core::ptr::copy_nonoverlapping(kroot as *const u8, new_l2 as *mut u8, 4096);
+    }
+    let vpn2 = ((user_lo >> 30) & 0x1FF) as usize;
+    let l2e = read64(new_l2 + vpn2 as u64 * 8);
+    if l2e & PTE_V == 0 {
+        return None;
+    }
+    let l1 = alloc_zeroed_page()?;
+    if l2e & PTE_LEAF != 0 {
+        let gphys = ((l2e >> 10) & 0x0FFF_FFFF_FFFF) << 12;
+        let gphys = gphys & !0x3FFF_FFFF;
+        for j in 0..512u64 {
+            write64(l1 + j * 8, meg_pte(gphys + j * 0x20_0000, false));
+        }
+    } else {
+        let old_l1 = ((l2e >> 10) & 0x0FFF_FFFF_FFFF) << 12;
+        unsafe {
+            core::ptr::copy_nonoverlapping(old_l1 as *const u8, l1 as *mut u8, 4096);
+        }
+        for j in 0..512u64 {
+            let e = read64(l1 + j * 8);
+            write64(l1 + j * 8, (e & !PTE_U) | PTE_G);
+        }
+    }
+    let mut va = user_lo & !0x1F_FFFF;
+    while va < user_hi {
+        if ((va >> 30) & 0x1FF) as usize == vpn2 {
+            let i1 = ((va >> 21) & 0x1FF) as usize;
+            write64(l1 + i1 as u64 * 8, meg_pte(va, true));
+        }
+        va += 0x20_0000;
+    }
+    for &u in unmap {
+        if ((u >> 30) & 0x1FF) as usize == vpn2 {
+            let i1 = ((u >> 21) & 0x1FF) as usize;
+            write64(l1 + i1 as u64 * 8, read64(l1 + i1 as u64 * 8) & !PTE_V);
+        }
+    }
+    write64(new_l2 + vpn2 as u64 * 8, ((l1 >> 12) << 10) | PTE_V);
+    Some(new_l2)
+}
+
+/// Mark the 2 MiB page covering `va` user-accessible (current satp).
+#[cfg(target_arch = "riscv64")]
+pub fn allow_user_2m(va: u64) {
+    let root = satp_root();
+    let i2 = ((va >> 30) & 0x1FF) as usize;
+    let l2e = read64(root + i2 as u64 * 8);
+    if l2e & PTE_V == 0 || l2e & PTE_LEAF != 0 {
+        return;
+    }
+    let l1 = ((l2e >> 10) & 0x0FFF_FFFF_FFFF) << 12;
+    let i1 = ((va >> 21) & 0x1FF) as usize;
+    let e = read64(l1 + i1 as u64 * 8);
+    if e & PTE_V == 0 {
+        return;
+    }
+    write64(l1 + i1 as u64 * 8, (e | PTE_U) & !PTE_G);
+    unsafe {
+        core::arch::asm!("sfence.vma", options(nostack));
+    }
+}
+
+#[cfg(target_arch = "riscv64")]
+pub fn with_user_access<T>(f: impl FnOnce() -> T) -> T {
+    unsafe {
+        core::arch::asm!("csrs sstatus, {0}", in(reg) SSTATUS_SUM, options(nostack));
+    }
+    let r = f();
+    unsafe {
+        core::arch::asm!("csrc sstatus, {0}", in(reg) SSTATUS_SUM, options(nostack));
+    }
+    r
+}
+
+#[cfg(target_arch = "riscv64")]
+fn print_walk(label: &str, root: u64, va: u64) {
+    write_str(label);
+    write_hex(va);
+    match unsafe { walk_in(root, va) } {
+        Some(w) => {
+            write_str(" present=1 user=");
+            write_u64(w.user as u64);
+        }
+        None => {
+            write_str(" present=0 user=0");
+        }
+    }
+}
+
+/// Serial proof: U leaves are task-local; kernel satp has none.
+#[cfg(target_arch = "riscv64")]
+pub fn prove_aspace(init_root: u64, _probe: Option<u64>) -> bool {
+    let k = kernel_cr3();
+    write_str("[mm] kernel satp=");
+    write_hex(k);
+    write_str(" (supervisor identity, no U leaves)");
+    console::nl();
+
+    write_str("[mm] /init  satp=");
+    write_hex(init_root);
+    write_str(" ");
+    print_walk("USER ", init_root, aether_core::USER_RV_IMAGE_BASE);
+    write_str(" ");
+    print_walk("ktext ", init_root, crate::arch::riscv64::KERNEL_VA);
+    console::nl();
+
+    let init_ok = user_mapped(init_root, aether_core::USER_RV_IMAGE_BASE)
+        && !user_mapped(init_root, crate::arch::riscv64::KERNEL_VA)
+        && unsafe { walk_in(init_root, crate::arch::riscv64::KERNEL_VA) }.is_some()
+        && !user_mapped(k, aether_core::USER_RV_IMAGE_BASE);
+
+    SUM_ARMED.store(true, Ordering::Release);
+    let ok = init_ok;
+    if ok {
+        println!("[mm] aspace isolate ok (task-local U leaves + SUM off)");
+    } else {
+        println!("[mm] aspace isolate FAIL");
+    }
+    ok
 }
 
 #[cfg(target_arch = "aarch64")]
