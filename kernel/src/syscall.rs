@@ -67,15 +67,17 @@ pub fn copy_to_user(ptr: u64, len: u64) -> Result<(), SysError> {
 
 pub fn copy_user_ipc(ptr: u64) -> Result<UserIpcMsg, SysError> {
     copy_from_user(ptr, core::mem::size_of::<UserIpcMsg>() as u64)?;
+    let kva = crate::mm::paging::user_kva(ptr).ok_or(SysError::Fault)?;
     Ok(crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::read_volatile(ptr as *const UserIpcMsg)
+        core::ptr::read_volatile(kva as *const UserIpcMsg)
     }))
 }
 
 pub fn copy_user_job(ptr: u64) -> Result<UserAccelJob, SysError> {
     copy_from_user(ptr, core::mem::size_of::<UserAccelJob>() as u64)?;
+    let kva = crate::mm::paging::user_kva(ptr).ok_or(SysError::Fault)?;
     Ok(crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::read_volatile(ptr as *const UserAccelJob)
+        core::ptr::read_volatile(kva as *const UserAccelJob)
     }))
 }
 
@@ -102,7 +104,8 @@ pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
                 return Err(SysError::Inval);
             }
             let len = a1.min(256) as usize;
-            let slice = unsafe { core::slice::from_raw_parts(a0 as *const u8, len) };
+            let kva = crate::mm::paging::user_kva(a0).ok_or(SysError::Fault)?;
+            let slice = unsafe { core::slice::from_raw_parts(kva as *const u8, len) };
             debug_print(slice);
             Ok(0)
         }
@@ -131,8 +134,9 @@ fn dispatch_trap(
             copy_from_user(a0, a1.min(256))?;
             let len = a1.min(256) as usize;
             let mut buf = [0u8; 256];
+            let kva = crate::mm::paging::user_kva(a0).ok_or(SysError::Fault)?;
             crate::mm::paging::with_user_access(|| unsafe {
-                core::ptr::copy_nonoverlapping(a0 as *const u8, buf.as_mut_ptr(), len);
+                core::ptr::copy_nonoverlapping(kva as *const u8, buf.as_mut_ptr(), len);
             });
             debug_print(&buf[..len]);
             Ok(0)

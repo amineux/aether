@@ -6,8 +6,8 @@
 //! known user windows are unmapped (`P=0`). PML4[511] aliases the first
 //! 2 GiB at the classic `-2 GiB` kernel map (`KERNEL_VMA + PA`). A
 //! boot-time KASLR slide dual-maps an 8 MiB kernel span at
-//! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
-//! SIPI / user windows do not move. The kernel is a static-PIE
+//! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity islands
+//! / SIPI / user windows do not move. The kernel is a static-PIE
 //! (`relocation-model=pic`, `code-model=small`); the trampoline
 //! applies `.rela.dyn` `R_X86_64_RELATIVE` and unmaps the unused
 //! canonical alias when the slide is non-zero. This is not a
@@ -15,12 +15,20 @@
 //! USER page (`USER_COW_BASE`) read-only in `/init` and `/probe`; a
 //! write fault copies the frame and sets RW on that aspace only.
 //!
+//! **Identity teardown:** after HH is live, the kernel unmaps the
+//! bulk of the trampoline identity 4 GiB. Remaining islands are
+//! documented in [`identity_keep_pa`]: low 2 MiB (SIPI / mailbox /
+//! trampoline / boot PTs), virtio-blk window, APIC MMIO. SoftNPU
+//! tensors are reached via Soft SMMU IOVA → guest PA →
+//! [`phys_to_kva`] (HH on x86). Page-table walks use the same KVA.
+//!
 //! **KPTI subset:** `clone_user` does **not** copy PML4[511] or the
 //! identity 4 GiB. User CR3 maps the task's 2 MiB ELF window (USER)
 //! plus four supervisor 4 KiB trampoline pages at [`KPTI_TRAMP_VA`]
-//! (syscall/IRQ entry). Kernel CR3 keeps identity + HH so SoftNPU
-//! `IdentityDma`, AP SIPI, and page-table PA walks still work. Not a
-//! Meltdown-complete KAISER claim (trampoline pages stay mapped).
+//! (syscall/IRQ entry). Kernel CR3 keeps HH + identity *islands* so
+//! AP SIPI, Multiboot, virtio-blk, APIC, and page-table PA walks
+//! (via HH) still work. Not a Meltdown-complete KAISER claim
+//! (trampoline pages stay mapped).
 //!
 //! **PCID subset:** [`cr3_tagged`] / [`PcidAlloc`] are the host twin of
 //! kernel CR3 tagging (kernel PCID 1, per-aspace user PCIDs from 2).
@@ -80,6 +88,49 @@ pub const KPTI_TRAMP_STACK_TOP: u64 = 0x7_7000;
 pub const KPTI_TRAMP_PAS: [u64; 4] = [0x7_3000, 0x7_4000, 0x7_5000, 0x7_6000];
 /// Slots at the end of the trampoline code page (`kernel_cr3`, …).
 pub const KPTI_SLOT_BASE: u64 = 0x7_3F00;
+
+/// Low identity island after teardown: boot PTs, Multiboot mailbox,
+/// AP SIPI @ `0x8000`, KPTI trampoline, HH PDs. One 2 MiB leaf.
+pub const IDENTITY_KEEP_LOW: u64 = PAGE_2M;
+/// xAPIC MMIO (identity; sits above the HH 2 GiB window).
+pub const APIC_MMIO_BASE: u64 = 0xFEE0_0000;
+/// Exclusive end of the APIC 2 MiB identity leaf.
+pub const APIC_MMIO_END: u64 = APIC_MMIO_BASE + PAGE_2M;
+
+/// True when `pa` stays identity-mapped on the kernel CR3 after teardown.
+///
+/// Islands: `[0, IDENTITY_KEEP_LOW)`, virtio-blk
+/// [`crate::sysnr::BLK_WINDOW_BASE`]..[`crate::sysnr::BLK_WINDOW_END`],
+/// and the APIC leaf. SoftNPU arenas / user ELF windows are **not**
+/// islands — DMA goes Soft SMMU → HH.
+pub fn identity_keep_pa(pa: u64) -> bool {
+    use crate::sysnr::{BLK_WINDOW_BASE, BLK_WINDOW_END};
+    pa < IDENTITY_KEEP_LOW
+        || (pa >= BLK_WINDOW_BASE && pa < BLK_WINDOW_END)
+        || (pa >= APIC_MMIO_BASE && pa < APIC_MMIO_END)
+}
+
+/// True when the 2 MiB identity leaf at `page_pa` is a keep island.
+pub fn identity_keep_2m(page_pa: u64) -> bool {
+    let page = page_pa & !(PAGE_2M - 1);
+    identity_keep_pa(page) || identity_keep_pa(page.saturating_add(PAGE_2M - 1))
+}
+
+/// Kernel CPU VA for a guest PA after identity teardown.
+///
+/// RAM below 2 GiB is the HH alias (`KERNEL_VMA + PA`). APIC (and any
+/// other keep island above the HH span) stays identity. `None` if the
+/// PA is neither HH-reachable nor an identity island.
+pub fn phys_to_kva(pa: u64) -> Option<u64> {
+    if let Some(va) = phys_to_hh(pa) {
+        return Some(va);
+    }
+    if identity_keep_pa(pa) {
+        Some(pa)
+    } else {
+        None
+    }
+}
 
 /// `PA → KERNEL_VMA + PA` when `PA` fits in the HH 2 GiB window.
 pub fn phys_to_hh(pa: u64) -> Option<u64> {
@@ -349,8 +400,8 @@ impl IdentityAs {
     }
 
     /// Drop the unused link-time HH kernel span after a non-zero slide.
-    /// Identity PDs are untouched (SoftNPU DMA / SIPI). Slide 0 keeps
-    /// the canonical map — it *is* the running window.
+    /// Identity PDs are untouched here (teardown is [`teardown_identity`]).
+    /// Slide 0 keeps the canonical map — it *is* the running window.
     pub fn unmap_unused_kaslr_alias(&mut self) {
         if self.slide == 0 {
             return;
@@ -369,6 +420,19 @@ impl IdentityAs {
         let mut s = Self::kernel_with_slide(slide);
         s.unmap_unused_kaslr_alias();
         s
+    }
+
+    /// Drop identity 2 MiB leaves except [`identity_keep_2m`] islands.
+    /// HH PDs are untouched — SoftNPU / PT walks use [`phys_to_kva`].
+    pub fn teardown_identity(&mut self) {
+        for i in 0..4 {
+            for j in 0..512 {
+                let phys = (i as u64 * 0x4000_0000) + (j as u64 * PAGE_2M);
+                if !identity_keep_2m(phys) {
+                    self.pd[i][j] = 0;
+                }
+            }
+        }
     }
 
     /// KPTI user map: USER only on `[user_lo, user_hi)`, supervisor 4 KiB
@@ -780,6 +844,46 @@ mod tests {
         assert!(u.walk(KPTI_TRAMP_STACK).unwrap().present);
         assert!(u.user_mapped(USER_IMAGE_BASE));
         assert!(u.walk(USER_PROBE_BASE).is_none());
+    }
+
+    #[test]
+    fn identity_keep_islands_and_kva() {
+        use crate::sysnr::{BLK_WINDOW_BASE, BLK_WINDOW_END};
+
+        assert!(identity_keep_pa(0x8000));
+        assert!(identity_keep_pa(0x7000));
+        assert!(identity_keep_pa(KPTI_TRAMP_VA));
+        assert!(identity_keep_pa(BLK_WINDOW_BASE));
+        assert!(identity_keep_pa(BLK_WINDOW_END - 1));
+        assert!(identity_keep_pa(APIC_MMIO_BASE));
+        assert!(!identity_keep_pa(0x0100_0000));
+        assert!(!identity_keep_pa(USER_IMAGE_BASE));
+        assert!(!identity_keep_pa(KERNEL_LMA));
+        assert_eq!(phys_to_kva(0x0100_0000), Some(KERNEL_VMA + 0x0100_0000));
+        assert_eq!(phys_to_kva(APIC_MMIO_BASE), Some(APIC_MMIO_BASE));
+        assert!(phys_to_kva(0x9000_0000).is_none());
+    }
+
+    #[test]
+    fn teardown_drops_ram_keeps_islands() {
+        use crate::sysnr::BLK_WINDOW_BASE;
+
+        let mut k = IdentityAs::kernel_with_pie_slide(KASLR_SLIDE_STRIDE);
+        k.teardown_identity();
+        assert_eq!(k.walk(0x8000).unwrap().phys, 0x8000);
+        assert_eq!(k.walk(0x7000).unwrap().phys, 0x7000);
+        assert_eq!(k.walk(KPTI_TRAMP_VA).unwrap().phys, KPTI_TRAMP_VA);
+        assert_eq!(k.walk(BLK_WINDOW_BASE).unwrap().phys, BLK_WINDOW_BASE);
+        assert_eq!(k.walk(APIC_MMIO_BASE).unwrap().phys, APIC_MMIO_BASE);
+        assert!(k.walk(0x0100_0000).is_none());
+        assert!(k.walk(USER_IMAGE_BASE).is_none());
+        assert!(k.walk(KERNEL_LMA).is_none());
+        assert_eq!(k.walk(KERNEL_VMA + 0x0100_0000).unwrap().phys, 0x0100_0000);
+        assert_eq!(
+            k.walk(KERNEL_TEXT_VA + KASLR_SLIDE_STRIDE).unwrap().phys,
+            KERNEL_LMA
+        );
+        assert!(!k.user_mapped(0x8000));
     }
 
     #[test]
