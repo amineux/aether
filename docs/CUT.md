@@ -73,8 +73,32 @@ it onto a spanning tree:
 
 That refusal is enforced even on QEMU's single virtual interconnect.
 
+## OperatorKernelHandle
+
+A compiled collective is a capability (`CapKind::OperatorKernel`), not
+a compiler blob and not a second IR. The object stores a topology
+(`Tree` / `Ring` / `Torus`) and exactly one bound `FlowClass`.
+
+```
+bind(Tree, Gradient)     → ok; inject sets TREE_OFFLOAD
+bind(Tree, Curl)         → CurlOnTree
+bind(Tree, Harmonic)     → HarmonicTreeReduce
+bind(Ring, Curl)         → ok; inject sets RING_RESERVE
+bind(Torus, Harmonic)    → ok; no TREE_OFFLOAD
+inject_as(other class)   → ClassMismatch (quota untouched)
+```
+
+Mint / derive use the existing cap table. BIND is required to inject;
+SUBMIT is also required on the inject path. Revoke of a parent empties
+descendants (`revoke` / `revoke_in`). Host tests in
+`core/src/opkernel.rs` lock the matrix. There is no new syscall and
+no QEMU collective engine — `Fabric::send` is still the admit path.
+
+`SparsifiedCollective` (drop small harmonic components before inject)
+is still a stub. See [ROADMAP.md](ROADMAP.md).
+
 ## Related
 
 - **AffinityLaplacian** — implemented (integer prototype). See above.
-- Still on the roadmap: `OperatorKernelHandle`, `SparsifiedCollective`
-  ([ROADMAP.md](ROADMAP.md)).
+- **OperatorKernelHandle** — implemented (cap + Hodge bind/refuse).
+- Still on the roadmap: `SparsifiedCollective`.

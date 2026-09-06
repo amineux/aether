@@ -185,6 +185,29 @@ Landed as a **documented subset**, not a general physical MM:
 Still stubbed: higher-half / KASLR, hotplug, FDT, managing RAM past
 the identity 4 GiB.
 
+## OperatorKernelHandle (this cut)
+
+Landed as a **research kernel surface**, not a compiler and not a
+collective ISA:
+
+- `CapKind::OperatorKernel` names an `OperatorKernelHandle`
+  (`core/src/opkernel.rs`): collective topology (`Tree` / `Ring` /
+  `Torus`) plus one bound Hodge class.
+- Bind refuses Tree+Curl (`CurlOnTree`) and Tree+Harmonic
+  (`HarmonicTreeReduce`) — the same policy as `FlowHodgeQuota`.
+  Ring and torus never set `TREE_OFFLOAD`.
+- Inject builds a fabric header from the handle (flow +
+  TREE_OFFLOAD / RING_RESERVE) and `Fabric::send` admits it.
+  A requested class other than the bound one is `ClassMismatch`
+  before quota.
+- Mint / derive go through the existing cap table. Revoke of a
+  parent empties descendants (CDT already landed).
+- Host tests lock bind / inject / refuse. Boot demo + serial
+  `[opkernel] tree+gradient inject + harmonic-tree REFUSE`.
+  No new syscall (0–8 frozen). No QEMU collective engine.
+
+`SparsifiedCollective` stays a stub.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -200,7 +223,7 @@ Search for `// STUB:` / `STUB` :
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
-| OperatorKernelHandle | (none) | Cap for a compiled collective (tree vs ring vs torus); binds a Hodge class |
+| OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
@@ -234,9 +257,9 @@ kernel thread queue sleeps.
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
-  an aarch64 thin HAL, and Multiboot mmap → frames (this cut) are
-  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
-  expansion remain deferred.
+  an aarch64 thin HAL, Multiboot mmap → frames, and
+  OperatorKernelHandle (this cut) are landed. ABI stays stable.
+  Custom QEMU virtio-accel and Laplacian expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -245,9 +268,10 @@ kernel thread queue sleeps.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
-aarch64 thin HAL (PR #13), and Multiboot mmap (this cut) are **done**
-as research-prototype slices. Custom QEMU virtio-accel and the other
-stubs above are still open.
+aarch64 thin HAL (PR #13), Multiboot mmap (PR #14), and
+OperatorKernelHandle (this cut) are **done** as research-prototype
+slices. Custom QEMU virtio-accel and the other stubs above are still
+open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

@@ -13,6 +13,7 @@ use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
 use crate::iommu::{IommuMap, MapError, MapRequest};
 use crate::observe::{EventKind, EventRing};
+use crate::opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
 use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 use crate::phase::Phase;
 use crate::sched::{Job, JobKind, TileKind, TileScheduler};
@@ -34,6 +35,7 @@ pub struct DemoReport {
     pub map_ok: bool,
     pub color_ok: bool,
     pub revoke_ok: bool,
+    pub opkernel_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -59,6 +61,7 @@ impl DemoReport {
             && self.map_ok
             && self.color_ok
             && self.revoke_ok
+            && self.opkernel_ok
     }
 }
 
@@ -490,6 +493,46 @@ pub fn run_boot_demo() -> DemoReport {
         )
         .is_err();
 
+    // OperatorKernelHandle: tree+gradient injects; tree+harmonic bind refuses;
+    // torus+harmonic injects without TREE_OFFLOAD. Tenant B holds no cap.
+    let tree = OperatorKernelHandle::bind(OpKernelId(1), CollectiveKind::Tree, FlowClass::Gradient)
+        .unwrap();
+    let tree_cap = tree.mint(&mut caps_a).unwrap();
+    let tree_inject = tree
+        .inject(&caps_a, tree_cap, &mut fabric, ep_a, tenant_a, b"ok-tree")
+        .is_ok();
+    let tree_got = fabric.recv(ep_a).unwrap();
+    events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 2);
+    let harm_bind_refused =
+        OperatorKernelHandle::bind(OpKernelId(2), CollectiveKind::Tree, FlowClass::Harmonic)
+            .is_err();
+    let wrong_class = tree.inject_as(
+        &caps_a,
+        tree_cap,
+        &mut fabric,
+        ep_a,
+        tenant_a,
+        b"nope",
+        FlowClass::Harmonic,
+    ) == Err(OpKernelError::ClassMismatch);
+    let torus =
+        OperatorKernelHandle::bind(OpKernelId(3), CollectiveKind::Torus, FlowClass::Harmonic)
+            .unwrap();
+    let torus_cap = torus.mint(&mut caps_a).unwrap();
+    let torus_inject = torus
+        .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"ok-torus")
+        .is_ok();
+    let torus_got = fabric.recv(ep_a).unwrap();
+    let opkernel_ok = tree_inject
+        && tree_got.header.flags.tree_offload()
+        && tree_got.header.flow == FlowClass::Gradient
+        && harm_bind_refused
+        && wrong_class
+        && torus_inject
+        && !torus_got.header.flags.tree_offload()
+        && torus_got.header.flow == FlowClass::Harmonic
+        && !caps_b.holds(CapKind::OperatorKernel, 1);
+
     fabric
         .send(
             Message::new(
@@ -528,6 +571,7 @@ pub fn run_boot_demo() -> DemoReport {
         map_ok,
         color_ok,
         revoke_ok,
+        opkernel_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -559,6 +603,7 @@ mod tests {
         assert!(r.map_ok, "map");
         assert!(r.color_ok, "color");
         assert!(r.revoke_ok, "cdt revoke");
+        assert!(r.opkernel_ok, "opkernel");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);

@@ -44,6 +44,13 @@ architectural.
 (`core/src/hodge.rs`). Gradient may tree-offload; curl and harmonic must
 not. See [CUT.md](CUT.md).
 
+An `OperatorKernelHandle` (`CapKind::OperatorKernel`) is a compiled
+collective bound to one of those classes. Tree topology implies
+`TREE_OFFLOAD` and therefore refuses Curl / Harmonic at bind time.
+Inject writes the handle's class and flags into the header; a
+mismatched class is refused before enqueue. This is a cap, not a
+compiler. See [CUT.md](CUT.md).
+
 ### Spectral cuts
 
 Placement is not only affinity hints. A `SpectralCut` cap binds a job to

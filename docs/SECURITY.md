@@ -13,7 +13,7 @@ table. There is no global “handle namespace” to guess.
 Each `Capability` stores:
 
 - `kind` — Memory, Endpoint, AccelQueue, Notification, SpectralCut,
-  FlowQuota, Activity, Partition
+  FlowQuota, Activity, Partition, OperatorKernel
 - `rights` — subset of READ/WRITE/GRANT/MAP/SUBMIT/WAIT/EXECUTE/BIND/UNIFIED
   (`UNIFIED` is never in `MEM_FULL`)
 - `object` — kernel object id
@@ -36,6 +36,9 @@ Each `Capability` stores:
    A's cut. Cross-cut placements are `CutError::CrossCut`.
 7. **Hodge class.** `FlowQuota` badge is a class mask. Harmonic +
    `TREE_OFFLOAD` is refused even if the tenant is authorized (`deadlock`).
+   An `OperatorKernel` cap binds one topology to one class; Tree+Harmonic
+   / Tree+Curl refuse at bind, and inject of a different class is
+   `ClassMismatch`.
 8. **Activity + partition.** A virt accel is an `Activity` cap, not an
    ioctl. Jobs bind a `PartitionProfile` (spatial slice, credits, blast
    radius). Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.

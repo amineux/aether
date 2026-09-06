@@ -31,6 +31,9 @@ not a seL4 CNode, not a calendar milestone). An aarch64 thin HAL
 + GICv2 + TTBR; no EL0, not product-class). Multiboot mmap → frames
 is **done** as a documented x86 subset (clip 16 MiB, 128 MiB bitmap
 cap; explicit fallback on RISC-V / aarch64; not a general MM).
+OperatorKernelHandle is **done** as an unscheduled research kernel
+surface (`CapKind::OperatorKernel` + Hodge bind/refuse; not a
+compiler, not a new syscall, not a collective engine).
 
 ### KEEP / ACTIVE Y1
 
@@ -86,8 +89,9 @@ After AccelDevice bites a real-shaped path — not before:
 5. Per-task PML4 + SMEP/SMAP (documented x86 subset)
 6. Minimal cap CDT / revoke (internal API + host/QEMU demo)
 7. aarch64 thin HAL (QEMU virt, no EL0)
-8. Multiboot mmap → frames (documented subset) — **this cut**
-9. Optional virtio-accel / MicroPerceptron interop later
+8. Multiboot mmap → frames (documented subset)
+9. OperatorKernelHandle (Hodge-bound collective cap) — **this cut**
+10. Optional virtio-accel / MicroPerceptron interop later
 
 ### Active file touch map
 
@@ -101,11 +105,13 @@ After AccelDevice bites a real-shaped path — not before:
 | Cap CDT / revoke | `core/src/caps.rs`, `core/src/demo.rs`, `docs/{SECURITY,ROADMAP,YEAR2_PLAN}.md` |
 | aarch64 thin HAL | `boot/aarch64/`, `kernel/src/arch/aarch64/`, `Makefile`, `qemu-aarch64-ci` |
 | Multiboot mmap | `core/src/mmap.rs`, `kernel/src/mm/{mod,frame}.rs`, `boot/x86_64/trampoline.S` |
+| OperatorKernelHandle | `core/src/opkernel.rs`, `core/src/{caps,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
 arch PR on the revised track. CDT landed as a small `aether-core`
-slice. Still do not open CXL PRs here.
+slice. OperatorKernelHandle is the same kind of slice (caps + Hodge,
+no new syscall). Still do not open CXL PRs here.
 
 ---
 

@@ -17,6 +17,7 @@ active track the site must match.
 | Tile scheduler + SpectralCut refuse | Implemented (n≤8 enumerate) | `core/src/{sched,cut}.rs` |
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
+| OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR) | `hal/`, `drivers/`, `core/src/accel.rs` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |

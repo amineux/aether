@@ -20,6 +20,8 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 - Order submit → fence → complete / timeout.
 - Move Memory caps and pin local places.
 - Account Hodge flow class and SpectralCut placement.
+- Bind an `OperatorKernelHandle` (collective topology × Hodge class)
+  as a cap. No new syscall; host / kernel-internal API only.
 
 ## What the kernel will not do
 
