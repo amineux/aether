@@ -10,11 +10,12 @@ tasks communicate, a capability was minted or transferred.
 MsgHeader
   dest          EndpointId     object table, not a CPtr
   badge         u64            set at mint; receiver sees sender's badge
-  flags         SYNC | ASYNC | GRANT | REPLY
+  flags         SYNC | ASYNC | GRANT | REPLY | TREE_OFFLOAD | RING_RESERVE
   n_caps        0..4           caps moved/copied with the message
   payload_len   ≤ 64 bytes     control plane only
   route         ChipletRoute   die / chiplet / tile / hop_hint
   sender_tenant TenantId
+  flow          FlowClass      Gradient | Curl | Harmonic
 ```
 
 Bulk tensor data does **not** ride in the payload. It rides in a Memory
@@ -35,6 +36,18 @@ single-package router except for being copied end-to-end. The point is the
 **ABI**: a mesh, EMIB, or UALink hop can steer on the header without
 parsing tensors. Silicon partners should treat these four bytes as
 architectural.
+
+### Hodge class (FlowHodgeQuota)
+
+`flow` plus `TREE_OFFLOAD` / `RING_RESERVE` is enforced in `Fabric::send`
+(`core/src/hodge.rs`). Gradient may tree-offload; curl and harmonic must
+not. See [CUT.md](CUT.md).
+
+### Spectral cuts
+
+Placement is not only affinity hints. A `SpectralCut` cap binds a job to
+one side of the package graph. Cross-cut tile/bank pairs are refused.
+See [CUT.md](CUT.md).
 
 ## Endpoints
 

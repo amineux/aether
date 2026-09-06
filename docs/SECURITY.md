@@ -29,6 +29,10 @@ Each `Capability` stores:
    fails for a Memory cap or a read-only queue cap.
 5. **Isolation demo.** Tenant B does not `holds(Memory, A's arena)` and
    cannot `require` A's `CPtr` (the slot is empty in B's table).
+6. **Cut bind.** `SpectralCut` requires `BIND`. Tenant B does not hold
+   A's cut. Cross-cut placements are `CutError::CrossCut`.
+7. **Hodge class.** `FlowQuota` badge is a class mask. Harmonic +
+   `TREE_OFFLOAD` is refused even if the tenant is authorized (`deadlock`).
 
 Host tests in `core/src/caps.rs` and `core/src/demo.rs` lock these down.
 

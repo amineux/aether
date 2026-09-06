@@ -9,6 +9,7 @@
 //!     without parsing the payload
 
 use crate::caps::Capability;
+use crate::hodge::{FlowClass, HodgeError, HodgeQuota};
 use crate::types::{TenantId, TileId};
 
 pub const MAX_ENDPOINTS: usize = 16;
@@ -55,12 +56,22 @@ impl MsgFlags {
     pub const ASYNC: u16 = 1 << 1;
     pub const GRANT: u16 = 1 << 2;
     pub const REPLY: u16 = 1 << 3;
+    /// Gradient-only: use a spanning-tree / reduction-engine offload.
+    pub const TREE_OFFLOAD: u16 = 1 << 4;
+    /// Curl: reserve ring capacity on the virtual interconnect.
+    pub const RING_RESERVE: u16 = 1 << 5;
 
     pub const fn is_sync(self) -> bool {
         self.0 & Self::SYNC != 0
     }
     pub const fn is_grant(self) -> bool {
         self.0 & Self::GRANT != 0
+    }
+    pub const fn tree_offload(self) -> bool {
+        self.0 & Self::TREE_OFFLOAD != 0
+    }
+    pub const fn ring_reserve(self) -> bool {
+        self.0 & Self::RING_RESERVE != 0
     }
 }
 
@@ -73,6 +84,7 @@ pub struct MsgHeader {
     pub payload_len: u8,
     pub route: ChipletRoute,
     pub sender_tenant: TenantId,
+    pub flow: FlowClass,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -105,6 +117,7 @@ impl Message {
                 payload_len: data.len() as u8,
                 route,
                 sender_tenant,
+                flow: FlowClass::Gradient,
             },
             caps: [None; MAX_MSG_CAPS],
             payload,
@@ -124,6 +137,11 @@ impl Message {
     pub fn payload(&self) -> &[u8] {
         &self.payload[..self.header.payload_len as usize]
     }
+
+    pub fn with_flow(mut self, flow: FlowClass) -> Self {
+        self.header.flow = flow;
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -135,6 +153,7 @@ pub enum FabricError {
     WouldBlock,
     Closed,
     EndpointLimit,
+    Hodge(HodgeError),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -188,6 +207,7 @@ impl Endpoint {
 pub struct Fabric {
     eps: [Option<Endpoint>; MAX_ENDPOINTS],
     next_id: u32,
+    pub hodge: HodgeQuota,
 }
 
 impl Fabric {
@@ -195,6 +215,7 @@ impl Fabric {
         Self {
             eps: [None; MAX_ENDPOINTS],
             next_id: 1,
+            hodge: HodgeQuota::generous(),
         }
     }
 
@@ -230,10 +251,24 @@ impl Fabric {
         Ok(self.ep(id)?.owner)
     }
 
-    /// Asynchronous send. SYNC is recorded on the header for the scheduler
-    /// (caller blocks until a matching recv); the queue itself is the same.
+    /// Admit Hodge policy/quota on the virtual link, then enqueue.
     pub fn send(&mut self, msg: Message) -> Result<(), FabricError> {
-        self.ep_mut(msg.header.dest)?.push(msg)
+        let dest = msg.header.dest;
+        let flow = msg.header.flow;
+        let tree = msg.header.flags.tree_offload();
+        {
+            let ep = self.ep_mut(dest)?;
+            if ep.closed {
+                return Err(FabricError::Closed);
+            }
+            if ep.qlen >= MAX_QUEUE {
+                return Err(FabricError::QueueFull);
+            }
+        }
+        self.hodge
+            .admit(flow, tree)
+            .map_err(FabricError::Hodge)?;
+        self.ep_mut(dest)?.push(msg)
     }
 
     pub fn recv(&mut self, id: EndpointId) -> Result<Message, FabricError> {
@@ -382,6 +417,27 @@ mod tests {
             .unwrap_err(),
             FabricError::PayloadTooLarge
         );
+    }
+
+    #[test]
+    fn hodge_refuses_harmonic_tree() {
+        let mut f = Fabric::new();
+        let ep = f.create_endpoint(TenantId(1)).unwrap();
+        let msg = Message::new(
+            ep,
+            0,
+            MsgFlags(MsgFlags::ASYNC | MsgFlags::TREE_OFFLOAD),
+            ChipletRoute::LOCAL,
+            TenantId(1),
+            b"harm",
+        )
+        .unwrap()
+        .with_flow(crate::hodge::FlowClass::Harmonic);
+        assert_eq!(
+            f.send(msg).unwrap_err(),
+            FabricError::Hodge(crate::hodge::HodgeError::HarmonicTreeReduce)
+        );
+        assert_eq!(f.pending(ep).unwrap(), 0);
     }
 
     #[test]

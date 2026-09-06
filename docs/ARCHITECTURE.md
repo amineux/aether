@@ -19,6 +19,9 @@ It does not invent performance numbers.
 4. **The HAL is the silicon contract.** Drivers implement `AccelDevice`. The
    rest of the kernel does not know if the backend is SoftNPU, VirtIO, or a
    real command processor.
+5. **Cuts and Hodge classes are capabilities.** A `SpectralCut` is a bound
+   partition of the package graph; a `FlowClass` on every message selects
+   gradient / curl / harmonic policy. See [CUT.md](CUT.md).
 
 ## Boot (x86_64 / QEMU)
 
@@ -84,6 +87,8 @@ aether-kernel   arch, mm, console, syscall ABI, built-in init
 | `core/src/sched.rs` | Tile scheduler |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
+| `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
+| `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 
 ## HAL ports (future arches)
 

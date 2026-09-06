@@ -25,6 +25,8 @@ pub enum CapKind {
     Endpoint = 2,
     AccelQueue = 3,
     Notification = 4,
+    SpectralCut = 5,
+    FlowQuota = 6,
 }
 
 impl CapKind {
@@ -35,6 +37,8 @@ impl CapKind {
             2 => Some(Self::Endpoint),
             3 => Some(Self::AccelQueue),
             4 => Some(Self::Notification),
+            5 => Some(Self::SpectralCut),
+            6 => Some(Self::FlowQuota),
             _ => None,
         }
     }
@@ -52,12 +56,16 @@ impl CapRights {
     pub const SUBMIT: u16 = 1 << 4;
     pub const WAIT: u16 = 1 << 5;
     pub const EXECUTE: u16 = 1 << 6;
+    /// Bind a task / job to a SpectralCut (placement refusal).
+    pub const BIND: u16 = 1 << 7;
 
     pub const NONE: Self = Self(0);
-    pub const ALL: Self = Self(0x7F);
+    pub const ALL: Self = Self(0xFF);
     pub const MEM_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT | Self::MAP);
     pub const EP_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT);
     pub const ACCEL_FULL: Self = Self(Self::SUBMIT | Self::WAIT | Self::GRANT | Self::READ);
+    pub const CUT_FULL: Self = Self(Self::READ | Self::BIND | Self::GRANT);
+    pub const HODGE_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT);
 
     pub const fn contains(self, bits: u16) -> bool {
         self.0 & bits == bits

@@ -4,6 +4,7 @@
 //! places both `Thread` and `AccelWave` on the same fabric scheduler so
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
 
+use crate::cut::{AffinityGraph, CutError, SpectralCut, MAX_CUTS_SCHED};
 use crate::types::{BankId, TileId, MAX_TILES};
 
 pub const MAX_JOBS: usize = 32;
@@ -33,6 +34,8 @@ pub struct Job {
     pub priority: u8,
     pub deadline_ticks: Option<u64>,
     pub tenant: u32,
+    /// Bound `SpectralCut` object id. `None` = unrestricted (legacy jobs).
+    pub cut_id: Option<u32>,
 }
 
 impl Job {
@@ -74,6 +77,8 @@ pub struct TileScheduler {
     next_id: u32,
     steal_cursor: usize,
     now: u64,
+    graph: AffinityGraph,
+    cuts: [Option<SpectralCut>; MAX_CUTS_SCHED],
 }
 
 impl TileScheduler {
@@ -84,7 +89,36 @@ impl TileScheduler {
             next_id: 1,
             steal_cursor: 0,
             now: 0,
+            graph: AffinityGraph::empty(),
+            cuts: [None; MAX_CUTS_SCHED],
         }
+    }
+
+    pub fn set_graph(&mut self, g: AffinityGraph) {
+        self.graph = g;
+    }
+
+    pub fn install_cut(&mut self, cut: SpectralCut) -> bool {
+        if let Some(slot) = self.cuts.iter_mut().find(|c| c.is_none()) {
+            *slot = Some(cut);
+            true
+        } else {
+            false
+        }
+    }
+
+    fn cut(&self, id: u32) -> Option<&SpectralCut> {
+        self.cuts.iter().flatten().find(|c| c.id.0 == id)
+    }
+
+    /// Placement gate used by pick/steal. Unbound jobs always pass.
+    pub fn place_ok(&self, job: &Job, tile: TileId) -> Result<(), CutError> {
+        let Some(cid) = job.cut_id else {
+            return Ok(());
+        };
+        let cut = self.cut(cid).ok_or(CutError::NoCut)?;
+        cut.allow_place(&self.graph, tile, job.bank_affinity)
+            .map(|_| ())
     }
 
     pub fn add_tile(&mut self, id: TileId, kind: TileKind, home_bank: BankId) -> bool {
@@ -138,6 +172,9 @@ impl TileScheduler {
 
     fn score(&self, job: &Job, tile: &Tile) -> i32 {
         if !Job::compatible(job.kind, tile.kind) {
+            return i32::MIN;
+        }
+        if self.place_ok(job, tile.id).is_err() {
             return i32::MIN;
         }
         let mut s = 1000 - job.effective_prio(self.now) as i32 * 100;
@@ -248,6 +285,7 @@ mod tests {
             priority: 0,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         assert!(s.pick(TileId(0)).is_none());
         assert!(s.pick(TileId(2)).is_some());
@@ -264,6 +302,7 @@ mod tests {
             priority: 5,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -273,6 +312,7 @@ mod tests {
             priority: 1,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.priority, 1);
@@ -290,6 +330,7 @@ mod tests {
             priority: 0,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -299,6 +340,7 @@ mod tests {
             priority: 7,
             deadline_ticks: Some(100),
             tenant: 1,
+            cut_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.deadline_ticks, Some(100));
@@ -315,6 +357,7 @@ mod tests {
             priority: 3,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         s.enqueue(Job {
             id: 11,
@@ -324,6 +367,7 @@ mod tests {
             priority: 3,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.id, 11);
@@ -340,6 +384,7 @@ mod tests {
             priority: 4,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         // tile 1 has nothing local; steals from the ready pool
         let j = s.steal(TileId(1)).unwrap();
@@ -357,8 +402,31 @@ mod tests {
             priority: 4,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         assert!(s.steal(TileId(1)).is_none());
+        assert!(s.pick(TileId(0)).is_some());
+    }
+
+    #[test]
+    fn bound_cut_rejects_cross_chiplet_tile() {
+        let mut s = setup();
+        let (g, cut) = crate::cut::SpectralCut::qemu_chiplet_cut(400).unwrap();
+        s.set_graph(g);
+        s.install_cut(cut);
+        s.enqueue(Job {
+            id: 7,
+            kind: JobKind::Thread,
+            tile_hint: None,
+            bank_affinity: Some(BankId(0)),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: Some(cut.id.0),
+        });
+        // tile 1 is chiplet 1; bank 0 is chiplet 0 → CrossCut
+        assert!(s.pick(TileId(1)).is_none());
+        // tile 0 + bank 0 is legal
         assert!(s.pick(TileId(0)).is_some());
     }
 
@@ -373,6 +441,7 @@ mod tests {
             priority: 0,
             deadline_ticks: None,
             tenant: 1,
+            cut_id: None,
         });
         assert!(s.steal(TileId(2)).is_none());
     }

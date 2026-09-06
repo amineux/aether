@@ -5,7 +5,9 @@
 use crate::accel::{AccelJobDesc, AccelOp, SliceMem, SoftNpu};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
-use crate::fabric::{ChipletRoute, Fabric, Message, MsgFlags};
+use crate::cut::{bind_place, CutError, SpectralCut};
+use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
+use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
 use crate::observe::{EventKind, EventRing};
 use crate::sched::{Job, JobKind, TileKind, TileScheduler};
 use crate::types::{BankId, PhysAddr, TenantId, TileId};
@@ -17,17 +19,26 @@ pub struct DemoReport {
     pub accel_ok: bool,
     pub isolation_ok: bool,
     pub sched_ok: bool,
+    pub cut_ok: bool,
+    pub hodge_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
     pub arena_base: u64,
     pub arena_bank: u8,
     pub events: u32,
+    pub cut_phi_milli: u32,
 }
 
 impl DemoReport {
     pub fn all_ok(&self) -> bool {
-        self.ipc_ok && self.arena_ok && self.accel_ok && self.isolation_ok && self.sched_ok
+        self.ipc_ok
+            && self.arena_ok
+            && self.accel_ok
+            && self.isolation_ok
+            && self.sched_ok
+            && self.cut_ok
+            && self.hodge_ok
     }
 }
 
@@ -140,7 +151,46 @@ pub fn run_boot_demo() -> DemoReport {
     events.emit(EventKind::CapGrant, arena.id.0 as u64, granted as u64);
     let arena_ok = arena.pinned && arena.dma && arena.bank == BankId(0) && granted;
 
+    let (graph, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
+    let cut_cap = caps_a
+        .mint(Capability {
+            kind: CapKind::SpectralCut,
+            rights: CapRights::CUT_FULL,
+            object: cut.id.0,
+            badge: 0,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    events.emit(EventKind::CutBind, cut.id.0 as u64, cut.phi_milli as u64);
+    let place_ok = bind_place(
+        &caps_a,
+        cut_cap,
+        &cut,
+        &graph,
+        TileId(2),
+        Some(BankId(0)),
+    )
+    .is_ok();
+    let cross = bind_place(
+        &caps_a,
+        cut_cap,
+        &cut,
+        &graph,
+        TileId(1),
+        Some(BankId(0)),
+    );
+    let cut_refuse = cross == Err(CutError::CrossCut);
+    if cut_refuse {
+        events.emit(EventKind::CutRefuse, 1, 0);
+    }
+    // Tenant B cannot bind A's cut (no cap).
+    let b_no_cut = !caps_b.holds(CapKind::SpectralCut, cut.id.0);
+    let cut_ok = place_ok && cut_refuse && b_no_cut && cut.phi_milli <= cut.bound_milli;
+
     let mut sched = TileScheduler::new();
+    sched.set_graph(graph);
+    sched.install_cut(cut);
     sched.add_tile(TileId(0), TileKind::Cpu, BankId(0));
     sched.add_tile(TileId(1), TileKind::Cpu, BankId(1));
     sched.add_tile(TileId(2), TileKind::Npu, BankId(0));
@@ -152,6 +202,7 @@ pub fn run_boot_demo() -> DemoReport {
         priority: 3,
         deadline_ticks: Some(1_000),
         tenant: tenant_a.0,
+        cut_id: Some(cut.id.0),
     });
     sched.enqueue(Job {
         id: 0,
@@ -161,6 +212,7 @@ pub fn run_boot_demo() -> DemoReport {
         priority: 0,
         deadline_ticks: Some(50),
         tenant: tenant_a.0,
+        cut_id: Some(cut.id.0),
     });
     let wave = sched.pick(TileId(2));
     events.emit(
@@ -221,6 +273,75 @@ pub fn run_boot_demo() -> DemoReport {
     let cpl = npu.execute(&job, &mut mem).unwrap();
     events.emit(EventKind::AccelComplete, cpl.job_seq as u64, cpl.cycles as u64);
 
+    let hodge_cap = caps_a
+        .mint(Capability {
+            kind: CapKind::FlowQuota,
+            rights: CapRights::HODGE_FULL,
+            object: 1,
+            badge: CLASS_ALL,
+            generation: 0,
+            tenant: tenant_a,
+        })
+        .unwrap();
+    let hodge_grad = authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Gradient).is_ok();
+    // Tenant B has no FlowQuota cap: cannot authorize harmonic.
+    let b_no_hodge = !caps_b.holds(CapKind::FlowQuota, 1);
+
+    let grad_msg = Message::new(
+        ep_a,
+        0x11,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::TREE_OFFLOAD),
+        ChipletRoute::for_tile(TileId(0)),
+        tenant_a,
+        b"allreduce",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Gradient);
+    let grad_ok = fabric.send(grad_msg).is_ok();
+    events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 1);
+    let _ = fabric.recv(ep_a);
+
+    let curl_msg = Message::new(
+        ep_a,
+        0x22,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::RING_RESERVE),
+        ChipletRoute::for_tile(TileId(2)),
+        tenant_a,
+        b"ring",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Curl);
+    let curl_ok = fabric.send(curl_msg).is_ok()
+        && authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Curl).is_ok();
+    let _ = fabric.recv(ep_a);
+
+    let harm_tree = Message::new(
+        ep_a,
+        0x33,
+        MsgFlags(MsgFlags::ASYNC | MsgFlags::TREE_OFFLOAD),
+        ChipletRoute::LOCAL,
+        tenant_a,
+        b"cycle",
+    )
+    .unwrap()
+    .with_flow(FlowClass::Harmonic);
+    let harm_refused = fabric.send(harm_tree)
+        == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
+    events.emit(EventKind::HodgeRefuse, FlowClass::Harmonic as u64, 1);
+    let hodge_ok = hodge_grad && grad_ok && curl_ok && harm_refused && b_no_hodge
+        && authorize(
+            &Capability {
+                kind: CapKind::FlowQuota,
+                rights: CapRights::HODGE_FULL,
+                object: 1,
+                badge: CLASS_GRADIENT | CLASS_CURL,
+                generation: 1,
+                tenant: tenant_b,
+            },
+            FlowClass::Harmonic,
+        )
+        .is_err();
+
     fabric
         .send(
             Message::new(
@@ -250,12 +371,15 @@ pub fn run_boot_demo() -> DemoReport {
         accel_ok,
         isolation_ok,
         sched_ok,
+        cut_ok,
+        hodge_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
         arena_base: arena.base.0,
         arena_bank: arena.bank.0,
         events: events.len() as u32,
+        cut_phi_milli: cut.phi_milli,
     }
 }
 
@@ -271,7 +395,10 @@ mod tests {
         assert!(r.accel_ok, "accel");
         assert!(r.isolation_ok, "isolation");
         assert!(r.sched_ok, "sched");
+        assert!(r.cut_ok, "cut");
+        assert!(r.hodge_ok, "hodge");
         assert!(r.all_ok());
+        assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);
         assert_eq!(r.c00, 2);
         assert_eq!(r.c11, 13);
         assert_eq!(r.arena_bank, 0);

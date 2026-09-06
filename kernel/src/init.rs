@@ -48,6 +48,17 @@ pub fn run_demo() {
     write_str(flag(report.isolation_ok));
     console::nl();
 
+    write_str("[cut] bind SpectralCut cap  Phi=");
+    write_u64(report.cut_phi_milli as u64);
+    write_str(" milli  bound=400  ");
+    write_str(flag(report.cut_ok));
+    write_str(" (place NPU+bank0 ok, tile1+bank0 CrossCut refuse)");
+    console::nl();
+
+    write_str("[hodge] gradient tree-offload + curl ring + harmonic-tree REFUSE  ");
+    write_str(flag(report.hodge_ok));
+    console::nl();
+
     write_str("[fabric] SoftNPU job#");
     write_u64(report.job_seq as u64);
     write_str(" C[0,0]=");
@@ -77,6 +88,7 @@ pub fn run_demo() {
         console::nl();
         println!("====================================================");
         println!("  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE");
+        println!("  CUT BIND + HODGE FLOW CLASS ENFORCED");
         println!("====================================================");
         crate::arch::x86_64::io::outb(0xF4, 0x00);
     } else {

@@ -17,6 +17,10 @@ pub enum EventKind {
     AccelComplete = 11,
     IsolationDeny = 12,
     Warn = 13,
+    CutBind = 14,
+    CutRefuse = 15,
+    HodgeAdmit = 16,
+    HodgeRefuse = 17,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

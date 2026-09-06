@@ -20,6 +20,10 @@ Search for `// STUB:` / `STUB` :
 | Blocking sync IPC | `core/src/fabric.rs` | Waiter lists + scheduler sleep |
 | Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
 | RISC-V / aarch64 | `kernel/src/arch` | New boot + irq/timer/serial |
+| Fiedler eigensolve | `core/src/cut.rs` | Power iteration on `L=D−A`; v0.1 enumerates n≤8 |
+| AffinityLaplacian | (none) | First-class `L` object; heat-kernel / commute-time distances for placement |
+| OperatorKernelHandle | (none) | Cap for a compiled collective (tree vs ring vs torus); binds a Hodge class |
+| SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
 
 ## Suggested next cuts (technical, not calendar)
 

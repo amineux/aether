@@ -58,6 +58,7 @@ You should see the trampoline enter long mode, then:
 
 ```
 FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
+  CUT BIND + HODGE FLOW CLASS ENFORCED
 ```
 
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
@@ -105,8 +106,8 @@ flowchart TB
 
 | Piece | Role in v0.1 |
 | --- | --- |
-| **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants on messages; chiplet route tags in the header |
-| **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal |
+| **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
+| **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
 | **Accel HAL** | `probe / submit / poll / map`; VirtIO-Accel ring ABI + SoftNPU matmul/wave |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected |
@@ -142,7 +143,8 @@ team could take into bring-up.
 ## Docs
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
-- [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags
+- [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
+- [docs/CUT.md](docs/CUT.md) — SpectralCut + FlowHodgeQuota invariants
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, VirtIO-Accel, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/ROADMAP.md](docs/ROADMAP.md) — stubs and next cuts
