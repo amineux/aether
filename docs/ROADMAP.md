@@ -39,8 +39,7 @@ Landed:
   S-mode userspace cut (below) adds `sret` / `ecall` `/init`.
 - **AffinityLaplacian.** First-class `L = D − A` in `core/src/laplacian.rs`
   with integer Rayleigh, Fiedler-ish power iteration, heat-kernel and
-  commute-time helpers. Host tests. `SpectralCut::from_fiedler` is wired;
-  placement for n≤8 still enumerates.
+  commute-time helpers. The n≤32 placement cut (below) extends this.
 - **Diligence pack.** [DILIGENCE.md](DILIGENCE.md) — what ships, what is
   stubbed, how to plug `AccelDevice`, security invariants, CI, non-claims,
   and a design-win narrative that does not invent a partner.
@@ -51,7 +50,8 @@ Honest limits of this cut:
 
 - RISC-V userspace is a **documented subset**, not a second product
   kernel. See the S-mode userspace section.
-- Fiedler is integer power iteration on n≤8, not a production eigensolve.
+- Fiedler is integer power iteration (n≤32 host-tested), not a
+  production eigensolve and not GiFt-Placer. Enumeration stays at n≤8.
 - Nobody from a silicon team has reviewed this. The agenda is so they
   could.
 - SoftCommandProcessor is a **software CP**, not a silicon driver. It
@@ -284,6 +284,24 @@ architecture, not a PLIC virtio port, not `/probe` on this HAL:
 Still stubbed: PLIC, real virtio-mmio, FDT mmap, extra-hart SMP,
 `/probe`, product-class second kernel. aarch64 stays EL1-only.
 
+## AffinityLaplacian n≤32 placement (this cut)
+
+Landed as a **prototype eigensolve** — **not** GiFt-Placer, **not** a
+production package solver, **not** an EDA replacement:
+
+- `MAX_VERTS = 32`. Masks stay `u32` (`vert_mask` handles n=32).
+- `SpectralCut::from_fiedler` / `from_placement` take a Fiedler
+  median-cut of `AffinityLaplacian`. Host tests: n=16 and n=32
+  `two_chiplet_mesh` smokes recover the chiplet bipartition.
+- `SpectralCut::min_balanced` still enumerates for n ≤ 8
+  (`ENUM_MAX`). Above that it is `TooLarge` — O(2ⁿ) is not a
+  placement path.
+- `TileScheduler::bind_laplacian_cut` installs that cut. `pick`
+  refuses CrossCut on a bound cut; BIND is still required on
+  `bind_place`. A soft Fiedler-side score hint is not a refuse.
+- Complexity (dense integer): iterate O(iters·n²), commute O(n³).
+  No libm. No new syscall. AccelDevice / qemu arch CI unchanged.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -298,7 +316,7 @@ Search for `// STUB:` / `STUB` :
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** (U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU; no PLIC / virtio-mmio) |
-| Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
+| Production Fiedler | `core/src/laplacian.rs` | **done** as a prototype (n≤32 host-tested median-cut + sched bind). Not GiFt-Placer; enum stays n≤8 |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
@@ -335,9 +353,10 @@ kernel thread queue sleeps.
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
-  fence/timeline, SoftNPU F16/F32 software IEEE, and RISC-V S-mode
-  userspace (this cut) are landed. ABI stays stable. Custom QEMU
-  virtio-accel, RISC-V PLIC, and Laplacian expansion remain deferred.
+  fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
+  userspace, and AffinityLaplacian n≤32 placement (this cut) are
+  landed. ABI stays stable. Custom QEMU virtio-accel and RISC-V
+  PLIC remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -349,9 +368,10 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
   the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
-  software IEEE (PR #18), and RISC-V S-mode userspace (this cut)
-  are **done** as research-prototype slices. Custom QEMU virtio-accel,
-  RISC-V PLIC, and the other stubs above are still open.
+  software IEEE (PR #18), RISC-V S-mode userspace (PR #19), and
+  AffinityLaplacian n≤32 placement (this cut) are **done** as
+  research-prototype slices. Custom QEMU virtio-accel, RISC-V PLIC,
+  and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

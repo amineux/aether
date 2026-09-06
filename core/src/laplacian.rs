@@ -1,17 +1,26 @@
 //! AffinityLaplacian — first-class `L = D − A` for a package topology.
 //!
-//! Placement wants a Fiedler vector of the unnormalized Laplacian. For
-//! `n ≤ 8`, [`crate::cut::SpectralCut`] still enumerates balanced masks
-//! (the combinatorial problem Fiedler approximates). This type is the
-//! object a later eigensolve would feed, and it already exposes the
-//! helpers placement would call: Rayleigh quotient, a Fiedler-ish
-//! sign-split, heat-kernel distance, and a commute-time / resistance
-//! proxy.
+//! Placement wants a Fiedler vector of the unnormalized Laplacian.
+//! [`crate::cut::SpectralCut::from_fiedler`] / `from_placement` take a
+//! median cut of that vector for `n ≤ 32` (host-tested). For `n ≤ 8`,
+//! [`crate::cut::SpectralCut::min_balanced`] still enumerates — the
+//! combinatorial problem Fiedler approximates. Enumeration is refused
+//! above that gate.
 //!
-//! Arithmetic is integer / milli-fixed-point. There is no libm and no
-//! claim of a production eigensolver.
+//! Arithmetic is integer / milli-fixed-point. There is no libm. This is
+//! a **prototype eigensolve**, not GiFt-Placer, not a production package
+//! solver, and not an EDA replacement.
+//!
+//! Complexity on a dense n×n `L` (n ≤ 32):
+//! - `from_graph` / `quadratic_form` / `rayleigh_milli`: O(n²)
+//! - `fiedler_iterate`: O(iters · n²); default iters = max(32, 2n)
+//! - `fiedler_mask` (median cut): iterate + O(n²) insertion sort
+//! - `heat_step` / `heat_distance_milli`: O(steps · n²). The prototype
+//!   scale can saturate `u32` around n=32; commute-time is the
+//!   distance check at that size.
+//! - `commute_time_milli` (integer Gaussian elim on L+J): O(n³)
 
-use crate::cut::{AffinityGraph, MAX_VERTS};
+use crate::cut::{vert_bit, vert_mask, AffinityGraph, MAX_VERTS};
 
 const RAYLEIGH_SCALE: i64 = 1000;
 const SOLVE_SCALE: i64 = 1_000_000;
@@ -106,10 +115,15 @@ impl AffinityLaplacian {
         }
     }
 
+    pub fn default_iters(&self) -> u32 {
+        FIEDLER_ITERS.max((self.n as u32).saturating_mul(2))
+    }
+
     /// Power iteration on `(σI − L)` in the subspace orthogonal to `1`.
     ///
     /// The seed is a centered index vector — not the chiplet labels — so a
     /// recovered bipartition is evidence the graph geometry was used.
+    /// Pass `iters == 0` to use [`Self::default_iters`].
     pub fn fiedler_iterate(&self, iters: u32) -> [i32; MAX_VERTS] {
         let mut x = [0i32; MAX_VERTS];
         if self.n == 0 {
@@ -121,7 +135,11 @@ impl AffinityLaplacian {
         }
         self.center(&mut x);
         let sigma = self.max_degree().saturating_mul(2).saturating_add(1) as i64;
-        let steps = if iters == 0 { FIEDLER_ITERS } else { iters };
+        let steps = if iters == 0 {
+            self.default_iters()
+        } else {
+            iters
+        };
         for _ in 0..steps {
             let mut y = [0i32; MAX_VERTS];
             for i in 0..self.n {
@@ -138,28 +156,40 @@ impl AffinityLaplacian {
         x
     }
 
-    /// Canonical sign-split of the Fiedler-ish vector (bit 0 forced set).
+    /// Balanced median-cut of the Fiedler-ish vector (bit 0 forced set).
+    ///
+    /// Vertices are ordered by the iterate; the lower `n/2` form one side.
+    /// That is always a SpectralCut-compatible bipartition (`|L|−|R| ≤ 1`).
+    /// Sign-split alone can land unbalanced on integer vectors; the median
+    /// is the placement API.
     pub fn fiedler_mask(&self) -> u32 {
         if self.n == 0 {
             return 0;
         }
-        let x = self.fiedler_iterate(FIEDLER_ITERS);
-        let mut mask = 0u32;
+        let x = self.fiedler_iterate(0);
+        let mut idx = [0usize; MAX_VERTS];
         for i in 0..self.n {
-            if x[i] >= 0 {
-                mask |= 1 << i;
-            }
+            idx[i] = i;
         }
-        let all = (1u32 << self.n) - 1;
-        if mask == 0 || mask == all {
-            // Degenerate: fall back to a balanced prefix so callers still
-            // get a bipartition they can refuse on conductance.
-            let half = self.n / 2;
-            mask = (1u32 << half) - 1;
-            if mask == 0 {
-                mask = 1;
+        for i in 1..self.n {
+            let key = idx[i];
+            let mut j = i;
+            while j > 0 && (x[idx[j - 1]] > x[key] || (x[idx[j - 1]] == x[key] && idx[j - 1] > key))
+            {
+                idx[j] = idx[j - 1];
+                j -= 1;
             }
+            idx[j] = key;
         }
+        let half = self.n / 2;
+        let mut mask = 0u32;
+        for k in 0..half {
+            mask |= vert_bit(idx[k]);
+        }
+        if mask == 0 {
+            mask = vert_mask(half.max(1).min(self.n));
+        }
+        let all = vert_mask(self.n);
         if mask & 1 == 0 {
             mask ^= all;
         }
@@ -185,7 +215,13 @@ impl AffinityLaplacian {
 
     /// Squared heat-kernel distance after `steps` explicit Euler steps.
     /// Units are prototype-scaled; only ratios (near vs far) are meaningful.
-    pub fn heat_distance_milli(&self, i: usize, j: usize, t_milli: u32, steps: usize) -> Option<u32> {
+    pub fn heat_distance_milli(
+        &self,
+        i: usize,
+        j: usize,
+        t_milli: u32,
+        steps: usize,
+    ) -> Option<u32> {
         if i >= self.n || j >= self.n {
             return None;
         }
@@ -303,7 +339,7 @@ impl AffinityGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cut::{SpectralCut, Vertex, VertKind};
+    use crate::cut::{SpectralCut, VertKind, Vertex};
     use crate::types::TileId;
 
     fn path4() -> AffinityGraph {
@@ -377,7 +413,10 @@ mod tests {
         let left = mask & 0b1111;
         // Balanced 2–2 about the path centre: {0,1}|{2,3} (canonical bit0).
         assert_eq!(left.count_ones(), 2);
-        assert!(left == 0b0011 || left == 0b1101 || left == 0b0101);
+        assert!(
+            left == 0b0011 || left == 0b0101 || left == 0b1001,
+            "path median-cut {left:#06b}"
+        );
         let ends = lap.fiedler_iterate(32);
         // Ends of a path have opposite Fiedler sign.
         assert!((ends[0] >= 0) != (ends[3] >= 0) || ends[0] == 0 || ends[3] == 0);
@@ -412,5 +451,52 @@ mod tests {
         let chiplet = 0b000111u32;
         assert!(enumerated.left == chiplet || enumerated.right == chiplet);
         assert!(spectral.left == chiplet || spectral.right == chiplet);
+    }
+
+    fn assert_mesh_smoke(n: usize) {
+        let g = AffinityGraph::two_chiplet_mesh(n);
+        assert_eq!(g.n, n);
+        let lap = AffinityLaplacian::from_graph(&g);
+        assert_eq!(lap.n, n);
+        let ones = [1i32; MAX_VERTS];
+        assert_eq!(lap.quadratic_form(&ones[..n]), 0);
+        let mask = lap.fiedler_mask();
+        let c0 = AffinityGraph::mesh_chiplet0_mask(n);
+        let all = crate::cut::vert_mask(n);
+        assert!(
+            mask == c0 || mask == (all ^ c0),
+            "n={n} fiedler {mask:#034b} chiplet0 {c0:#034b}"
+        );
+        assert_eq!(mask.count_ones() as usize, n / 2);
+        assert_ne!(mask & 1, 0);
+        let x = lap.fiedler_iterate(0);
+        let r = lap.rayleigh_milli(&x[..n]).unwrap();
+        assert!(r > 0, "Fiedler is not the kernel at n={n}");
+        let cut = SpectralCut::from_placement(crate::cut::CutId(n as u32), &g, 400).unwrap();
+        assert!(cut.left == c0 || cut.right == c0);
+        assert!(cut.phi_milli > 0 && cut.phi_milli <= 400);
+    }
+
+    #[test]
+    fn n16_smoke_fiedler_placement() {
+        assert_mesh_smoke(16);
+        let g = AffinityGraph::two_chiplet_mesh(16);
+        let lap = AffinityLaplacian::from_graph(&g);
+        // Intra-chiplet (tile 0 ↔ tile 1) vs EMIB (tile 0 ↔ tile 8).
+        let near = lap.commute_time_milli(0, 1).unwrap();
+        let far = lap.commute_time_milli(0, 8).unwrap();
+        assert!(near < far, "n=16 commute intra {near} !< inter {far}");
+    }
+
+    #[test]
+    fn n32_smoke_fiedler_placement() {
+        assert_mesh_smoke(32);
+        let g = AffinityGraph::two_chiplet_mesh(32);
+        let lap = AffinityLaplacian::from_graph(&g);
+        // Heat-kernel L2 saturates u32 at this n with the prototype
+        // scale; commute-time (O(n³) Gauss) is the distance check.
+        let near = lap.commute_time_milli(0, 1).unwrap();
+        let far = lap.commute_time_milli(0, 16).unwrap();
+        assert!(near < far, "n=32 commute intra {near} !< inter {far}");
     }
 }

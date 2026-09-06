@@ -43,7 +43,9 @@ silicon fence). SoftNPU F16/F32 is **done** as software IEEE
 (`DType` 1/2; FTZ; not a tensor ISA; `UserAccelJob` still I32).
 RISC-V S-mode userspace is **done** as a documented subset
 (`sret`/`ecall` `/init` + Sv39 U-isolate + in-kernel SoftNPU; no
-PLIC; not product-class).
+PLIC; not product-class). AffinityLaplacian n≤32 placement is
+**done** as a prototype eigensolve (`from_placement` +
+`bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer).
 
 ### KEEP / ACTIVE Y1
 
@@ -85,7 +87,6 @@ After AccelDevice bites a real-shaped path — not before:
   the honest demo.
 - ELF beyond this subset (higher-half, PIE, ramfs). Per-task PML4 +
   SMEP/SMAP + optional `/probe` is landed.
-- Laplacian expansion (n≤32 placement; AffinityLaplacian in sched).
 - aarch64 EL0 / GICv3 / virtio (thin HAL landed; userspace is later).
 
 ### PR order for Kernel (revised)
@@ -102,8 +103,11 @@ After AccelDevice bites a real-shaped path — not before:
 8. Multiboot mmap → frames (documented subset)
 9. OperatorKernelHandle (Hodge-bound collective cap)
 10. SparsifiedCollective (drop below-threshold harmonic)
-11. Hardware-shaped fence/timeline (seq / wait / complete) — **this cut**
-12. Optional virtio-accel / MicroPerceptron interop later
+11. Hardware-shaped fence/timeline (seq / wait / complete)
+12. SoftNPU F16/F32 software IEEE
+13. RISC-V S-mode userspace (documented subset)
+14. AffinityLaplacian n≤32 placement in sched — **this cut**
+15. Optional virtio-accel / MicroPerceptron interop later
 
 ### Active file touch map
 
@@ -120,6 +124,7 @@ After AccelDevice bites a real-shaped path — not before:
 | OperatorKernelHandle | `core/src/opkernel.rs`, `core/src/{caps,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
 | SparsifiedCollective | `core/src/sparsify.rs`, `core/src/{opkernel,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
 | Hardware fence/timeline | `core/src/fence.rs`, `drivers/src/{fakecp,softnpu}.rs`, `docs/{ACCEL,ARCHITECTURE,ROADMAP}.md` |
+| AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
@@ -127,7 +132,8 @@ arch PR on the revised track. CDT landed as a small `aether-core`
 slice. OperatorKernelHandle and SparsifiedCollective are the same
 kind of slice (caps + Hodge, no new syscall). The fence/timeline
 cut is `aether-core` + driver retire (`retire_into`); no new
-syscall. Still do not open CXL PRs here.
+syscall. Laplacian-in-sched is the same kind of `aether-core` slice
+(no new syscall, AccelDevice frozen). Still do not open CXL PRs here.
 
 ---
 
@@ -179,6 +185,9 @@ above override what Kernel actually sequences. Criteria below are
 1. Multi-chiplet: affinity graph spans ≥2 chiplets; scheduler refuses
    cross-cut without BIND; AffinityLaplacian used in sched placement
    (not only Cut enum n≤8) for at least an n≤32 host-tested case.
+   **Landed** as a prototype (`two_chiplet_mesh` n=16/32, Fiedler
+   median-cut, `bind_laplacian_cut`). Not GiFt-Placer. Enumeration
+   stays at n≤8.
 2. CXL region objects: `MemorySpace::CxlRegion` is a real typed place
    with pin/map path; coherent remote load still refused without
    UNIFIED; QEMU stub window OK — no claim of real CXL.mem.
@@ -186,8 +195,8 @@ above override what Kernel actually sequences. Criteria below are
    host tests lock it; [SECURITY.md](SECURITY.md) gap table updated.
    **Landed** as a small derivation tree (`parent` + `(tenant, generation)`, `revoke_in`
    of named tables). Not a seL4 CNode/MDB. No `SYS_REVOKE`. Kernel
-   World is still one shared `CapTable`. CXL / Laplacian items above
-   are **not** done.
+   World is still one shared `CapTable`. The Laplacian item above is
+   **landed** as a prototype; CXL is **not** done.
 
 ### Y2H2 — Bring-up + ecosystem docs
 
@@ -226,10 +235,10 @@ for new qemu/smp targets.
    `arch/x86_64` and `task.rs` the same as PML4 work — sequence Y1H2 as
    **SMP first (kernel threads)** then **per-task PML4**, or one owner
    for both to avoid conflict.
-4. **Laplacian in sched:** AffinityLaplacian today is a prototype
-   (n≤8). Wiring into sched before a stable placement API will churn
-   `cut.rs`/`sched.rs` under Y2H1 — freeze `SpectralCut` BIND semantics
-   in Y1H2.
+4. **Laplacian in sched:** n≤32 Fiedler placement + `bind_laplacian_cut`
+   landed as a prototype. BIND / CrossCut semantics are frozen; do not
+   grow `MAX_VERTS` past 32 without a wider mask type. Still not a
+   production eigensolve.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.

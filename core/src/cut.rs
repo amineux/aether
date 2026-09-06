@@ -5,19 +5,48 @@
 //! Tasks bind via `CapRights::BIND`. The scheduler refuses a placement
 //! whose tile and bank sit on opposite sides of the bound cut.
 //!
-//! Intended construction (large n): Fiedler vector of the unnormalized
-//! Laplacian `L = D − A` (see [`crate::laplacian::AffinityLaplacian`]).
-//! For n ≤ 8, [`SpectralCut::min_balanced`] still enumerates — the
-//! combinatorial problem Fiedler approximates. [`SpectralCut::from_fiedler`]
-//! is wired as the optional constructor. The QEMU topology is two chiplets
-//! with weak inter-die edges; the min-conductance split is the chiplet cut.
+//! Placement for `n ≤ 32` uses the Fiedler median-cut of
+//! [`crate::laplacian::AffinityLaplacian`] ([`SpectralCut::from_fiedler`] /
+//! [`SpectralCut::from_placement`]). For `n ≤ ENUM_MAX` (8),
+//! [`SpectralCut::min_balanced`] still enumerates — the combinatorial
+//! problem Fiedler approximates. Enumeration is O(2ⁿ·n²) and is refused
+//! above that gate. This is a prototype eigensolve, not GiFt-Placer and
+//! not an EDA package solver.
+//!
+//! The QEMU topology is two chiplets with weak inter-die edges; the
+//! min-conductance split is the chiplet cut.
 
 use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable};
 use crate::laplacian::AffinityLaplacian;
 use crate::types::{BankId, TileId};
 
-pub const MAX_VERTS: usize = 8;
+/// Dense affinity-graph capacity. Masks are `u32`, so this is also the
+/// host-tested placement ceiling.
+pub const MAX_VERTS: usize = 32;
+/// Balanced-mask enumeration stays at this n. Above it, use Fiedler.
+pub const ENUM_MAX: usize = 8;
 pub const MAX_CUTS_SCHED: usize = 4;
+
+/// Bitmask of vertices `0..n`. `n == 32` is `u32::MAX` (a `1u32 << 32`
+/// shift is undefined).
+pub const fn vert_mask(n: usize) -> u32 {
+    if n == 0 {
+        0
+    } else if n >= 32 {
+        u32::MAX
+    } else {
+        (1u32 << n) - 1
+    }
+}
+
+/// Vertex bit `1 << i`, or 0 if `i` is out of the u32 mask.
+pub const fn vert_bit(i: usize) -> u32 {
+    if i >= 32 {
+        0
+    } else {
+        1u32 << i
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum VertKind {
@@ -86,7 +115,7 @@ impl AffinityGraph {
 
     pub fn vol(&self, mask: u32) -> u32 {
         (0..self.n)
-            .filter(|i| mask & (1 << i) != 0)
+            .filter(|i| mask & vert_bit(*i) != 0)
             .map(|i| self.degree(i))
             .sum()
     }
@@ -94,11 +123,11 @@ impl AffinityGraph {
     pub fn cut_weight(&self, mask: u32) -> u32 {
         let mut c = 0u32;
         for i in 0..self.n {
-            if mask & (1 << i) == 0 {
+            if mask & vert_bit(i) == 0 {
                 continue;
             }
             for j in 0..self.n {
-                if mask & (1 << j) == 0 {
+                if mask & vert_bit(j) == 0 {
                     c += self.w[i][j] as u32;
                 }
             }
@@ -108,7 +137,7 @@ impl AffinityGraph {
 
     /// Φ(S) = cut(S,V\S) / min(vol S, vol V\S), in thousandths.
     pub fn conductance_milli(&self, mask: u32) -> Option<u32> {
-        let all = (1u32 << self.n) - 1;
+        let all = vert_mask(self.n);
         if mask == 0 || mask == all {
             return None;
         }
@@ -169,6 +198,73 @@ impl AffinityGraph {
         g.add_edge(2, 5, 1);
         g
     }
+
+    /// Two-chiplet synthetic package used for n=16 / n=32 placement smokes.
+    ///
+    /// Not a package netlist. Chiplet 0 owns verts `0..n/2` (last is
+    /// `BankId(0)`); chiplet 1 owns the rest (`BankId(1)` at `n-1`). Strong
+    /// intra-die ring + bank star; weak EMIB between corresponding verts.
+    /// `n` must be even and in `4..=MAX_VERTS`.
+    pub fn two_chiplet_mesh(n: usize) -> Self {
+        let mut g = Self::empty();
+        if n < 4 || n > MAX_VERTS || n % 2 != 0 {
+            return g;
+        }
+        let half = n / 2;
+        for i in 0..n {
+            let chiplet = if i < half { 0u8 } else { 1u8 };
+            let is_bank = i == half - 1 || i == n - 1;
+            let v = if is_bank {
+                Vertex {
+                    kind: VertKind::Bank(BankId(chiplet)),
+                    chiplet,
+                }
+            } else {
+                Vertex {
+                    kind: VertKind::Tile(TileId(i as u16)),
+                    chiplet,
+                }
+            };
+            g.add_vert(v);
+        }
+        for c in 0..2 {
+            let base = c * half;
+            for k in 0..half {
+                let a = base + k;
+                let b = base + (k + 1) % half;
+                g.add_edge(a, b, 8);
+                let d = base + (k + 2) % half;
+                g.add_edge(a, d, 6);
+            }
+            let bank = base + half - 1;
+            for k in 0..half - 1 {
+                g.add_edge(base + k, bank, 10);
+            }
+        }
+        for k in 0..half {
+            g.add_edge(k, half + k, 1);
+        }
+        g
+    }
+
+    /// Chiplet-0 mask for [`two_chiplet_mesh`]: the low `n/2` bits.
+    pub fn mesh_chiplet0_mask(n: usize) -> u32 {
+        vert_mask(n / 2)
+    }
+
+    pub fn first_tile_on(&self, chiplet: u8) -> Option<TileId> {
+        self.verts[..self.n].iter().find_map(|v| match v.kind {
+            VertKind::Tile(t) if v.chiplet == chiplet => Some(t),
+            _ => None,
+        })
+    }
+
+    pub fn bank_on(&self, chiplet: u8) -> Option<BankId> {
+        self.verts[..self.n].iter().find_map(|v| match v.kind {
+            VertKind::Bank(b) if v.chiplet == chiplet => Some(b),
+            _ => None,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -189,6 +285,8 @@ pub enum CutError {
     UnknownVertex,
     NoCut,
     NotBound,
+    /// Enumeration (`min_balanced`) refused: n > [`ENUM_MAX`].
+    TooLarge,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,7 +305,7 @@ impl SpectralCut {
         left: u32,
         bound_milli: u32,
     ) -> Result<Self, CutError> {
-        let all = (1u32 << g.n) - 1;
+        let all = vert_mask(g.n);
         let left = left & all;
         let right = all & !left;
         if left == 0 || right == 0 {
@@ -239,20 +337,36 @@ impl SpectralCut {
         Ok((g, cut))
     }
 
-    /// Sign-split of [`AffinityLaplacian::fiedler_mask`]. Used as the
-    /// intended large-n constructor; for n ≤ 8 prefer [`Self::min_balanced`].
+    /// Median-cut of [`AffinityLaplacian::fiedler_mask`]. This is the
+    /// n≤32 placement constructor. Enumeration stays on [`Self::min_balanced`]
+    /// for n ≤ [`ENUM_MAX`] only.
     pub fn from_fiedler(id: CutId, g: &AffinityGraph, bound_milli: u32) -> Result<Self, CutError> {
+        if g.n == 0 || g.n > MAX_VERTS {
+            return Err(CutError::EmptyPart);
+        }
         let lap = AffinityLaplacian::from_graph(g);
         Self::from_mask(id, g, lap.fiedler_mask(), bound_milli)
     }
 
+    /// Alias for [`Self::from_fiedler`]: laplacian-informed placement.
+    pub fn from_placement(
+        id: CutId,
+        g: &AffinityGraph,
+        bound_milli: u32,
+    ) -> Result<Self, CutError> {
+        Self::from_fiedler(id, g, bound_milli)
+    }
+
     /// Enumerate balanced masks; pick minimum conductance. This is what a
-    /// Fiedler sweep approximates when n is large.
+    /// Fiedler sweep approximates when n is large. Refuses n > [`ENUM_MAX`].
     pub fn min_balanced(id: CutId, g: &AffinityGraph, bound_milli: u32) -> Result<Self, CutError> {
-        if g.n == 0 || g.n > MAX_VERTS {
+        if g.n == 0 {
             return Err(CutError::EmptyPart);
         }
-        let all = (1u32 << g.n) - 1;
+        if g.n > ENUM_MAX {
+            return Err(CutError::TooLarge);
+        }
+        let all = vert_mask(g.n);
         let target = g.n as u32 / 2;
         let mut best: Option<(u32, u32)> = None; // mask, phi
         for mask in 1..all {
@@ -278,7 +392,7 @@ impl SpectralCut {
     }
 
     pub fn side_of(&self, vi: usize) -> Option<Side> {
-        let bit = 1u32 << vi;
+        let bit = vert_bit(vi);
         if self.left & bit != 0 {
             Some(Side::Left)
         } else if self.right & bit != 0 {
@@ -378,6 +492,90 @@ mod tests {
         assert_eq!(
             SpectralCut::from_mask(CutId(1), &g, 0b000001, 400).unwrap_err(),
             CutError::Unbalanced
+        );
+    }
+
+    #[test]
+    fn min_balanced_refuses_above_enum_max() {
+        let g = AffinityGraph::two_chiplet_mesh(16);
+        assert_eq!(g.n, 16);
+        assert_eq!(
+            SpectralCut::min_balanced(CutId(4), &g, 400).unwrap_err(),
+            CutError::TooLarge
+        );
+    }
+
+    #[test]
+    fn fiedler_placement_n16_is_chiplet_split() {
+        let g = AffinityGraph::two_chiplet_mesh(16);
+        let cut = SpectralCut::from_placement(CutId(16), &g, 400).unwrap();
+        let c0 = AffinityGraph::mesh_chiplet0_mask(16);
+        assert!(cut.left == c0 || cut.right == c0);
+        assert_eq!(cut.left.count_ones(), 8);
+        assert!(cut.phi_milli > 0 && cut.phi_milli <= 400);
+        let t0 = g.first_tile_on(0).unwrap();
+        let t1 = g.first_tile_on(1).unwrap();
+        let b0 = g.bank_on(0).unwrap();
+        assert!(cut.allow_place(&g, t0, Some(b0)).is_ok());
+        assert_eq!(
+            cut.allow_place(&g, t1, Some(b0)).unwrap_err(),
+            CutError::CrossCut
+        );
+    }
+
+    #[test]
+    fn fiedler_placement_n32_is_chiplet_split() {
+        let g = AffinityGraph::two_chiplet_mesh(32);
+        assert_eq!(g.n, 32);
+        let cut = SpectralCut::from_fiedler(CutId(32), &g, 400).unwrap();
+        let c0 = AffinityGraph::mesh_chiplet0_mask(32);
+        assert!(cut.left == c0 || cut.right == c0);
+        assert_eq!(cut.left.count_ones(), 16);
+        assert_eq!(cut.left | cut.right, u32::MAX);
+        assert!(cut.phi_milli > 0 && cut.phi_milli <= 400);
+        let t0 = g.first_tile_on(0).unwrap();
+        let t1 = g.first_tile_on(1).unwrap();
+        let b0 = g.bank_on(0).unwrap();
+        assert!(cut.allow_place(&g, t0, Some(b0)).is_ok());
+        assert_eq!(
+            cut.allow_place(&g, t1, Some(b0)).unwrap_err(),
+            CutError::CrossCut
+        );
+    }
+
+    #[test]
+    fn bind_right_required_on_n16_mesh() {
+        let t = TenantId(1);
+        let mut tab = CapTable::new(t);
+        let g = AffinityGraph::two_chiplet_mesh(16);
+        let cut = SpectralCut::from_placement(CutId(16), &g, 400).unwrap();
+        let t0 = g.first_tile_on(0).unwrap();
+        let b0 = g.bank_on(0).unwrap();
+        let p = tab
+            .mint(Capability::new(
+                CapKind::SpectralCut,
+                CapRights(CapRights::READ),
+                cut.id.0,
+                t,
+            ))
+            .unwrap();
+        assert_eq!(
+            bind_place(&tab, p, &cut, &g, t0, Some(b0)).unwrap_err(),
+            CutError::NotBound
+        );
+        let q = tab
+            .mint(Capability::new(
+                CapKind::SpectralCut,
+                CapRights::CUT_FULL,
+                cut.id.0,
+                t,
+            ))
+            .unwrap();
+        assert!(bind_place(&tab, q, &cut, &g, t0, Some(b0)).is_ok());
+        let t1 = g.first_tile_on(1).unwrap();
+        assert_eq!(
+            bind_place(&tab, q, &cut, &g, t1, Some(b0)).unwrap_err(),
+            CutError::CrossCut
         );
     }
 

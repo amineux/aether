@@ -140,11 +140,11 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
-| `core/src/sched.rs` | Tile scheduler + color gate |
+| `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
-| `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
-| `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`) |
+| `core/src/cut.rs` | ChipletSpectralCut + affinity graph (n≤32 Fiedler; enum n≤8) |
+| `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`; n≤32 prototype placement) |
 | `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 isolate, `sret`/`ecall` |
 | `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |

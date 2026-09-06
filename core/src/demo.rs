@@ -7,7 +7,7 @@ use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
 use crate::color::{admit_arena_wave, ColorError};
-use crate::cut::{bind_place, CutError, SpectralCut};
+use crate::cut::{bind_place, AffinityGraph, CutError, CutId, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
 use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
@@ -248,7 +248,8 @@ pub fn run_boot_demo() -> DemoReport {
         && local_ok
         && !unified_default;
 
-    let (graph, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
+    let graph = AffinityGraph::qemu_package();
+    let cut = SpectralCut::from_placement(CutId(1), &graph, 400).unwrap();
     let cut_cap = caps_a
         .mint(Capability::new(
             CapKind::SpectralCut,
@@ -304,7 +305,7 @@ pub fn run_boot_demo() -> DemoReport {
 
     let mut sched = TileScheduler::new();
     sched.set_graph(graph);
-    sched.install_cut(cut);
+    let _ = sched.bind_laplacian_cut(cut.id, 400).unwrap();
     sched.bind_partition(part);
     sched.add_tile(TileId(0), TileKind::Cpu, BankId(0));
     sched.add_tile(TileId(1), TileKind::Cpu, BankId(1));

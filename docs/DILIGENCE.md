@@ -14,8 +14,8 @@ active track the site must match.
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
 | `IommuMap` Soft SMMU (per-stream, non-identity IOVA) | Implemented, host-tested | `core/src/iommu.rs` |
-| Tile scheduler + SpectralCut refuse | Implemented (n≤8 enumerate) | `core/src/{sched,cut}.rs` |
-| AffinityLaplacian `L = D − A` | Implemented (integer prototype) | `core/src/laplacian.rs` |
+| Tile scheduler + SpectralCut refuse | Implemented (n≤32 Fiedler placement; enum n≤8) | `core/src/{sched,cut}.rs` |
+| AffinityLaplacian `L = D − A` | Implemented (integer prototype, n≤32 host-tested) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
 | OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
@@ -46,7 +46,7 @@ gaps:
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. No PLIC / virtio-mmio |
 | aarch64 is thin | kmain + PL011 + TTBR + GICv2/CNTV + `aether_core` self-check. No EL0, no virtio |
-| Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
+| Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No higher-half / KPTI | Per-task PML4 clones the identity 4 GiB; kernel can still name every PA |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
