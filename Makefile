@@ -29,6 +29,7 @@ test-host:
 
 kernel:
 	cd $(KERNEL_DIR) && cargo build --release --target $(TARGET)
+	@touch $(KERNEL_ELF)
 
 $(KERNEL_ELF): kernel
 
