@@ -15,18 +15,33 @@ QEMU_FLAGS  := -kernel $(LOADER_ELF) -serial stdio -display none \
                -no-reboot -no-shutdown -m 128M \
                -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
-.PHONY: all kernel loader user-init qemu qemu-debug qemu-ci test test-host target clean help
+RV_TARGET   := riscv64gc-unknown-none-elf
+RV_KERNEL   := $(KERNEL_DIR)/target/$(RV_TARGET)/release/aether
+RV_ELF      := $(BUILD)/aether-riscv.elf
+QEMU_RV     := qemu-system-riscv64
+QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
+                 -no-reboot -kernel $(RV_ELF)
+
+.PHONY: all kernel kernel-riscv loader user-init qemu qemu-riscv \
+        qemu-debug qemu-ci qemu-riscv-ci test test-host target target-riscv \
+        clean help
 
 all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test   - host unit tests (caps, fabric, arenas, sched, elf, preempt)"
-	@echo "  make qemu   - build /init + kernel, boot under QEMU (serial on stdio)"
+	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf)"
+	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
+	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot"
+	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
 	@echo "  make clean"
 
 target:
 	rustup target add $(TARGET)
+
+target-riscv:
+	rustup target add $(RV_TARGET)
 
 test: test-host
 
@@ -73,6 +88,36 @@ qemu-ci: $(LOADER_ELF)
 
 qemu-debug: $(LOADER_ELF)
 	$(QEMU) $(QEMU_FLAGS) -s -S
+
+kernel-riscv: target-riscv
+	cd $(KERNEL_DIR) && cargo build --release --target $(RV_TARGET)
+	mkdir -p $(BUILD)
+	cp -f $(RV_KERNEL) $(RV_ELF)
+	@echo "riscv kernel $$(wc -c < $(RV_ELF)) bytes"
+
+$(RV_ELF): kernel-riscv
+
+# sifive_test at 0x100000: write 0x5555 → qemu exit 0.
+qemu-riscv: $(RV_ELF)
+	$(QEMU_RV) $(QEMU_RV_FLAGS); \
+	ec=$$?; \
+	if [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; then exit 0; else exit $$ec; fi
+
+qemu-riscv-ci: $(RV_ELF)
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/riscv-serial.log
+	set +e; \
+	timeout --signal=KILL 25s $(QEMU_RV) $(QEMU_RV_FLAGS) \
+		> $(BUILD)/riscv-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/riscv-serial.log; \
+	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log; then \
+		echo "qemu-riscv-ci: demo ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-riscv-ci: demo banner missing (qemu exit $$ec)"; \
+	exit 1
 
 clean:
 	rm -rf $(BUILD)

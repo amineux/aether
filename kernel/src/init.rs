@@ -1,7 +1,9 @@
 //! Kernel-side invariant self-check (same `run_boot_demo` as `cargo test`).
 //! The COMPLETE banner and SoftNPU verify are printed by ring-3 `/init`.
 
+use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
+use aether_core::laplacian::AffinityLaplacian;
 
 use crate::arch::irq;
 use crate::console::{self, write_hex, write_i32, write_str, write_u64};
@@ -67,6 +69,21 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.color_ok));
     console::nl();
 
+    {
+        let g = AffinityGraph::qemu_package();
+        let lap = AffinityLaplacian::from_graph(&g);
+        let mask = lap.fiedler_mask();
+        let chiplet = 0b000111u32;
+        let split = mask == chiplet || mask == (!chiplet & 0b111111);
+        write_str("[laplace] L=D-A n=");
+        write_u64(lap.n as u64);
+        write_str(" fiedler-mask=");
+        write_hex(mask as u64);
+        write_str(" chiplet-split=");
+        write_str(flag(split));
+        console::nl();
+    }
+
     write_str("[fabric] SoftNPU job#");
     write_u64(report.job_seq as u64);
     write_str(" C[0,0]=");
@@ -78,10 +95,10 @@ pub fn run_kernel_selfcheck() {
     console::nl();
 
     unsafe {
-        if let Some(w) = paging::walk(0x400000) {
+        if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
             write_hex(w.phys.0);
-            write_str(" huge2M=");
+            write_str(" huge=");
             write_str(if w.huge_2m { "true" } else { "false" });
             write_str(" ticks=");
             write_u64(irq::ticks());
@@ -90,13 +107,12 @@ pub fn run_kernel_selfcheck() {
     }
 
     if !report.all_ok() {
-        println!("[kcheck] FAIL -- refusing ring-3 drop");
-        crate::arch::x86_64::io::outb(0xF4, 0x01);
-        loop {
-            unsafe {
-                core::arch::asm!("hlt");
-            }
-        }
+        println!("[kcheck] FAIL -- self-check");
+        crate::arch::exit_qemu(false);
+        crate::arch::idle();
     }
-    println!("[kcheck] boot demo all_ok — loading /init");
+    #[cfg(target_arch = "x86_64")]
+    println!("[kcheck] boot demo all_ok -- loading /init");
+    #[cfg(target_arch = "riscv64")]
+    println!("[kcheck] boot demo all_ok -- RISC-V thin port (no /init)");
 }

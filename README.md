@@ -9,8 +9,9 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > and invariants* are what we would pitch to an AI-chip OS team.
 
 ```
-make test    # host unit tests (caps, fabric, arenas, scheduler, SoftNPU)
-make qemu    # boot Aether in QEMU; serial demo on stdio
+make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
+make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
+make qemu-riscv   # same aether_core self-check on QEMU virt (thin S-mode port)
 ```
 
 ## Why this exists
@@ -70,6 +71,24 @@ FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
 `make qemu` treats that as a clean run. CI runs `make qemu-ci` (45s timeout).
 
+**RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
+
+```bash
+make qemu-riscv
+```
+
+```
+qemu-system-riscv64 \
+  -machine virt -cpu rv64 -m 128M -nographic \
+  -no-reboot -kernel build/aether-riscv.elf
+```
+
+OpenSBI loads the ELF at `0x80200000`. The trampoline identity-maps
+4 GiB (Sv39), then the same kernel self-check runs (fabric, cut, map,
+bank color, Laplacian). This is a **thin port**: kmain + serial +
+`aether_core`, not ring-3. Success writes `0x5555` to the virt test
+finisher.
+
 ## Architecture
 
 ```mermaid
@@ -125,12 +144,13 @@ flowchart TB
 
 ```
 boot/x86_64/     multiboot1 trampoline (32-bit → long mode) + linker scripts
+boot/riscv64/    OpenSBI S-mode trampoline + Sv39 linker script
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU backend
-kernel/          freestanding x86_64 kernel (mm, syscall, ELF, tasks)
+kernel/          freestanding kernel (x86_64 ring-3 + riscv64 thin port)
 user/init/       ring-3 `/init` (static ELF64, embedded into the kernel)
-docs/            architecture, fabric, accel, security, roadmap
+docs/            architecture, fabric, accel, security, diligence, roadmap
 ```
 
 The kernel and `/init` are **separate Cargo projects** so
@@ -149,6 +169,8 @@ The kernel and `/init` are **separate Cargo projects** so
   Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
 - **Identity map, UP only.** User gets one USER 2 MiB page; a second core
   does not. Preemption is PIT + a kernel companion thread.
+- **RISC-V is a thin port.** `make qemu-riscv` reaches kmain and the
+  fabric self-check. No ring-3, no PLIC virtio. aarch64 is not started.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the path toward something a silicon
 team could take into bring-up.
@@ -158,10 +180,12 @@ team could take into bring-up.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
-- [docs/CUT.md](docs/CUT.md) — SpectralCut + FlowHodgeQuota invariants
+- [docs/CUT.md](docs/CUT.md) — SpectralCut + AffinityLaplacian + Hodge
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
-- [docs/ROADMAP.md](docs/ROADMAP.md) — stubs and next cuts
+- [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
+- [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
+- [docs/ROADMAP.md](docs/ROADMAP.md) — Month 1–6 status, stubs, next cuts
 
 ## License
 

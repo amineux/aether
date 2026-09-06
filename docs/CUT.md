@@ -21,8 +21,16 @@ require(cptr, SpectralCut, BIND)
 when k > 2). Sign-split, then optionally improve by Kernighan–Lin.
 **v0.1:** integer conductance
 `Φ = 1000 · cut(S,V\S) / min(vol S, vol V\S)` and, for n ≤ 8, enumerate
-balanced masks. On the QEMU 2-chiplet graph the min-Φ split *is* the
-chiplet cut (weak inter-die edges).
+balanced masks (`SpectralCut::min_balanced`). On the QEMU 2-chiplet
+graph the min-Φ split *is* the chiplet cut (weak inter-die edges).
+
+`AffinityLaplacian` (`core/src/laplacian.rs`) is the first-class `L`
+object. It exposes Rayleigh (`rayleigh_milli`), a Fiedler-ish power
+iteration + sign-split (`fiedler_mask`), and heat / commute-time
+distance helpers. `SpectralCut::from_fiedler` builds a cut from that
+mask. Placement still enumerates for n≤8; the Laplacian is what a
+later large-n eigensolve would feed. Arithmetic is integer /
+milli-fixed-point — not a production eigensolver.
 
 Tasks bind via `Job.cut_id`. `TileScheduler::pick` scores a violating
 tile as impossible (`i32::MIN`) — same as a CPU tile trying to run an
@@ -65,7 +73,8 @@ it onto a spanning tree:
 
 That refusal is enforced even on QEMU's single virtual interconnect.
 
-## Related (ROADMAP, not in v0.1 code)
+## Related
 
-See [ROADMAP.md](ROADMAP.md): `AffinityLaplacian`, `OperatorKernelHandle`,
-`SparsifiedCollective`.
+- **AffinityLaplacian** — implemented (integer prototype). See above.
+- Still on the roadmap: `OperatorKernelHandle`, `SparsifiedCollective`
+  ([ROADMAP.md](ROADMAP.md)).

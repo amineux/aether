@@ -6,13 +6,14 @@
 //! whose tile and bank sit on opposite sides of the bound cut.
 //!
 //! Intended construction (large n): Fiedler vector of the unnormalized
-//! Laplacian `L = D − A` (or a multicut / spectral clustering). v0.1 uses
-//! integer conductance and, for n ≤ 8, enumerates balanced masks — the
-//! combinatorial problem Fiedler approximates. The QEMU topology is two
-//! chiplets with weak inter-die edges; the min-conductance split is the
-//! chiplet cut.
+//! Laplacian `L = D − A` (see [`crate::laplacian::AffinityLaplacian`]).
+//! For n ≤ 8, [`SpectralCut::min_balanced`] still enumerates — the
+//! combinatorial problem Fiedler approximates. [`SpectralCut::from_fiedler`]
+//! is wired as the optional constructor. The QEMU topology is two chiplets
+//! with weak inter-die edges; the min-conductance split is the chiplet cut.
 
 use crate::caps::{CapError, CapKind, CapRights, CapTable, CPtr};
+use crate::laplacian::AffinityLaplacian;
 use crate::types::{BankId, TileId};
 
 pub const MAX_VERTS: usize = 8;
@@ -240,6 +241,17 @@ impl SpectralCut {
         Ok((g, cut))
     }
 
+    /// Sign-split of [`AffinityLaplacian::fiedler_mask`]. Used as the
+    /// intended large-n constructor; for n ≤ 8 prefer [`Self::min_balanced`].
+    pub fn from_fiedler(
+        id: CutId,
+        g: &AffinityGraph,
+        bound_milli: u32,
+    ) -> Result<Self, CutError> {
+        let lap = AffinityLaplacian::from_graph(g);
+        Self::from_mask(id, g, lap.fiedler_mask(), bound_milli)
+    }
+
     /// Enumerate balanced masks; pick minimum conductance. This is what a
     /// Fiedler sweep approximates when n is large.
     pub fn min_balanced(
@@ -360,6 +372,14 @@ mod tests {
         let cut = SpectralCut::min_balanced(CutId(2), &g, 400).unwrap();
         // Fiedler / min-Φ should isolate the weak EMIB, i.e. chiplet halves.
         assert!(cut.left == 0b000111 || cut.right == 0b000111);
+    }
+
+    #[test]
+    fn fiedler_constructor_is_chiplet_split() {
+        let g = AffinityGraph::qemu_package();
+        let cut = SpectralCut::from_fiedler(CutId(3), &g, 400).unwrap();
+        assert!(cut.left == 0b000111 || cut.right == 0b000111);
+        assert!(cut.phi_milli > 0 && cut.phi_milli <= 400);
     }
 
     #[test]

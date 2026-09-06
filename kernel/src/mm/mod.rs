@@ -11,7 +11,8 @@ use crate::console::{self, write_hex, write_str, write_u64};
 use crate::println;
 
 pub fn init() {
-    frame::init(0x0100_0000, 0x0800_0000); // 16 MiB .. 128 MiB
+    let (lo, hi) = crate::arch::frame_window();
+    frame::init(lo, hi);
     heap::init();
     let Some(f) = frame::alloc() else {
         println!("[boot] frame allocator empty");
@@ -30,5 +31,6 @@ pub fn init() {
             core::ptr::write_bytes(p, 0xAE, 32);
         }
     }
-    println!("[boot] identity map 4 GiB (2 MiB pages) from trampoline");
+    crate::console::write_str(crate::arch::identity_map_note());
+    crate::console::nl();
 }

@@ -127,6 +127,8 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
+| `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`) |
+| `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/space.rs` | Typed `MemorySpace` + `(place, local)` |
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
@@ -135,15 +137,54 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 
-## HAL ports (future arches)
+## Boot (RISC-V / QEMU virt)
 
-To add RISC-V or aarch64:
+Thin v0.1 of the port — **kmain + serial + `aether_core` self-check**, not
+ring-3. Same fabric, map API, and bank-color checks. New trampoline only.
+
+```
+QEMU -machine virt -kernel build/aether-riscv.elf
+        │  OpenSBI (default -bios), S-mode, a0=hartid, a1=dtb
+        ▼
+boot/riscv64/trampoline.S
+        │  park extra harts, UART0 hello
+        │  Sv39 identity-map 4 GiB (1 GiB leaves)
+        ▼
+kernel::kmain  (Rust, riscv64gc-unknown-none-elf)
+        │  UART, frames, heap, stvec, SBI timer
+        ▼
+init::run_kernel_selfcheck   (same aether_core path as x86)
+        │  sifive_test 0x5555 on success
+        ▼
+wfi idle
+```
+
+```
+make qemu-riscv
+```
+
+Physical sketch (128 MiB guest, RAM at `0x80000000`):
+
+| Range | Use |
+| --- | --- |
+| `0x00100000` | sifive_test finisher |
+| `0x10000000` | UART0 (16550) |
+| `0x80200000` | Kernel `.text` (OpenSBI payload) |
+| `0x81000000–0x88000000` | Frame allocator window |
+
+No PLIC virtio, no `sret` userspace, no FDT mmap parser. aarch64 is
+not started.
+
+## HAL ports
+
+RISC-V is the HAL-split test:
 
 1. New `boot/<arch>` + linker script.
 2. Implement `kernel/src/arch/<arch>`: console, timer, irq ack, page tables.
 3. Keep `aether-core` / `aether-hal` unchanged.
 
-The fabric does not encode x86.
+The fabric does not encode x86. aarch64 would repeat this recipe
+(UART + GIC timer + TTBR). Ring-3 / virtqueue stay x86 until a later cut.
 
 ## SMP
 
