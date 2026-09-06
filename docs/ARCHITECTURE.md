@@ -64,6 +64,7 @@ boot/x86_64/trampoline.S
         │    (dedicated HH PDs; dual-map 8 MiB at +slide)
         │  enable PAE + EFER.LME + paging
         │  copy payload → LMA 0x400000
+        │  apply .rela.dyn (addend + slide); unmap unused alias
         │  jump to VA 0xffffffff80400000+slide
         ▼
 kernel::_start  (Rust, x86_64-unknown-none, higher-half)
@@ -92,7 +93,7 @@ Physical sketch (128 MiB guest):
 | Range | Use |
 | --- | --- |
 | `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD identity) |
-| `0x7000–0x700B` | Multiboot mailbox + KASLR slide bytes |
+| `0x7000–0x700F` | Multiboot mailbox + KASLR slide + PIE reloc count |
 | `0x71000–0x72FFF` | Dedicated HH PD0/PD1 (KASLR dual-map; identity PDs untouched) |
 | `0x73000–0x76FFF` | KPTI trampoline (code + shadow IDT + entry stack); supervisor 4 KiB in user CR3 |
 | `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
@@ -109,7 +110,9 @@ the trampoline / page tables / AP SIPI / kernel image stay out of the
 free pool. Missing mmap is an explicit arch-window fallback, not a
 silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) plus a
 boot-time KASLR slide (0 / 16 / 32 MiB dual-map; CI forces
-`kaslr=1`) is landed. The unused HH alias stays (not PIE / reloc).
+`kaslr=1`) plus PIE `.rela.dyn` apply and unused-alias unmap
+is landed. The link-time VA is not usable when the slide is
+non-zero.
 KPTI user CR3 (no HH, no identity DMA, 4 KiB trampoline) is landed
 as a documented subset — not Meltdown-complete. PCID tags those
 CR3 switches when CPUID.1:ECX[17] is set. TCG QEMU cannot
@@ -336,13 +339,15 @@ switch stays on kernel CR3 while in the kernel; the trampoline
 loads the user CR3 just before `iretq`. CR4.SMEP and CR4.SMAP are
 enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
 `STAC`/`CLAC` wrap user copies. Kernel `.text` is linked at
-`0xffffffff80400000` and runs at that VA plus a boot-time slide.
-PCID (when CPUID advertises it) tags kernel vs user `mov cr3` so
-the KPTI switch is not a full TLB flush; INVPCID (or bit-63-clear)
-covers remap. A documented COW subset maps one shared 4 KiB USER
-page at `0x0280_0000` read-only in `/init` and `/probe`; a write
-fault copies the frame on that aspace only. This is **not**
-Meltdown-complete, PIE KASLR, `fork`, or a POSIX MM.
+`0xffffffff80400000` and runs at that VA plus a boot-time slide
+after `.rela.dyn` is applied; the unused canonical alias is
+unmapped when the slide is non-zero. PCID (when CPUID advertises
+it) tags kernel vs user `mov cr3` so the KPTI switch is not a
+full TLB flush; INVPCID (or bit-63-clear) covers remap. A
+documented COW subset maps one shared 4 KiB USER page at
+`0x0280_0000` read-only in `/init` and `/probe`; a write fault
+copies the frame on that aspace only. This is **not**
+Meltdown-complete, a secret slide, `fork`, or a POSIX MM.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V

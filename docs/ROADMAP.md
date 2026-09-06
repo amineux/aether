@@ -144,8 +144,8 @@ KPTI / KASLR (higher-half alias is a later cut):
 Still stubbed: KPTI, PCID, COW, growable `mmap`,
 per-task cap tables, APs in ring-3. SoftNPU still touches `/init`
 tensors through the **intentional** kernel identity window (DMA).
-KASLR is the later documented subset (boot-time slide + dual-map;
-not PIE / unmap of the unused alias).
+KASLR is the later documented subset (boot-time slide + dual-map +
+PIE reloc / unused-alias unmap).
 
 ## Year-2 H1: cap CDT / revoke (this cut)
 
@@ -182,8 +182,8 @@ Landed as a **documented subset**, not a general physical MM:
   the planned window. `make qemu-ci` greps the parse line.
 
 Still stubbed: hotplug, FDT, managing RAM past the identity
-4 GiB (HH is only a 2 GiB alias of low PA). KASLR is a later
-documented subset (does not grow the physical window).
+4 GiB (HH is only a 2 GiB alias of low PA). KASLR + PIE reloc is a
+later documented subset (does not grow the physical window).
 
 ## OperatorKernelHandle (this cut)
 
@@ -371,9 +371,9 @@ KPTI, not PCID, not COW, not Meltdown unmap:
   low map.
 - An 8 MiB kernel span is dual-mapped at `KERNEL_VMA + slide + PA`.
   The trampoline jumps to `0xffffffff80400000 + slide`. RIP is the
-  slid VA. The canonical alias stays so linked absolute symbols
-  still work. That is **not** production KASLR (an attacker who
-  knows the link address can still use it).
+  slid VA. The KASLR cut left the canonical alias mapped so
+  `code-model=kernel` absolute symbols still resolved. The later
+  PIE cut (below) applies `.rela.dyn` and unmaps that unused alias.
 - Host tests: `core/src/aspace.rs` (`parse_kaslr_cmdline`, dual-map
   walk, identity of the overwritten HH slot unchanged). QEMU:
   `[mm] kaslr slide=0x1000000` + `[mm] higher-half ok` with RIP in
@@ -385,16 +385,18 @@ Sequenced follow-ups (do not claim them here):
 
 1. **PIE + reloc table.** `relocation-model=pic`, keep `.rela.dyn`,
    apply `R_*_RELATIVE` in the trampoline, then unmap the unused
-   canonical alias. Needed before the slide is a real secret.
+   canonical alias. **Landed** as a later subset.
 2. **KPTI.** Separate user CR3 without kernel HH (Meltdown unmap).
    Identity DMA / SIPI must keep a supervisor-only low map on the
    kernel CR3. **Landed** as a later subset.
 3. **PCID** so KPTI CR3 switches are not a full TLB shootdown.
    **Landed** as a later subset (CPUID-gated; fallback is full flush).
 4. **COW** / growable `mmap` — unrelated to this slide.
+   **Landed** as a later one-page subset.
 
-Still stubbed at the KASLR cut: PIE / unmap of the unused alias,
-KPTI (later subset), PCID, COW, tearing down the identity 4 GiB.
+Still stubbed at the KASLR cut: PIE / unmap of the unused alias
+(later subset), KPTI (later subset), PCID, COW, tearing down the
+identity 4 GiB.
 
 ## KPTI user CR3 (this cut)
 
@@ -424,14 +426,15 @@ Honest limits (do not market these as done):
 
 - The four trampoline pages are still mapped in user CR3
   (supervisor-only). That is not a complete Meltdown unmap.
-- Unused KASLR canonical alias stays on the kernel map (not PIE).
+- Unused KASLR canonical alias is unmapped by the later PIE cut.
 - No speculation barriers, no NX on trampoline data.
 
-Sequenced follow-ups: PIE + reloc (unmap unused alias), PCID (next),
-COW / growable `mmap`.
+Sequenced follow-ups: PIE + reloc (unmap unused alias; **landed**),
+PCID (next), COW / growable `mmap`.
 
-Still stubbed at the KPTI cut: PIE / unmap of the unused alias, PCID
-(later subset), COW, tearing down the kernel identity 4 GiB.
+Still stubbed at the KPTI cut: PIE / unmap of the unused alias
+(later subset), PCID (later subset), COW, tearing down the kernel
+identity 4 GiB.
 
 ## PCID tagged TLB (this cut)
 
@@ -467,11 +470,12 @@ Honest limits (do not market these as done):
   Meltdown-complete claim.
 - PCIDs are a handful of boot aspaces, not a recycled 12-bit
   allocator under fork load.
-- Unused KASLR alias stays (not PIE). Identity 4 GiB stays on the
-  kernel CR3 for DMA.
+- Unused KASLR alias is unmapped by the later PIE cut. Identity
+  4 GiB stays on the kernel CR3 for DMA.
 
-Still stubbed at the PCID cut: PIE / unmap of the unused alias, COW
-(later subset), tearing down the kernel identity 4 GiB.
+Still stubbed at the PCID cut: PIE / unmap of the unused alias
+(later subset), COW (later subset), tearing down the kernel
+identity 4 GiB.
 
 ## Copy-on-write page subset (this cut)
 
@@ -502,12 +506,57 @@ Honest limits (do not market these as done):
 
 - One page, one template, x86 only. Not file-backed COW, not
   `fork` of the whole aspace, not growable `mmap`.
-- Unused KASLR alias stays (not PIE). Identity 4 GiB stays on
-  the kernel CR3 for DMA.
+- Unused KASLR alias is unmapped by the later PIE cut. Identity
+  4 GiB stays on the kernel CR3 for DMA.
 
-Sequenced follow-ups: PIE + reloc (unmap unused alias),
+Sequenced follow-ups: PIE + reloc (unmap unused alias; **landed**),
 growable `mmap` / `fork`-shaped aspace clone, tearing down the
 kernel identity 4 GiB.
+
+## PIE + reloc table (this cut)
+
+Landed as a **documented subset**, not a secret slide, not
+Meltdown-complete, not a user-ELF relocator:
+
+- x86_64 kernel is `relocation-model=pic` + `code-model=small`
+  (static-PIE). `code-model=kernel` + PIC is rejected by lld
+  (`R_X86_64_32S` against absolute symbols). RIP-relative
+  displacements cover the 8 MiB image; two absolute asm operands
+  (`_start` stack `lea`, `SYSCALL_KSTACK`) were rewritten
+  RIP-relative. RISC-V / aarch64 rustflags stay static.
+- Linker keeps `.rela.dyn` (not discarded). `objcopy -O binary`
+  leaves the table in `kernel.bin`. `scripts/pack_kernel_relocs.py`
+  appends a 16-byte trailer (`magic`, count, offset, entsize=24)
+  so the trampoline can walk `Elf64_Rela` without an ELF parser.
+  Only `R_X86_64_RELATIVE` is accepted (CI-sized image has a few
+  hundred). Formula: `*r_offset = addend + slide` via the identity
+  map (`LMA = VA - KERNEL_VMA`).
+- After apply, HH PD0 indices 2..5 (the 8 MiB link-time span) are
+  zeroed when `slide != 0` and CR3 is reloaded. The unused
+  canonical alias (`0xffffffff80400000`) is not present. Slide 0
+  keeps that map — it *is* the running window. Identity 4 GiB is
+  untouched (SoftNPU `IdentityDma`, AP SIPI, Multiboot, user ELF).
+- Host tests: `core/src/reloc.rs` (addend+slide, trailer, refuse
+  non-RELATIVE / OOB) and `core/src/aspace.rs`
+  (`pie_unmaps_unused_canonical_alias`). QEMU:
+  `[mm] pie reloc n=` + `[mm] kaslr unused alias unmapped` +
+  RIP in the slid window + existing SoftNPU / KPTI / PCID / COW /
+  clone greps. `make qemu-ci` / `qemu-smp-ci` grep those lines.
+- KPTI trampoline, `enter_user`, SoftNPU kthread-B, and `SYS_CLONE`
+  are unchanged in contract. Function pointers in `.data` are
+  relocated before `_start`.
+
+Honest limits (do not market these as done):
+
+- Three 16 MiB slots, cmdline / TSC / RDRAND. Not a secret ASLR
+  entropy claim. An attacker who can read the slide mailbox or
+  RIP still knows the map.
+- Identity 4 GiB stays on the kernel CR3 (intentional DMA window).
+- User `/init` is still a static non-PIE ELF (`core::elf` rejects
+  `ET_DYN`). Not `fork`, not growable `mmap`.
+
+Still stubbed: tearing down the kernel identity 4 GiB, a recycled
+PCID allocator, Meltdown-complete trampoline unmap, POSIX MM.
 
 ## User-level threads / `SYS_CLONE` (this cut)
 
@@ -621,7 +670,7 @@ Search for `// STUB:` / `STUB` :
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
-| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault). PIE-reloc / `fork` / growable `mmap` still stub |
+| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault). `fork` / growable `mmap` still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
@@ -653,10 +702,10 @@ kernel thread queue sleeps.
 3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.
-4. **PIE-KASLR / growable `mmap` / `fork`.** One-page COW + KPTI +
-   PCID landed (tagged TLB when CPUID advertises PCID; full flush
-   otherwise). Do not claim Meltdown-complete, PIE reloc, a secret
-   slide, or a POSIX MM.
+4. **Growable `mmap` / `fork`.** PIE-reloc KASLR + one-page COW +
+   KPTI + PCID landed (tagged TLB when CPUID advertises PCID; full
+   flush otherwise). Do not claim Meltdown-complete, a secret slide,
+   or a POSIX MM.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
@@ -679,13 +728,13 @@ kernel thread queue sleeps.
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
-  kernel map, the KASLR boot-time slide, the KPTI user-CR3 subset,
-  the PCID tagged-TLB subset, the one-page COW subset (this cut),
-  user-level threads via `SYS_CLONE`, and in-kernel
-  ramfs for `/init`, RISC-V PLIC + SoftNPU software doorbell, and
-  aarch64 EL0 `/init` are landed. ABI stays stable
+  kernel map, the KASLR boot-time slide, the PIE-reloc / unused-alias
+  unmap, the KPTI user-CR3 subset, the PCID tagged-TLB subset, the
+  one-page COW subset, user-level threads via `SYS_CLONE`, and
+  in-kernel ramfs for `/init`, RISC-V PLIC + SoftNPU software
+  doorbell, and aarch64 EL0 `/init` are landed. ABI stays stable
   (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
-  PIE-reloc KASLR remain deferred.
+  `fork` / growable `mmap` remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -704,11 +753,12 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   for `/init` (PR #24), RISC-V PLIC + SoftNPU doorbell (PR #25),
   aarch64 EL0 `/init` (PR #26), the x86 KASLR boot-time
   slide (PR #27), the x86 KPTI user-CR3 subset (PR #28), the
-  x86 PCID tagged-TLB subset (PR #29), and the one-page COW
-  subset (this cut)
+  x86 PCID tagged-TLB subset (PR #29), the one-page COW
+  subset (PR #30), and the x86 PIE-reloc / unused-alias unmap
+  (this cut)
   are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), virtio-blk, PIE-reloc
-  KASLR / `fork`, and the other stubs above are still open.
+  Custom QEMU virtio-accel (path A), virtio-blk, `fork` /
+  growable `mmap`, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

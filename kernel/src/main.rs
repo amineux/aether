@@ -37,7 +37,7 @@ static mut KERNEL_STACK: Stack = Stack([0; KERNEL_STACK_SIZE]);
 pub extern "C" fn _start() -> ! {
     unsafe {
         core::arch::asm!(
-            "lea rsp, [{stack} + {size}]",
+            "lea rsp, [rip + {stack} + {size}]",
             "and rsp, -16",
             "call {kmain}",
             "2: hlt; jmp 2b",

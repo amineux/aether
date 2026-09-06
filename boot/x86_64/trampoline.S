@@ -6,11 +6,11 @@
  * -2 GiB kernel map (PML4[511] → same PDPT; dedicated HH PDs at
  * 0x71000/0x72000 so identity PDs never move), copy the embedded
  * kernel blob to LMA 0x400000, pick a KASLR slide (cmdline kaslr=0|1|2
- * or rdrand/rdtsc), dual-map an 8 MiB kernel span at +slide, and jump
- * to VA 0xffffffff80400000+slide. Identity stays for DMA / SIPI / user
- * windows. The canonical HH alias stays so code-model=kernel absolute
- * symbols still resolve. KPTI (user CR3 without HH / identity DMA) is
- * a later kernel cut. Not PIE, not PCID, not COW.
+ * or rdrand/rdtsc), dual-map an 8 MiB kernel span at +slide, apply
+ * .rela.dyn R_X86_64_RELATIVE (addend + slide), unmap the unused
+ * canonical HH alias when slide != 0, and jump to VA
+ * 0xffffffff80400000+slide. Identity stays for DMA / SIPI / user
+ * windows. Mailbox +8 = slide, +12 = reloc count.
  */
     .set ALIGN,    1
     .set MEMINFO,  2
@@ -34,6 +34,7 @@ _start:
     movl    %eax, 0x7000
     movl    %ebx, 0x7004
     movl    $0, 0x7008
+    movl    $0, 0x700C
     movl    $0x80000, %esp
 
     /* COM1 115200 8N1 so we can see boot progress if the kernel never runs. */
@@ -151,6 +152,8 @@ long_mode:
     movl    $0x7008, %ebx             /* 64-bit: no RIP-relative mailbox */
     movl    %ecx, (%ebx)
     call    apply_kaslr_alias
+    call    apply_pie_relocs
+    call    unmap_unused_alias
 
     movl    $jump_msg, %esi
     call    puts64
@@ -264,6 +267,81 @@ apply_kaslr_alias:
 .kaslr_alias_done:
     ret
 
+/* Walk packed .rela.dyn: *r_offset = addend + slide (identity dest). */
+apply_pie_relocs:
+    movl    $payload_end, %eax
+    subl    $payload_start, %eax
+    movl    $0x400000, %edi
+    leaq    (%rdi,%rax), %rsi
+    cmpl    $0xAE7E4E1C, -16(%rsi)
+    jne     .reloc_bad
+    movl    -12(%rsi), %ecx
+    movl    -8(%rsi), %edx
+    cmpl    $24, -4(%rsi)
+    jne     .reloc_bad
+    movl    $0x700C, %eax
+    movl    %ecx, (%eax)
+    testl   %ecx, %ecx
+    jz      .reloc_done
+    leaq    (%rdi,%rdx), %rsi
+    movl    $0x7008, %eax
+    movl    (%eax), %r11d
+.reloc_loop:
+    movq    (%rsi), %r8
+    movl    8(%rsi), %eax
+    movq    16(%rsi), %r9
+    cmpl    $8, %eax
+    jne     .reloc_halt_bad
+    movl    %r8d, %eax
+    subl    $0x80000000, %eax
+    cmpl    $0x400000, %eax
+    jb      .reloc_halt_bad
+    addq    %r11, %r9
+    movq    %r9, (%rax)
+    addq    $24, %rsi
+    decl    %ecx
+    jnz     .reloc_loop
+.reloc_done:
+    movl    $reloc_ok_msg, %esi
+    call    puts64
+.reloc_skip_ok:
+    ret
+.reloc_bad:
+    movl    $0x700C, %eax
+    movl    $0, (%eax)
+    movl    $0x7008, %eax
+    cmpl    $0, (%eax)
+    je      .reloc_skip_ok
+.reloc_halt_bad:
+    movl    $reloc_fail_msg, %esi
+    call    puts64
+1:
+    hlt
+    jmp     1b
+
+/* Zero HH PD0[2..5] when slide != 0 so the link VA is not executable. */
+unmap_unused_alias:
+    movl    $0x7008, %ebx
+    movl    (%ebx), %eax
+    testl   %eax, %eax
+    jz      .unmap_zero
+    movl    $0x71000, %edi
+    movl    $2, %ecx
+.unmap_loop:
+    movq    $0, (%edi,%ecx,8)
+    incl    %ecx
+    cmpl    $6, %ecx
+    jb      .unmap_loop
+    movq    %cr3, %rax
+    movq    %rax, %cr3
+    movl    $unmap_msg, %esi
+    call    puts64
+    ret
+.unmap_zero:
+    movl    $unmap_keep_msg, %esi
+    call    puts64
+    ret
+
 /* --- tiny polling UART (32-bit) --- */
     .code32
 puts32:
@@ -333,6 +411,14 @@ lm_msg:
     .asciz  "[boot] long mode, copying kernel to LMA 0x400000\r\n"
 jump_msg:
     .asciz  "[boot] jumping to slid higher-half _start\r\n"
+reloc_ok_msg:
+    .asciz  "[boot] PIE relocs applied (R_X86_64_RELATIVE)\r\n"
+reloc_fail_msg:
+    .asciz  "[boot] PIE reloc table missing or bad; halt\r\n"
+unmap_msg:
+    .asciz  "[boot] unused KASLR alias unmapped\r\n"
+unmap_keep_msg:
+    .asciz  "[boot] unused KASLR alias kept (slide=0)\r\n"
 
     .section .payload, "a"
     .align  4096
