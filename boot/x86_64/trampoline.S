@@ -133,9 +133,9 @@ long_mode:
     movl    $jump_msg, %esi
     call    puts64
 
-    /* ELF32 object: 32-bit immediates sign-extend under REX.W. */
-    movq    $0x80000000, %rax        /* 0xffffffff80000000 */
-    addq    $0x400000, %rax          /* + LMA → _start */
+    /* as --32 will not emit a sign-extended movq imm32; movabs is
+     * written as bytes so we actually land at 0xffffffff80400000. */
+    .byte   0x48, 0xb8, 0x00, 0x00, 0x40, 0x80, 0xff, 0xff, 0xff, 0xff
     jmp     *%rax
 
 /* --- tiny polling UART (32-bit) --- */
