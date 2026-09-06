@@ -132,10 +132,6 @@ pub fn nframes() -> usize {
     ALLOC.lock().nframes
 }
 
-pub fn base() -> u64 {
-    ALLOC.lock().base
-}
-
 /// Mark `[start, end)` used so the ELF image is not handed out as frames.
 pub fn reserve_range(phys_start: u64, phys_end: u64) {
     let mut a = ALLOC.lock();

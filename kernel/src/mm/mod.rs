@@ -20,9 +20,7 @@ pub mod paging;
 
 use crate::console::{self, write_hex, write_str, write_u64};
 use crate::println;
-use aether_core::mmap::MemoryMap;
-#[cfg(target_arch = "x86_64")]
-use aether_core::mmap::{plan_frames, span};
+use aether_core::mmap::{plan_frames, span, MemoryMap};
 
 #[cfg(target_arch = "x86_64")]
 use aether_core::mmap::{
@@ -47,7 +45,6 @@ enum FramePlan {
 pub fn init() {
     let plan = discover();
     match &plan {
-        #[cfg(target_arch = "x86_64")]
         FramePlan::Mmap(map) => {
             print_mmap(map);
             let planned = plan_frames(map);

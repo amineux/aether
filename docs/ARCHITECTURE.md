@@ -89,7 +89,7 @@ Physical sketch (128 MiB guest):
 | `0x400000` | Kernel `.text` (after copy) |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
-| mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is `0x0100_0000–0x0800_0000` |
+| mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
 The boot path parses the Multiboot1 mmap (Multiboot2 parser is
 host-tested). Type-1 regions below 16 MiB are printed then clipped so
