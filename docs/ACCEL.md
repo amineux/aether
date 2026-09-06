@@ -55,9 +55,12 @@ the byte.
 
 ## Virtqueue MMIO layout (in-kernel BAR)
 
-There is **no** upstream `virtio-accel` device. A custom QEMU fork is
-still out of scope. The kernel emulates a virtqueue-shaped MMIO window
-(`aether_drivers::mmio::AccelMmio`, 1 KiB):
+There is **no** upstream `virtio-accel` device. SpecForge Y1H1 **path B**
+is the decision: this in-kernel BAR is the **canonical demo**. Path A
+(a custom QEMU `-device` / virtio-mmio) stays optional later. The
+kernel emulates a virtqueue-shaped MMIO window
+(`aether_drivers::mmio::AccelMmio`, 1 KiB). The offsets below are
+**frozen**.
 
 ```text
 MMIO cfg (what a future -device virtio-accel would expose)
@@ -94,6 +97,35 @@ and raise a real IRQ. Swap `SoftNpuDevice` for `VirtioAccelMmio` without
 touching fabric or caps.
 
 The older `VirtioAccelQueue` helper remains as a host-tested ring model.
+
+## ADR: SpecForge Y1H1 virtio path (A vs B)
+
+**Status:** Accepted 2026-09-06.
+
+**Context.** SpecForge Y1H1 asked for a real virtio-accel path: either
+**(A)** a QEMU `-device` / virtio-mmio that DMA-reads the BAR above with
+SoftNPU behind it, **or (B)** document that the in-kernel BAR is the
+canonical demo and lock it with a golden MMIO trace. Falsifier deferred
+a custom QEMU device until after AccelDevice; Soft-CP (`backend = 3`)
+already covers a second AccelDevice path on the host.
+
+**Decision: path B.** SoftNPU behind `AccelMmio` is what `make qemu`
+runs. Stock QEMU only. No new QEMU device C code.
+
+- The BAR layout in the previous section is **frozen**: `magic` (0x00),
+  `version` (0x04), `status` (0x08), `qsize` (0x0C), `doorbell` (0x10),
+  `used_idx` (0x14), plus irq/avail and the avail/used rings. Changing
+  an offset is a dual SoftNPU + this doc + golden-trace update.
+- Host tests record the cfg / doorbell / used-ring access sequence for
+  one SoftNPU submit/complete (`golden_mmio_softnpu_submit_complete` in
+  `drivers/src/mmio.rs`, and the SoftNPU twin in
+  `drivers/src/softnpu.rs`).
+- Path A remains optional later. A QEMU device would implement **these**
+  offsets, DMA the job wire, and raise a real IRQ. Do not invent a
+  second BAR.
+
+**Not claimed.** This is not an upstream virtio device, not a silicon
+BAR, and not a vendor integration.
 
 ## Map API (Soft SMMU; not hardware)
 

@@ -5,7 +5,9 @@ revision 2026-09-06. Filed on main via PR.
 
 ## Non-negotiables
 
-- Research prototype. SoftNPU + stock/custom QEMU is the demo path.
+- Research prototype. SoftNPU + stock QEMU (in-kernel BAR) is the
+  canonical demo (SpecForge path B). A custom QEMU `-device` (path A)
+  stays optional later.
 - No fake NVIDIA partnership, no FLOP benchmarks, no tape-out / readiness
   claims.
 - [`docs/ABI.md`](ABI.md) syscall 0–8 stay frozen; additive only
@@ -20,9 +22,10 @@ revision 2026-09-06. Filed on main via PR.
 only — do not schedule Kernel work against it. Soft SMMU (PR #7) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
 **done** as software models. SMP smoke (INIT-SIPI + per-CPU `gs` +
-two-hart work-steal) is **done** as a QEMU `-smp 2` slice. Custom QEMU
-virtio-accel and the other stubs remain open (see
-[ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
+two-hart work-steal) is **done** as a QEMU `-smp 2` slice. SpecForge
+virtio path B (in-kernel BAR canonical + golden MMIO trace) is
+**done**; custom QEMU virtio-accel (path A) and the other stubs
+remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows;
 no higher-half / POSIX MM). A minimal cap CDT / revoke is **done** as
 unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
@@ -45,7 +48,9 @@ RISC-V S-mode userspace is **done** as a documented subset
 (`sret`/`ecall` `/init` + Sv39 U-isolate + in-kernel SoftNPU; no
 PLIC; not product-class). AffinityLaplacian n≤32 placement is
 **done** as a prototype eigensolve (`from_placement` +
-`bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer).
+`bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer). SpecForge
+virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
+trace on SoftNPU submit/complete; BAR frozen). Path A is not.
 
 ### KEEP / ACTIVE Y1
 
@@ -82,9 +87,9 @@ Kernel calendar items:
 
 After AccelDevice bites a real-shaped path — not before:
 
-- Custom QEMU virtio-accel (`-device` / virtio-mmio DMA of the
-  [ACCEL.md](ACCEL.md) BAR layout). In-kernel BAR + SoftNPU remains
-  the honest demo.
+- Custom QEMU virtio-accel (path A: `-device` / virtio-mmio DMA of the
+  frozen [ACCEL.md](ACCEL.md) BAR). Path B landed: in-kernel BAR is
+  the canonical demo + golden MMIO trace. Path A stays optional later.
 - ELF beyond this subset (higher-half, PIE, ramfs). Per-task PML4 +
   SMEP/SMAP + optional `/probe` is landed.
 - aarch64 EL0 / GICv3 / virtio (thin HAL landed; userspace is later).
@@ -106,8 +111,9 @@ After AccelDevice bites a real-shaped path — not before:
 11. Hardware-shaped fence/timeline (seq / wait / complete)
 12. SoftNPU F16/F32 software IEEE
 13. RISC-V S-mode userspace (documented subset)
-14. AffinityLaplacian n≤32 placement in sched — **this cut**
-15. Optional virtio-accel / MicroPerceptron interop later
+14. AffinityLaplacian n≤32 placement in sched
+15. SpecForge virtio path B (ADR + golden MMIO trace) — **this cut**
+16. Optional virtio-accel QEMU `-device` (path A) / MicroPerceptron later
 
 ### Active file touch map
 
@@ -125,6 +131,7 @@ After AccelDevice bites a real-shaped path — not before:
 | SparsifiedCollective | `core/src/sparsify.rs`, `core/src/{opkernel,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
 | Hardware fence/timeline | `core/src/fence.rs`, `drivers/src/{fakecp,softnpu}.rs`, `docs/{ACCEL,ARCHITECTURE,ROADMAP}.md` |
 | AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
+| Virtio path B (golden MMIO) | `drivers/src/{mmio,virtio_accel,softnpu}.rs`, `docs/{ACCEL,ROADMAP,YEAR2_PLAN}.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
@@ -133,7 +140,9 @@ slice. OperatorKernelHandle and SparsifiedCollective are the same
 kind of slice (caps + Hodge, no new syscall). The fence/timeline
 cut is `aether-core` + driver retire (`retire_into`); no new
 syscall. Laplacian-in-sched is the same kind of `aether-core` slice
-(no new syscall, AccelDevice frozen). Still do not open CXL PRs here.
+(no new syscall, AccelDevice frozen). Path B is a docs + host-test
+slice on the existing BAR (no new syscall, no QEMU device). Still
+do not open CXL PRs here.
 
 ---
 
@@ -157,7 +166,8 @@ above override what Kernel actually sequences. Criteria below are
    DMA-reads the published BAR layout in [ACCEL.md](ACCEL.md) with
    SoftNPU behind it, **or** (B) documented "in-kernel BAR is canonical
    demo" + golden MMIO trace test — pick A if effort fits; B is the
-   honest fallback.
+   honest fallback. **Landed as path B** (ADR + frozen BAR + golden
+   trace on SoftNPU submit/complete). Path A stays optional.
 4. Partner sketch enrichment: `PartnerNpuStub` fills opcode/dtype/route
    from real `AccelJobDesc` fields; [ACCEL.md](ACCEL.md) "how to plug CP"
    updated; still labeled sketch, not partnership.
@@ -228,9 +238,9 @@ for new qemu/smp targets.
    bits only after [ABI.md](ABI.md) amendment in the same PR. Do not
    reshape `UserAccelJob` wire without a version bump in [ACCEL.md](ACCEL.md).
 2. **Virtqueue BAR layout:** [ACCEL.md](ACCEL.md) BAR offsets are a
-   de-facto ABI for SoftNPU ↔ future QEMU device. Freeze layout before
-   Y1H1 QEMU work; any change needs a dual SoftNPU+doc update — merge
-   conflict magnet with the partner sketch.
+   de-facto ABI for SoftNPU ↔ future QEMU device. **Frozen** by the
+   path-B golden MMIO trace. Any change needs a dual SoftNPU + doc +
+   golden-trace update. Path A later must consume these offsets.
 3. **SMP vs userspace:** INIT-SIPI + per-CPU state will thrash
    `arch/x86_64` and `task.rs` the same as PML4 work — sequence Y1H2 as
    **SMP first (kernel threads)** then **per-task PML4**, or one owner

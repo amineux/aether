@@ -1,9 +1,11 @@
 //! Virtqueue-shaped MMIO window for VirtIO-Accel.
 //!
-//! This is the register file a future `-device virtio-accel` would expose.
-//! v0.1 emulates it in-kernel: the kernel driver pokes these offsets; the
-//! SoftNPU backend services the avail ring when the doorbell is kicked
-//! and raises a used-ring IRQ flag. There is no custom QEMU device.
+//! SpecForge Y1H1 **path B**: this in-kernel BAR is the canonical demo.
+//! A future `-device virtio-accel` (path A) would expose the same offsets;
+//! v0.1 does not add that QEMU device. The kernel driver pokes these
+//! registers; SoftNPU services the avail ring on a doorbell kick and
+//! raises a used-ring IRQ flag. Offsets below are frozen — see
+//! `docs/ACCEL.md`.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType};
 use aether_core::partition::PartitionId;
@@ -37,6 +39,107 @@ pub const AVAIL_BASE: usize = 0x80;
 pub const USED_BASE: usize = 0x340;
 pub const JOB_WIRE_SIZE: usize = 88;
 pub const USED_WIRE_SIZE: usize = 16;
+
+/// Frozen path-B cfg: magic, version, status, qsize, doorbell, used_idx.
+/// The golden MMIO trace also records the used-ring base (`USED_BASE`).
+pub const GOLDEN_CFG_OFFS: &[usize] = &[
+    REG_MAGIC,
+    REG_VERSION,
+    REG_STATUS,
+    REG_QSIZE,
+    REG_DOORBELL,
+    REG_USED_IDX,
+];
+
+/// True for a published cfg register or the first used-ring slot.
+pub const fn is_golden_mmio_off(off: usize) -> bool {
+    matches!(
+        off,
+        REG_MAGIC | REG_VERSION | REG_STATUS | REG_QSIZE | REG_DOORBELL | REG_USED_IDX
+    ) || off == USED_BASE
+}
+
+/// Path-B golden: published cfg + used-ring accesses for one SoftNPU
+/// submit/complete (`probe` → `submit` → `service`/`take`+`complete` → `poll`).
+/// Values match a 2×2×2 I32 matmul (`job_seq = 1`).
+#[cfg(test)]
+pub const GOLDEN_SOFTNPU_SUBMIT_COMPLETE: &[MmioTraceEntry] = &[
+    MmioTraceEntry {
+        off: 0x00,
+        write: false,
+        value: VIRTIO_ACCEL_MAGIC,
+    },
+    MmioTraceEntry {
+        off: 0x04,
+        write: false,
+        value: VIRTIO_ACCEL_VERSION,
+    },
+    MmioTraceEntry {
+        off: 0x0C,
+        write: false,
+        value: VIRTQ_SIZE as u32,
+    },
+    MmioTraceEntry {
+        off: 0x08,
+        write: true,
+        value: STATUS_ACK | STATUS_DRIVER | STATUS_DRIVER_OK,
+    },
+    MmioTraceEntry {
+        off: 0x08,
+        write: false,
+        value: STATUS_ACK | STATUS_DRIVER | STATUS_DRIVER_OK,
+    },
+    MmioTraceEntry {
+        off: 0x14,
+        write: false,
+        value: 0,
+    },
+    MmioTraceEntry {
+        off: 0x10,
+        write: true,
+        value: 1,
+    },
+    MmioTraceEntry {
+        off: 0x10,
+        write: false,
+        value: 1,
+    },
+    MmioTraceEntry {
+        off: 0x14,
+        write: false,
+        value: 0,
+    },
+    MmioTraceEntry {
+        off: 0x10,
+        write: true,
+        value: 0,
+    },
+    MmioTraceEntry {
+        off: 0x14,
+        write: false,
+        value: 0,
+    },
+    MmioTraceEntry {
+        off: 0x340,
+        write: true,
+        value: 1,
+    },
+    MmioTraceEntry {
+        off: 0x14,
+        write: true,
+        value: 1,
+    },
+    MmioTraceEntry {
+        off: 0x14,
+        write: false,
+        value: 1,
+    },
+    MmioTraceEntry {
+        off: 0x340,
+        write: false,
+        value: 1,
+    },
+];
 
 /// Packed job written into the avail ring (MMIO ABI, not the Rust layout).
 #[repr(C)]
@@ -129,21 +232,80 @@ impl AccelJobWire {
     }
 }
 
+/// One recorded BAR access. Host tests compare these against the published
+/// layout (magic, version, status, qsize, doorbell, used_idx, used ring).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct MmioTraceEntry {
+    pub off: u16,
+    pub write: bool,
+    pub value: u32,
+}
+
+#[cfg(test)]
+const MMIO_TRACE_CAP: usize = 64;
+
+#[cfg(test)]
+#[derive(Clone, Debug)]
+struct MmioTrace {
+    entries: [MmioTraceEntry; MMIO_TRACE_CAP],
+    len: usize,
+}
+
+#[cfg(test)]
+impl MmioTrace {
+    const fn new() -> Self {
+        Self {
+            entries: [MmioTraceEntry {
+                off: 0,
+                write: false,
+                value: 0,
+            }; MMIO_TRACE_CAP],
+            len: 0,
+        }
+    }
+
+    fn push(&mut self, off: usize, write: bool, value: u32) {
+        if self.len >= MMIO_TRACE_CAP {
+            return;
+        }
+        self.entries[self.len] = MmioTraceEntry {
+            off: off as u16,
+            write,
+            value,
+        };
+        self.len += 1;
+    }
+
+    fn clear(&mut self) {
+        self.len = 0;
+    }
+
+    fn as_slice(&self) -> &[MmioTraceEntry] {
+        &self.entries[..self.len]
+    }
+}
+
 /// In-kernel emulated BAR0. Driver and device both poke this window.
 #[derive(Clone, Debug)]
 pub struct AccelMmio {
     bytes: [u8; ACCEL_MMIO_SIZE],
+    #[cfg(test)]
+    trace: core::cell::RefCell<MmioTrace>,
 }
 
 impl AccelMmio {
     pub fn new() -> Self {
         let mut s = Self {
             bytes: [0; ACCEL_MMIO_SIZE],
+            #[cfg(test)]
+            trace: core::cell::RefCell::new(MmioTrace::new()),
         };
         s.write_u32(REG_MAGIC, VIRTIO_ACCEL_MAGIC);
         s.write_u32(REG_VERSION, VIRTIO_ACCEL_VERSION);
         s.write_u32(REG_QSIZE, VIRTQ_SIZE as u32);
         s.write_u32(REG_STATUS, 0);
+        #[cfg(test)]
+        s.trace_reset();
         s
     }
 
@@ -151,7 +313,7 @@ impl AccelMmio {
         &self.bytes
     }
 
-    pub fn read_u32(&self, off: usize) -> u32 {
+    fn load_u32(&self, off: usize) -> u32 {
         if off + 4 > ACCEL_MMIO_SIZE {
             return 0;
         }
@@ -160,22 +322,54 @@ impl AccelMmio {
         u32::from_le_bytes(b)
     }
 
+    fn record(&self, off: usize, write: bool, value: u32) {
+        #[cfg(test)]
+        self.trace.borrow_mut().push(off, write, value);
+        #[cfg(not(test))]
+        let _ = (off, write, value);
+    }
+
+    pub fn read_u32(&self, off: usize) -> u32 {
+        let v = self.load_u32(off);
+        self.record(off, false, v);
+        v
+    }
+
     pub fn write_u32(&mut self, off: usize, v: u32) {
         if off + 4 > ACCEL_MMIO_SIZE {
             return;
         }
         self.bytes[off..off + 4].copy_from_slice(&v.to_le_bytes());
+        self.record(off, true, v);
     }
 
+    /// Driver probe: magic / version / qsize must match the frozen BAR.
     pub fn negotiate(&mut self) -> bool {
         if self.read_u32(REG_MAGIC) != VIRTIO_ACCEL_MAGIC
             || self.read_u32(REG_VERSION) != VIRTIO_ACCEL_VERSION
+            || self.read_u32(REG_QSIZE) != VIRTQ_SIZE as u32
         {
             self.write_u32(REG_STATUS, STATUS_FAILED);
             return false;
         }
         self.write_u32(REG_STATUS, STATUS_ACK | STATUS_DRIVER | STATUS_DRIVER_OK);
         true
+    }
+
+    #[cfg(test)]
+    pub fn trace_reset(&mut self) {
+        self.trace.borrow_mut().clear();
+    }
+
+    #[cfg(test)]
+    pub fn golden_cfg_trace(&self) -> std::vec::Vec<MmioTraceEntry> {
+        self.trace
+            .borrow()
+            .as_slice()
+            .iter()
+            .copied()
+            .filter(|e| is_golden_mmio_off(e.off as usize))
+            .collect()
     }
 
     pub fn status(&self) -> u32 {
@@ -270,10 +464,7 @@ impl AccelMmio {
     fn write_job(&mut self, slot: usize, job: &AccelJobWire) {
         let off = AVAIL_BASE + slot * JOB_WIRE_SIZE;
         let bytes = unsafe {
-            core::slice::from_raw_parts(
-                job as *const AccelJobWire as *const u8,
-                JOB_WIRE_SIZE,
-            )
+            core::slice::from_raw_parts(job as *const AccelJobWire as *const u8, JOB_WIRE_SIZE)
         };
         self.bytes[off..off + JOB_WIRE_SIZE].copy_from_slice(bytes);
     }
@@ -304,6 +495,7 @@ impl AccelMmio {
         self.bytes[off..off + 4].copy_from_slice(&cpl.job_seq.to_le_bytes());
         self.bytes[off + 4..off + 8].copy_from_slice(&cpl.status.to_le_bytes());
         self.bytes[off + 8..off + 12].copy_from_slice(&cpl.cycles.to_le_bytes());
+        self.record(off, true, cpl.job_seq);
     }
 
     fn read_used(&self, slot: usize) -> Completion {
@@ -314,11 +506,13 @@ impl AccelMmio {
         seq.copy_from_slice(&self.bytes[off..off + 4]);
         st.copy_from_slice(&self.bytes[off + 4..off + 8]);
         cy.copy_from_slice(&self.bytes[off + 8..off + 12]);
-        Completion {
+        let cpl = Completion {
             job_seq: u32::from_le_bytes(seq),
             status: i32::from_le_bytes(st),
             cycles: u32::from_le_bytes(cy),
-        }
+        };
+        self.record(off, false, cpl.job_seq);
+        cpl
     }
 }
 
@@ -332,14 +526,80 @@ impl Default for AccelMmio {
 mod tests {
     use super::*;
 
+    fn peek_u32(bytes: &[u8], off: usize) -> u32 {
+        u32::from_le_bytes(bytes[off..off + 4].try_into().unwrap())
+    }
+
     #[test]
     fn layout_offsets() {
+        assert_eq!(REG_MAGIC, 0x00);
+        assert_eq!(REG_VERSION, 0x04);
+        assert_eq!(REG_STATUS, 0x08);
+        assert_eq!(REG_QSIZE, 0x0C);
         assert_eq!(REG_DOORBELL, 0x10);
         assert_eq!(REG_USED_IDX, 0x14);
         assert_eq!(REG_IRQ_STATUS, 0x18);
         assert_eq!(AVAIL_BASE, 0x80);
         assert_eq!(USED_BASE, 0x340);
+        assert_eq!(
+            GOLDEN_CFG_OFFS,
+            &[
+                REG_MAGIC,
+                REG_VERSION,
+                REG_STATUS,
+                REG_QSIZE,
+                REG_DOORBELL,
+                REG_USED_IDX
+            ]
+        );
         assert_eq!(core::mem::size_of::<AccelJobWire>(), JOB_WIRE_SIZE);
+    }
+
+    #[test]
+    fn published_bar_reset_values() {
+        let mmio = AccelMmio::new();
+        let b = mmio.as_bytes();
+        assert_eq!(peek_u32(b, REG_MAGIC), VIRTIO_ACCEL_MAGIC);
+        assert_eq!(peek_u32(b, REG_VERSION), VIRTIO_ACCEL_VERSION);
+        assert_eq!(peek_u32(b, REG_STATUS), 0);
+        assert_eq!(peek_u32(b, REG_QSIZE), VIRTQ_SIZE as u32);
+        assert_eq!(peek_u32(b, REG_DOORBELL), 0);
+        assert_eq!(peek_u32(b, REG_USED_IDX), 0);
+    }
+
+    #[test]
+    fn golden_mmio_softnpu_submit_complete() {
+        let mut mmio = AccelMmio::new();
+        assert!(mmio.negotiate());
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        mmio.driver_submit(&job).unwrap();
+        let (token, got) = mmio.device_take_avail().unwrap();
+        assert_eq!(got.m, 2);
+        mmio.device_complete(
+            token,
+            Completion {
+                job_seq: 1,
+                status: 0,
+                cycles: 8,
+            },
+        );
+        let c = mmio.driver_poll_used().unwrap();
+        assert_eq!(c.job_seq, 1);
+        assert_eq!(c.cycles, 8);
+
+        let got = mmio.golden_cfg_trace();
+        assert_eq!(got.as_slice(), GOLDEN_SOFTNPU_SUBMIT_COMPLETE);
+
+        let b = mmio.as_bytes();
+        assert_eq!(peek_u32(b, REG_MAGIC), VIRTIO_ACCEL_MAGIC);
+        assert_eq!(peek_u32(b, REG_VERSION), VIRTIO_ACCEL_VERSION);
+        assert_eq!(
+            peek_u32(b, REG_STATUS),
+            STATUS_ACK | STATUS_DRIVER | STATUS_DRIVER_OK
+        );
+        assert_eq!(peek_u32(b, REG_QSIZE), VIRTQ_SIZE as u32);
+        assert_eq!(peek_u32(b, REG_DOORBELL), 0);
+        assert_eq!(peek_u32(b, REG_USED_IDX), 1);
     }
 
     #[test]
@@ -389,6 +649,14 @@ mod tests {
     fn bad_magic_fails_negotiate() {
         let mut mmio = AccelMmio::new();
         mmio.write_u32(REG_MAGIC, 0);
+        assert!(!mmio.negotiate());
+        assert_eq!(mmio.status(), STATUS_FAILED);
+    }
+
+    #[test]
+    fn bad_qsize_fails_negotiate() {
+        let mut mmio = AccelMmio::new();
+        mmio.write_u32(REG_QSIZE, 3);
         assert!(!mmio.negotiate());
         assert_eq!(mmio.status(), STATUS_FAILED);
     }

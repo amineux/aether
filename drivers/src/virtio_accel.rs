@@ -1,11 +1,13 @@
 //! VirtIO-Accel: a virtio-inspired job/completion ring.
 //!
 //! Host-tested ring model. The live QEMU path uses [`crate::mmio::AccelMmio`]
-//! (doorbell + used-ring IRQ). This module keeps the same ABI in Rust
-//! structs so unit tests do not need a byte BAR.
+//! (doorbell + used-ring IRQ). SpecForge Y1H1 path B: that in-kernel BAR
+//! is the canonical demo; this module keeps the same frozen ABI in Rust
+//! structs so unit tests do not need a byte BAR. Path A (a custom QEMU
+//! `-device`) stays optional later.
 //!
 //! ```text
-//! MMIO cfg @ BAR0
+//! MMIO cfg @ BAR0 (frozen)
 //!   0x00 magic    u32  = 0xAE7EACC1
 //!   0x04 version  u32  = 1
 //!   0x08 status   u32  (ACK, DRIVER, DRIVER_OK, FAILED)
@@ -163,5 +165,33 @@ mod tests {
         q.magic = 0;
         assert!(!q.negotiate());
         assert_eq!(q.status, STATUS_FAILED);
+    }
+
+    #[test]
+    fn frozen_bar_constants_match_mmio() {
+        use crate::mmio::{
+            GOLDEN_CFG_OFFS, REG_DOORBELL, REG_MAGIC, REG_QSIZE, REG_STATUS, REG_USED_IDX,
+            REG_VERSION,
+        };
+        assert_eq!(VIRTIO_ACCEL_MAGIC, 0xAE7E_ACC1);
+        assert_eq!(VIRTIO_ACCEL_VERSION, 1);
+        assert_eq!(VIRTQ_SIZE, 8);
+        assert_eq!(REG_MAGIC, 0x00);
+        assert_eq!(REG_VERSION, 0x04);
+        assert_eq!(REG_STATUS, 0x08);
+        assert_eq!(REG_QSIZE, 0x0C);
+        assert_eq!(REG_DOORBELL, 0x10);
+        assert_eq!(REG_USED_IDX, 0x14);
+        assert_eq!(
+            GOLDEN_CFG_OFFS,
+            &[
+                REG_MAGIC,
+                REG_VERSION,
+                REG_STATUS,
+                REG_QSIZE,
+                REG_DOORBELL,
+                REG_USED_IDX
+            ]
+        );
     }
 }
