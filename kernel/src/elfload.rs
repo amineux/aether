@@ -5,7 +5,9 @@
 //! (and `/probe`) rather than touching those blobs at the load site.
 
 use aether_core::elf::{loads_in_window, parse_elf64};
-use aether_core::ramfs::{RamFs, INIT_PATH, PROBE_PATH};
+#[cfg(target_arch = "x86_64")]
+use aether_core::ramfs::PROBE_PATH;
+use aether_core::ramfs::{RamFs, INIT_PATH};
 #[cfg(target_arch = "x86_64")]
 use aether_core::{USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END};
 #[cfg(target_arch = "riscv64")]
