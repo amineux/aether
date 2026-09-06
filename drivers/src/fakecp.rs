@@ -17,7 +17,9 @@
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
+use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
+use aether_core::partition::PartitionError;
 use aether_core::types::{PhysAddr, TileId};
 use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_SOFT_CP};
 
@@ -275,6 +277,17 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         }
     }
 
+    /// Retire the IRQ seq into a CP-shaped [`Timeline`].
+    ///
+    /// The device names the seq; the timeline owns credit + watermark.
+    /// No fence on the job is `Ok(None)`.
+    pub fn retire_into(&self, timeline: &mut Timeline) -> Result<Option<Fence>, PartitionError> {
+        match self.completed_fence() {
+            Some(id) => timeline.complete(FenceId(id)).map(Some),
+            None => Ok(None),
+        }
+    }
+
     /// Device-side: consume the mailbox, resolve Soft-SMMU IOVAs, execute, raise IRQ.
     pub fn service(&mut self) -> Option<Completion> {
         let cmd = self.mailbox.take()?;
@@ -397,7 +410,7 @@ mod tests {
     use aether_core::fence::{FenceId, Timeline};
     use aether_core::iommu::{StreamState, SOFT_SMMU_IOVA_BASE};
     use aether_core::partition::{
-        BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
+        BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
     };
     use aether_core::types::{ChipletId, TenantId};
     use aether_hal::{
@@ -669,10 +682,14 @@ mod tests {
         d.service().unwrap();
         let cpl = d.poll().unwrap();
         assert_eq!(cpl.status, 0);
-        let done = timeline
-            .complete(FenceId(d.completed_fence().unwrap()))
-            .unwrap();
+        assert_eq!(
+            timeline.wait(FenceId(d.completed_fence().unwrap())),
+            Err(PartitionError::FenceNotReady)
+        );
+        let done = d.retire_into(&mut timeline).unwrap().unwrap();
         assert!(done.completed);
+        assert!(timeline.wait(done.id).unwrap().completed);
         assert_eq!(timeline.in_flight(), 0);
+        assert_eq!(timeline.retired(), fence.id.0);
     }
 }

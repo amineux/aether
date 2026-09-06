@@ -160,7 +160,7 @@ flowchart TB
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
 | **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; SoftCommandProcessor (`CpCmd`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
-| **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → fence → complete |
+| **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
 | **Observability** | COM1 console + structured `EventRing` |
 

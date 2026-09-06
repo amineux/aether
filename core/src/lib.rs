@@ -44,7 +44,7 @@ pub use cut::{AffinityGraph, CutError, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
-pub use fence::{Fence, FenceId, Timeline};
+pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
     IommuMap, MapError, MapRequest, MappedRegion, StreamId, StreamState, DEFAULT_STREAM,

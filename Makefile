@@ -126,6 +126,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
 		echo "qemu-ci: /init + mmap + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
@@ -160,6 +161,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -193,7 +195,8 @@ qemu-riscv-ci: $(RV_ELF)
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log \
-	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log; then \
+	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
@@ -227,6 +230,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log; then \
 		echo "qemu-aarch64-ci: demo ok (qemu exit $$ec)"; \
 		exit 0; \

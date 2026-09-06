@@ -206,7 +206,7 @@ collective ISA:
   `[opkernel] tree+gradient inject + harmonic-tree REFUSE`.
   No new syscall (0–8 frozen). No QEMU collective engine.
 
-## SparsifiedCollective (this cut)
+## SparsifiedCollective
 
 Landed as a **research kernel surface**, not a spectral compiler and
 not an eigensolver:
@@ -223,6 +223,33 @@ not an eigensolver:
   frozen). No QEMU collective engine.
 - Host tests lock drop / keep / Gradient-Curl / refuse. Boot demo
   + serial `[sparsify] below-threshold DROP + above KEEP + harmonic-tree REFUSE`.
+
+## Hardware fence/timeline (this cut)
+
+Landed as a **software model** of a CP-shaped timeline — **not** a
+silicon fence unit, **not** CUDA streams:
+
+- `TimelineId` + monotonic seq (`FenceId`). The seq is what
+  `AccelJobDesc.fence_id` and `CpCmd` already carry (`u64`, ABI
+  unchanged).
+- `submit` allocates seq + credit. `wait` polls the retired
+  watermark. `complete` is in-order CP retire.
+- An issued but not-yet-retired `wait_for` is allowed (the CP would
+  stall). A never-issued pred is refused. That is not the old
+  host-side "refuse submit until pred completes" shortcut.
+- `timeout` is a software overlay: it releases a credit without
+  claiming a device IRQ.
+- SoftCommandProcessor and SoftNPU retire through
+  `Timeline::complete` / `retire_into`. The QEMU used-ring IRQ
+  (software doorbell) now retires the World timeline the same way.
+- Host tests: submit → wait → complete; credit exhaustion; timeout
+  refuse; multi-job in-order. Boot demo + serial
+  `[fence] timeline seq#… submit -> wait -> complete`.
+- No new syscall (0–8 frozen). `AccelDevice` / `UserAccelJob`
+  unchanged.
+
+This is still not a hardware fence. QEMU does not write a silicon
+timeline register.
 
 ## STUB markers in the tree
 
@@ -243,7 +270,7 @@ Search for `// STUB:` / `STUB` :
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
-| Hardware fence/timeline | `core/src/fence.rs` | Software credits on QEMU; doorbell IRQ is now software |
+| Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 `SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / used-ring
@@ -274,9 +301,9 @@ kernel thread queue sleeps.
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
-  OperatorKernelHandle, and SparsifiedCollective (this cut) are
-  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
-  expansion remain deferred.
+  OperatorKernelHandle, SparsifiedCollective, and the hardware-shaped
+  fence/timeline (this cut) are landed. ABI stays stable. Custom
+  QEMU virtio-accel and Laplacian expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -286,9 +313,10 @@ kernel thread queue sleeps.
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
-  OperatorKernelHandle (PR #15), and SparsifiedCollective (this cut)
-  are **done** as research-prototype slices. Custom QEMU virtio-accel
-  and the other stubs above are still open.
+  OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16), and
+  the hardware-shaped fence/timeline (this cut) are **done** as
+  research-prototype slices. Custom QEMU virtio-accel and the other
+  stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

@@ -58,9 +58,9 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.activity_ok));
     console::nl();
 
-    write_str("[fence] submit#");
+    write_str("[fence] timeline seq#");
     write_u64(report.fence_id);
-    write_str(" -> complete  phase=COMPUTE  credits/partition  ");
+    write_str(" submit -> wait -> complete  credits/partition  ");
     write_str(flag(report.fence_ok));
     console::nl();
 

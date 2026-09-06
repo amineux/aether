@@ -7,7 +7,9 @@
 
 use aether_core::accel::{AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
+use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, DEFAULT_STREAM};
+use aether_core::partition::PartitionError;
 use aether_core::types::PhysAddr;
 use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_VIRTIO_SOFTNPU};
 
@@ -68,6 +70,8 @@ pub struct SoftNpuDevice<M: DmaView> {
     pub npu: SoftNpu,
     pub mem: M,
     pub iommu: IommuMap,
+    last_fence: Option<u64>,
+    fence_done: bool,
 }
 
 impl<M: DmaView> SoftNpuDevice<M> {
@@ -84,6 +88,25 @@ impl<M: DmaView> SoftNpuDevice<M> {
             npu: SoftNpu::new(),
             mem,
             iommu: IommuMap::new(),
+            last_fence: None,
+            fence_done: false,
+        }
+    }
+
+    /// Fence id retired by the last used-ring IRQ, if the job named one.
+    pub fn completed_fence(&self) -> Option<u64> {
+        if self.fence_done {
+            self.last_fence
+        } else {
+            None
+        }
+    }
+
+    /// Retire the IRQ seq into a CP-shaped [`Timeline`].
+    pub fn retire_into(&self, timeline: &mut Timeline) -> Result<Option<Fence>, PartitionError> {
+        match self.completed_fence() {
+            Some(id) => timeline.complete(FenceId(id)).map(Some),
+            None => Ok(None),
         }
     }
 
@@ -159,6 +182,9 @@ impl<M: DmaView> SoftNpuDevice<M> {
     /// Avail-ring addresses are Soft-SMMU IOVAs; resolve to guest PA for DMA.
     pub fn service(&mut self) -> Option<Completion> {
         let (token, job) = self.mmio.device_take_avail()?;
+        let fence_id = job.fence_id;
+        self.fence_done = false;
+        self.last_fence = if fence_id != 0 { Some(fence_id) } else { None };
         if !self.buffers_mapped(&job) {
             let cpl = Completion {
                 job_seq: self.npu.seq,
@@ -166,7 +192,7 @@ impl<M: DmaView> SoftNpuDevice<M> {
                 cycles: 0,
             };
             self.mmio.device_complete(token, cpl);
-            return Some(cpl);
+            return Some(self.note_fence(fence_id, cpl));
         }
         let Some(job) = self.job_from_iova(job) else {
             let cpl = Completion {
@@ -175,12 +201,12 @@ impl<M: DmaView> SoftNpuDevice<M> {
                 cycles: 0,
             };
             self.mmio.device_complete(token, cpl);
-            return Some(cpl);
+            return Some(self.note_fence(fence_id, cpl));
         };
         match self.npu.execute(&job, &mut self.mem) {
             Ok(cpl) => {
                 self.mmio.device_complete(token, cpl);
-                Some(cpl)
+                Some(self.note_fence(job.fence_id, cpl))
             }
             Err(_) => {
                 let cpl = Completion {
@@ -189,9 +215,17 @@ impl<M: DmaView> SoftNpuDevice<M> {
                     cycles: 0,
                 };
                 self.mmio.device_complete(token, cpl);
-                Some(cpl)
+                Some(self.note_fence(job.fence_id, cpl))
             }
         }
+    }
+
+    fn note_fence(&mut self, fence_id: u64, cpl: Completion) -> Completion {
+        if fence_id != 0 {
+            self.last_fence = Some(fence_id);
+            self.fence_done = true;
+        }
+        cpl
     }
 
     fn buffers_mapped(&self, job: &AccelJobDesc) -> bool {
@@ -236,6 +270,12 @@ impl<M: DmaView> AccelDevice for SoftNpuDevice<M> {
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
         let wired = self.job_to_iova(job);
+        self.fence_done = false;
+        self.last_fence = if job.fence_id != 0 {
+            Some(job.fence_id)
+        } else {
+            None
+        };
         self.mmio.driver_submit(&wired).map_err(|_| HalError::Busy)
     }
 
@@ -327,5 +367,53 @@ mod tests {
         assert!(!dev.irq_pending());
         let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn used_ring_retires_partition_fence() {
+        use aether_core::partition::{
+            BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
+        };
+        use aether_core::types::ChipletId;
+
+        let mut backing = [0u8; 256];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let part = PartitionProfile::new(
+            PartitionId(1),
+            SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+            QosBudget {
+                bw_mbps: 100,
+                credits: 2,
+            },
+            BlastRadius {
+                max_nodes: 2,
+                max_hops: 1,
+            },
+        );
+        let mut timeline = Timeline::new(PartitionId(1));
+        let fence = timeline.submit(&part, None).unwrap();
+        let mut job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job.fence_id = fence.id.0;
+
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        dev.map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        dev.submit(&job).unwrap();
+        assert!(dev.completed_fence().is_none());
+        dev.service().unwrap();
+        assert_eq!(dev.completed_fence(), Some(fence.id.0));
+        let done = dev.retire_into(&mut timeline).unwrap().unwrap();
+        assert!(done.completed);
+        assert!(timeline.wait(fence.id).unwrap().completed);
+        assert_eq!(timeline.in_flight(), 0);
     }
 }

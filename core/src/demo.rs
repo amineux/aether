@@ -14,7 +14,9 @@ use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLAS
 use crate::iommu::{IommuMap, MapError, MapRequest};
 use crate::observe::{EventKind, EventRing};
 use crate::opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
-use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
+use crate::partition::{
+    BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
+};
 use crate::phase::Phase;
 use crate::sched::{Job, JobKind, TileKind, TileScheduler};
 use crate::space::{map_place, FabricAddr, MemorySpace, Place, SpaceError};
@@ -296,6 +298,7 @@ pub fn run_boot_demo() -> DemoReport {
     let mut timeline = Timeline::new(part.id);
     let fence = timeline.submit(&part, None).unwrap();
     events.emit(EventKind::FenceSubmit, fence.id.0, part.id.0 as u64);
+    let wait_before = timeline.wait(fence.id) == Err(PartitionError::FenceNotReady);
 
     let mut sched = TileScheduler::new();
     sched.set_graph(graph);
@@ -397,6 +400,7 @@ pub fn run_boot_demo() -> DemoReport {
     );
     let fence_done = timeline.complete(fence.id).unwrap();
     events.emit(EventKind::FenceComplete, fence_done.id.0, 1);
+    let wait_after = timeline.wait(fence.id).unwrap();
     let color_ok = admit_arena_wave(
         tenant_a.0,
         Phase::Compute,
@@ -425,10 +429,13 @@ pub fn run_boot_demo() -> DemoReport {
         .is_ok();
 
     let fence_ok = fence.submitted
+        && wait_before
         && fence_done.completed
+        && wait_after.completed
         && !fence_done.timed_out
         && job.phase == Phase::Compute
         && job.space == MemorySpace::TileSram
+        && timeline.retired() == fence.seq()
         && timeline.in_flight() == 0;
 
     let hodge_cap = caps_a

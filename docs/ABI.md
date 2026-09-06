@@ -17,7 +17,9 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 ## What the kernel will do
 
 - Admit a job against a **partition** (spatial slice, credits, blast radius).
-- Order submit → fence → complete / timeout.
+- Order submit → wait → complete on a CP-shaped timeline seq.
+  `timeout` is a software overlay (releases a credit; not a device
+  IRQ). `AccelJobDesc.fence_id` / `CpCmd` stay a `u64` seq.
 - Move Memory caps and pin local places.
 - Account Hodge flow class and SpectralCut placement.
 - Bind an `OperatorKernelHandle` (collective topology × Hodge class)

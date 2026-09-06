@@ -36,7 +36,10 @@ surface (`CapKind::OperatorKernel` + Hodge bind/refuse; not a
 compiler, not a new syscall, not a collective engine).
 SparsifiedCollective is **done** as the sibling slice (integer milli
 threshold; drop below-threshold harmonic before inject; Hodge refuse
-still wins; not an eigensolve).
+still wins; not an eigensolve). The hardware-shaped fence/timeline
+is **done** as a software model (`TimelineId` + seq / wait /
+complete; timeout is software; QEMU IRQ is still software; not a
+silicon fence).
 
 ### KEEP / ACTIVE Y1
 
@@ -94,8 +97,9 @@ After AccelDevice bites a real-shaped path — not before:
 7. aarch64 thin HAL (QEMU virt, no EL0)
 8. Multiboot mmap → frames (documented subset)
 9. OperatorKernelHandle (Hodge-bound collective cap)
-10. SparsifiedCollective (drop below-threshold harmonic) — **this cut**
-11. Optional virtio-accel / MicroPerceptron interop later
+10. SparsifiedCollective (drop below-threshold harmonic)
+11. Hardware-shaped fence/timeline (seq / wait / complete) — **this cut**
+12. Optional virtio-accel / MicroPerceptron interop later
 
 ### Active file touch map
 
@@ -111,13 +115,15 @@ After AccelDevice bites a real-shaped path — not before:
 | Multiboot mmap | `core/src/mmap.rs`, `kernel/src/mm/{mod,frame}.rs`, `boot/x86_64/trampoline.S` |
 | OperatorKernelHandle | `core/src/opkernel.rs`, `core/src/{caps,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
 | SparsifiedCollective | `core/src/sparsify.rs`, `core/src/{opkernel,demo}.rs`, `docs/{CUT,FABRIC,ROADMAP}.md` |
+| Hardware fence/timeline | `core/src/fence.rs`, `drivers/src/{fakecp,softnpu}.rs`, `docs/{ACCEL,ARCHITECTURE,ROADMAP}.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
 arch PR on the revised track. CDT landed as a small `aether-core`
 slice. OperatorKernelHandle and SparsifiedCollective are the same
-kind of slice (caps + Hodge, no new syscall). Still do not open CXL
-PRs here.
+kind of slice (caps + Hodge, no new syscall). The fence/timeline
+cut is `aether-core` + driver retire (`retire_into`); no new
+syscall. Still do not open CXL PRs here.
 
 ---
 
