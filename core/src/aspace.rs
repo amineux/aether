@@ -9,7 +9,8 @@
 //!
 //! Honest limits: no KASLR, no KPTI, no PCID, no COW, no POSIX `mmap`.
 //! The identity 4 GiB stays mapped on purpose (SoftNPU DMA, page-table
-//! walks, AP SIPI, user ELF windows).
+//! walks, AP SIPI, user ELF windows). `SYS_CLONE` user threads share
+//! one of these maps; they do not get a second PML4.
 
 pub const PTE_P: u64 = 1;
 pub const PTE_RW: u64 = 1 << 1;
@@ -230,6 +231,27 @@ mod tests {
         assert!(USER_IMAGE_END - USER_IMAGE_BASE == PAGE_2M);
         assert!(USER_PROBE_END - USER_PROBE_BASE == PAGE_2M);
     }
+
+    #[test]
+    fn clone_threads_share_one_aspace() {
+        // SYS_CLONE does not clone_user() a second PML4. Two threads
+        // on /init walk the same map: image + stack USER, /probe unmapped.
+        let k = IdentityAs::kernel();
+        let shared = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        let parent_sp = USER_IMAGE_END - 16;
+        let child_sp = USER_IMAGE_END - 0x2000;
+        assert!(shared.user_mapped(USER_IMAGE_BASE));
+        assert!(shared.user_mapped(parent_sp));
+        assert!(shared.user_mapped(child_sp));
+        assert_eq!(
+            shared.walk(parent_sp).unwrap().pde,
+            shared.walk(child_sp).unwrap().pde
+        );
+        assert_eq!(shared.walk(parent_sp).unwrap().phys, parent_sp);
+        assert_eq!(shared.walk(child_sp).unwrap().phys, child_sp);
+        assert!(shared.walk(USER_PROBE_BASE).is_none());
+        assert!(!shared.user_mapped(KERNEL_TEXT_VA));
+    }
 }
 
 /// Sv39 PTE bits (privileged spec). U is only meaningful on a leaf.
@@ -388,5 +410,15 @@ mod sv39_tests {
         assert_eq!(USER_RV_IMAGE_END - USER_RV_IMAGE_BASE, PAGE_2M);
         assert!(USER_RV_IMAGE_BASE >= 0x8000_0000);
         assert!(USER_RV_IMAGE_BASE < 0x8800_0000);
+    }
+
+    #[test]
+    fn clone_threads_share_one_sv39() {
+        let k = Sv39As::kernel();
+        let shared = k.clone_user(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, &[]);
+        assert!(shared.user_mapped(USER_RV_IMAGE_BASE));
+        assert!(shared.user_mapped(USER_RV_IMAGE_END - 16));
+        assert!(shared.user_mapped(USER_RV_IMAGE_END - 0x2000));
+        assert!(!shared.user_mapped(0x8020_0000));
     }
 }

@@ -83,9 +83,10 @@ The intended story:
   complete and software-mechanism present**; a real device can still
   ignore it.
 
-Ring-3 is live; each user task has its own PML4 with USER only on its
-2 MiB ELF window (the other user window is unmapped). CR4.SMEP/SMAP
-are on. The map API refuses a pin without a Memory cap, allocates a
+Ring-3 is live; each user *task* has its own PML4 with USER only on its
+2 MiB ELF window (the other user window is unmapped). `SYS_CLONE`
+threads share that PML4 — they are not a second isolation domain.
+CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates a
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test

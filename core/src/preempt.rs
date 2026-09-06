@@ -274,4 +274,21 @@ mod tests {
         assert_eq!(q.yield_now(), Some(1));
         assert_eq!(q.current, Some(1));
     }
+
+    #[test]
+    fn four_threads_round_robin_includes_clone() {
+        // kthread + /init + /probe + SYS_CLONE sibling.
+        let mut q = CpuQueue::new();
+        q.quantum = 1;
+        assert!(q.spawn(1));
+        assert!(q.spawn(2));
+        assert!(q.spawn(3));
+        assert!(q.spawn(4));
+        assert_eq!(q.ensure_running(), Some(1));
+        assert_eq!(q.tick(), Some(2));
+        assert_eq!(q.tick(), Some(3));
+        assert_eq!(q.tick(), Some(4));
+        assert_eq!(q.tick(), Some(1));
+        assert!(q.switches >= 4);
+    }
 }

@@ -1,6 +1,7 @@
 //! CPU threads, PIT preemption, and blocking wait.
 //!
-//! Two runnables after boot: ring-3 `/init` and kernel `kthread-B`.
+//! Boot runnables: kernel `kthread-B`, ring-3 `/init`, optional `/probe`.
+//! `SYS_CLONE` adds a sibling user thread on `/init`'s PML4 / satp.
 //! Switching copies an [`InterruptFrame`] so IRQ and syscall share one path.
 
 use aether_core::preempt::{CpuQueue, WaitWhy};
@@ -38,7 +39,8 @@ pub const TID_KTHREAD: u32 = 1;
 pub const TID_USER: u32 = 2;
 pub const TID_PROBE: u32 = 3;
 const KSTACK_SIZE: usize = 16 * 1024;
-const MAX: usize = 4;
+/// Slots 1..MAX-1; matches [`aether_core::preempt::MAX_THREADS`].
+const MAX: usize = 8;
 
 #[repr(align(16))]
 struct KStack([u8; KSTACK_SIZE]);
@@ -93,7 +95,7 @@ const EMPTY_FRAME: InterruptFrame = InterruptFrame {
     sstatus: 0,
 };
 
-fn empty_thread() -> Thread {
+const fn empty_thread() -> Thread {
     Thread {
         saved: EMPTY_FRAME,
         kstack: KStack([0; KSTACK_SIZE]),
@@ -107,38 +109,14 @@ fn empty_thread() -> Thread {
 static mut TASKS: Tasks = Tasks {
     queue: CpuQueue::new(),
     threads: [
-        Thread {
-            saved: EMPTY_FRAME,
-            kstack: KStack([0; KSTACK_SIZE]),
-            kstack_top: 0,
-            user_buf: 0,
-            cr3: 0,
-            used: false,
-        },
-        Thread {
-            saved: EMPTY_FRAME,
-            kstack: KStack([0; KSTACK_SIZE]),
-            kstack_top: 0,
-            user_buf: 0,
-            cr3: 0,
-            used: false,
-        },
-        Thread {
-            saved: EMPTY_FRAME,
-            kstack: KStack([0; KSTACK_SIZE]),
-            kstack_top: 0,
-            user_buf: 0,
-            cr3: 0,
-            used: false,
-        },
-        Thread {
-            saved: EMPTY_FRAME,
-            kstack: KStack([0; KSTACK_SIZE]),
-            kstack_top: 0,
-            user_buf: 0,
-            cr3: 0,
-            used: false,
-        },
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
+        empty_thread(),
     ],
     current: 0,
     started: false,
@@ -300,6 +278,50 @@ pub fn spawn_user_task(id: u32, entry: u64, stack: u64, cr3: u64) {
     t.threads[i].kstack = KStack([0; KSTACK_SIZE]);
     t.threads[i].cr3 = cr3;
     install(id, user_frame(entry, stack));
+}
+
+fn alloc_tid() -> Option<u32> {
+    let t = tasks();
+    (1..MAX as u32).find(|&id| !t.threads[slot_index(id)].used)
+}
+
+fn set_user_arg0(id: u32, val: u64) {
+    let t = tasks();
+    let f = &mut t.threads[slot_index(id)].saved;
+    #[cfg(target_arch = "x86_64")]
+    {
+        f.rdi = val;
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        f.set_ret(val);
+    }
+}
+
+/// `SYS_CLONE`: new user thread, same CR3/satp as the caller, own stack.
+/// `None` = caller is not a user thread or the table is full.
+pub fn clone_user(entry: u64, stack: u64) -> Option<u64> {
+    let t = tasks();
+    if !t.started {
+        return None;
+    }
+    let cur = t.current;
+    if slot_index(cur) >= MAX || !t.threads[slot_index(cur)].used {
+        return None;
+    }
+    let cr3 = t.threads[slot_index(cur)].cr3;
+    if cr3 == 0 || cr3 == crate::mm::paging::kernel_cr3() {
+        return None;
+    }
+    let id = alloc_tid()?;
+    spawn_user_task(id, entry, stack, cr3);
+    set_user_arg0(id, id as u64);
+    write_str("[sched] clone tid=");
+    write_u64(id as u64);
+    write_str(" share aspace with tid=");
+    write_u64(cur as u64);
+    console::nl();
+    Some(id as u64)
 }
 
 pub fn current_id() -> u32 {

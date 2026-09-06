@@ -76,7 +76,7 @@ elfload::load_init / load_probe  (embedded static ELF64s)
         │  clone per-task PML4; SMEP/SMAP; CR3 switch
         ▼
 iretq → ring-3 /init
-        │  syscall: debug_print, recv (block), yield, send, map, accel_*
+        │  syscall: debug_print, clone, recv (block), yield, send, map, accel_*
         ▼
 SYS_EXIT → isa-debug-exit
 ```
@@ -130,7 +130,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `kernel/src/mm` | Multiboot mmap → frames, bump heap, HH + per-task PML4 clone, SMEP/SMAP, USER bits |
 | `core/src/mmap.rs` | Host-tested Multiboot1 / Multiboot2 mmap parser + frame plan |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
-| `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
+| `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait, `SYS_CLONE` |
 | `kernel/src/elfload.rs` | Static ELF64 loader (embedded `build/init.elf`) |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
 | `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
@@ -322,10 +322,17 @@ A kernel companion thread (`kthread-B`) shares the timer quantum with
 empty endpoint and `SYS_ACCEL_WAIT` before the SoftNPU runs actually
 block and reschedule.
 
+`SYS_CLONE` (nr 10) starts a second user thread on `/init`'s PML4 /
+satp: own stack and register state, same USER window. That is **not**
+Linux `clone` and not `/probe` (a second ELF with its own aspace).
+The child prints `[init] user-thread share-aspace` and yields;
+`SYS_EXIT` is still guest-wide.
+
 PIE / `ET_DYN` is rejected (no relocator). RISC-V has no `/probe` in
 this cut. SoftNPU on RISC-V is the same in-kernel virtqueue; there is
 no PLIC.
 
-Host proof of the clone/walk contract lives in `core/src/aspace.rs`
-(`IdentityAs` for x86, `Sv39As` for RISC-V).
+Host proof of the aspace clone/walk contract lives in
+`core/src/aspace.rs` (`IdentityAs` for x86, `Sv39As` for RISC-V),
+including the shared-map case `SYS_CLONE` uses.
 QEMU prints `[mm] aspace isolate ok` after walking both CR3s.

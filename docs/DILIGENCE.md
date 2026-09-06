@@ -26,6 +26,7 @@ active track the site must match.
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
+| User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
 | RISC-V virt boot | S-mode + U-mode `/init` (no PLIC) | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
 | aarch64 virt boot | Thin EL1 port (no EL0) | `boot/aarch64/`, `make qemu-aarch64` |
 | Multiboot mmap → frames | Documented x86 subset (clip 16 MiB, cap 128 MiB); HAL fallback | `core/src/mmap.rs`, `kernel/src/mm/` |
