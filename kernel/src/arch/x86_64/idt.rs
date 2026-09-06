@@ -123,6 +123,7 @@ fn eoi(irq: u8) {
     outb(PIC1, 0x20);
 }
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct InterruptFrame {
     pub r15: u64,
@@ -150,11 +151,12 @@ pub struct InterruptFrame {
 }
 
 #[no_mangle]
-pub extern "C" fn isr_dispatch(frame: &InterruptFrame) {
+pub extern "C" fn isr_dispatch(frame: &mut InterruptFrame) {
     match frame.vec {
         32 => {
             irq::inc_ticks();
             eoi(0);
+            crate::task::on_timer(frame);
         }
         33 => {
             let _sc = inb(0x60);

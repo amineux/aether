@@ -55,16 +55,20 @@ qemu-system-x86_64 \
   -no-reboot -no-shutdown -m 128M
 ```
 
-You should see the trampoline enter long mode, then:
+You should see the trampoline enter long mode, a kernel self-check of the
+host-identical fabric demo, then ring-3 `/init` over `syscall`:
 
 ```
+[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000)
+[sched] kthread-B tick=…
 FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
   CUT BIND + HODGE FLOW CLASS ENFORCED
   TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
+  RING-3 /init VIA SYSCALL/SYSRET
 ```
 
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
-`make qemu` treats that as a clean run.
+`make qemu` treats that as a clean run. CI runs `make qemu-ci` (45s timeout).
 
 ## Architecture
 
@@ -124,22 +128,26 @@ boot/x86_64/     multiboot1 trampoline (32-bit → long mode) + linker scripts
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU backend
-kernel/          freestanding x86_64 kernel (mm, sched glue, IPC, caps, accel)
+kernel/          freestanding x86_64 kernel (mm, syscall, ELF, tasks)
+user/init/       ring-3 `/init` (static ELF64, embedded into the kernel)
 docs/            architecture, fabric, accel, security, roadmap
 ```
 
-The kernel is a **separate Cargo project** (`kernel/`) so `cargo test --workspace`
-stays on the host. `make qemu` builds it for `x86_64-unknown-none`.
+The kernel and `/init` are **separate Cargo projects** so
+`cargo test --workspace` stays on the host. `make qemu` builds both for
+`x86_64-unknown-none` and embeds the init ELF.
 
 ## What v0.1 is honest about
 
 - **Research prototype.** No IOMMU, no verified cap derivation tree, no real
-  silicon driver, no SMP, no ELF userspace.
+  silicon driver, no SMP.
 - **VirtIO-Accel is a protocol + software device**, not a tree in upstream QEMU.
   The SoftNPU runs in-kernel so the demo does not depend on a custom qemu.
-- **Init is a kernel-built-in task** that calls the syscall surface as functions.
-  Ring-3 + `syscall` is designed, not wired.
-- **Identity map, UP only.** Page-table walk exists; a second core does not.
+- **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
+  as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
+  Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
+- **Identity map, UP only.** User gets one USER 2 MiB page; a second core
+  does not. Preemption is PIT + a kernel companion thread.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the path toward something a silicon
 team could take into bring-up.

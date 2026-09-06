@@ -7,6 +7,7 @@ use aether_core::types::PhysAddr;
 
 const P: u64 = 1;
 const RW: u64 = 1 << 1;
+const US: u64 = 1 << 2;
 const PS: u64 = 1 << 7;
 
 #[derive(Clone, Copy, Debug)]
@@ -64,7 +65,65 @@ pub unsafe fn walk(va: u64) -> Option<Walk> {
             huge_2m: true,
         });
     }
-    None
+    let i1 = ((va >> 12) & 0x1FF) as usize;
+    let pt = (pde & 0x000F_FFFF_FFFF_F000) as *const u64;
+    let pte = core::ptr::read_volatile(pt.add(i1));
+    if pte & P == 0 {
+        return None;
+    }
+    let phys = (pte & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF);
+    Some(Walk {
+        pml4e,
+        pdpte,
+        pde,
+        phys: PhysAddr(phys),
+        huge_2m: false,
+    })
+}
+
+fn invlpg(va: u64) {
+    unsafe {
+        core::arch::asm!("invlpg [{0}]", in(reg) va, options(nostack, preserves_flags));
+    }
+}
+
+/// Set USER on PML4[0] and PDPT[0] so ring-3 can walk the low 1 GiB.
+/// Leaf pages stay supervisor-only until [`allow_user_2m`].
+pub fn allow_user_walk_low() {
+    unsafe {
+        let pml4 = (cr3() & !0xFFF) as *mut u64;
+        let pml4e = core::ptr::read_volatile(pml4);
+        core::ptr::write_volatile(pml4, pml4e | US);
+        let pdpt = (pml4e & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let pdpte = core::ptr::read_volatile(pdpt);
+        core::ptr::write_volatile(pdpt, pdpte | US);
+    }
+}
+
+/// Mark the 2 MiB page covering `va` user-accessible (identity map).
+pub fn allow_user_2m(va: u64) {
+    unsafe {
+        let pml4 = (cr3() & !0xFFF) as *mut u64;
+        let pml4e = core::ptr::read_volatile(pml4);
+        if pml4e & P == 0 {
+            return;
+        }
+        let pdpt = (pml4e & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let i3 = ((va >> 30) & 0x1FF) as usize;
+        let pdpte = core::ptr::read_volatile(pdpt.add(i3));
+        if pdpte & P == 0 || pdpte & PS != 0 {
+            return;
+        }
+        core::ptr::write_volatile(pdpt.add(i3), pdpte | US);
+        let pd = (pdpte & 0x000F_FFFF_FFFF_F000) as *mut u64;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let pde = core::ptr::read_volatile(pd.add(i2));
+        if pde & P == 0 {
+            return;
+        }
+        core::ptr::write_volatile(pd.add(i2), pde | US);
+        invlpg(va);
+    }
 }
 
 pub fn flags_rw() -> u64 {

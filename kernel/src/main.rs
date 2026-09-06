@@ -1,14 +1,17 @@
-//! Aether kernel entry. Built-in init exercises fabric + arena + accel.
+//! Aether kernel entry. Loads `/init` and drops to ring-3.
 
 #![no_std]
 #![no_main]
 
 mod arch;
 mod console;
+mod elfload;
 mod init;
 mod mm;
 mod sync;
 mod syscall;
+mod task;
+mod world;
 
 use core::panic::PanicInfo;
 
@@ -51,26 +54,39 @@ fn kmain() -> ! {
 
     mm::init();
     arch::idt::init();
+    arch::gdt::init();
+    arch::syscall::init();
     arch::timer::init();
+    task::init();
+    world::init();
 
     println!("[boot] UP timer armed (100 Hz); SMP AP bring-up is STUB");
-    println!("[boot] running built-in init (ELF loader is on the roadmap)");
     nl();
 
-    init::run_demo();
+    init::run_kernel_selfcheck();
 
-    nl();
-    println!("Aether idle. (research prototype -- halt loop)");
-    loop {
-        unsafe {
-            core::arch::asm!("hlt");
+    match elfload::load() {
+        Ok(entry) => {
+            task::spawn_kthread();
+            task::spawn_user(entry);
+            task::enter_user();
+        }
+        Err(e) => {
+            write_str("[boot] ELF load failed: ");
+            write_str(e);
+            crate::console::nl();
+            crate::arch::x86_64::io::outb(0xF4, 0x01);
+            loop {
+                unsafe {
+                    core::arch::asm!("hlt");
+                }
+            }
         }
     }
 }
 
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    // Avoid core::fmt in the panic path.
     write_str("KERNEL PANIC\r\n");
     let _ = write_u64;
     loop {
