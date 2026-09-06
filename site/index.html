@@ -471,6 +471,7 @@
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
                 <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
                 <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
+                <li>In-kernel ramfs — loader <code>open</code>s <code>/init</code> (and x86 <code>/probe</code>); seeded from embedded blobs; not POSIX / virtio-blk</li>
                 <li>Higher-half kernel map — <code>ffffffff80000000+PA</code> on x86; identity 4 GiB kept for SoftNPU DMA (not KASLR / KPTI / PCID / COW)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
@@ -503,7 +504,7 @@
               <ul>
                 <li>KPTI / KASLR / PCID / COW — HH subset landed; identity 4 GiB is an intentional DMA window</li>
                 <li>Per-task cap tables — World still shares one <code>CapTable</code>; no <code>SYS_REVOKE</code></li>
-                <li>ELF past this subset — <code>/probe</code> exists; no PIE, no ramfs</li>
+                <li>ELF past this subset — ramfs landed for <code>/init</code> + <code>/probe</code>; no PIE, no virtio-blk</li>
               </ul>
             </div>
           </article>
@@ -562,7 +563,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init, in-kernel ramfs for /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
               </div>
             </div>
             <div class="proof">

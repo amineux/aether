@@ -104,12 +104,16 @@ pub extern "C" fn kmain() -> ! {
 
     #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     {
-        match elfload::load_init() {
-            Ok(init) => {
+        match elfload::mount_boot_ramfs().and_then(|fs| {
+            elfload::load_init(&fs).map(|init| {
                 #[cfg(target_arch = "x86_64")]
-                let probe = elfload::load_probe().ok();
+                let probe = elfload::load_probe(&fs).ok();
                 #[cfg(target_arch = "riscv64")]
                 let probe: Option<elfload::LoadedImage> = None;
+                (init, probe)
+            })
+        }) {
+            Ok((init, probe)) => {
                 let probe_cr3 = probe.as_ref().map(|p| p.cr3);
                 crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
                 task::spawn_kthread();
