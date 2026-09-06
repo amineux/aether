@@ -862,9 +862,10 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   `SYS_MMAP` landed.
 
 The public site (`site/`) is a research leave-behind, not a vendor
-pitch. Its HAL-path and roadmap copy should match this active track
-and [DILIGENCE.md](DILIGENCE.md) non-claims — no partnership, no
-booked silicon bring-up, no manufacturing climax.
+pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
+not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
+match this active track and [DILIGENCE.md](DILIGENCE.md) non-claims
+— no partnership, no booked silicon bring-up, no manufacturing climax.
 
 ## What we will not claim
 
