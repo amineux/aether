@@ -17,6 +17,7 @@ make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # same aether_core self-check on QEMU virt (thin S-mode port)
+make qemu-aarch64 # same self-check on QEMU virt (thin EL1 port, no EL0)
 ```
 
 ## Why this exists
@@ -94,6 +95,24 @@ bank color, Laplacian). This is a **thin port**: kmain + serial +
 `aether_core`, not ring-3. Success writes `0x5555` to the virt test
 finisher.
 
+**aarch64 virt** (`qemu-system-aarch64`, `rustup target add aarch64-unknown-none`):
+
+```bash
+make qemu-aarch64
+```
+
+```
+qemu-system-aarch64 \
+  -machine virt,gic-version=2 -cpu cortex-a72 -m 128M -nographic \
+  -no-reboot -nic none -kernel build/aether-aarch64.elf -semihosting
+```
+
+QEMU loads the ELF at `0x40080000`. The trampoline identity-maps
+4 GiB (TTBR0, 1 GiB blocks), then the same kernel self-check runs.
+This is a **thin port**: kmain + serial + `aether_core`, not EL0.
+Success is Angel semihosting `SYS_EXIT`. Not a product-class second
+architecture.
+
 ## Architecture
 
 ```mermaid
@@ -150,10 +169,11 @@ flowchart TB
 ```
 boot/x86_64/     multiboot1 trampoline (32-bit → long mode) + linker scripts
 boot/riscv64/    OpenSBI S-mode trampoline + Sv39 linker script
+boot/aarch64/    QEMU virt EL1 trampoline + TTBR0 linker script
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor
-kernel/          freestanding kernel (x86_64 ring-3 + riscv64 thin port)
+kernel/          freestanding kernel (x86_64 ring-3 + riscv64/aarch64 thin ports)
 user/init/       ring-3 `/init` (static ELF64, embedded into the kernel)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
 docs/            architecture, fabric, accel, security, diligence, roadmap
@@ -182,8 +202,10 @@ The kernel and `/init` are **separate Cargo projects** so
   (no higher-half / KPTI). SMP is a QEMU `-smp 2` smoke; APs do not
   run `/init`. `make qemu-smp` proves two harts; `make qemu` stays
   uniprocessor.
-- **RISC-V is a thin port.** `make qemu-riscv` reaches kmain and the
-  fabric self-check. No ring-3, no PLIC virtio. aarch64 is not started.
+- **RISC-V and aarch64 are thin ports.** `make qemu-riscv` and
+  `make qemu-aarch64` reach kmain and the fabric self-check. No
+  userspace, no virtio. Neither is a product-class second
+  architecture.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the path toward something a silicon
 team could take into bring-up.

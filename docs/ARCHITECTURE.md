@@ -136,6 +136,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
 | `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`) |
 | `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 walk |
+| `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/space.rs` | Typed `MemorySpace` + `(place, local)` |
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
@@ -179,19 +180,59 @@ Physical sketch (128 MiB guest, RAM at `0x80000000`):
 | `0x80200000` | Kernel `.text` (OpenSBI payload) |
 | `0x81000000–0x88000000` | Frame allocator window |
 
-No PLIC virtio, no `sret` userspace, no FDT mmap parser. aarch64 is
-not started.
+No PLIC virtio, no `sret` userspace, no FDT mmap parser.
+
+## Boot (aarch64 / QEMU virt)
+
+Thin v0.1 of the port — **kmain + serial + `aether_core` self-check**,
+not EL0. Same fabric, map API, bank-color, and CDT checks. New
+trampoline only. **Not** a product-class second kernel.
+
+```
+QEMU -machine virt,gic-version=2 -cpu cortex-a72 -kernel build/aether-aarch64.elf
+        │  -semihosting -nic none; x0=dtb; EL1 (or EL2 → EL1 in the trampoline)
+        ▼
+boot/aarch64/trampoline.S
+        │  park extra PEs, PL011 hello
+        │  TTBR0 identity-map 4 GiB (1 GiB blocks)
+        ▼
+kernel::kmain  (Rust, aarch64-unknown-none)
+        │  UART, frames, heap, VBAR, GICv2 + CNTV
+        ▼
+init::run_kernel_selfcheck   (same aether_core path as x86)
+        │  Angel SYS_EXIT 0 on success
+        ▼
+wfi idle
+```
+
+```
+make qemu-aarch64
+```
+
+Physical sketch (128 MiB guest, RAM at `0x40000000`):
+
+| Range | Use |
+| --- | --- |
+| `0x08000000` | GICv2 distributor |
+| `0x08010000` | GICv2 CPU interface |
+| `0x09000000` | PL011 UART |
+| `0x40080000` | Kernel `.text` |
+| `0x41000000–0x48000000` | Frame allocator window |
+
+No EL0, no virtqueue, no GICv3, no FDT mmap parser. Extra PEs stay
+parked.
 
 ## HAL ports
 
-RISC-V is the HAL-split test:
+RISC-V and aarch64 are the HAL-split test:
 
 1. New `boot/<arch>` + linker script.
 2. Implement `kernel/src/arch/<arch>`: console, timer, irq ack, page tables.
 3. Keep `aether-core` / `aether-hal` unchanged.
 
-The fabric does not encode x86. aarch64 would repeat this recipe
-(UART + GIC timer + TTBR). Ring-3 / virtqueue stay x86 until a later cut.
+The fabric does not encode x86. aarch64 repeated the RISC-V recipe
+(PL011 + GIC timer + TTBR). Ring-3 / virtqueue stay x86 until a later
+cut. Neither thin port is product-class.
 
 ## SMP
 
@@ -213,7 +254,8 @@ What this cut does:
 What it does not do:
 
 - APs never enter ring-3. `/init` and `kthread-B` stay BSP-only.
-- No more than one AP (APIC ID 1). RISC-V extra harts stay parked.
+- No more than one AP (APIC ID 1). RISC-V extra harts and aarch64 extra
+  PEs stay parked.
 - Not a Linux-style CFS, not a coherence claim, not a benchmark.
 
 ## Userspace

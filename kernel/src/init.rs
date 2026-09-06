@@ -140,4 +140,6 @@ pub fn run_kernel_selfcheck() {
     println!("[kcheck] boot demo all_ok -- loading /init");
     #[cfg(target_arch = "riscv64")]
     println!("[kcheck] boot demo all_ok -- RISC-V thin port (no /init)");
+    #[cfg(target_arch = "aarch64")]
+    println!("[kcheck] boot demo all_ok -- aarch64 thin port (no EL0)");
 }

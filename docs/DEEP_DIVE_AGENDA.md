@@ -17,7 +17,7 @@ No NDA draft, no performance slide.
 | Time | Block | Owner-side goal |
 | --- | --- | --- |
 | 0:00–0:05 | Frame | Aether is a research prototype. No partnership claim. We want to know if the HAL contract is one they would implement. |
-| 0:05–0:20 | Live demo | Serial boot + fabric banner on x86_64, then RISC-V. Host tests on the same `run_boot_demo()`. |
+| 0:05–0:20 | Live demo | Serial boot + fabric banner on x86_64, then RISC-V / aarch64. Host tests on the same `run_boot_demo()`. |
 | 0:20–0:40 | HAL walkthrough | `AccelDevice`, `AccelJobDesc`, SoftNPU vs a real doorbell. Where their driver would sit. |
 | 0:40–0:55 | Caps, spaces, cuts | Tenant isolation, `(place, local)`, SpectralCut + AffinityLaplacian, Hodge refuse. |
 | 0:55–1:10 | Compiler boundary | Why there is no in-kernel graph IR. PJRT/IREE-shaped nouns. Who owns fusion. |
@@ -32,7 +32,8 @@ the open questions.
 Machine: any `x86_64` Linux with rustc 1.83+, `qemu-system-x86_64`,
 GNU `as`/`ld`/`objcopy`, `rustup target add x86_64-unknown-none`.
 RISC-V also needs `qemu-system-riscv64` and
-`rustup target add riscv64gc-unknown-none-elf`.
+`rustup target add riscv64gc-unknown-none-elf`. aarch64 needs
+`qemu-system-aarch64` and `rustup target add aarch64-unknown-none`.
 
 ```bash
 # 1. Same invariants on the host (no QEMU).
@@ -43,11 +44,15 @@ make qemu
 
 # 3. RISC-V thin port. Same self-check; OpenSBI chatter first. No /init.
 make qemu-riscv
+
+# 4. aarch64 thin port. Same self-check; QEMU virt EL1. No EL0.
+make qemu-aarch64
 ```
 
 What to point at on the serial:
 
-1. Trampoline line (`multiboot1` or `riscv64, OpenSBI S-mode`).
+1. Trampoline line (`multiboot1`, `riscv64, OpenSBI S-mode`, or
+   `aarch64, QEMU virt EL1`).
 2. `[fabric] IPC ok  arena ok … isolation ok`.
 3. `[cut] bind SpectralCut … CrossCut refuse`.
 4. `[hodge] … harmonic-tree REFUSE ok`.
@@ -84,7 +89,8 @@ Files, in this order:
 5. `drivers/src/fakecp.rs` — software CP: packed packet + Soft SMMU + IRQ/fence.
 6. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
 7. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
-8. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` — evidence
+8. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` and
+   `boot/aarch64/trampoline.S` + `kernel/src/arch/aarch64/` — evidence
    the HAL split is real: new UART/timer/page tables, same core.
 
 Questions to ask *them* while the board is up:
@@ -129,7 +135,7 @@ Questions to ask *them* while the board is up:
 ## What we will not say in the room
 
 - That we have a design win, a joint roadmap, or a shared customer.
-- That RISC-V ring-3 is done.
+- That RISC-V ring-3 or aarch64 EL0 is done.
 - That SoftNPU predicts their silicon latency.
 - That seL4 proofs are “in progress.”
 

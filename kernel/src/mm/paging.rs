@@ -6,14 +6,20 @@
 //! USER only on that task's 2 MiB ELF window, other known user windows
 //! unmapped. Not a higher-half / KPTI / POSIX MM.
 
+#[cfg(target_arch = "x86_64")]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
+#[cfg(target_arch = "x86_64")]
 use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
 use aether_core::types::PhysAddr;
+#[cfg(target_arch = "x86_64")]
 use aether_core::{USER_IMAGE_BASE, USER_PROBE_BASE};
 
+#[cfg(target_arch = "x86_64")]
 use crate::console::{self, write_hex, write_str, write_u64};
+#[cfg(target_arch = "x86_64")]
 use crate::mm::frame;
+#[cfg(target_arch = "x86_64")]
 use crate::println;
 
 #[cfg(target_arch = "x86_64")]
@@ -25,9 +31,13 @@ const US: u64 = 1 << 2;
 #[cfg(target_arch = "x86_64")]
 const PS: u64 = 1 << 7;
 
+#[cfg(target_arch = "x86_64")]
 static KERNEL_CR3: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "x86_64")]
 static SMAP_ON: AtomicBool = AtomicBool::new(false);
+#[cfg(target_arch = "x86_64")]
 static SMEP_ON: AtomicBool = AtomicBool::new(false);
+#[cfg(target_arch = "x86_64")]
 static CR3_SWITCH_LOGS: AtomicU32 = AtomicU32::new(0);
 
 #[derive(Clone, Copy, Debug)]
@@ -504,6 +514,41 @@ pub unsafe fn walk(va: u64) -> Option<Walk> {
     if pte & PTE_LEAF != 0 {
         let ppn = (pte >> 10) & 0x0FFF_FFFF_FFFF;
         let phys = (ppn << 12) | (va & 0x3FFF_FFFF);
+        return Some(Walk {
+            pml4e: pte,
+            pdpte: 0,
+            pde: 0,
+            phys: PhysAddr(phys),
+            huge_2m: true,
+            user: false,
+        });
+    }
+    None
+}
+
+#[cfg(target_arch = "aarch64")]
+const PTE_VALID: u64 = 1;
+#[cfg(target_arch = "aarch64")]
+const PTE_TABLE: u64 = 1 << 1;
+
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn ttbr0() -> u64 {
+    let v: u64;
+    core::arch::asm!("mrs {v}, ttbr0_el1", v = out(reg) v, options(nomem, nostack));
+    v
+}
+
+/// 4K / T0SZ=25 walk. A 1 GiB L1 identity block is `huge_2m = true`.
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn walk(va: u64) -> Option<Walk> {
+    let root = (ttbr0() & 0x0000_FFFF_FFFF_F000) as *const u64;
+    let i1 = ((va >> 30) & 0x1FF) as usize;
+    let pte = core::ptr::read_volatile(root.add(i1));
+    if pte & PTE_VALID == 0 {
+        return None;
+    }
+    if pte & PTE_TABLE == 0 {
+        let phys = (pte & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
         return Some(Walk {
             pml4e: pte,
             pdpte: 0,

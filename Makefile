@@ -26,9 +26,20 @@ QEMU_RV     := qemu-system-riscv64
 QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
                  -no-reboot -kernel $(RV_ELF)
 
-.PHONY: all kernel kernel-riscv loader user-init user-probe qemu qemu-riscv \
-        qemu-debug qemu-ci qemu-riscv-ci qemu-smp qemu-smp-ci \
-        test test-host target target-riscv clean help
+AA_TARGET   := aarch64-unknown-none
+AA_KERNEL   := $(KERNEL_DIR)/target/$(AA_TARGET)/release/aether
+AA_ELF      := $(BUILD)/aether-aarch64.elf
+QEMU_AA     := qemu-system-aarch64
+# QEMU virt, GICv2 + cortex-a72, PL011 UART on stdio. Semihosting is
+# the clean exit path (Angel SYS_EXIT); CI also greps the fabric banner.
+QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
+                 -nographic -no-reboot -nic none -kernel $(AA_ELF) \
+                 -semihosting
+
+.PHONY: all kernel kernel-riscv kernel-aarch64 loader user-init user-probe \
+        qemu qemu-riscv qemu-aarch64 \
+        qemu-debug qemu-ci qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
+        test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
 
@@ -37,10 +48,12 @@ help:
 	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
+	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
+	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps the fabric banner"
 	@echo "  make clean"
 
 target:
@@ -48,6 +61,9 @@ target:
 
 target-riscv:
 	rustup target add $(RV_TARGET)
+
+target-aarch64:
+	rustup target add $(AA_TARGET)
 
 test: test-host
 
@@ -175,6 +191,38 @@ qemu-riscv-ci: $(RV_ELF)
 		exit 0; \
 	fi; \
 	echo "qemu-riscv-ci: demo banner missing (qemu exit $$ec)"; \
+	exit 1
+
+kernel-aarch64: target-aarch64
+	cd $(KERNEL_DIR) && cargo build --release --target $(AA_TARGET)
+	mkdir -p $(BUILD)
+	cp -f $(AA_KERNEL) $(AA_ELF)
+	@echo "aarch64 kernel $$(wc -c < $(AA_ELF)) bytes"
+
+$(AA_ELF): kernel-aarch64
+
+# Angel SYS_EXIT 0 via -semihosting; CI greps the same banners as RISC-V.
+qemu-aarch64: $(AA_ELF)
+	$(QEMU_AA) $(QEMU_AA_FLAGS); \
+	ec=$$?; \
+	if [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; then exit 0; else exit $$ec; fi
+
+qemu-aarch64-ci: $(AA_ELF)
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/aarch64-serial.log
+	set +e; \
+	timeout --signal=KILL 25s $(QEMU_AA) $(QEMU_AA_FLAGS) \
+		> $(BUILD)/aarch64-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/aarch64-serial.log; \
+	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log; then \
+		echo "qemu-aarch64-ci: demo ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-aarch64-ci: demo banner missing (qemu exit $$ec)"; \
 	exit 1
 
 clean:

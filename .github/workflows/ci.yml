@@ -49,3 +49,21 @@ jobs:
 
       - name: RISC-V virt demo
         run: make qemu-riscv-ci
+
+  qemu-aarch64:
+    name: make qemu-aarch64-ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install rustup target
+        run: rustup target add aarch64-unknown-none
+
+      - name: Install QEMU (aarch64)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends qemu-system-arm
+
+      - name: aarch64 virt demo
+        run: make qemu-aarch64-ci
