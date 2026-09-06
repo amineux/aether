@@ -99,6 +99,13 @@ pub fn init() {
     crate::println!("[boot] GDT reloaded (user CS/DS DPL=3) + TSS");
 }
 
+/// APs share the BSP GDT. Do not `ltr` — one TSS is BSP-only (no ring-3 on APs).
+pub fn load_ap() {
+    unsafe {
+        gdt_load(core::ptr::addr_of!(GDTR));
+    }
+}
+
 pub fn set_rsp0(rsp0: u64) {
     unsafe {
         core::ptr::write_unaligned(core::ptr::addr_of_mut!(TSS.rsp0), rsp0);

@@ -296,6 +296,27 @@ impl TileScheduler {
     pub fn pick_or_steal(&mut self, tile: TileId) -> Option<Job> {
         self.pick(tile).or_else(|| self.steal(tile))
     }
+
+    /// Lockstep stand-in for two CPU harts sharing one ready pool.
+    /// Returns `(jobs_on_a, jobs_on_b)`.
+    pub fn drive_two_cpu_tiles(&mut self, a: TileId, b: TileId) -> (usize, usize) {
+        let mut na = 0usize;
+        let mut nb = 0usize;
+        loop {
+            let ja = self.pick_or_steal(a);
+            let jb = self.pick_or_steal(b);
+            if ja.is_none() && jb.is_none() {
+                break;
+            }
+            if ja.is_some() {
+                na += 1;
+            }
+            if jb.is_some() {
+                nb += 1;
+            }
+        }
+        (na, nb)
+    }
 }
 
 impl Default for TileScheduler {
@@ -441,6 +462,31 @@ mod tests {
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.id, 11);
+    }
+
+    #[test]
+    fn two_harts_drive_pick_or_steal() {
+        let mut s = setup();
+        for id in 1..=6 {
+            s.enqueue(Job {
+                id,
+                kind: JobKind::Thread,
+                tile_hint: None,
+                bank_affinity: None,
+                priority: 4,
+                deadline_ticks: None,
+                tenant: 1,
+                cut_id: None,
+                phase: Phase::Compute,
+                partition_id: None,
+                fence_id: None,
+                arena_color: None,
+            });
+        }
+        let (c0, c1) = s.drive_two_cpu_tiles(TileId(0), TileId(1));
+        assert!(c0 >= 1 && c1 >= 1, "both CPU tiles must run work, got {c0}+{c1}");
+        assert_eq!(c0 + c1, 6);
+        assert_eq!(s.ready_count(), 0);
     }
 
     #[test]

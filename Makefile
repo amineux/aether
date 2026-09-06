@@ -23,8 +23,8 @@ QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
                  -no-reboot -kernel $(RV_ELF)
 
 .PHONY: all kernel kernel-riscv loader user-init qemu qemu-riscv \
-        qemu-debug qemu-ci qemu-riscv-ci test test-host target target-riscv \
-        clean help
+        qemu-debug qemu-ci qemu-riscv-ci qemu-smp qemu-smp-ci \
+        test test-host target target-riscv clean help
 
 all: $(LOADER_ELF)
 
@@ -34,6 +34,8 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot"
+	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
+	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
 	@echo "  make clean"
 
@@ -88,6 +90,32 @@ qemu-ci: $(LOADER_ELF)
 
 qemu-debug: $(LOADER_ELF)
 	$(QEMU) $(QEMU_FLAGS) -s -S
+
+# SMP smoke: same guest as qemu-ci plus -smp 2. UP qemu-ci is unchanged.
+QEMU_SMP_FLAGS := $(QEMU_FLAGS) -smp 2
+
+qemu-smp: $(LOADER_ELF)
+	$(QEMU) $(QEMU_SMP_FLAGS); \
+	ec=$$?; \
+	if [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; then exit 0; else exit $$ec; fi
+
+qemu-smp-ci: $(LOADER_ELF)
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/smp-serial.log
+	set +e; \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_SMP_FLAGS) \
+		> $(BUILD)/smp-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/smp-serial.log; \
+	if grep -q "\\[smp\\] AP 1 online" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[smp\\] SMP smoke ok" $(BUILD)/smp-serial.log \
+	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
+		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-smp-ci: SMP/demo banner missing (qemu exit $$ec)"; \
+	exit 1
 
 kernel-riscv: target-riscv
 	cd $(KERNEL_DIR) && cargo build --release --target $(RV_TARGET)

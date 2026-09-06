@@ -90,13 +90,31 @@ Hardware SMMU (program a real SID / PT walk on an IOMMU) is still a
 stub. QEMU does not emulate an SMMU for this path. Bank QoS beyond
 existing admit/refuse is out of scope.
 
+## Year-1 H2: SMP smoke (this cut)
+
+Landed on x86_64 QEMU only — **not** a product SMP kernel, **not**
+per-task isolation:
+
+- `smp_start_aps` does INIT-SIPI to APIC ID 1. Trampoline lives at
+  `0x8000`. `make qemu-smp` / `make qemu-smp-ci` use `-smp 2`.
+- Per-CPU `gs` (`IA32_GS_BASE` → `PerCpu { cpu_id, ticks }`).
+- One fixed IPI (vector 48) so the AP's local tick moves.
+- Work-steal: BSP `pick` + AP `steal` on the existing `TileScheduler`
+  ready pool. Serial: `[smp] SMP smoke ok (2 harts)`. Host test:
+  `drive_two_cpu_tiles`.
+- APs stay in kernel mode. `/init` + SoftNPU virtqueue stay BSP-only.
+  `make qemu-ci` is still UP and must keep working.
+
+Per-task PML4 / SMEP / SMAP is the follow-up (same `arch/x86_64` +
+`task.rs` files — do not combine). RISC-V extra harts stay parked.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
 
 | Item | Where | Intent |
 | --- | --- | --- |
-| SMP AP bring-up | `kernel/src/arch/irq.rs` `smp_start_aps` | INIT-SIPI, per-CPU `gs`, IPI |
+| Per-task PML4 / SMEP / SMAP | `kernel/src/{mm,task,elfload}.rs` | Follow-up to SMP; do not mix in the same PR |
 | F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | Stop assuming 128 MiB @ 16 MiB |
 | Higher-half + KASLR | linker / trampoline | Standard kernel hardening |
@@ -127,7 +145,9 @@ kernel thread queue sleeps.
    table is silicon.
 3. **RISC-V userspace.** Same `aether-core`, `sret` + page-table isolate.
    Only worth it after the x86 ABI stays stable.
-4. **Per-task page tables.** Isolation becomes a hardware fact.
+4. **Per-task page tables.** Isolation becomes a hardware fact. Sequence
+   after SMP (this cut) so `arch/x86_64` + `task.rs` are not thrashed
+   twice at once.
 5. **Cap CDT / revoke.** Descendants die with the parent.
 6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
@@ -135,18 +155,18 @@ kernel thread queue sleeps.
 
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
 
-- **Active (Falsifier revision):** Soft SMMU SIDs on the AccelDevice
-  map path, one real-shaped second AccelDevice (concrete command packet
-  + fence/IRQ), ABI stay stable. Custom QEMU virtio-accel, SMP, ELF
-  beyond `/init`, Laplacian expansion, and aarch64 are deferred.
+- **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
+  and SMP smoke (this cut) are landed. ABI stays stable. Custom QEMU
+  virtio-accel, per-task PML4, Laplacian expansion, and aarch64 remain
+  deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   cap CDT-as-calendar, and a Y2 bring-up climax are killed as
   milestones.
 
-Soft SMMU (PR #7) and SoftCommandProcessor (this cut) are **done** as
-software models. That file's "not done" line is stale for those two.
-Custom QEMU virtio-accel, SMP, and the other stubs above are still open.
+Soft SMMU (PR #7), SoftCommandProcessor (PR #8), and SMP smoke (this
+cut) are **done** as research-prototype slices. Custom QEMU
+virtio-accel, per-task PML4, and the other stubs above are still open.
 
 ## What we will not claim
 

@@ -19,8 +19,10 @@ revision 2026-09-06. Filed on main via PR.
 ([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
 only — do not schedule Kernel work against it. Soft SMMU (PR #7) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
-**done** as software models. Custom QEMU virtio-accel, SMP, and the
-other stubs remain open (see [ROADMAP.md](ROADMAP.md)).
+**done** as software models. SMP smoke (INIT-SIPI + per-CPU `gs` +
+two-hart work-steal) is **done** as a QEMU `-smp 2` slice. Custom QEMU
+virtio-accel, per-task PML4, and the other stubs remain open (see
+[ROADMAP.md](ROADMAP.md)).
 
 ### KEEP / ACTIVE Y1
 
@@ -59,8 +61,8 @@ After AccelDevice bites a real-shaped path — not before:
 - Custom QEMU virtio-accel (`-device` / virtio-mmio DMA of the
   [ACCEL.md](ACCEL.md) BAR layout). In-kernel BAR + SoftNPU remains
   the honest demo.
-- SMP (`smp_start_aps` INIT-SIPI, per-CPU `gs`, work-steal).
 - ELF beyond `/init` (per-task PML4, SMEP/SMAP, second user binary).
+  SMP smoke is landed; do **not** mix PML4 into that PR.
 - Laplacian expansion (n≤32 placement; AffinityLaplacian in sched).
 - aarch64 (thin HAL after the x86 ABI is stable).
 
@@ -71,7 +73,9 @@ After AccelDevice bites a real-shaped path — not before:
 2. Soft SMMU SIDs on the AccelDevice path
 3. Second AccelDevice software CP with a real command packet (not
    `PartnerNpuStub` enrichment theater)
-4. Optional virtio-accel / MicroPerceptron interop later
+4. SMP smoke (INIT-SIPI, per-CPU `gs`, two-hart work-steal) — **this cut**
+5. Optional virtio-accel / MicroPerceptron interop later
+6. Per-task PML4 after SMP, not in the same PR
 
 ### Active file touch map
 
@@ -80,9 +84,11 @@ After AccelDevice bites a real-shaped path — not before:
 | Soft SMMU SIDs | `core/src/iommu.rs`, `drivers/src/{mmio,softnpu}.rs`, tests under `core/` |
 | Second software CP | `hal/`, `drivers/` (new backend, not partner-stub paint), `docs/ACCEL.md` |
 | Cross-cutting | this file, ROADMAP status rows, CI only if a new host test target appears |
+| SMP smoke | `kernel/src/arch/{irq,x86_64/{smp,cpu,apic,idt}}.rs`, `Makefile`, `qemu-smp-ci` |
 
-Do not open `kernel/src/arch/`, `boot/`, SMP, CXL, or CDT PRs on this
-track.
+The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
+That gate opened after AccelDevice (PR #8). SMP smoke is the first
+arch PR on the revised track. Still do not open CXL or CDT PRs here.
 
 ---
 
@@ -119,8 +125,9 @@ above override what Kernel actually sequences. Criteria below are
    (can still be software) with distinct backend id; both pass
    probe/submit/poll/map contract tests.
 2. SMP: `smp_start_aps` does INIT-SIPI (or QEMU multi-`-smp` bring-up);
-   per-CPU `gs`/tick; work-steal driven by ≥2 harts; `make qemu` SMP
-   smoke.
+   per-CPU `gs`/tick; work-steal driven by ≥2 harts; `make qemu-smp`
+   smoke. **Landed** as a QEMU `-smp 2` slice (APs kernel-only; not a
+   product scheduler).
 3. ELF userspace maturity: per-task PML4 (or documented subset) +
    SMEP/SMAP on x86; `/init` still static ELF; optional second user
    binary; no PIE required.

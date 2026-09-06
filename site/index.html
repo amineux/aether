@@ -493,7 +493,7 @@
               <h3>Production-shaped HAL</h3>
               <ul>
                 <li>HAL shaped for 1–2 NPU/GPU command processors — bring-up <em>with</em> partners</li>
-                <li>SMP (INIT-SIPI, per-CPU state; work-steal already exists as a structure)</li>
+                <li>SMP smoke (QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only)</li>
                 <li>ELF userspace maturity — past a single embedded <code>/init</code></li>
               </ul>
             </div>
@@ -546,7 +546,7 @@
   RING-3 /init VIA SYSCALL/SYSRET</span>
 
 Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span>
-CI: cargo test + qemu-ci + qemu-riscv-ci</pre>
+CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci</pre>
           </div>
           <div class="proof-list" data-reveal data-d="2">
             <div class="proof">
@@ -567,7 +567,7 @@ CI: cargo test + qemu-ci + qemu-riscv-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). No SMP. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
               </div>
             </div>
             <div class="proof">

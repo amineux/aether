@@ -1,4 +1,4 @@
-//! Interrupt flag helpers and the UP tick counter.
+//! Interrupt flag helpers, the global PIT tick counter, and SMP entry.
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -60,10 +60,40 @@ pub fn ticks() -> u64 {
 }
 
 pub fn inc_ticks() -> u64 {
-    TICKS.fetch_add(1, Ordering::Relaxed) + 1
+    let n = TICKS.fetch_add(1, Ordering::Relaxed) + 1;
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::cpu::inc_local_ticks();
+    n
 }
 
-/// STUB: APIC INIT-SIPI-SIPI + per-CPU `gs` / RISC-V `tp`. UP only.
+/// Bring up APIC ID 1 via INIT-SIPI when QEMU `-smp 2` (or more) is present.
+/// Times out and stays UP otherwise. RISC-V extra harts stay parked.
+#[allow(dead_code)]
 pub fn smp_start_aps() {
-    // STUB: no AP bring-up
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::smp::start_aps();
+}
+
+#[allow(dead_code)]
+pub fn ncpus() -> u32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::arch::x86_64::cpu::ncpus()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        1
+    }
+}
+
+#[allow(dead_code)]
+pub fn cpu_id() -> u32 {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::arch::x86_64::cpu::id()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        0
+    }
 }
