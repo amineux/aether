@@ -49,7 +49,7 @@ pub unsafe fn cr3() -> u64 {
 
 #[cfg(target_arch = "x86_64")]
 pub fn capture_kernel_cr3() {
-    let v = unsafe { cr3() } & !0xFFF;
+    let v = unsafe { cr3() & !0xFFF };
     KERNEL_CR3.store(v, Ordering::Release);
 }
 
@@ -57,7 +57,7 @@ pub fn capture_kernel_cr3() {
 pub fn kernel_cr3() -> u64 {
     let v = KERNEL_CR3.load(Ordering::Acquire);
     if v == 0 {
-        unsafe { cr3() } & !0xFFF
+        unsafe { cr3() & !0xFFF }
     } else {
         v
     }
@@ -74,7 +74,7 @@ pub fn load_cr3(val: u64) {
 #[cfg(target_arch = "x86_64")]
 pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
     let want = if next == 0 { kernel_cr3() } else { next } & !0xFFF;
-    let cur = unsafe { cr3() } & !0xFFF;
+    let cur = unsafe { cr3() & !0xFFF };
     if cur == want {
         return;
     }

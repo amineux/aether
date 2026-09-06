@@ -14,8 +14,6 @@ pub static PROBE_ELF: &[u8] = include_bytes!(env!("AETHER_PROBE_ELF"));
 pub struct LoadedImage {
     pub entry: u64,
     pub cr3: u64,
-    pub base: u64,
-    pub end: u64,
 }
 
 fn load_into(elf: &[u8], base: u64, end: u64, name: &str) -> Result<u64, &'static str> {
@@ -57,27 +55,12 @@ pub fn load_init() -> Result<LoadedImage, &'static str> {
     let entry = load_into(INIT_ELF, USER_IMAGE_BASE, USER_IMAGE_END, "/init")?;
     let cr3 = paging::clone_user_aspace(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE])
         .ok_or("PML4 clone failed for /init")?;
-    Ok(LoadedImage {
-        entry,
-        cr3,
-        base: USER_IMAGE_BASE,
-        end: USER_IMAGE_END,
-    })
+    Ok(LoadedImage { entry, cr3 })
 }
 
 pub fn load_probe() -> Result<LoadedImage, &'static str> {
     let entry = load_into(PROBE_ELF, USER_PROBE_BASE, USER_PROBE_END, "/probe")?;
     let cr3 = paging::clone_user_aspace(USER_PROBE_BASE, USER_PROBE_END, &[USER_IMAGE_BASE])
         .ok_or("PML4 clone failed for /probe")?;
-    Ok(LoadedImage {
-        entry,
-        cr3,
-        base: USER_PROBE_BASE,
-        end: USER_PROBE_END,
-    })
-}
-
-/// Back-compat name used by older comments: load `/init` only.
-pub fn load() -> Result<u64, &'static str> {
-    load_init().map(|i| i.entry)
+    Ok(LoadedImage { entry, cr3 })
 }
