@@ -411,10 +411,10 @@ Landed as a **documented subset**, not virtio-mmio, not a QEMU
 - SoftNPU stays the **in-kernel AccelMmio BAR** (path B; same
   frozen offsets). Full virtio-mmio is still open.
 - Software doorbell: after `AccelDevice::submit` kicks the BAR,
-  the kernel raises UART0 THRE → PLIC source 10 (plus SSIP as a
-  second real trap). The SEI handler claims source 10, acks THRE,
-  and `World::run_pending_accel` services the same used ring the
-  x86 kthread poll path does.
+  the kernel raises UART0 THRE → PLIC source 10. The SEI handler
+  claims source 10, acks THRE, and `World::run_pending_accel`
+  services the same used ring the x86 kthread poll path does.
+  SSIP remains enabled as a spare trap; it is not the doorbell.
 - `make qemu-riscv` / `make qemu-riscv-ci` greps
   `[boot] PLIC hart0 S-mode`,
   `[plic] claim irq=10 SoftNPU used-ring`, and
