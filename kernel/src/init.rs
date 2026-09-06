@@ -102,6 +102,11 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.sparsify_ok));
     console::nl();
 
+    write_str("[accel] SoftNPU F32/F16 soft-float 2x2 ");
+    write_str(flag(report.dtype_ok));
+    write_str(" (software IEEE; not a tensor ISA)");
+    console::nl();
+
     {
         let g = AffinityGraph::qemu_package();
         let lap = AffinityLaplacian::from_graph(&g);

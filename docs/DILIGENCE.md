@@ -19,7 +19,7 @@ active track the site must match.
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
 | OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
-| Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR) | `hal/`, `drivers/`, `core/src/accel.rs` |
+| Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |

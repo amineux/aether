@@ -2,7 +2,7 @@
 //!
 //! The kernel prints this report; host tests assert the same path.
 
-use crate::accel::{AccelJobDesc, AccelOp, SliceMem, SoftNpu};
+use crate::accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, SliceMem, SoftNpu};
 use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
@@ -40,6 +40,7 @@ pub struct DemoReport {
     pub revoke_ok: bool,
     pub opkernel_ok: bool,
     pub sparsify_ok: bool,
+    pub dtype_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -67,6 +68,7 @@ impl DemoReport {
             && self.revoke_ok
             && self.opkernel_ok
             && self.sparsify_ok
+            && self.dtype_ok
     }
 }
 
@@ -607,6 +609,7 @@ pub fn run_boot_demo() -> DemoReport {
         && c11 == DEMO_B[5]
         && npu.jobs_retired == 1
         && job.fence_id == fence.id.0;
+    let dtype_ok = demo_f16_f32_ok();
 
     DemoReport {
         ipc_ok,
@@ -624,6 +627,7 @@ pub fn run_boot_demo() -> DemoReport {
         revoke_ok,
         opkernel_ok,
         sparsify_ok,
+        dtype_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -657,6 +661,7 @@ mod tests {
         assert!(r.revoke_ok, "cdt revoke");
         assert!(r.opkernel_ok, "opkernel");
         assert!(r.sparsify_ok, "sparsify");
+        assert!(r.dtype_ok, "f16/f32 soft-float");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);

@@ -37,10 +37,21 @@ v0.1 opcodes:
 | Op | Meaning |
 | --- | --- |
 | `Nop` | doorbell / latency probe |
-| `MatMul` | `C = A @ B` (i32 reference) |
+| `MatMul` | `C = A @ B` (I32 / software F16 / software F32) |
 | `Wave` | matmul + optional bias (stand-in for a fused wave) |
 
-`F16` / `F32` are **STUB** (no libm / no hard-float in the kernel).
+`DType` values (additive; `I32 = 0` unchanged):
+
+| Value | Type | SoftNPU |
+| --- | --- | --- |
+| 0 | `I32` | integer matmul (unchanged) |
+| 1 | `F16` | software IEEE-754 `binary16` via F32 helpers |
+| 2 | `F32` | software IEEE-754 `binary32` add/mul (FTZ) |
+
+This is **not** a silicon tensor ISA and not a hard-float HAL. Unknown
+dtype values are `UnsupportedDType`. `UserAccelJob` has no dtype field
+(`/init` stays I32). `AccelJobDesc` / `AccelJobWire` / `CpCmd` carry
+the byte.
 
 ## Virtqueue MMIO layout (in-kernel BAR)
 
@@ -141,11 +152,14 @@ cover refuse (foreign bank / foreign tenant) and transfer-then-admit.
 
 ## SoftNPU
 
-`aether_core::SoftNpu` is a deterministic integer engine:
+`aether_core::SoftNpu` is a deterministic reference engine:
 
 - shapes up to 64×64 (prototype bound)
-- overflow → `AccelError::Overflow`
-- `Wave` adds an optional bias vector
+- I32 overflow → `AccelError::Overflow`
+- F16 / F32 use integer-only software IEEE (`core/src/softfloat.rs`);
+  subnormals flush to zero. Not libm, not a vendor FLOP claim.
+- `Wave` adds an optional bias vector (same dtype as the job)
+- A DMA view without `load_u16` refuses F16 (`UnsupportedDType`)
 
 It is a **model of a matmul/wave engine**, not a product NPU. The point is
 that job submit, ownership, and completion look like silicon.
@@ -175,7 +189,7 @@ in-process SoftNPU engine (`backend = 0`), and not the no-op
 offset  type   field
 0x00    u32    magic        0xAE7E0C01
 0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2)
-0x05    u8     dtype        DType (I32=0)
+0x05    u8     dtype        DType (I32=0, F16=1, F32=2)
 0x06    u8     space        MemorySpace
 0x07    u8     phase        Phase (Compute=0, Exchange=1, Barrier=2)
 0x08    u16    m

@@ -158,7 +158,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; SoftCommandProcessor (`CpCmd`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |

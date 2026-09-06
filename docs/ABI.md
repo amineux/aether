@@ -62,3 +62,9 @@ Ring-3 uses the System V / Linux register convention: `rax` = number,
 User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 `core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1
 (accel queue) before the ring-3 drop.
+
+`UserAccelJob` has no `dtype` field (wire unchanged). Ring-3 `/init`
+submits I32. Additive `DType` values on `AccelJobDesc` / `CpCmd` /
+`AccelJobWire`: `I32=0`, `F16=1`, `F32=2`. Documented in
+[ACCEL.md](ACCEL.md). Do not reshape `UserAccelJob` without a version
+bump there.

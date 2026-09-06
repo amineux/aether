@@ -251,13 +251,29 @@ silicon fence unit, **not** CUDA streams:
 This is still not a hardware fence. QEMU does not write a silicon
 timeline register.
 
+## F16/F32 dtypes (this cut)
+
+Landed as **software IEEE** on SoftNPU — **not** a tensor ISA, **not**
+libm, **not** a hard-float HAL, **not** a FLOP benchmark:
+
+- `DType`: `I32=0` (unchanged), `F16=1`, `F32=2`. Jobs, `AccelJobWire`,
+  and `CpCmd` carry the byte. Unknown values stay `UnsupportedDType`.
+- SoftNPU matmul/wave: integer-only `binary32` add/mul; F16 converts
+  through those helpers. Subnormals flush to zero.
+- A DMA view without `load_u16` refuses F16 (host-tested).
+- `UserAccelJob` / syscalls 0–8 unchanged (`/init` stays I32).
+- Host tests + boot demo + serial
+  `[accel] SoftNPU F32/F16 soft-float 2x2 ok (software IEEE; not a tensor ISA)`.
+
+A real tile ISA is still a compiler concern.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
 
 | Item | Where | Intent |
 | --- | --- | --- |
-| F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
+| F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
 | Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
@@ -301,9 +317,10 @@ kernel thread queue sleeps.
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
-  OperatorKernelHandle, SparsifiedCollective, and the hardware-shaped
-  fence/timeline (this cut) are landed. ABI stays stable. Custom
-  QEMU virtio-accel and Laplacian expansion remain deferred.
+  OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
+  fence/timeline, and SoftNPU F16/F32 software IEEE (this cut) are
+  landed. ABI stays stable. Custom QEMU virtio-accel and Laplacian
+  expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -313,10 +330,11 @@ kernel thread queue sleeps.
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
-  OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16), and
-  the hardware-shaped fence/timeline (this cut) are **done** as
-  research-prototype slices. Custom QEMU virtio-accel and the other
-  stubs above are still open.
+  OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
+  the hardware-shaped fence/timeline (PR #17), and SoftNPU F16/F32
+  software IEEE (this cut) are **done** as research-prototype
+  slices. Custom QEMU virtio-accel and the other stubs above are
+  still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

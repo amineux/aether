@@ -34,6 +34,21 @@ impl DmaView for IdentityDma {
         unsafe { core::ptr::write_volatile(p, val) };
         Ok(())
     }
+
+    fn load_u16(&self, addr: PhysAddr) -> Result<u16, aether_core::accel::AccelError> {
+        let p = addr.0 as *const u16;
+        // SAFETY: caller mapped + owns the arena (cap + transfer).
+        Ok(unsafe { core::ptr::read_volatile(p) })
+    }
+    fn store_u16(
+        &mut self,
+        addr: PhysAddr,
+        val: u16,
+    ) -> Result<(), aether_core::accel::AccelError> {
+        let p = addr.0 as *mut u16;
+        unsafe { core::ptr::write_volatile(p, val) };
+        Ok(())
+    }
 }
 
 /// DMA through a caller-provided buffer (demo / tests).
@@ -233,12 +248,13 @@ impl<M: DmaView> SoftNpuDevice<M> {
             // Host unit tests that only exercise the ring may skip pin.
             return true;
         }
-        let a_bytes = 4u64.saturating_mul(job.elems_a() as u64);
-        let b_bytes = 4u64.saturating_mul(job.elems_b() as u64);
-        let c_bytes = 4u64.saturating_mul(job.elems_c() as u64);
-        self.dma_range_ok(job.a, a_bytes.max(4))
-            && self.dma_range_ok(job.b, b_bytes.max(4))
-            && self.dma_range_ok(job.c, c_bytes.max(4))
+        let es = job.elem_bytes().max(1);
+        let a_bytes = job.bytes_a();
+        let b_bytes = job.bytes_b();
+        let c_bytes = job.bytes_c();
+        self.dma_range_ok(job.a, a_bytes.max(es))
+            && self.dma_range_ok(job.b, b_bytes.max(es))
+            && self.dma_range_ok(job.c, c_bytes.max(es))
     }
 
     fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {

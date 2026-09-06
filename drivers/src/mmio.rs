@@ -106,7 +106,7 @@ impl AccelJobWire {
             a_stride: self.a_stride,
             b_stride: self.b_stride,
             c_stride: self.c_stride,
-            dtype: if self.dtype == 0 { DType::I32 } else { DType::I32 },
+            dtype: DType::from_u8(self.dtype).unwrap_or(DType::I32),
             tenant: self.tenant,
             completion_ep: self.completion_ep,
             space: match self.space {
@@ -366,6 +366,23 @@ mod tests {
         let c = mmio.driver_poll_used().unwrap();
         assert_eq!(c.cycles, 8);
         assert!(!mmio.irq_pending());
+    }
+
+    #[test]
+    fn wire_roundtrips_f16_f32_dtype() {
+        let mut mmio = AccelMmio::new();
+        assert!(mmio.negotiate());
+        let job = AccelJobDesc::matmul_f32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        mmio.driver_submit(&job).unwrap();
+        let (_, got) = mmio.device_take_avail().unwrap();
+        assert_eq!(got.dtype, DType::F32);
+
+        let mut mmio = AccelMmio::new();
+        assert!(mmio.negotiate());
+        let job = AccelJobDesc::matmul_f16(2, 2, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+        mmio.driver_submit(&job).unwrap();
+        let (_, got) = mmio.device_take_avail().unwrap();
+        assert_eq!(got.dtype, DType::F16);
     }
 
     #[test]
