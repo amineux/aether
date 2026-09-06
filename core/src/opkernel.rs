@@ -136,6 +136,15 @@ impl OperatorKernelHandle {
         quota.admit(self.flow, self.topology.tree_offload())
     }
 
+    /// Attach a milli energy / threshold. See [`crate::sparsify`].
+    pub const fn sparsify(
+        self,
+        energy_milli: u32,
+        threshold_milli: u32,
+    ) -> crate::sparsify::SparsifiedCollective {
+        crate::sparsify::SparsifiedCollective::wrap(self, energy_milli, threshold_milli)
+    }
+
     /// Same as [`Self::admit`] but the caller names a class. Mismatch refuses
     /// before Hodge policy runs.
     pub fn admit_as(self, quota: &mut HodgeQuota, flow: FlowClass) -> Result<(), OpKernelError> {

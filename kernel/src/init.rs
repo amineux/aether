@@ -98,6 +98,10 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.opkernel_ok));
     console::nl();
 
+    write_str("[sparsify] below-threshold DROP + above KEEP + harmonic-tree REFUSE  ");
+    write_str(flag(report.sparsify_ok));
+    console::nl();
+
     {
         let g = AffinityGraph::qemu_package();
         let lap = AffinityLaplacian::from_graph(&g);

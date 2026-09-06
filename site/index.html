@@ -471,6 +471,7 @@
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
                 <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB); no higher-half / KPTI</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
+                <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
                 <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
                 <li>aarch64 virt thin boot (kmain + <code>aether_core</code>, no EL0; not product-class)</li>
@@ -558,7 +559,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V and aarch64 thin ports.</p>
+                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V and aarch64 thin ports.</p>
               </div>
             </div>
             <div class="proof">

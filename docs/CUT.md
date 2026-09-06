@@ -94,11 +94,26 @@ descendants (`revoke` / `revoke_in`). Host tests in
 `core/src/opkernel.rs` lock the matrix. There is no new syscall and
 no QEMU collective engine — `Fabric::send` is still the admit path.
 
-`SparsifiedCollective` (drop small harmonic components before inject)
-is still a stub. See [ROADMAP.md](ROADMAP.md).
+## SparsifiedCollective
+
+A transform over a Hodge-bound collective (`OperatorKernelHandle` or a
+`FlowClass` header), not a second cap and not an eigensolver. Integer
+milli energy vs a threshold:
+
+```
+decide(Tree, Harmonic, any energy)     → HarmonicTreeReduce
+decide(Torus, Harmonic, E < T)         → Drop (no enqueue, quota untouched)
+decide(Torus, Harmonic, E >= T)        → Keep; inject as Harmonic
+decide(Tree, Gradient, any energy)     → Keep; TREE_OFFLOAD unchanged
+decide(Ring, Curl, any energy)         → Keep; RING_RESERVE unchanged
+```
+
+Hodge refuse runs first: a below-threshold harmonic on a Tree is still
+refused, not dropped. Caps stay on `CapKind::OperatorKernel`. Host
+tests in `core/src/sparsify.rs` lock the matrix. No new syscall.
 
 ## Related
 
 - **AffinityLaplacian** — implemented (integer prototype). See above.
 - **OperatorKernelHandle** — implemented (cap + Hodge bind/refuse).
-- Still on the roadmap: `SparsifiedCollective`.
+- **SparsifiedCollective** — implemented (integer milli threshold).

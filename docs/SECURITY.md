@@ -38,7 +38,8 @@ Each `Capability` stores:
    `TREE_OFFLOAD` is refused even if the tenant is authorized (`deadlock`).
    An `OperatorKernel` cap binds one topology to one class; Tree+Harmonic
    / Tree+Curl refuse at bind, and inject of a different class is
-   `ClassMismatch`.
+   `ClassMismatch`. `SparsifiedCollective` may drop below-threshold
+   harmonic before enqueue; it does not bypass Harmonic+TREE refuse.
 8. **Activity + partition.** A virt accel is an `Activity` cap, not an
    ioctl. Jobs bind a `PartitionProfile` (spatial slice, credits, blast
    radius). Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.
