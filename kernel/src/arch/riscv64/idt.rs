@@ -1,4 +1,4 @@
-//! Supervisor trap vector. Timer + U-mode `ecall` are handled.
+//! Supervisor trap vector. Timer, PLIC (SoftNPU doorbell), U-mode `ecall`.
 //!
 //! `sscratch` is the kernel stack top in U-mode and 0 in S-mode, so a
 //! trap from user does not write the user stack (SUM is off).
@@ -6,7 +6,7 @@
 use core::arch::global_asm;
 
 use crate::arch::irq;
-use crate::arch::riscv64::timer;
+use crate::arch::riscv64::{plic, timer};
 
 /// sstatus.SPP — previous privilege (1 = S, 0 = U).
 pub const SSTATUS_SPP: u64 = 1 << 8;
@@ -67,7 +67,8 @@ pub fn init() {
             options(nostack)
         );
     }
-    crate::println!("[boot] stvec set (direct); U-mode ecall + sscratch (no PLIC)");
+    crate::arch::riscv64::plic::init();
+    crate::println!("[boot] stvec set (direct); U-mode ecall + sscratch + PLIC");
 }
 
 #[no_mangle]
@@ -77,7 +78,27 @@ pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
     if interrupt && code == 5 {
         irq::inc_ticks();
         timer::rearm();
+        // Last-resort SoftNPU drain if the PLIC/SSIP doorbell was missed.
+        crate::world::run_pending_accel();
         crate::task::on_timer(frame);
+        return;
+    }
+    if interrupt && code == 9 {
+        let irq_id = plic::claim();
+        if irq_id == plic::SOFTNPU_IRQ {
+            plic::ack_softnpu_doorbell();
+            crate::console::write_str("[plic] claim irq=");
+            crate::console::write_u64(irq_id as u64);
+            crate::console::write_str(" SoftNPU used-ring");
+            crate::console::nl();
+            crate::world::run_pending_accel();
+        }
+        plic::complete(irq_id);
+        return;
+    }
+    if interrupt && code == 1 {
+        plic::clear_ssip();
+        crate::world::run_pending_accel();
         return;
     }
     if !interrupt && code == SCAUSE_U_ECALL {

@@ -28,7 +28,7 @@ active track the site must match.
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
 | In-kernel ramfs for `/init` | Named files; seed from blobs; not POSIX / virtio-blk | `core/src/ramfs.rs`, `kernel/src/elfload.rs` |
-| RISC-V virt boot | S-mode + U-mode `/init` (no PLIC) | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
+| RISC-V virt boot | S-mode + U-mode `/init` + PLIC SoftNPU doorbell | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
 | aarch64 virt boot | Thin EL1 port (no EL0) | `boot/aarch64/`, `make qemu-aarch64` |
 | Multiboot mmap → frames | Documented x86 subset (clip 16 MiB, cap 128 MiB); HAL fallback | `core/src/mmap.rs`, `kernel/src/mm/` |
 
@@ -46,7 +46,7 @@ gaps:
 | --- | --- |
 | Hardware SMMU | Soft SMMU is software only (chiplet SIDs + capture/bind); a real device can still DMA past it |
 | Custom QEMU virtio-accel | Path B landed: in-kernel BAR is canonical + golden MMIO trace. Path A optional later. Stock QEMU demos SoftNPU |
-| RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. No PLIC / virtio-mmio |
+| RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
 | aarch64 is thin | kmain + PL011 + TTBR + GICv2/CNTV + `aether_core` self-check. No EL0, no virtio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
@@ -58,8 +58,8 @@ gaps:
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
 send/recv/map/accel. RISC-V now has the same syscall numbers over
-`ecall`/`sret` (U-mode `/init`, in-kernel SoftNPU, no PLIC). aarch64
-is still EL1-only.
+`ecall`/`sret` (U-mode `/init`, in-kernel SoftNPU, PLIC software
+doorbell). aarch64 is still EL1-only.
 
 ## How a silicon team plugs `AccelDevice`
 
@@ -109,8 +109,10 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 11. Revoke of a parent empties derived children in that table;
     `revoke_in` empties GRANT-children in named tables. Unrelated caps live.
 
-Not enforced in hardware yet: SMMU stream IDs, RISC-V PLIC, aarch64
-EL0, measured boot. Revoke descendants is host-tested (`revoke` /
+Not enforced in hardware yet: SMMU stream IDs, RISC-V virtio-mmio,
+aarch64 EL0, measured boot. The RISC-V PLIC is programmed and the
+SoftNPU used-ring is claimed on source 10; that is still a software
+doorbell on the path-B BAR, not a silicon MSI. Revoke descendants is host-tested (`revoke` /
 `revoke_in`); there is no `SYS_REVOKE` and no kernel-global CNode walk.
 On x86, isolation is “cap tables + ring-3 + per-task USER leaves +
 SMEP/SMAP + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
@@ -127,7 +129,7 @@ right thing.”
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, mmap, opkernel, sparsify |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
-| RISC-V boot | `make qemu-riscv-ci` | U-mode `/init` + `ecall` + aspace isolate + fabric banner |
+| RISC-V boot | `make qemu-riscv-ci` | U-mode `/init` + `ecall` + PLIC SoftNPU used-ring + aspace isolate + fabric banner |
 | aarch64 boot | `make qemu-aarch64-ci` | QEMU virt EL1 + self-check banner; greps mmap fallback |
 
 x86_64 is the supported path. RISC-V CI now also greps U-mode `/init`.

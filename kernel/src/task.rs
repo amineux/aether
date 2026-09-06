@@ -467,6 +467,10 @@ fn kthread_b() -> ! {
                 println!("[sched] kthread-B fabric ping posted");
             }
         }
+        // x86: kthread poll is the used-ring path (PIC has no SoftNPU line).
+        // RISC-V: PLIC/SSIP (or the timer fallback in trap_dispatch) services
+        // AccelMmio. Do not poll here — SIE is on and WORLD is a spinlock.
+        #[cfg(target_arch = "x86_64")]
         crate::world::run_pending_accel();
         unsafe {
             #[cfg(target_arch = "x86_64")]

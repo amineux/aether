@@ -47,8 +47,10 @@ complete; timeout is software; QEMU IRQ is still software; not a
 silicon fence). SoftNPU F16/F32 is **done** as software IEEE
 (`DType` 1/2; FTZ; not a tensor ISA; `UserAccelJob` still I32).
 RISC-V S-mode userspace is **done** as a documented subset
-(`sret`/`ecall` `/init` + Sv39 U-isolate + in-kernel SoftNPU; no
-PLIC; not product-class). AffinityLaplacian n≤32 placement is
+(`sret`/`ecall` `/init` + Sv39 U-isolate + in-kernel SoftNPU).
+RISC-V PLIC + SoftNPU software doorbell (UART THRE → source 10;
+path B BAR; not virtio-mmio) is **done** as the follow-up interrupt
+path. Neither is product-class. AffinityLaplacian n≤32 placement is
 **done** as a prototype eigensolve (`from_placement` +
 `bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer). SpecForge
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
@@ -99,7 +101,9 @@ After AccelDevice bites a real-shaped path — not before:
 
 - Custom QEMU virtio-accel (path A: `-device` / virtio-mmio DMA of the
   frozen [ACCEL.md](ACCEL.md) BAR). Path B landed: in-kernel BAR is
-  the canonical demo + golden MMIO trace. Path A stays optional later.
+  the canonical demo + golden MMIO trace. RISC-V PLIC + software
+  doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
+  BAR behind the PLIC is still open. Path A stays optional later.
 - ELF beyond this subset (KASLR / KPTI / PIE). In-kernel ramfs for
   `/init` + `/probe` landed (seed from embedded blobs; no user
   `open`/`read`). virtio-blk is still open. Per-task PML4 +
@@ -125,8 +129,9 @@ After AccelDevice bites a real-shaped path — not before:
 12. SoftNPU F16/F32 software IEEE
 13. RISC-V S-mode userspace (documented subset)
 14. AffinityLaplacian n≤32 placement in sched
-15. SpecForge virtio path B (ADR + golden MMIO trace) — **this cut**
-16. Optional virtio-accel QEMU `-device` (path A) / MicroPerceptron later
+15. SpecForge virtio path B (ADR + golden MMIO trace)
+16. RISC-V PLIC + SoftNPU software doorbell (path B BAR) — **this cut**
+17. Optional virtio-accel QEMU `-device` (path A) / MicroPerceptron later
 
 ### Active file touch map
 
@@ -145,6 +150,7 @@ After AccelDevice bites a real-shaped path — not before:
 | Hardware fence/timeline | `core/src/fence.rs`, `drivers/src/{fakecp,softnpu}.rs`, `docs/{ACCEL,ARCHITECTURE,ROADMAP}.md` |
 | AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
 | Virtio path B (golden MMIO) | `drivers/src/{mmio,virtio_accel,softnpu}.rs`, `docs/{ACCEL,ROADMAP,YEAR2_PLAN}.md` |
+| RISC-V PLIC SoftNPU doorbell | `kernel/src/arch/riscv64/{plic,idt}.rs`, `kernel/src/{world,task}.rs`, `Makefile` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
@@ -266,9 +272,9 @@ for new qemu/smp targets.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.
-6. **RISC-V / aarch64 temptation:** RISC-V U-mode `/init` landed as a
-   subset; do not block Y1 on PLIC virtio or aarch64 EL0. Neither
-   port is a second kernel.
+6. **RISC-V / aarch64 temptation:** RISC-V U-mode `/init` + PLIC
+   SoftNPU doorbell landed as a subset; do not block Y1 on virtio-mmio
+   or aarch64 EL0. Neither port is a second kernel.
 
 ### PR order (SpecForge original)
 

@@ -1,4 +1,7 @@
 //! 16550 UART0 at 0x10000000 (QEMU virt).
+//!
+//! Console is polled TX. IER stays 0 except when `plic` raises the
+//! SoftNPU doorbell (THRE → PLIC source 10). Do not enable RX here.
 
 use super::UART0;
 

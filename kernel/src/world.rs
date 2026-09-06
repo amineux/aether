@@ -164,14 +164,23 @@ pub fn kernel_send_ping() -> bool {
 }
 
 /// Device-side IRQ/poll: service the virtqueue, then harvest the used ring.
+/// Safe before `init` (timer can fire while World is still None).
 pub fn run_pending_accel() {
-    let serviced = with(|w| {
+    let serviced = {
+        let mut g = WORLD.lock();
+        let Some(w) = g.as_mut() else {
+            return;
+        };
         if !w.pending && !w.npu.doorbell_pending() && !w.npu.irq_pending() {
-            return None;
+            return;
         }
-        let _ = w.npu.service();
-        w.npu.poll()
-    });
+        // IRQ may fire on a user satp/CR3. IdentityDma is PA=VA through
+        // the trampoline map; U-bit / SMAP leaves need SUM / STAC.
+        crate::mm::paging::with_user_access(|| {
+            let _ = w.npu.service();
+            w.npu.poll()
+        })
+    };
     let Some(cpl) = serviced else {
         return;
     };
@@ -425,6 +434,8 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
         Ok::<(), SysError>(())
     })?;
     println!("[accel] virtqueue doorbell kick (SoftNPU deferred to IRQ)");
+    #[cfg(target_arch = "riscv64")]
+    crate::arch::riscv64::plic::raise_softnpu_doorbell();
     Ok(0)
 }
 

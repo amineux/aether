@@ -1,5 +1,5 @@
 //! Architecture HAL. x86_64 is the full ring-3 path; riscv64 is S-mode
-//! + U-mode `/init` (no PLIC); aarch64 is a thin EL1 bring-up.
+//! + U-mode `/init` + PLIC SoftNPU doorbell; aarch64 is a thin EL1 bring-up.
 
 pub mod irq;
 

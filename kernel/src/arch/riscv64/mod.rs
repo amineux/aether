@@ -2,11 +2,14 @@
 //!
 //! S-mode kernel + U-mode `/init` via `sret` / `ecall`. Sv39 task
 //! isolate (U-bit on one 2 MiB window). SoftNPU is the in-kernel
-//! virtqueue — no PLIC, no real virtio-mmio. Extra harts stay parked.
+//! virtqueue (path B). Completions arrive on a PLIC software doorbell
+//! (UART THRE → source 10), not a virtio-mmio `-device`. Extra harts
+//! stay parked.
 
 use core::arch::global_asm;
 
 pub mod idt;
+pub mod plic;
 pub mod serial;
 pub mod timer;
 

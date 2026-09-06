@@ -25,6 +25,9 @@ RV_ELF      := $(BUILD)/aether-riscv.elf
 RV_INIT_ELF := $(USER_DIR)/target/$(RV_TARGET)/release/aether-init
 RV_INIT_BLOB := $(BUILD)/init-riscv.elf
 QEMU_RV     := qemu-system-riscv64
+# Stock QEMU virt. SoftNPU stays the in-kernel BAR (path B); PLIC
+# source 10 is UART0 THRE used as a software doorbell — no virtio-mmio
+# -device. Extra harts stay parked.
 QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
                  -no-reboot -kernel $(RV_ELF)
 
@@ -50,12 +53,12 @@ help:
 	@echo "Aether targets:"
 	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
-	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init (no PLIC)"
+	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
-	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + fabric"
+	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
 	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps the fabric banner"
 	@echo "  make clean"
 
@@ -228,10 +231,13 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] U-mode /init" $(BUILD)/riscv-serial.log \
 	   && grep -q "ecall debug_print ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[boot\\] PLIC hart0 S-mode" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[plic\\] claim irq=10 SoftNPU used-ring" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
 	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
-		echo "qemu-riscv-ci: U-mode /init + clone + demo ok (qemu exit $$ec)"; \
+		echo "qemu-riscv-ci: U-mode /init + PLIC SoftNPU + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-riscv-ci: userspace/demo banner missing (qemu exit $$ec)"; \

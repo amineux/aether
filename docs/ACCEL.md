@@ -288,11 +288,16 @@ watermark, in-order `complete`). That is not a CUDA stream: there
 is no implicit catch-up, and a partition that is out of credits
 refuses submit. `timeout` is a software overlay — it does not
 claim a device IRQ. SoftCommandProcessor and SoftNPU both retire
-through this API. QEMU's used-ring IRQ is still software.
+through this API. QEMU's used-ring IRQ is still software on x86
+(kthread poll after the PIC timer). On RISC-V the same AccelMmio
+BAR is serviced from a **PLIC claim** (UART THRE software doorbell,
+source 10) — a real interrupt path, still path B, still not a
+virtio-mmio `-device`.
 
 A later cut should:
 
-- let a real device IRQ (not only kthread poll) write the seq
+- let a virtio-mmio / MSI-X device IRQ write the seq (RISC-V already
+  retires from a PLIC claim on the path-B BAR; x86 is still kthread poll)
 - meter HBM bandwidth as the partition QoS budget already names
 - replace Soft SMMU with a hardware SMMU page table (program a real SID)
 
