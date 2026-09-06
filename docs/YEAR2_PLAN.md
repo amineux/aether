@@ -19,7 +19,8 @@ revision 2026-09-06. Filed on main via PR.
 
 **This is the ACTIVE track.** SpecForge's half-year calendar
 ([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
-only — do not schedule Kernel work against it. Soft SMMU (PR #7) and
+only — do not schedule Kernel work against it. Soft SMMU (PR #7;
+deepened as STE→CD→S1/S2 + ATS invalidate, still not hardware) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
 **done** as software models. SMP smoke (INIT-SIPI + per-CPU `gs` +
 two-hart work-steal) is **done** as a QEMU `-smp 2` slice. SpecForge
@@ -94,7 +95,9 @@ follow-up; `make qemu-ci` stays on the embedded fallback.
 
 1. Soft SMMU: non-identity IOVA + `stream_id` on the `AccelDevice` map
    path (not a SoftMMU product claim). Map without Memory+MAP still
-   refuses; wrong-stream DMA fault/reject is a software model.
+   refuses; wrong-stream DMA fault/reject is a software model. The
+   table now walks STE→CD→Stage-1/2 and has an ATS-shaped invalidate;
+   hardware SMMU still requires partner silicon.
 2. One real-shaped `AccelDevice` path beyond SoftNPU that packs a
    **concrete command packet** + fence/IRQ complete (software model OK).
    Distinct backend id; probe/submit/poll/map contract tests. This is
@@ -178,7 +181,7 @@ After AccelDevice bites a real-shaped path — not before:
 
 | Step | Primary touches |
 | --- | --- |
-| Soft SMMU SIDs | `core/src/iommu.rs`, `drivers/src/{mmio,softnpu}.rs`, tests under `core/` |
+| Soft SMMU SIDs | `core/src/iommu.rs`, `drivers/src/{mmio,softnpu,fakecp}.rs`, tests under `core/` |
 | Second software CP | `hal/`, `drivers/` (new backend, not partner-stub paint), `docs/ACCEL.md` |
 | Cross-cutting | this file, ROADMAP status rows, CI only if a new host test target appears |
 | SMP smoke | `kernel/src/arch/{irq,x86_64/{smp,cpu,apic,idt}}.rs`, `Makefile`, `qemu-smp-ci` |

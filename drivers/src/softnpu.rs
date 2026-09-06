@@ -277,8 +277,7 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {
-        self.iommu.covers_iova(DEFAULT_STREAM, addr, len)
-            || self.iommu.covers_iova_any(addr, len)
+        self.iommu.covers_iova(DEFAULT_STREAM, addr, len) || self.iommu.covers_iova_any(addr, len)
     }
 }
 
@@ -290,7 +289,8 @@ fn map_hal_error(e: MapError) -> HalError {
         MapError::NotMapped
         | MapError::CrossTenant
         | MapError::WrongStream
-        | MapError::StreamAbort => HalError::Fault,
+        | MapError::StreamAbort
+        | MapError::Stage2Fault => HalError::Fault,
     }
 }
 
@@ -511,5 +511,34 @@ mod tests {
         assert!(done.completed);
         assert!(timeline.wait(fence.id).unwrap().completed);
         assert_eq!(timeline.in_flight(), 0);
+    }
+
+    #[test]
+    fn invalidate_does_not_break_softnpu_resolve() {
+        use aether_core::iommu::InvCmd;
+
+        let mut backing = [0u8; 256];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        let iova = dev
+            .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        let _ = dev.iommu.invalidate(InvCmd::All).unwrap();
+        assert_eq!(dev.iommu.resolve(iova).unwrap().0, 0);
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        dev.submit(&job).unwrap();
+        let serviced = dev.service().unwrap();
+        assert_eq!(serviced.status, 0);
+        let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        assert_eq!(out0, 19);
     }
 }

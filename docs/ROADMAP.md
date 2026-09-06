@@ -25,8 +25,8 @@ product kernel.
 | Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend; path B canonical for stock QEMU) |
 | Custom QEMU `virtio-accel` device | **done** as optional path A (`qemu/aether_accel.c`; `make accel-test` / `make qemu-accel`). Stock `make qemu` stays path B. CI does not rebuild QEMU. |
 | `IommuMap` pin/translate; refuse without Memory+MAP | **done** (Soft SMMU; non-identity IOVA) |
-| Soft SMMU / software stream IDs | **done** (per-stream IOVA namespaces; not hardware) |
-| Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU) |
+| Soft SMMU / software stream IDs | **done** (STE→CD→S1/S2 walk + ATS invalidate; not hardware) |
+| Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU; partner silicon) |
 | Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
 | Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership; not a CP path) |
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + Soft SMMU SID + IRQ/fence; host tests) |
@@ -89,25 +89,34 @@ Landed (software only — **not** a hardware SMMU, **not** an SMMUv3 emulator):
   guest-PA overlap is `Overlap` (or `CrossTenant` if another tenant
   already holds the window).
 - **Chiplet StreamIDs** (`StreamId` = `chiplet | tile | ssid`), not PCIe
-  BDF. STE → CD (SSID) indexing is a software table, not a guest walk.
+  BDF. Walk is **STE → CD (SSID ≤ S1CDMax) → Stage-1 → Stage-2** on
+  software block tables, not a guest 4K PTE walk and not silicon.
+- Default `map` installs Nested with **identity Stage-2** (`IPA == PA`)
+  so SoftNPU `resolve(iova)` is still the guest PA. `bind_nested`
+  allocates a distinct IPA (`SOFT_SMMU_IPA_BASE`) so host tests can
+  watch both stages; `unbind_stage2` then yields `Stage2Fault`.
 - **SID lifecycle** (OpenVMM / smmuv3-accel shaped): Unbound → Captured
   on first sighting → Bound on Memory+MAP `bind_stream` / first `map`.
-  Translate **aborts** (`StreamAbort`) until Bound. `unbind_stream` is
-  the FLR analogue.
+  Translate **aborts** (`StreamAbort`) until Bound. Illegal SSID /
+  missing CD is also `StreamAbort`. `unbind_cd` drops one SSID;
+  `unbind_stream` / `flr` is the STE-wide FLR analogue.
+- **ATS-shaped invalidate** (`InvCmd::{Ats,Tlbi,CfgSte,CfgCd,All}`):
+  software ATC only. Tables stay. SoftNPU does not depend on the ATC.
 - Non-identity IOVA allocator: each (STE, CD) gets a window above
   4 GiB (`SOFT_SMMU_IOVA_BASE`). `iova != guest_pa` for the QEMU demo.
-- `translate` / `resolve` / `unmap` are stream-aware (`WrongStream`,
-  `NotMapped`, `CrossTenant`, `StreamAbort`). Memory+MAP is still
-  required to pin or bind.
+- `translate` / `walk` / `resolve` / `unmap` are stream-aware
+  (`WrongStream`, `NotMapped`, `CrossTenant`, `StreamAbort`,
+  `Stage2Fault`). Memory+MAP is still required to pin or bind.
 - SoftNPU / virtqueue DMA writes IOVAs into the avail ring and resolves
   them back to guest PA before `KernelDma` / `SliceMem` loads. No
   IdentityDma shortcut when Soft SMMU is populated.
 - Host tests cover stream A vs B, chiplet SIDs, abort-until-bound,
+  SSID/CD hardening, nested S1/S2, ATS invalidate / unbind_cd / FLR,
   translate hit/miss, unmap, cap refuse, and non-identity IOVA.
 
 Hardware SMMU (program a real SID / PT walk on an IOMMU) is still a
-stub. QEMU does not emulate an SMMU for this path. Bank QoS beyond
-existing admit/refuse is out of scope.
+stub and still requires partner silicon. QEMU does not emulate an SMMU
+for this path. Bank QoS beyond existing admit/refuse is out of scope.
 
 ## Year-1 H2: SMP smoke (this cut)
 
@@ -754,7 +763,7 @@ Search for `// STUB:` / `STUB` :
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
 | Higher-half + KASLR / KPTI / PCID / COW / mmap | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault) + growable anon `SYS_MMAP=11`. `fork` still stub |
-| Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
+| Hardware SMMU | `core/src/iommu.rs` | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate); program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | **done** as EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). GICv3 / virtio-mmio still stub |
@@ -781,9 +790,10 @@ kernel thread queue sleeps.
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
    (GPA in the job wire; Soft SMMU stays the cap table) is still
    open. Soft-CP already covers a second AccelDevice path on the host.
-2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
-   program a real SMMU context / PT walk. Do not claim the software
-   table is silicon.
+2. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
+   ATS-shaped invalidate in software. Program a real SMMU context / PT
+   walk. Do not claim the software table is silicon. Partner silicon
+   is still required.
 3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.

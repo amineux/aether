@@ -153,13 +153,17 @@ It is not a hardware SMMU and not a full SMMUv3 emulator.
 
 ```text
 StreamId = chiplet | tile | ssid     (not a PCIe BDF)
-STE  →  CD (ssid)  →  block descriptors
+STE  →  CD (ssid ≤ S1CDMax)  →  Stage-1 (IOVA→IPA)  →  Stage-2 (IPA→PA)
 
 capture(sid)                         // first sighting; DMA still aborts
-bind_stream(Memory+MAP, sid)         // install STE + CD
+bind_stream(Memory+MAP, sid)         // install STE + CD (Nested, identity S2)
+bind_nested(Memory+MAP, sid)         // Nested with distinct IPA (host tests)
 map(...)                             // capture+bind on first authorized use
-translate / resolve                  // StreamAbort until Bound
-unbind_stream(sid)                   // FLR analogue
+walk / resolve                       // STE→CD→S1→S2; StreamAbort until Bound
+invalidate(Ats|Tlbi|CfgSte|CfgCd)    // software ATC; tables stay
+unbind_cd(sid)                       // drop one SSID
+unbind_stage2(sid)                   // drop S2 only → Stage2Fault
+unbind_stream / flr(sid)             // STE-wide FLR analogue
 ```
 
 Rules:
@@ -172,13 +176,16 @@ Rules:
    is `Overlap` (or `CrossTenant` if another tenant holds the window).
 3. IOVAs come from a per-(STE, CD) bump allocator above 4 GiB
    (`SOFT_SMMU_IOVA_BASE`). This is not identity.
-4. Translate on an Unbound / Captured SID, or an STE whose SSID has no
-   CD, is `StreamAbort`. Wrong SID is `WrongStream`. Wrong tenant is
-   `CrossTenant`. Unmapped on a bound SID is `NotMapped`.
+4. Translate on an Unbound / Captured SID, an illegal SSID (`> S1CDMax`),
+   or an STE whose SSID has no valid CD, is `StreamAbort`. Wrong SID is
+   `WrongStream`. Wrong tenant is `CrossTenant`. Unmapped Stage-1 on a
+   bound SID is `NotMapped`. Nested Stage-2 miss is `Stage2Fault`.
 5. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
    Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`. SoftNPU DMA
-   uses stream 0: first pin binds that SID; submit writes IOVAs into
-   the virtqueue; `service` resolves IOVA → guest PA.
+   uses stream 0: first pin binds that SID (Nested, identity Stage-2);
+   submit writes IOVAs into the virtqueue; `service` walks
+   STE→CD→S1→S2 to resolve IOVA → guest PA. This is still a software
+   table. A hardware SMMU requires partner silicon.
 
 Bank QoS / bandwidth coloring is not part of Soft SMMU.
 
@@ -319,7 +326,8 @@ A later cut should:
 - let a virtio-mmio / MSI-X device IRQ write the seq (RISC-V already
   retires from a PLIC claim on the path-B BAR; x86 is still kthread poll)
 - meter HBM bandwidth as the partition QoS budget already names
-- replace Soft SMMU with a hardware SMMU page table (program a real SID)
+- replace Soft SMMU with a hardware SMMU page table (program a real SID).
+  Soft SMMU now walks STE→CD→Stage-1/2 in software; that is not silicon.
 
 Do not assume cache coherence across chiplets. SRAM on the tile is the
 honest first place; HBM and CXL are other typed spaces, not a wafer-scale

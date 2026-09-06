@@ -13,7 +13,7 @@ active track the site must match.
 | Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo}.rs` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
-| `IommuMap` Soft SMMU (per-stream, non-identity IOVA) | Implemented, host-tested | `core/src/iommu.rs` |
+| `IommuMap` Soft SMMU (STE→CD→S1/S2 walk, ATS invalidate) | Implemented, host-tested | `core/src/iommu.rs` |
 | Tile scheduler + SpectralCut refuse | Implemented (n≤32 Fiedler placement; enum n≤8) | `core/src/{sched,cut}.rs` |
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype, n≤32 host-tested) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
@@ -46,7 +46,7 @@ gaps:
 
 | Gap | Honest reading |
 | --- | --- |
-| Hardware SMMU | Soft SMMU is software only (chiplet SIDs + capture/bind); a real device can still DMA past it |
+| Hardware SMMU | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate) but is still software only; a real device can still DMA past it. Partner silicon required. |
 | Custom QEMU virtio-accel | Path A landed as optional (`qemu/`; `make accel-test`). Path B is still what stock `make qemu` runs. CI does not rebuild QEMU. Guest does not yet bind PCI BAR0 |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
@@ -75,8 +75,9 @@ doorbell). aarch64 now has the same syscall numbers over
 3. map(): bind_stream + pin from a Memory cap walk. Refuse anything
    that did not come from the cap table. Refuse a silent remote
    (place, local) — aether_hal::map_fabric already does.
-   IommuMap is the Soft-SMMU table (per-stream IOVA; abort until Bound).
-   A hardware SMMU is still required on silicon; do not treat this as one.
+   IommuMap is the Soft-SMMU table (STE→CD→S1/S2 walk; abort until Bound;
+   ATS invalidate is a software ATC). A hardware SMMU is still required
+   on silicon; do not treat this as one.
 4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
    uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId.
    Doorbell. Do not execute in the syscall.
@@ -119,8 +120,9 @@ doorbell on the path-B BAR, not a silicon MSI. Revoke descendants is host-tested
 `revoke_in`); there is no `SYS_REVOKE` and no kernel-global CNode walk.
 On x86, isolation is “cap tables + ring-3 + per-task USER leaves +
 SMEP/SMAP + KPTI trampoline + PCID (if CPUID) + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
-task-local U leaves + SUM off + Soft SMMU.” Soft SMMU is a software
-table a real device can ignore. The kernel runs higher-half; user
+task-local U leaves + SUM off + Soft SMMU.” Soft SMMU is a deepened
+software table (STE→CD→S1/S2 + ATS invalidate) a real device can
+ignore; hardware SMMU needs partner silicon. The kernel runs higher-half; user
 CR3 does not map HH or the identity DMA window (KPTI subset, not
 Meltdown-complete; PCID is a tagged-TLB gate, not a speculation
 barrier). On aarch64 it is “cap tables + EL0 +
@@ -173,9 +175,9 @@ graph IR in the kernel. They want:
    The in-tree virtqueue BAR is the packet shape.
 2. **Isolation that is not ioctl folklore.** Weights and KV caches are
    Memory caps with tenants and a bank color. Cross-tenant mint is a
-   type error. Soft SMMU gives per-stream non-identity IOVA in software
-   — policy and the software table are tested; a hardware SMMU is not
-   programmed.
+   type error. Soft SMMU gives per-stream non-identity IOVA and a
+   STE→CD→Stage-1/2 walk in software — policy and the software table
+   are tested; a hardware SMMU is not programmed.
 3. **Placement that names the package graph.** A SpectralCut is a
    capability. The Laplacian is a first-class `L = D − A`. Cross-die
    placement is refused because the cut said so, not because a hint

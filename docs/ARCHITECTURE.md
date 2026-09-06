@@ -166,7 +166,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/fabric.rs` | Endpoints and messages |
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
-| `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
+| `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate (not hardware) |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
