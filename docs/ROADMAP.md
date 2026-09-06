@@ -98,10 +98,19 @@ kernel thread queue sleeps.
 
 ## Two-year plan
 
-Sequenced acceptance criteria, file touch map, risks, and PR order live
-in [YEAR2_PLAN.md](YEAR2_PLAN.md) (SpecForge leave-behind, 2026-09-06).
-That plan does not mark Soft SMMU, bank QoS credits, virtio-accel QEMU,
-SMP, or the other stubs above as done.
+[YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
+
+- **Active (Falsifier revision):** Soft SMMU SIDs on the AccelDevice
+  map path, one real-shaped second AccelDevice (concrete command packet
+  + fence/IRQ), ABI stay stable. Custom QEMU virtio-accel, SMP, ELF
+  beyond `/init`, Laplacian expansion, and aarch64 are deferred.
+- **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
+  Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
+  cap CDT-as-calendar, and a Y2 bring-up climax are killed as
+  milestones.
+
+Nothing in that file marks Soft SMMU, virtio-accel QEMU, SMP, or the
+other stubs above as done.
 
 ## What we will not claim
 

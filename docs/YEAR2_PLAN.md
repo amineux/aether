@@ -1,7 +1,7 @@
 # Year 2 plan
 
-Leave-behind for Kernel tracking. SpecForge draft 2026-09-06; filed on
-main via PR.
+Leave-behind for Kernel tracking. SpecForge draft 2026-09-06; Falsifier
+revision 2026-09-06. Filed on main via PR.
 
 ## Non-negotiables
 
@@ -13,12 +13,85 @@ main via PR.
 - Prefer extending `aether_hal::AccelDevice` + `AccelJobDesc` over
   inventing a second IR.
 
-## Milestone acceptance
+## Falsifier revision — execution track
 
-These milestones are **not done**. Soft SMMU, bank QoS credits, a real
-virtio-accel QEMU path, SMP, per-task PML4, multi-chiplet placement,
-CXL region objects, and cap CDT/revoke remain in progress or stub on
-the current tree (see [ROADMAP.md](ROADMAP.md)).
+**This is the ACTIVE track.** SpecForge's half-year calendar
+([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
+only — do not schedule Kernel work against it. Soft SMMU, a second
+real-shaped AccelDevice, custom QEMU virtio-accel, SMP, and the other
+stubs remain **not done** on the current tree (see
+[ROADMAP.md](ROADMAP.md)).
+
+### KEEP / ACTIVE Y1
+
+1. Soft SMMU: non-identity IOVA + `stream_id` on the `AccelDevice` map
+   path (not a SoftMMU product claim). Map without Memory+MAP still
+   refuses; wrong-stream DMA fault/reject is a software model.
+2. One real-shaped `AccelDevice` path beyond SoftNPU that packs a
+   **concrete command packet** + fence/IRQ complete (software model OK).
+   Distinct backend id; probe/submit/poll/map contract tests. This is
+   **not** `PartnerNpuStub` enrichment theater.
+3. Keep `AccelDevice` / `AccelJobDesc` ABI stable. New surface = new
+   numbers or caps bits only after [ABI.md](ABI.md) amendment in the
+   same PR. Do not reshape `UserAccelJob` wire without a version bump
+   in [ACCEL.md](ACCEL.md).
+
+### KILL as milestones (calendar theater)
+
+These stay in the SpecForge appendix as written. They are **not**
+Kernel calendar items:
+
+- Bank QoS beyond admit/refuse (`PartitionProfile` already admits or
+  refuses; EventRing credit-drain theater is not a Y1 goal).
+- Second partner stub enrichment without a signed partner
+  (`PartnerNpuStub` stays a labeled sketch).
+- CXL region objects — keep the typed `MemorySpace::CxlRegion` place
+  only; no pin/map productization, no CXL.mem claim.
+- Cap CDT as a calendar item (revoke-descendants remains a STUB, not a
+  scheduled milestone).
+- Y2 manufacturing / bring-up playbook as a climax goal
+  ([DILIGENCE.md](DILIGENCE.md) already exists).
+
+### DEFER
+
+After AccelDevice bites a real-shaped path — not before:
+
+- Custom QEMU virtio-accel (`-device` / virtio-mmio DMA of the
+  [ACCEL.md](ACCEL.md) BAR layout). In-kernel BAR + SoftNPU remains
+  the honest demo.
+- SMP (`smp_start_aps` INIT-SIPI, per-CPU `gs`, work-steal).
+- ELF beyond `/init` (per-task PML4, SMEP/SMAP, second user binary).
+- Laplacian expansion (n≤32 placement; AffinityLaplacian in sched).
+- aarch64 (thin HAL after the x86 ABI is stable).
+
+### PR order for Kernel (revised)
+
+1. `docs/YEAR2_PLAN.md` with both SpecForge criteria + this Falsifier
+   active track
+2. Soft SMMU SIDs on the AccelDevice path
+3. Second AccelDevice software CP with a real command packet (not
+   `PartnerNpuStub` enrichment theater)
+4. Optional virtio-accel / MicroPerceptron interop later
+
+### Active file touch map
+
+| Step | Primary touches |
+| --- | --- |
+| Soft SMMU SIDs | `core/src/iommu.rs`, `drivers/src/{mmio,softnpu}.rs`, tests under `core/` |
+| Second software CP | `hal/`, `drivers/` (new backend, not partner-stub paint), `docs/ACCEL.md` |
+| Cross-cutting | this file, ROADMAP status rows, CI only if a new host test target appears |
+
+Do not open `kernel/src/arch/`, `boot/`, SMP, CXL, or CDT PRs on this
+track.
+
+---
+
+## SpecForge criteria (aspirational appendix)
+
+Original SpecForge half-year acceptance, file touch map, sequencing
+risks, and PR order. **Not the active schedule.** KEEP / KILL / DEFER
+above override what Kernel actually sequences. Criteria below are
+**not done** unless verified on the branch tip.
 
 ### Y1H1 — Soft isolation + real accel path
 
@@ -77,7 +150,7 @@ the current tree (see [ROADMAP.md](ROADMAP.md)).
    crate or `drivers/` template; `site/` roadmap section matches this
    plan (no vendor logos as partners).
 
-## File touch map (expected)
+### File touch map (expected)
 
 | Milestone | Primary touches |
 | --- | --- |
@@ -89,7 +162,7 @@ the current tree (see [ROADMAP.md](ROADMAP.md)).
 Cross-cutting: this file, ROADMAP status rows, CI (`.github/workflows/ci.yml`)
 for new qemu/smp targets.
 
-## Sequencing risks
+### Sequencing risks
 
 1. **ABI freeze:** Syscall 0–8 frozen. New surface = new numbers or caps
    bits only after [ABI.md](ABI.md) amendment in the same PR. Do not
@@ -111,7 +184,7 @@ for new qemu/smp targets.
 6. **RISC-V temptation:** Do not block Y1 on `sret` userspace; keep a
    thin HAL. aarch64 after the x86 ABI is stable.
 
-## PR order
+### PR order (SpecForge original)
 
 1. `docs/YEAR2_PLAN.md` (this leave-behind) + ROADMAP pointer
 2. Y1H1 iommu `stream_id` + credit refuse tests
