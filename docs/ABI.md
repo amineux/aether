@@ -40,7 +40,7 @@ then submits `AccelJobDesc` records through an `Activity` endpoint.
 `Wave` in v0.1 is a software stand-in for one compiled dispatch, not a
 fusion pass.
 
-## Syscall numbers (frozen 0–10)
+## Syscall numbers (frozen 0–10; 11 additive)
 
 Ring-3 / U-mode uses the same numbers on every arch. x86_64 is the
 System V / Linux register convention: `rax` = number, `rdi,rsi,rdx` =
@@ -64,6 +64,7 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 8 | `arena_alloc(size, flags, bank)` | Mints a Memory cap |
 | 9 | `exit(status)` | x86 `isa-debug-exit`; RISC-V sifive_test; aarch64 Angel SYS_EXIT (additive; 0–8 unchanged) |
 | 10 | `clone(entry, stack, flags)` | User thread on the caller's PML4 / satp / TTBR0. `flags` must be 0. Returns child tid. Child starts at `entry` with arg0 = tid and `rsp`/`sp` = `stack`. Additive; 0–9 unchanged. |
+| 11 | `mmap(addr, len, flags)` | Anonymous grow. `flags` must be 0. `addr` 0 = first free page in the grow window; nonzero must be page-aligned and in that window. Returns VA. Additive; 0–10 unchanged. |
 
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
@@ -79,6 +80,18 @@ at `USER_COW_BASE` (`0x0280_0000`) read-only into x86 `/init` and
 `user_range_known` accepts the page so a later copy helper can name
 it; `SYS_CLONE` entry/stack must still sit in an ELF window.
 Numbers **0–10 stay frozen**. RISC-V / aarch64 do not map the VA.
+
+`SYS_MMAP` is a **documented subset**, not POSIX `mmap`: no file,
+no `MAP_SHARED`, no `PROT_*` / `MAP_*` bits, no `munmap` of
+individual pages (`SYS_UNMAP` stays a no-op). The kernel allocates
+4 KiB frames and maps them USER+RW in the caller's PML4 / satp /
+TTBR0. `addr` 0 is first-fit in a fixed grow window
+(`USER_MMAP_BASE` `0x02C0_0000` on x86, after virtio-blk;
+`USER_RV_MMAP_BASE` / `USER_AA_MMAP_BASE` after the ELF window).
+64 KiB cap. SoftNPU stays on kernel CR3. Soft SMMU is unchanged
+(these pages are not DMA-pinned). `SYS_CLONE` siblings share the
+grown region; `/probe` has its own PML4 and does not. Numbers
+**0–10 stay frozen**.
 
 User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 `core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1
@@ -96,5 +109,6 @@ The ELF loader opens `/init` (and optional `/probe`) from an
 in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
 Boot seeds those names from an x86 virtio-blk AETHFS01 image when
 a drive is present, otherwise from the embedded ELF blobs. This is
-**not** a user syscall: numbers **0–10 stay frozen** as the table
-above. No `SYS_OPEN` / `SYS_READ`. SoftNPU stays the in-kernel BAR.
+**not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11)
+is the only additive slot in this cut. No `SYS_OPEN` / `SYS_READ`.
+SoftNPU stays the in-kernel BAR.

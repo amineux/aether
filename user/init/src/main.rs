@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–10).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–11).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -9,9 +9,9 @@
 
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
-    UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
-    SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV,
-    SYS_SEND, SYS_YIELD,
+    UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
+    SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
+    SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
 use aether_core::sysnr::{COW_PRIVATE_WORD, COW_TEMPLATE_WORD, USER_COW_BASE};
@@ -109,6 +109,30 @@ fn spawn_user_thread() -> bool {
     true
 }
 
+fn grow_mmap() -> bool {
+    let va = sys(SYS_MMAP, 0, 4096, 0);
+    if va < 0 {
+        debug_print(b"[init] mmap FAIL\r\n");
+        return false;
+    }
+    let p = va as *mut u64;
+    unsafe {
+        core::ptr::write_volatile(p, MMAP_GROW_WORD);
+    }
+    let got = unsafe { core::ptr::read_volatile(p) };
+    if got != MMAP_GROW_WORD {
+        debug_print(b"[init] mmap write FAIL\r\n");
+        return false;
+    }
+    let va2 = sys(SYS_MMAP, 0, 4096, 0);
+    if va2 != va + 4096 {
+        debug_print(b"[init] mmap grow FAIL\r\n");
+        return false;
+    }
+    debug_print(b"[init] mmap grow ok (anon pages)\r\n");
+    true
+}
+
 #[link_section = ".text.boot"]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
@@ -150,6 +174,10 @@ pub extern "C" fn _start() -> ! {
             exit(1);
         }
         debug_print(b"[init] cow write ok (private page)\r\n");
+    }
+
+    if !grow_mmap() {
+        exit(1);
     }
 
     // Recv: empty inbox → block until kthread-B sends ping-fabric.

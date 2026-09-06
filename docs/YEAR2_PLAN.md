@@ -77,7 +77,9 @@ COW subset (`USER_COW_BASE` RO in `/init` + `/probe` until a
 write fault; not `fork` / POSIX `mmap`) is **done** as the next
 documented x86 subset. User-level threads via `SYS_CLONE` (nr 10) are
 **done** as a documented subset (share caller PML4/satp; `flags=0`;
-not Linux clone / fork; `SYS_EXIT` still guest-wide).
+not Linux clone / fork; `SYS_EXIT` still guest-wide). Growable
+anonymous `SYS_MMAP` (nr 11) is **done** as a documented subset
+(4 KiB USER pages in a reserved window; not POSIX `mmap`).
 In-kernel ramfs for `/init` (and x86 `/probe`) is **done** as a
 documented subset (seed from virtio-blk or embedded blobs; loader
 `open`/`read`; not POSIX; no new syscall). x86 virtio-blk → ramfs
@@ -124,7 +126,8 @@ After AccelDevice bites a real-shaped path — not before:
   the canonical demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
   BAR behind the PLIC is still open. Path A stays optional later.
-- ELF beyond this subset (`fork` / growable `mmap`). Boot-time
+- ELF beyond this subset (`fork` / POSIX `mmap`). Growable anonymous
+  `SYS_MMAP=11` landed. Boot-time
   slide + dual-map + PIE `.rela.dyn` landed (16 MiB slots; unused
   alias unmapped). KPTI user CR3 landed (no HH / no identity DMA;
   trampoline only; not Meltdown-complete). PCID tagged TLB landed

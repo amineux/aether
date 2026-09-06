@@ -471,6 +471,7 @@
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
                 <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
                 <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
+                <li>Growable user <code>mmap</code> — additive <code>SYS_MMAP=11</code> anonymous 4 KiB USER pages (not POSIX <code>mmap</code>; no file / no <code>MAP_SHARED</code>)</li>
                 <li>In-kernel ramfs — loader <code>open</code>s <code>/init</code> (and x86 <code>/probe</code>); seeded from x86 virtio-blk (AETHFS01) or embedded blobs; not POSIX</li>
                 <li>Higher-half + KASLR slide + PIE reloc + KPTI + PCID + one-page COW — <code>ffffffff80000000+PA</code> plus 0/16/32 MiB dual-map on x86; <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped. User CR3 has no HH / no identity DMA (4 KiB trampoline). PCID tags KPTI <code>mov cr3</code> when CPUID advertises it (else full flush). Identity 4 GiB stays on kernel CR3 for SoftNPU DMA (not a secret slide / Meltdown-complete / POSIX <code>mmap</code>)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
@@ -502,7 +503,7 @@
               <div class="tl-when">Deferred · after this subset</div>
               <h3>Remaining isolation (not a product MM)</h3>
               <ul>
-                <li>Growable <code>mmap</code> / <code>fork</code> — PIE-reloc + one-page COW + KPTI + PCID landed (tagged TLB when CPUID.PCID; not Meltdown-complete); identity 4 GiB stays on kernel CR3 for DMA</li>
+                <li><code>fork</code> / POSIX <code>mmap</code> — growable anonymous <code>SYS_MMAP=11</code> landed; no file-backed / <code>MAP_SHARED</code> / new aspace</li>
                 <li>Per-task cap tables — World still shares one <code>CapTable</code>; no <code>SYS_REVOKE</code></li>
                 <li>ELF past this subset — ramfs + x86 virtio-blk seed landed for <code>/init</code> + <code>/probe</code>; kernel is static-PIE; user ELFs stay non-PIE; no user <code>open</code>/<code>read</code></li>
               </ul>
