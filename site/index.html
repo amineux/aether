@@ -31,7 +31,7 @@
         <li><a href="#solution">Solution</a></li>
         <li><a href="#how">How it works</a></li>
         <li><a href="#market">Market</a></li>
-        <li><a href="#partners">Partners</a></li>
+        <li><a href="#partners">HAL path</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
         <li><a href="#status">Status</a></li>
         <li class="nav-mobile-only"><a href="https://github.com/amineux/aether">GitHub</a></li>
@@ -419,29 +419,29 @@
     <section class="band" id="partners">
       <div class="wrap">
         <div class="sec-head" data-reveal>
-          <p class="kicker">05 — Partnerships</p>
-          <h2>How a partnership with companies like NVIDIA could accelerate bring-up.</h2>
+          <p class="kicker">05 — HAL co-design (aspirational)</p>
+          <h2>What AccelDevice co-design would look like if a silicon team engaged.</h2>
         </div>
         <div class="disclaimer" data-reveal>
-          <strong>Aspirational, not claimed.</strong>
-          <span>Aether has no partnership with NVIDIA or any silicon vendor. <code>PartnerNpuStub</code> is a no-op sketch. This section is a design-win narrative: what collaboration could look like if a partner chose to engage.</span>
+          <strong>No partnership. No vendor deal. No silicon bring-up booked.</strong>
+          <span>Aether has no relationship with NVIDIA or any ASIC house. <code>PartnerNpuStub</code> is a leftover no-op sketch, not a design win. This section is HAL language from the <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">diligence pack</a> — not a pipeline, not a booked lab, not proximity to a vendor.</span>
         </div>
         <div class="partner-grid">
           <article class="glass" data-reveal>
             <h3>Co-design AccelDevice on a real command processor</h3>
-            <p>Probe / submit / poll / map is the doorbell. The job descriptor is opcode, shape, typed places, phase, fence. A partner fills those fields from silicon they already have — Aether stays out of the ISA.</p>
+            <p>Probe / submit / poll / map is the doorbell. The job descriptor is opcode, shape, typed places, phase, fence. A silicon team would fill those fields from hardware they already have — Aether stays out of the ISA. Nobody is doing that with this tree today.</p>
           </article>
           <article class="glass" data-reveal data-d="1">
-            <h3>Package OS under their runtime</h3>
-            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether admits the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose.</p>
+            <h3>Package OS under a vendor runtime</h3>
+            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether would admit the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose. That is an interface bet, not an integration.</p>
           </article>
           <article class="glass" data-reveal data-d="2">
             <h3>MIG-like isolation, generalized to chiplets</h3>
-            <p>Spatial slices + QoS + blast radius as capabilities, not a single-GPU product feature. Tenants cannot mint across each other. Cross-die placement is a cut, not a hint.</p>
+            <p>Spatial slices + QoS + blast radius as capabilities, not a single-GPU product feature. Tenants cannot mint across each other. Cross-die placement is a cut, not a hint. This is the thesis; it is not a vendor feature we ship.</p>
           </article>
           <article class="glass" data-reveal data-d="3">
-            <h3>Shared bring-up with foundry and OS teams</h3>
-            <p>Manufacturing and silicon bring-up is partner work. Aether’s offer is a HAL, a diligence pack, and a vertical slice they can boot in QEMU before anyone books lab time.</p>
+            <h3>A QEMU slice they can evaluate — not a booked lab</h3>
+            <p>The offer is a HAL contract, a diligence pack, and a vertical slice that boots in QEMU. Manufacturing, foundry work, and silicon bring-up are not on our calendar and are not claimed.</p>
           </article>
         </div>
       </div>
@@ -452,60 +452,62 @@
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
-            <h2>Research → partner-ready → manufacturing support.</h2>
-            <p class="lede">Honest sequence. We do not tape out chips. We want the package OS ready when partners do.</p>
+            <h2>Research → partner-shaped HAL path → optional bring-up docs later.</h2>
+            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. We do not tape out chips. Soft SMMU, Soft-CP, and SMP smoke landed as research cuts. Manufacturing support is not a milestone.</p>
           </div>
-          <div class="honest-pill" data-reveal>Not a tape-out plan</div>
+          <div class="honest-pill" data-reveal>Active track · not a foundry calendar</div>
         </div>
         <div class="timeline">
           <article class="tl now" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Now · Year 0 · done</div>
+              <div class="tl-when">Now · research cuts landed</div>
               <h3>Working vertical slice</h3>
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
                 <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU)</li>
-                <li>Soft SMMU — per-stream non-identity IOVA (not hardware SMMU)</li>
+                <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
+                <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
+                <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only; no per-task PML4</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
                 <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
-                <li>Diligence docs, deep-dive agenda, host-tested invariants</li>
+                <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
               </ul>
             </div>
           </article>
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Year 1 · H1</div>
-              <h3>Partner-shaped device path</h3>
+              <div class="tl-when">Open · partner-shaped HAL path</div>
+              <h3>If a silicon team implements AccelDevice</h3>
               <ul>
-                <li>Real virtio-accel QEMU device, or an MMIO partner path</li>
                 <li>Hardware SMMU — program a real SID / PT; Soft SMMU is software only</li>
-                <li>Bank QoS beyond admit/refuse</li>
-                <li>Second partner stub (still a sketch until someone implements it)</li>
+                <li>Optional custom QEMU virtio-accel (deferred; in-kernel BAR remains the demo)</li>
+                <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen</li>
+                <li>Not a signed vendor path. <code>PartnerNpuStub</code> stays a labeled sketch — no second-stub enrichment theater</li>
               </ul>
             </div>
           </article>
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Year 1 · H2</div>
-              <h3>Production-shaped HAL</h3>
+              <div class="tl-when">Deferred · after SMP</div>
+              <h3>Userspace isolation (not a product HAL)</h3>
               <ul>
-                <li>HAL shaped for 1–2 NPU/GPU command processors — bring-up <em>with</em> partners</li>
-                <li>SMP smoke (QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only)</li>
-                <li>ELF userspace maturity — past a single embedded <code>/init</code></li>
+                <li>Per-task PML4 / SMEP / SMAP — not started; sequenced after SMP, not mixed in</li>
+                <li>ELF userspace past a single embedded <code>/init</code></li>
+                <li>SMP smoke already landed as a QEMU slice — not a product scheduler</li>
               </ul>
             </div>
           </article>
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Year 2 · H1</div>
+              <div class="tl-when">Later · research</div>
               <h3>Package topology as a solver input</h3>
               <ul>
-                <li>Multi-chiplet topology + AffinityLaplacian-driven placement in scheduling</li>
-                <li>CXL region objects (today: a typed place, not a window)</li>
+                <li>Multi-chiplet topology + AffinityLaplacian-driven placement in scheduling (deferred)</li>
+                <li>CXL stays a typed place — no pin/map productization, no CXL.mem claim</li>
                 <li>Formal subset of caps — inspired by seL4, not a proof claim</li>
               </ul>
             </div>
@@ -513,13 +515,13 @@
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Year 2 · H2</div>
-              <h3>Bring-up support, not a foundry</h3>
+              <div class="tl-when">Optional later · docs</div>
+              <h3>Bring-up notes if a team asks — not manufacturing</h3>
               <ul>
-                <li>Manufacturing / silicon bring-up playbook for OS + partner HAL</li>
-                <li>Reference platform story</li>
-                <li>Open AccelDevice ecosystem</li>
-                <li>Optional certification-oriented docs — orientation, not a certificate</li>
+                <li>Optional how-to: map a command processor into <code>AccelDevice</code></li>
+                <li>In-tree <code>ACCEL.md</code> / <code>DILIGENCE.md</code> stay the leave-behind</li>
+                <li>Not a foundry playbook, not a tape-out checklist, not a climax goal</li>
+                <li>No certification claim — orientation docs only if someone needs them</li>
               </ul>
             </div>
           </article>
@@ -532,7 +534,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
           <h2>What you can boot. What is stubbed.</h2>
-          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Soft SMMU, Soft-CP, and SMP smoke landed as research cuts. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -553,28 +555,28 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU, SpectralCut, Laplacian, Hodge, x86 ring-3, RISC-V thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, x86 ring-3, SMP smoke, RISC-V thin port.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">CI</span>
               <div>
                 <a href="https://github.com/amineux/aether/actions">Actions on every push / PR</a>
-                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-riscv-ci</code>.</p>
+                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is not started. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
-                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · FABRIC · CUT · ACCEL · DILIGENCE</a>
-                <p>Leave-behind for a silicon OS team. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · DILIGENCE · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
           </div>
