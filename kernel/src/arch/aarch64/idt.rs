@@ -1,17 +1,54 @@
-//! EL1 exception vectors. The virtual timer is the only handled IRQ.
+//! EL1 exception vectors: CNTV IRQ, EL0 `svc`, `eret` return.
+//!
+//! `tpidr_el1` holds the user thread's kernel stack top so a trap from
+//! EL0 does not write the user stack. PAN is not available on
+//! cortex-a72 (v8.0); EL1 can touch AP_EL0 pages without a SUM analogue.
 
 use core::arch::global_asm;
 
 use crate::arch::aarch64::timer;
 use crate::arch::irq;
 
+/// SPSR_EL1.M EL1h (SP_ELx).
+pub const SPSR_EL1H: u64 = 0x5;
+/// ESR_EL1.EC = SVC from AArch64.
+const ESR_EC_SVC64: u64 = 0x15;
+
 #[repr(C)]
-pub struct TrapFrame {
+#[derive(Clone, Copy)]
+pub struct InterruptFrame {
+    /// x0 … x30
     pub regs: [u64; 31],
     pub elr: u64,
     pub spsr: u64,
     pub esr: u64,
+    /// SP_EL0 if the trap came from EL0; pre-trap SP_EL1 otherwise.
+    pub sp: u64,
+    pub _pad: u64,
 }
+
+impl InterruptFrame {
+    pub fn syscall_nr(&self) -> u64 {
+        self.regs[8]
+    }
+    pub fn arg0(&self) -> u64 {
+        self.regs[0]
+    }
+    pub fn arg1(&self) -> u64 {
+        self.regs[1]
+    }
+    pub fn arg2(&self) -> u64 {
+        self.regs[2]
+    }
+    pub fn set_ret(&mut self, v: u64) {
+        self.regs[0] = v;
+    }
+    pub fn set_sp(&mut self, v: u64) {
+        self.sp = v;
+    }
+}
+
+const _: () = assert!(core::mem::size_of::<InterruptFrame>() == 288);
 
 extern "C" {
     fn exception_vectors();
@@ -26,13 +63,12 @@ pub fn init() {
             options(nostack)
         );
     }
-    crate::println!("[boot] VBAR_EL1 set; GICv2 only (no EL0 vectors used)");
+    crate::println!("[boot] VBAR_EL1 set; EL0 svc + GICv2");
 }
 
 #[no_mangle]
-pub extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
+pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
     let esr = frame.esr;
-    let ec = (esr >> 26) & 0x3F;
     // IRQ path: the vector stub stores esr=0xFFFF_FFFF as a sentinel.
     if esr == 0xFFFF_FFFF {
         let iar = timer::ack();
@@ -40,10 +76,18 @@ pub extern "C" fn trap_dispatch(frame: &mut TrapFrame) {
         if id == timer::TIMER_IRQ {
             irq::inc_ticks();
             timer::rearm();
+            crate::world::run_pending_accel();
+            crate::task::on_timer(frame);
         }
         if id < 1020 {
             timer::eoi(iar);
         }
+        return;
+    }
+    let ec = (esr >> 26) & 0x3F;
+    if ec == ESR_EC_SVC64 {
+        // ELR already points past `svc`.
+        crate::syscall::from_user_trap(frame);
         return;
     }
     crate::console::write_str("[fault] esr=");
@@ -81,7 +125,7 @@ exception_vectors:
     .align 7
     b       sync_el1
 
-    /* Lower EL, AArch64 — unused (no EL0) */
+    /* Lower EL, AArch64 */
     .align 7
     b       sync_el1
     .align 7
@@ -102,7 +146,7 @@ exception_vectors:
     b       sync_el1
 
 sync_el1:
-    sub     sp, sp, #272
+    sub     sp, sp, #288
     stp     x0,  x1,  [sp, #0]
     stp     x2,  x3,  [sp, #16]
     stp     x4,  x5,  [sp, #32]
@@ -124,12 +168,20 @@ sync_el1:
     mrs     x2, esr_el1
     stp     x0, x1, [sp, #248]
     str     x2,     [sp, #264]
+    and     x3, x1, #0xf
+    cbnz    x3, 1f
+    mrs     x3, sp_el0
+    b       2f
+1:
+    add     x3, sp, #288
+2:
+    str     x3, [sp, #272]
     mov     x0, sp
     bl      trap_dispatch
     b       trap_return
 
 irq_el1:
-    sub     sp, sp, #272
+    sub     sp, sp, #288
     stp     x0,  x1,  [sp, #0]
     stp     x2,  x3,  [sp, #16]
     stp     x4,  x5,  [sp, #32]
@@ -151,14 +203,27 @@ irq_el1:
     mov     x2, #0xffffffff
     stp     x0, x1, [sp, #248]
     str     x2,     [sp, #264]
+    and     x3, x1, #0xf
+    cbnz    x3, 3f
+    mrs     x3, sp_el0
+    b       4f
+3:
+    add     x3, sp, #288
+4:
+    str     x3, [sp, #272]
     mov     x0, sp
     bl      trap_dispatch
     /* fall through */
 
+    .globl trap_return
 trap_return:
     ldp     x0, x1, [sp, #248]
     msr     elr_el1, x0
     msr     spsr_el1, x1
+    ldr     x2, [sp, #272]
+    msr     sp_el0, x2
+    and     x3, x1, #0xf
+    cbnz    x3, trap_return_el1
     ldp     x0,  x1,  [sp, #0]
     ldp     x2,  x3,  [sp, #16]
     ldp     x4,  x5,  [sp, #32]
@@ -175,7 +240,33 @@ trap_return:
     ldp     x26, x27, [sp, #208]
     ldp     x28, x29, [sp, #224]
     ldr     x30,      [sp, #240]
-    add     sp, sp, #272
+    add     sp, sp, #288
+    mrs     x16, tpidr_el1
+    cbz     x16, 5f
+    mov     sp, x16
+5:
+    eret
+
+trap_return_el1:
+    ldr     x16, [sp, #272]
+    ldp     x0,  x1,  [sp, #0]
+    ldp     x2,  x3,  [sp, #16]
+    ldp     x4,  x5,  [sp, #32]
+    ldp     x6,  x7,  [sp, #48]
+    ldp     x8,  x9,  [sp, #64]
+    ldp     x10, x11, [sp, #80]
+    ldp     x12, x13, [sp, #96]
+    ldp     x14, x15, [sp, #112]
+    /* keep x16 = resume SP */
+    ldp     x18, x19, [sp, #144]
+    ldp     x20, x21, [sp, #160]
+    ldp     x22, x23, [sp, #176]
+    ldp     x24, x25, [sp, #192]
+    ldp     x26, x27, [sp, #208]
+    ldp     x28, x29, [sp, #224]
+    ldr     x30,      [sp, #240]
+    ldp     x14, x15, [sp, #112]
+    mov     sp, x16
     eret
     "#
 );

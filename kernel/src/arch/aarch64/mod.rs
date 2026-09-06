@@ -1,7 +1,9 @@
 //! AArch64 EL1 HAL for QEMU virt (GICv2 + PL011).
 //!
-//! Thin v0.1 port: PL011 console, generic virtual timer, VBAR, TTBR0
-//! walk. No EL0, no virtio, no SMP. `aether-core` is unchanged.
+//! EL1 kernel + EL0 `/init` via `eret` / `svc`. TTBR0 task isolate
+//! (AP_EL0 on one 2 MiB window). SoftNPU is the in-kernel virtqueue
+//! (path B), drained on the CNTV tick / kthread poll — not a GIC
+//! doorbell and not virtio-mmio. Extra PEs stay parked.
 
 use core::arch::global_asm;
 

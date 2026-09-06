@@ -1,4 +1,5 @@
-//! Per-task address-space contract (x86_64 2 MiB identity + HH subset).
+//! Per-task address-space contract (x86_64 2 MiB identity + HH subset,
+//! RISC-V Sv39, aarch64 TTBR0).
 //!
 //! The kernel clones the trampoline's 4 GiB identity map into a fresh
 //! PML4 / PDPT / PD set and sets USER only on one 2 MiB window. Other
@@ -420,5 +421,183 @@ mod sv39_tests {
         assert!(shared.user_mapped(USER_RV_IMAGE_END - 16));
         assert!(shared.user_mapped(USER_RV_IMAGE_END - 0x2000));
         assert!(!shared.user_mapped(0x8020_0000));
+    }
+}
+
+/// AArch64 4K / T0SZ=25 descriptor bits (ARM ARM D5). AP[2:1] = 01
+/// is EL1+EL0 RW. UXN is Unprivileged Execute Never.
+pub const AA_VALID: u64 = 1;
+pub const AA_TABLE: u64 = 1 << 1;
+pub const AA_ATTR_NORMAL: u64 = 1 << 2;
+pub const AA_AP_EL0: u64 = 1 << 6;
+pub const AA_SH_ISH: u64 = 3 << 8;
+pub const AA_AF: u64 = 1 << 10;
+pub const AA_PXN: u64 = 1 << 53;
+pub const AA_UXN: u64 = 1 << 54;
+
+/// Software TTBR0 identity map (4× 1 GiB L1 blocks). `clone_user`
+/// splits the 1 GiB that holds the user window into 2 MiB pages and
+/// sets AP_EL0 only there. Host-tested twin of the aarch64 kernel walk.
+/// Not GICv3, not a second product MM, not PAN (cortex-a72 is v8.0).
+#[derive(Clone, Debug)]
+pub struct Ttbr0As {
+    pub l1: [u64; 512],
+    pub l2: [u64; 512],
+    pub split_i1: usize,
+}
+
+impl Ttbr0As {
+    pub fn empty() -> Self {
+        Self {
+            l1: [0; 512],
+            l2: [0; 512],
+            split_i1: usize::MAX,
+        }
+    }
+
+    fn gig_block(phys: u64, normal: bool) -> u64 {
+        let mut e = AA_VALID | AA_AF | AA_UXN | (phys & !0x3FFF_FFFF);
+        if normal {
+            e |= AA_ATTR_NORMAL | AA_SH_ISH;
+        }
+        e
+    }
+
+    fn meg_block(phys: u64, user: bool) -> u64 {
+        let mut e = AA_VALID | AA_AF | AA_ATTR_NORMAL | AA_SH_ISH | (phys & !0x1F_FFFF);
+        if user {
+            e |= AA_AP_EL0 | AA_PXN;
+        } else {
+            e |= AA_UXN;
+        }
+        e
+    }
+
+    fn is_user(pte: u64) -> bool {
+        (pte >> 6) & 3 == 1
+    }
+
+    /// Trampoline-shaped kernel map: 4 GiB identity, no AP_EL0 bits.
+    pub fn kernel() -> Self {
+        let mut s = Self::empty();
+        s.l1[0] = Self::gig_block(0, false);
+        s.l1[1] = Self::gig_block(PAGE_1G, true);
+        s.l1[2] = Self::gig_block(2 * PAGE_1G, false);
+        s.l1[3] = Self::gig_block(3 * PAGE_1G, false);
+        s
+    }
+
+    /// Clone the kernel map. AP_EL0 only on `[user_lo, user_hi)` 2 MiB
+    /// leaves. Each address in `unmap` has its 2 MiB valid bit cleared.
+    pub fn clone_user(&self, user_lo: u64, user_hi: u64, unmap: &[u64]) -> Self {
+        let mut s = self.clone();
+        let i1 = ((user_lo >> 30) & 0x1FF) as usize;
+        s.split_i1 = i1;
+        let gphys = (i1 as u64) * PAGE_1G;
+        for j in 0..512u64 {
+            s.l2[j as usize] = Self::meg_block(gphys + j * PAGE_2M, false);
+        }
+        s.l1[i1] = AA_VALID | AA_TABLE;
+        let mut va = user_lo & !(PAGE_2M - 1);
+        while va < user_hi {
+            if ((va >> 30) & 0x1FF) as usize == i1 {
+                let i2 = ((va >> 21) & 0x1FF) as usize;
+                s.l2[i2] = Self::meg_block(va & !(PAGE_2M - 1), true);
+            }
+            va += PAGE_2M;
+        }
+        for &u in unmap {
+            if ((u >> 30) & 0x1FF) as usize == i1 {
+                let i2 = ((u >> 21) & 0x1FF) as usize;
+                s.l2[i2] &= !AA_VALID;
+            }
+        }
+        s
+    }
+
+    pub fn walk(&self, va: u64) -> Option<Walk> {
+        let i1 = ((va >> 30) & 0x1FF) as usize;
+        let pte1 = self.l1[i1];
+        if pte1 & AA_VALID == 0 {
+            return None;
+        }
+        if pte1 & AA_TABLE == 0 {
+            return Some(Walk {
+                pde: pte1,
+                phys: (pte1 & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF),
+                user: Self::is_user(pte1),
+                present: true,
+                huge_2m: true,
+            });
+        }
+        if i1 != self.split_i1 {
+            return None;
+        }
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let pte2 = self.l2[i2];
+        if pte2 & AA_VALID == 0 {
+            return None;
+        }
+        Some(Walk {
+            pde: pte2,
+            phys: (pte2 & 0x0000_FFFF_FFE0_0000) | (va & 0x1F_FFFF),
+            user: Self::is_user(pte2),
+            present: true,
+            huge_2m: pte2 & AA_TABLE == 0,
+        })
+    }
+
+    pub fn user_mapped(&self, va: u64) -> bool {
+        self.walk(va).map(|w| w.present && w.user).unwrap_or(false)
+    }
+}
+
+#[cfg(test)]
+mod ttbr0_tests {
+    use super::*;
+    use crate::sysnr::{USER_AA_IMAGE_BASE, USER_AA_IMAGE_END};
+
+    #[test]
+    fn kernel_identity_has_no_el0_leaves() {
+        let k = Ttbr0As::kernel();
+        let w = k.walk(USER_AA_IMAGE_BASE).unwrap();
+        assert!(w.present && w.huge_2m);
+        assert!(!w.user);
+        assert!(!k.user_mapped(USER_AA_IMAGE_BASE));
+        assert!(!k.user_mapped(0x4008_0000));
+        assert_eq!(k.walk(0x4008_0000).unwrap().phys, 0x4008_0000);
+        assert_eq!(k.walk(0x0900_0000).unwrap().phys, 0x0900_0000);
+    }
+
+    #[test]
+    fn user_leaves_are_task_local() {
+        let k = Ttbr0As::kernel();
+        let init = k.clone_user(USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, &[]);
+
+        assert!(init.user_mapped(USER_AA_IMAGE_BASE));
+        assert!(init.user_mapped(USER_AA_IMAGE_END - 8));
+        assert!(!init.user_mapped(0x4008_0000));
+        assert!(init.walk(0x4008_0000).unwrap().present);
+        assert!(!init.walk(0x4008_0000).unwrap().user);
+        assert!(!init.user_mapped(0x0900_0000));
+        assert!(init.walk(0x0900_0000).unwrap().present);
+        assert!(!k.user_mapped(USER_AA_IMAGE_BASE));
+    }
+
+    #[test]
+    fn aa_window_is_2m_in_ram() {
+        assert_eq!(USER_AA_IMAGE_END - USER_AA_IMAGE_BASE, PAGE_2M);
+        assert!(USER_AA_IMAGE_BASE >= 0x4000_0000);
+        assert!(USER_AA_IMAGE_BASE < 0x4800_0000);
+    }
+
+    #[test]
+    fn clone_threads_share_one_ttbr0() {
+        let k = Ttbr0As::kernel();
+        let shared = k.clone_user(USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, &[]);
+        assert!(shared.user_mapped(USER_AA_IMAGE_BASE));
+        assert!(shared.user_mapped(USER_AA_IMAGE_END - 16));
+        assert!(shared.user_mapped(USER_AA_IMAGE_END - 0x2000));
+        assert!(!shared.user_mapped(0x4008_0000));
     }
 }

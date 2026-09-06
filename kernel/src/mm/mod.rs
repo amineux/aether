@@ -73,6 +73,8 @@ pub fn init() {
     paging::capture_kernel_cr3();
     #[cfg(target_arch = "riscv64")]
     paging::capture_kernel_satp();
+    #[cfg(target_arch = "aarch64")]
+    paging::capture_kernel_ttbr();
     let Some(f) = frame::alloc() else {
         println!("[boot] frame allocator empty");
         return;

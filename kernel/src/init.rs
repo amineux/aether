@@ -1,6 +1,6 @@
 //! Kernel-side invariant self-check (same `run_boot_demo` as `cargo test`).
 //! The COMPLETE banner and SoftNPU verify are printed by user `/init`
-//! (x86 ring-3 / RISC-V U-mode). aarch64 prints them from kmain.
+//! (x86 ring-3 / RISC-V U-mode / aarch64 EL0).
 
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
@@ -150,8 +150,5 @@ pub fn run_kernel_selfcheck() {
         crate::arch::exit_qemu(false);
         crate::arch::idle();
     }
-    #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
     println!("[kcheck] boot demo all_ok -- loading /init");
-    #[cfg(target_arch = "aarch64")]
-    println!("[kcheck] boot demo all_ok -- aarch64 thin port (no EL0)");
 }

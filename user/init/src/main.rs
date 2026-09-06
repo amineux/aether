@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` (numbers 0–10).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–10).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -41,6 +41,17 @@ fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
                 options(nostack)
             );
         }
+        #[cfg(target_arch = "aarch64")]
+        {
+            core::arch::asm!(
+                "svc #0",
+                in("x8") nr,
+                inout("x0") a0 => ret,
+                in("x1") a1,
+                in("x2") a2,
+                options(nostack)
+            );
+        }
     }
     ret
 }
@@ -59,7 +70,7 @@ fn exit(code: u64) -> ! {
         unsafe {
             #[cfg(target_arch = "x86_64")]
             core::arch::asm!("hlt");
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
             core::arch::asm!("wfi");
         }
     }
@@ -103,10 +114,14 @@ pub extern "C" fn _start() -> ! {
     debug_print(b"[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000, own PML4)\r\n");
     #[cfg(target_arch = "riscv64")]
     debug_print(b"[init] U-mode /init (static ELF64 non-PIE @ 0x82000000, own satp)\r\n");
+    #[cfg(target_arch = "aarch64")]
+    debug_print(b"[init] EL0 /init (static ELF64 non-PIE @ 0x42000000, own TTBR0)\r\n");
     #[cfg(target_arch = "x86_64")]
     debug_print(b"[init] syscall debug_print ok\r\n");
     #[cfg(target_arch = "riscv64")]
     debug_print(b"[init] ecall debug_print ok\r\n");
+    #[cfg(target_arch = "aarch64")]
+    debug_print(b"[init] svc debug_print ok\r\n");
 
     if !spawn_user_thread() {
         exit(1);
@@ -235,6 +250,8 @@ pub extern "C" fn _start() -> ! {
     debug_print(b"  RING-3 /init VIA SYSCALL/SYSRET\r\n");
     #[cfg(target_arch = "riscv64")]
     debug_print(b"  U-MODE /init VIA ECALL/SRET\r\n");
+    #[cfg(target_arch = "aarch64")]
+    debug_print(b"  EL0 /init VIA SVC/ERET\r\n");
     debug_print(b"  VIRTQUEUE MMIO + IOMMU MAP + BANK COLOR\r\n");
     debug_print(b"====================================================\r\n");
 

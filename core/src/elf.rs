@@ -1,7 +1,7 @@
 //! Minimal ELF64 static-executable parser (no relocations).
 //!
-//! `/init` is a **static non-PIE** `ET_EXEC` for `EM_X86_64` or
-//! `EM_RISCV`. The kernel copies `PT_LOAD` segments to their `p_vaddr`
+//! `/init` is a **static non-PIE** `ET_EXEC` for `EM_X86_64`,
+//! `EM_RISCV`, or `EM_AARCH64`. The kernel copies `PT_LOAD` segments to their `p_vaddr`
 //! (identity-mapped user window). PIE / `ET_DYN` is rejected so we do
 //! not invent a relocator.
 
@@ -11,6 +11,7 @@ pub const ELFDATA2LSB: u8 = 1;
 pub const ELFOSABI_NONE: u8 = 0;
 pub const ET_EXEC: u16 = 2;
 pub const EM_X86_64: u16 = 62;
+pub const EM_AARCH64: u16 = 183;
 pub const EM_RISCV: u16 = 243;
 pub const PT_LOAD: u32 = 1;
 pub const PF_X: u32 = 1;
@@ -115,7 +116,7 @@ pub fn parse_elf64(bytes: &[u8]) -> Result<ElfImage, ElfError> {
         return Err(ElfError::NotExec);
     }
     let e_machine = r16(bytes, 18)?;
-    if e_machine != EM_X86_64 && e_machine != EM_RISCV {
+    if e_machine != EM_X86_64 && e_machine != EM_RISCV && e_machine != EM_AARCH64 {
         return Err(ElfError::BadMachine);
     }
     let e_version = r32(bytes, 20)?;
@@ -304,8 +305,17 @@ mod tests {
     }
 
     #[test]
+    fn parse_static_aarch64_exec() {
+        let bytes = minimal_exec_machine(0x4200_0100, 0x4200_0000, b"\x00\x00\x20\xd4", EM_AARCH64);
+        let img = parse_elf64(&bytes).unwrap();
+        assert_eq!(img.entry, 0x4200_0100);
+        assert_eq!(img.loads[0].vaddr, 0x4200_0000);
+        assert!(loads_in_window(&img, 0x4200_0000, 0x4220_0000));
+    }
+
+    #[test]
     fn reject_other_machine() {
-        let bytes = minimal_exec_machine(0x1000, 0x1000, b"abcd", 183); // EM_AARCH64
+        let bytes = minimal_exec_machine(0x1000, 0x1000, b"abcd", 3); // EM_386
         assert_eq!(parse_elf64(&bytes).unwrap_err(), ElfError::BadMachine);
     }
 }

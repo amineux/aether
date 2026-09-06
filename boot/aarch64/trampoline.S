@@ -4,7 +4,7 @@
  * 0x40080000 (x0=dtb). We drop to EL1 if needed, park extra PEs, identity-map
  * 4 GiB (1 GiB blocks), and call Rust kmain. PL011 UART is at 0x09000000.
  *
- * Thin HAL: no EL0, no GICv3, no FDT mmap parser.
+ * EL0 /init is entered later from kmain via eret. No GICv3, no FDT.
  */
     .section .text.boot, "ax"
     .align 2

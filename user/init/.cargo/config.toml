@@ -20,3 +20,13 @@ rustflags = [
     "-C", "link-arg=-zmax-page-size=0x1000",
     "-C", "link-arg=--no-pie",
 ]
+
+[target.aarch64-unknown-none]
+rustflags = [
+    "-C", "relocation-model=static",
+    "-C", "code-model=small",
+    "-C", "link-arg=-T",
+    "-C", "link-arg=user-aarch64.ld",
+    "-C", "link-arg=-zmax-page-size=0x1000",
+    "-C", "link-arg=--no-pie",
+]

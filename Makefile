@@ -34,15 +34,17 @@ QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
 AA_TARGET   := aarch64-unknown-none
 AA_KERNEL   := $(KERNEL_DIR)/target/$(AA_TARGET)/release/aether
 AA_ELF      := $(BUILD)/aether-aarch64.elf
+AA_INIT_ELF := $(USER_DIR)/target/$(AA_TARGET)/release/aether-init
+AA_INIT_BLOB := $(BUILD)/init-aarch64.elf
 QEMU_AA     := qemu-system-aarch64
 # QEMU virt, GICv2 + cortex-a72, PL011 UART on stdio. Semihosting is
-# the clean exit path (Angel SYS_EXIT); CI also greps the fabric banner.
+# the clean exit path (Angel SYS_EXIT); CI greps EL0 /init + aspace.
 QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
                  -nographic -no-reboot -nic none -kernel $(AA_ELF) \
                  -semihosting
 
 .PHONY: all kernel kernel-riscv kernel-aarch64 loader user-init user-init-riscv \
-        user-probe \
+        user-init-aarch64 user-probe \
         qemu qemu-riscv qemu-aarch64 \
         qemu-debug qemu-ci qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         test test-host target target-riscv target-aarch64 clean help
@@ -54,12 +56,12 @@ help:
 	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
-	@echo "  make qemu-aarch64 - aarch64 virt thin port (kmain + aether_core demo)"
+	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
-	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps the fabric banner"
+	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + aspace + fabric"
 	@echo "  make clean"
 
 target:
@@ -243,7 +245,15 @@ qemu-riscv-ci: $(RV_ELF)
 	echo "qemu-riscv-ci: userspace/demo banner missing (qemu exit $$ec)"; \
 	exit 1
 
-kernel-aarch64: target-aarch64
+user-init-aarch64: target-aarch64 $(AA_INIT_BLOB)
+
+$(AA_INIT_BLOB): $(USER_DIR)/src/main.rs $(USER_DIR)/user-aarch64.ld $(USER_DIR)/Cargo.toml
+	mkdir -p $(BUILD)
+	cd $(USER_DIR) && cargo build --release --target $(AA_TARGET)
+	cp $(AA_INIT_ELF) $(AA_INIT_BLOB)
+	@echo "init-aarch64.elf $$(wc -c < $(AA_INIT_BLOB)) bytes (static non-PIE ELF64)"
+
+kernel-aarch64: target-aarch64 $(AA_INIT_BLOB)
 	cd $(KERNEL_DIR) && cargo build --release --target $(AA_TARGET)
 	mkdir -p $(BUILD)
 	cp -f $(AA_KERNEL) $(AA_ELF)
@@ -251,7 +261,7 @@ kernel-aarch64: target-aarch64
 
 $(AA_ELF): kernel-aarch64
 
-# Angel SYS_EXIT 0 via -semihosting; CI greps the same banners as RISC-V.
+# Angel SYS_EXIT 0 via -semihosting; CI greps EL0 /init + isolate.
 qemu-aarch64: $(AA_ELF)
 	$(QEMU_AA) $(QEMU_AA_FLAGS); \
 	ec=$$?; \
@@ -261,7 +271,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	mkdir -p $(BUILD)
 	rm -f $(BUILD)/aarch64-serial.log
 	set +e; \
-	timeout --signal=KILL 25s $(QEMU_AA) $(QEMU_AA_FLAGS) \
+	timeout --signal=KILL 45s $(QEMU_AA) $(QEMU_AA_FLAGS) \
 		> $(BUILD)/aarch64-serial.log 2>&1; \
 	ec=$$?; \
 	set -e; \
@@ -272,11 +282,18 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/aarch64-serial.log \
-	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log; then \
-		echo "qemu-aarch64-ci: demo ok (qemu exit $$ec)"; \
+	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] EL0 /init" $(BUILD)/aarch64-serial.log \
+	   && grep -q "svc debug_print ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
+	   && grep -q "EL0 /init VIA SVC/ERET" $(BUILD)/aarch64-serial.log; then \
+		echo "qemu-aarch64-ci: EL0 /init + aspace + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
-	echo "qemu-aarch64-ci: demo banner missing (qemu exit $$ec)"; \
+	echo "qemu-aarch64-ci: userspace/demo banner missing (qemu exit $$ec)"; \
 	exit 1
 
 clean:

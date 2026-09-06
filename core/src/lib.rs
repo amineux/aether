@@ -40,8 +40,8 @@ pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftN
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{
-    hh_to_phys, phys_to_hh, IdentityAs, Sv39As, CR4_SMAP, CR4_SMEP, KERNEL_HH_SPAN, KERNEL_LMA,
-    KERNEL_TEXT_VA, KERNEL_VMA,
+    hh_to_phys, phys_to_hh, IdentityAs, Sv39As, Ttbr0As, CR4_SMAP, CR4_SMEP, KERNEL_HH_SPAN,
+    KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
@@ -73,9 +73,9 @@ pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_
 pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV,
-    SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE,
-    USER_PROBE_END, USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_STACK_TOP,
-    USER_STACK_TOP,
+    SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, USER_AA_STACK_TOP,
+    USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END, USER_PROBE_STACK_TOP,
+    USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_STACK_TOP, USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 

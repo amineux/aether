@@ -21,4 +21,5 @@ fn main() {
     embed("AETHER_INIT_ELF", "init.elf");
     embed("AETHER_PROBE_ELF", "probe.elf");
     embed("AETHER_INIT_ELF_RISCV", "init-riscv.elf");
+    embed("AETHER_INIT_ELF_AARCH64", "init-aarch64.elf");
 }

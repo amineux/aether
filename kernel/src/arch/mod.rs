@@ -1,5 +1,5 @@
 //! Architecture HAL. x86_64 is the full ring-3 path; riscv64 is S-mode
-//! + U-mode `/init` + PLIC SoftNPU doorbell; aarch64 is a thin EL1 bring-up.
+//! + U-mode `/init` + PLIC SoftNPU doorbell; aarch64 is EL1 + EL0 `/init`.
 
 pub mod irq;
 
@@ -103,6 +103,6 @@ pub fn identity_map_note() -> &'static str {
     }
     #[cfg(target_arch = "aarch64")]
     {
-        "[boot] TTBR0 identity map 4 GiB (1 GiB blocks) from trampoline"
+        "[boot] TTBR0 identity map 4 GiB (1 GiB blocks) from trampoline; EL0 splits RAM to 2 MiB"
     }
 }
