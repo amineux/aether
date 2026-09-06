@@ -1,11 +1,11 @@
 //! Virtqueue-shaped MMIO window for VirtIO-Accel.
 //!
-//! SpecForge Y1H1 **path B**: this in-kernel BAR is the canonical demo.
-//! A future `-device virtio-accel` (path A) would expose the same offsets;
-//! v0.1 does not add that QEMU device. The kernel driver pokes these
-//! registers; SoftNPU services the avail ring on a doorbell kick and
-//! raises a used-ring IRQ flag. Offsets below are frozen — see
-//! `docs/ACCEL.md`.
+//! SpecForge Y1H1 **path B**: this in-kernel BAR is the canonical demo
+//! for stock `make qemu`. Path A (`qemu/aether_accel.c`,
+//! `make qemu-accel`) implements the same offsets as an optional QEMU
+//! `-device`. The kernel driver pokes these registers; SoftNPU services
+//! the avail ring on a doorbell kick and raises a used-ring IRQ flag.
+//! Offsets below are frozen — see `docs/ACCEL.md`.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType};
 use aether_core::partition::PartitionId;

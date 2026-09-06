@@ -56,14 +56,15 @@ the byte.
 ## Virtqueue MMIO layout (in-kernel BAR)
 
 There is **no** upstream `virtio-accel` device. SpecForge Y1H1 **path B**
-is the decision: this in-kernel BAR is the **canonical demo**. Path A
-(a custom QEMU `-device` / virtio-mmio) stays optional later. The
-kernel emulates a virtqueue-shaped MMIO window
+is still the **canonical demo**: the in-kernel BAR is what `make qemu`
+runs (stock QEMU). Path A landed as an **optional** QEMU `-device`
+(`qemu/aether_accel.c`, `make qemu-accel`) that implements these same
+offsets. The kernel emulates a virtqueue-shaped MMIO window
 (`aether_drivers::mmio::AccelMmio`, 1 KiB). The offsets below are
 **frozen**.
 
 ```text
-MMIO cfg (what a future -device virtio-accel would expose)
+MMIO cfg (path A -device aether-accel and path B in-kernel BAR)
   0x00  magic       0xAE7EACC1
   0x04  version     1
   0x08  status      ACK | DRIVER | DRIVER_OK | FAILED
@@ -88,44 +89,62 @@ SoftNpuDevice::service (IRQ / kthread poll)
 AccelDevice::poll    → read used[i], ack IRQ
 ```
 
-`SoftNpuDevice` is the backend executor. The kernel driver never calls
-`SoftNpu::execute` in-process on the submit path. `make qemu` still
-needs only stock QEMU.
+`SoftNpuDevice` is the backend executor on path B. The kernel driver
+never calls `SoftNpu::execute` in-process on the submit path. `make qemu`
+still needs only stock QEMU.
 
-A QEMU device team would implement the same offsets, DMA the job wire,
-and raise a real IRQ. Swap `SoftNpuDevice` for `VirtioAccelMmio` without
-touching fabric or caps.
+Path A (`qemu/aether_accel.c`) implements the same offsets, DMA-reads
+tensor GPAs from the job wire, runs SoftNPU I32, and raises a used-ring
+IRQ. A guest driver can swap `SoftNpuDevice` for `VirtioAccelMmio`
+without touching fabric or caps. The stock kernel still uses path B so
+Soft SMMU / identity islands / mmap / KPTI stay on the code `make qemu`
+already boots.
 
 The older `VirtioAccelQueue` helper remains as a host-tested ring model.
 
 ## ADR: SpecForge Y1H1 virtio path (A vs B)
 
-**Status:** Accepted 2026-09-06.
+**Status:** Accepted 2026-09-06; path A addendum 2026-09-06.
 
 **Context.** SpecForge Y1H1 asked for a real virtio-accel path: either
 **(A)** a QEMU `-device` / virtio-mmio that DMA-reads the BAR above with
 SoftNPU behind it, **or (B)** document that the in-kernel BAR is the
 canonical demo and lock it with a golden MMIO trace. Falsifier deferred
 a custom QEMU device until after AccelDevice; Soft-CP (`backend = 3`)
-already covers a second AccelDevice path on the host.
+already covers a second AccelDevice path on the host. Path B landed
+first (golden MMIO trace, stock QEMU).
 
-**Decision: path B.** SoftNPU behind `AccelMmio` is what `make qemu`
-runs. Stock QEMU only. No new QEMU device C code.
+**Decision: path B remains canonical for stock QEMU.** SoftNPU behind
+`AccelMmio` is what `make qemu` runs. Stock QEMU only on that target.
+
+**Path A landed as optional.** `qemu/aether_accel.c` is a self-contained
+softmmu device model (PCI wrapper in `qemu/aether_accel_pci.c`) that
+implements **these** offsets, DMA-reads the job wire, executes SoftNPU
+I32, and raises a used-ring IRQ. `make accel-test` is the host/unit
+test CI runs. `make qemu-accel` uses `-device aether-accel` when
+`QEMU_ACCEL` points at a QEMU built with the device (see
+`qemu/README.md`). CI does **not** rebuild QEMU.
 
 - The BAR layout in the previous section is **frozen**: `magic` (0x00),
   `version` (0x04), `status` (0x08), `qsize` (0x0C), `doorbell` (0x10),
   `used_idx` (0x14), plus irq/avail and the avail/used rings. Changing
-  an offset is a dual SoftNPU + this doc + golden-trace update.
+  an offset is a dual SoftNPU + path-A device + this doc + golden-trace
+  update.
 - Host tests record the cfg / doorbell / used-ring access sequence for
   one SoftNPU submit/complete (`golden_mmio_softnpu_submit_complete` in
   `drivers/src/mmio.rs`, and the SoftNPU twin in
-  `drivers/src/softnpu.rs`).
-- Path A remains optional later. A QEMU device would implement **these**
-  offsets, DMA the job wire, and raise a real IRQ. Do not invent a
-  second BAR.
+  `drivers/src/softnpu.rs`). Path A’s C test checks the same published
+  cfg values after one I32 submit/complete.
+- Do not invent a second BAR. Path A DMA uses guest physical addresses
+  from the job wire. Soft SMMU stays a kernel table on path B; this
+  device is not a QEMU IOMMU.
+- F16 / F32 software IEEE stay path-B SoftNPU. Path A completes those
+  dtypes with status `-1`.
 
 **Not claimed.** This is not an upstream virtio device, not a silicon
-BAR, and not a vendor integration.
+BAR, not a vendor integration, and not a kernel driver that has swapped
+off `SoftNpuDevice`. The stock guest still retires jobs on the
+in-kernel BAR.
 
 ## Map API (Soft SMMU; not hardware)
 
@@ -271,8 +290,9 @@ in-tree as a labeled no-op, not progress.
 
 QEMU still demos SoftNPU (which already writes Soft-SMMU IOVAs into
 the avail ring). Soft-CP is host-contract tested; the kernel self-check
-only probes it so the backend id is visible on the serial log. No
-custom QEMU device is added here.
+only probes it so the backend id is visible on the serial log. Soft-CP
+does not add a QEMU device. Path A (`qemu/aether_accel.c`) is a
+separate optional BAR device; stock `make qemu` does not attach it.
 
 ## Co-scheduling
 
