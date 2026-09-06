@@ -27,6 +27,7 @@ active track the site must match.
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
+| Growable user `mmap` (`SYS_MMAP`) | Additive nr 11; anonymous 4 KiB USER pages; not POSIX | `kernel/src/{syscall,mm/paging}.rs`, `user/init` |
 | In-kernel ramfs for `/init` | Named files; seed from virtio-blk or blobs; not POSIX | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` |
 | RISC-V virt boot | S-mode + U-mode `/init` + PLIC SoftNPU doorbell | `boot/riscv64/`, `user/init/`, `make qemu-riscv` |
 | aarch64 virt boot | EL1 + EL0 `/init` + TTBR0 isolate + in-kernel SoftNPU | `boot/aarch64/`, `user/init/`, `make qemu-aarch64` |
@@ -50,7 +51,7 @@ gaps:
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
-| No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write). Identity 4 GiB stays on kernel CR3 for DMA. Not a secret slide, not Meltdown-complete, not POSIX `mmap` |
+| No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset + growable anon `SYS_MMAP` landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write; `USER_MMAP_BASE` first-fit 4 KiB). Identity 4 GiB stays on kernel CR3 for DMA. Not a secret slide, not Meltdown-complete, not POSIX `mmap` / `fork` |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |

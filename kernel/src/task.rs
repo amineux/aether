@@ -385,6 +385,26 @@ pub fn current_id() -> u32 {
     tasks().current
 }
 
+/// Caller's aspace root (user PML4 / satp / TTBR0), or `None` if the
+/// current thread is a kernel thread. `SYS_MMAP` maps into this root;
+/// SoftNPU kthread-B stays on [`crate::mm::paging::kernel_cr3`].
+pub fn current_user_root() -> Option<u64> {
+    let t = tasks();
+    if !t.started {
+        return None;
+    }
+    let cur = t.current;
+    if slot_index(cur) >= MAX || !t.threads[slot_index(cur)].used {
+        return None;
+    }
+    let cr3 = t.threads[slot_index(cur)].cr3;
+    if cr3 == 0 || cr3 == crate::mm::paging::kernel_cr3() {
+        None
+    } else {
+        Some(cr3)
+    }
+}
+
 pub fn started() -> bool {
     tasks().started
 }
