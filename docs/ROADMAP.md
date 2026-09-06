@@ -1,10 +1,10 @@
 # Roadmap and stubs
 
 Aether v0.1 is a **working vertical slice**: QEMU boot, ring-3 `/init`,
-fabric + SoftNPU via `syscall`, host-tested invariants. It is not a
+fabric + SoftNPU via virtqueue MMIO, host-tested invariants. It is not a
 product kernel.
 
-## Month 1–2 (this cut)
+## Month 1–2
 
 | Item | Status |
 | --- | --- |
@@ -17,6 +17,17 @@ product kernel.
 | Per-task PML4 / SMEP / SMAP | not started |
 | User-level threads (clone) | not started — kthread-B + `/init` mix |
 
+## Month 3–4 (this cut)
+
+| Item | Status |
+| --- | --- |
+| Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend) |
+| Custom QEMU `virtio-accel` device | not started — stock QEMU + in-tree emulator |
+| `IommuMap` pin/translate; refuse without Memory+MAP | **done** (identity IOVA) |
+| Hardware SMMU / stream IDs | not started (`MapRequest.stream_id` is a placeholder) |
+| Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
+| Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership) |
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -27,8 +38,8 @@ Search for `// STUB:` / `STUB` :
 | F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | Stop assuming 128 MiB @ 16 MiB |
 | Higher-half + KASLR | linker / trampoline | Standard kernel hardening |
-| IOMMU / SMMU | `AccelDevice::map` | Make Memory caps physically true |
-| VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; software backend is enough to demo |
+| Hardware SMMU | `core/src/iommu.rs` | Replace identity IOVA with stream IDs |
+| VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
 | Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
 | RISC-V / aarch64 | `kernel/src/arch` | New boot + irq/timer/serial |
 | Fiedler eigensolve | `core/src/cut.rs` | Power iteration on `L=D−A`; v0.1 enumerates n≤8 |
@@ -37,24 +48,22 @@ Search for `// STUB:` / `STUB` :
 | SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
-| Hardware fence/timeline | `core/src/fence.rs` | Software credits on QEMU; doorbell IRQ later |
+| Hardware fence/timeline | `core/src/fence.rs` | Software credits on QEMU; doorbell IRQ is now software |
 
 Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
-`SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / SoftNPU
-complete. The fabric object itself still returns `WouldBlock`; the
+`SYS_ACCEL_WAIT` block the caller and the kernel wakes on send / used-ring
+IRQ. The fabric object itself still returns `WouldBlock`; the
 kernel thread queue sleeps.
 
 ## Suggested next cuts (technical, not calendar)
 
-Month 3–6 stay roadmap only:
-
-1. **Real virtqueue MMIO.** Either a tiny QEMU device or virtio-mmio over
-   a reserved region so submit is not in-process.
-2. **Bank coloring.** Arena allocator takes a tenant color; scheduler
-   refuses a wave whose arena bank is foreign without an explicit xfer.
+1. **Custom QEMU virtio-accel** (or virtio-mmio) that DMA-reads the same
+   BAR layout. SoftNPU can stay the executor behind the device.
+2. **SMMU page tables.** `IommuMap` already tracks windows; program a
+   real stream ID instead of identity IOVA.
 3. **RISC-V port.** Same `aether-core`, new trampoline. This is the test
    that the HAL split is real.
-4. **Per-task page tables + IOMMU.** Isolation becomes a hardware fact.
+4. **Per-task page tables.** Isolation becomes a hardware fact.
 5. **Cap CDT / revoke.** Descendants die with the parent.
 
 ## What we will not claim
@@ -65,10 +74,10 @@ Month 3–6 stay roadmap only:
 - Wafer-scale marketing; tile SRAM is the honest first place
 - Cache coherence across chiplets (UCIe/EMIB are transport)
 - Readiness for tape-out or safety certification
-- Partnerships with silicon vendors
+- Partnerships with silicon vendors (`PartnerNpuStub` is a sketch)
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
 
-If you are a silicon OS team: start at `aether_hal::AccelDevice` and
-`AccelJobDesc`, then tell us which opcode/dtype/route fields your command
-processor already has. The rest of Aether is meant to stay out of your
-way.
+If you are a silicon OS team: start at `aether_hal::AccelDevice`,
+`AccelJobDesc`, and `PartnerNpuStub`, then tell us which opcode/dtype/route
+fields your command processor already has. The rest of Aether is meant
+to stay out of your way.

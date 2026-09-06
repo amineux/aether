@@ -1,13 +1,16 @@
 //! Kernel objects the syscall gate touches: caps, fabric, arenas, SoftNPU.
 
-use aether_core::accel::{AccelJobDesc, AccelOp, SoftNpu};
+use aether_core::accel::{AccelJobDesc, AccelOp};
 use aether_core::arena::{Arena, ArenaAllocator, ArenaRequest};
 use aether_core::caps::{CapKind, CapRights, CapTable, Capability, CPtr};
+use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
+use aether_core::iommu::MapRequest;
+use aether_core::phase::Phase;
 use aether_core::preempt::WaitWhy;
-use aether_core::sysnr::{UserAccelJob, UserCompletion, UserIpcMsg};
+use aether_core::sysnr::{UserCompletion, UserIpcMsg};
 use aether_core::types::{BankId, PhysAddr, TenantId};
-use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR};
+use aether_core::{USER_IMAGE_BASE, USER_IMAGE_END, INIT_EP_CPTR, INIT_QUEUE_CPTR};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::SoftNpuDevice;
 use aether_hal::AccelDevice;
@@ -23,9 +26,9 @@ struct Inner {
     caps: CapTable,
     fabric: Fabric,
     arenas: ArenaAllocator,
-    npu: SoftNpu,
+    npu: SoftNpuDevice<IdentityDma>,
     ep: EndpointId,
-    pending: Option<UserAccelJob>,
+    pending: bool,
     completion: Option<UserCompletion>,
     last_arena: Option<Arena>,
     mapped_va: u64,
@@ -67,13 +70,32 @@ pub fn init() {
     ])
     .expect("arenas");
 
+    let mut npu = SoftNpuDevice::new(IdentityDma);
+    let _ = npu.probe();
+    // Identity-map the /init image so stack tensors remain legal DMA targets.
+    let user_mem = caps
+        .mint(Capability {
+            kind: CapKind::Memory,
+            rights: CapRights::MEM_FULL,
+            object: 0xFFFF,
+            badge: 0,
+            generation: 0,
+            tenant,
+        })
+        .expect("user-image mem cap");
+    let user_cap = *caps.lookup(user_mem).expect("user mem");
+    let _ = npu.map_with_cap(
+        &user_cap,
+        MapRequest::pin(PhysAddr(USER_IMAGE_BASE), USER_IMAGE_END - USER_IMAGE_BASE),
+    );
+
     *WORLD.lock() = Some(Inner {
         caps,
         fabric,
         arenas,
-        npu: SoftNpu::new(),
+        npu,
         ep,
-        pending: None,
+        pending: false,
         completion: None,
         last_arena: None,
         mapped_va: 0,
@@ -85,6 +107,7 @@ pub fn init() {
     write_str(" object ep=");
     write_u64(ep.0 as u64);
     console::nl();
+    println!("[boot] virtqueue MMIO negotiated (SoftNPU backend, identity IOVA)");
 }
 
 fn with<T>(f: impl FnOnce(&mut Inner) -> T) -> T {
@@ -119,59 +142,47 @@ pub fn kernel_send_ping() -> bool {
     ok
 }
 
+/// Device-side IRQ/poll: service the virtqueue, then harvest the used ring.
 pub fn run_pending_accel() {
-    let job = with(|w| w.pending.take());
-    let Some(job) = job else {
-        return;
-    };
-    let Some(op) = AccelOp::from_u32(job.op) else {
-        return;
-    };
-    let desc = AccelJobDesc::matmul_i32(
-        job.m,
-        job.n,
-        job.k,
-        PhysAddr(job.a),
-        PhysAddr(job.b),
-        PhysAddr(job.c),
-        1,
-    );
-    let mut desc = desc;
-    desc.op = op;
-    let mut idma = IdentityDma;
-    let mut npu_ok = None;
-    with(|w| {
-        if let Ok(cpl) = w.npu.execute(&desc, &mut idma) {
-            npu_ok = Some(UserCompletion {
-                job_seq: cpl.job_seq,
-                status: cpl.status,
-                cycles: cpl.cycles,
-            });
+    let serviced = with(|w| {
+        if !w.pending && !w.npu.doorbell_pending() && !w.npu.irq_pending() {
+            return None;
         }
+        let _ = w.npu.service();
+        w.npu.poll()
     });
-    let mut dev = SoftNpuDevice::new(IdentityDma);
-    let _ = dev.probe();
-    let _ = dev.map(PhysAddr(job.a), 256);
-    let _ = dev.submit(&desc);
-    let _ = dev.poll();
-
-    if let Some(cpl) = npu_ok {
-        write_str("[accel] complete job#");
-        write_u64(cpl.job_seq as u64);
-        write_str(" status=");
-        write_i32(cpl.status);
-        write_str(" cycles=");
-        write_u64(cpl.cycles as u64);
-        console::nl();
-        with(|w| w.completion = Some(cpl));
-        if let Some(tid) = task::blocked_accel_thread(1) {
-            let buf = task::take_user_buf(tid);
-            if buf != 0 {
-                let _ = write_user_completion(buf, cpl);
-                task::set_saved_rax(tid, 0);
-            }
-            task::wake_accel(1);
+    let Some(cpl) = serviced else {
+        return;
+    };
+    write_str("[accel] used-ring IRQ job#");
+    write_u64(cpl.job_seq as u64);
+    write_str(" status=");
+    write_i32(cpl.status);
+    write_str(" cycles=");
+    write_u64(cpl.cycles as u64);
+    console::nl();
+    with(|w| {
+        w.pending = false;
+        w.completion = Some(UserCompletion {
+            job_seq: cpl.job_seq,
+            status: cpl.status,
+            cycles: cpl.cycles,
+        });
+    });
+    if let Some(tid) = task::blocked_accel_thread(1) {
+        let buf = task::take_user_buf(tid);
+        if buf != 0 {
+            let _ = write_user_completion(
+                buf,
+                UserCompletion {
+                    job_seq: cpl.job_seq,
+                    status: cpl.status,
+                    cycles: cpl.cycles,
+                },
+            );
+            task::set_saved_rax(tid, 0);
         }
+        task::wake_accel(1);
     }
 }
 
@@ -251,28 +262,38 @@ pub fn sys_recv(cptr: u64, out_ptr: u64, frame: &mut crate::arch::idt::Interrupt
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
-    let object = with(|w| {
+    let cap = with(|w| {
         w.caps
             .require(CPtr(cptr as u16), CapKind::Memory, CapRights::MAP)
-            .map(|c| c.object)
+            .copied()
             .map_err(|_| SysError::NoCap)
     })?;
     let arena = with(|w| {
         w.last_arena
-            .filter(|a| a.id.0 == object)
+            .filter(|a| a.id.0 == cap.object)
             .ok_or(SysError::Inval)
     })?;
     let va = if vaddr == 0 { arena.base.0 } else { vaddr };
+    let iova = with(|w| {
+        w.npu
+            .map_with_cap(&cap, MapRequest::pin(PhysAddr(va), arena.size))
+            .map_err(|_| SysError::Fault)
+    })?;
     paging::allow_user_2m(va);
-    with(|w| w.mapped_va = va);
-    write_str("[mm] map mem cptr va=");
+    with(|w| w.mapped_va = iova.0);
+    write_str("[mm] iommu map mem cptr pa=");
     write_hex(va);
-    write_str(" user-2M");
+    write_str(" iova=");
+    write_hex(iova.0);
+    write_str(" (identity) user-2M");
     console::nl();
-    Ok(va)
+    Ok(iova.0)
 }
 
-pub fn sys_unmap(_vaddr: u64, _len: u64) -> Result<u64, SysError> {
+pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    with(|w| {
+        let _ = w.npu.unmap(PhysAddr(vaddr));
+    });
     Ok(0)
 }
 
@@ -287,7 +308,7 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     };
     let arena = with(|w| {
         w.arenas
-            .alloc(ArenaRequest::tensor(size, pref))
+            .alloc(ArenaRequest::tensor(size, pref).for_tenant(TenantId(1)))
             .map_err(|_| SysError::Inval)
     })?;
     let cptr = with(|w| {
@@ -307,10 +328,14 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     write_u64(cptr.0 as u64);
     write_str(" bank=");
     write_u64(arena.bank.0 as u64);
-    write_str(" @ ");
+    write_str(" color.tenant=1 @ ");
     write_hex(arena.base.0);
     console::nl();
     Ok(cptr.0 as u64)
+}
+
+fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
+    aether_core::sysnr::user_range_ok(ptr, len) || w.npu.iommu.covers(PhysAddr(ptr), len)
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
@@ -324,12 +349,38 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
     if job.m != 4 || job.n != 4 || job.k != 4 {
         return Err(SysError::Inval);
     }
-    crate::syscall::copy_from_user(job.a, 256)?;
     with(|w| {
-        w.pending = Some(job);
+        if !dma_ok(w, job.a, 256) {
+            return Err(SysError::Fault);
+        }
+        if let Some(ar) = w.last_arena {
+            if admit_arena_wave(1, Phase::Compute, &ar, BankId(0)).is_err() {
+                write_str("[accel] refuse foreign bank color (need Exchange / transfer)\r\n");
+                return Err(SysError::Inval);
+            }
+        }
+        Ok(())
+    })?;
+    let Some(op) = AccelOp::from_u32(job.op) else {
+        return Err(SysError::Inval);
+    };
+    let mut desc = AccelJobDesc::matmul_i32(
+        job.m,
+        job.n,
+        job.k,
+        PhysAddr(job.a),
+        PhysAddr(job.b),
+        PhysAddr(job.c),
+        1,
+    );
+    desc.op = op;
+    with(|w| {
+        w.npu.submit(&desc).map_err(|_| SysError::Again)?;
+        w.pending = true;
         w.completion = None;
-    });
-    println!("[accel] submit queued (cap SUBMIT ok, SoftNPU deferred)");
+        Ok::<(), SysError>(())
+    })?;
+    println!("[accel] virtqueue doorbell kick (SoftNPU deferred to IRQ)");
     Ok(0)
 }
 

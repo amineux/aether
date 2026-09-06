@@ -13,10 +13,14 @@ Every activity that is not a CPU tile implements `aether_hal::AccelDevice`:
 
 ```text
 probe()  -> AccelInfo
-submit(job: &AccelJobDesc) -> job_token
-poll()   -> Option<Completion>     // IRQ/doorbell eventually calls this
-map(pa, len)                       // pin / IOMMU map; requires Memory cap
+submit(job: &AccelJobDesc) -> job_token   // avail ring + doorbell kick
+poll()   -> Option<Completion>            // used ring; IRQ ack
+map(req: MapRequest) -> iova              // pin / IOMMU; requires Memory cap
 ```
+
+`submit` does **not** execute the job. Completions arrive on the used
+ring after the device services a doorbell (SoftNPU `service()`, or a
+future MSI-X).
 
 The job descriptor is the architectural contract (see
 `aether_core::accel::AccelJobDesc`): opcode, MxNxK, physical bases
@@ -38,38 +42,86 @@ v0.1 opcodes:
 
 `F16` / `F32` are **STUB** (no libm / no hard-float in the kernel).
 
-## VirtIO-Accel (QEMU story)
+## Virtqueue MMIO layout (in-kernel BAR)
 
-There is **no** upstream `virtio-accel` device. Shipping a custom QEMU
-fork is out of scope for v0.1. Instead we specified a virtio-shaped ABI
-and implemented both sides in-tree:
+There is **no** upstream `virtio-accel` device. A custom QEMU fork is
+still out of scope. The kernel emulates a virtqueue-shaped MMIO window
+(`aether_drivers::mmio::AccelMmio`, 1 KiB):
 
 ```text
 MMIO cfg (what a future -device virtio-accel would expose)
-  0x00  magic     0xAE7EACC1
-  0x04  version   1
-  0x08  status    ACK | DRIVER | DRIVER_OK | FAILED
-  0x0C  qsize
-  0x10  doorbell  (write = kick)
-  0x14  used_idx
+  0x00  magic       0xAE7EACC1
+  0x04  version     1
+  0x08  status      ACK | DRIVER | DRIVER_OK | FAILED
+  0x0C  qsize       8
+  0x10  doorbell    write 1 = kick
+  0x14  used_idx    device-updated
+  0x18  irq_status  bit0 = used-ring IRQ
+  0x1C  irq_ack     driver write 1 to ack
+  0x20  avail_idx   driver-updated
 
-Queue
-  avail[]  AccelJobDesc
-  used[]   { job_seq, status, cycles }
+Queue (same BAR)
+  0x80  avail[8]    AccelJobWire (88 bytes; opcode/shape/IOVAs)
+  0x340 used[8]     { job_seq, status, cycles }
 ```
 
-`aether_drivers::VirtioAccelQueue` is that ring. `SoftNpuDevice` binds it
-to the software NPU so `make qemu` needs only stock QEMU.
+Path:
 
-A QEMU device team would:
+```text
+AccelDevice::submit  → write avail[i], avail_idx++, doorbell=1
+SoftNpuDevice::service (IRQ / kthread poll)
+                     → take avail, execute SoftNPU, write used, irq_status|=1
+AccelDevice::poll    → read used[i], ack IRQ
+```
 
-1. Implement the MMIO block and a virtqueue.
-2. DMA the job desc.
-3. Either execute a model or forward to a plugin.
-4. Write a used element and raise IRQ.
+`SoftNpuDevice` is the backend executor. The kernel driver never calls
+`SoftNpu::execute` in-process on the submit path. `make qemu` still
+needs only stock QEMU.
 
-The kernel driver then swaps `SoftNpuDevice` for `VirtioAccelMmio` without
+A QEMU device team would implement the same offsets, DMA the job wire,
+and raise a real IRQ. Swap `SoftNpuDevice` for `VirtioAccelMmio` without
 touching fabric or caps.
+
+The older `VirtioAccelQueue` helper remains as a host-tested ring model.
+
+## Map API (identity IOVA; future SMMU)
+
+`aether_core::iommu::IommuMap` is the pin/translate table:
+
+```text
+map(Memory cap + MAP, guest_pa, len) -> MappedRegion { iova == guest_pa }
+translate(guest_pa) -> iova
+covers(pa, len)     -> bool
+unmap(iova)
+```
+
+Rules:
+
+1. Refuse unless `cap.kind == Memory` and `cap.rights` contains `MAP`.
+2. Track every mapped window (overlap and table-full are errors).
+3. QEMU UP identity-maps: `iova == guest_pa`. A later SMMU cut allocates
+   a real IOVA and programs stream IDs (`MapRequest.stream_id`).
+4. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
+   Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`.
+
+`SYS_MAP` walks the Memory cap, pins the arena through `IommuMap`, and
+sets USER on the 2 MiB page. `/init` tensors may live in the user image
+(also identity-pinned at boot) or in a mapped arena.
+
+Do **not** map “all of HBM” into the NPU. The arena + cap is the point.
+
+## Bank coloring
+
+Tensor arenas carry a `BankColor { tenant, bank }`:
+
+- `ArenaRequest::for_tenant` paints the allocation at birth.
+- `transfer_owner` is the explicit ownership transfer; it recolors the
+  arena to the new tenant and keeps the physical bank.
+- `Phase::Exchange` is the other legal way to touch a foreign bank
+  (DMA / NoC xfer). Compute on a foreign color is refused.
+
+`TileScheduler::place_ok` and `admit_wave` share that gate. Host tests
+cover refuse (foreign bank / foreign tenant) and transfer-then-admit.
 
 ## SoftNPU
 
@@ -82,26 +134,35 @@ touching fabric or caps.
 It is a **model of a matmul/wave engine**, not a product NPU. The point is
 that job submit, ownership, and completion look like silicon.
 
-## How a real NPU driver plugs in
+## How to plug a real NPU
+
+Start from `aether_drivers::PartnerNpuStub` (no-op backend, `backend = 2`).
+That sketch shows how opcode / dtype / route fields become a command
+packet (`PartnerCmd`). Then:
 
 ```text
-1. PCI/MMIO probe; fill AccelInfo { backend: 2, ... }.
+1. PCI/MMIO probe; fill AccelInfo { backend: 2, vendor, device, ... }.
 2. On Memory cap + map(): program the IOMMU / SMMU and the device's
    page table / stream IDs. Refuse if the cap lacks MAP or the tenant
-   does not own the arena.
-3. On submit(): translate AccelJobDesc into the chip's command packet
-   (opcode, stride, dtype). Ring the doorbell.
+   does not own the arena. Identity IOVA is only a QEMU stand-in.
+3. On submit(): PartnerCmd::from_job(job, &iommu) → chip command packet
+   (opcode, dtype, route_chiplet/tile, IOVAs). Ring the doorbell.
+   Do not execute in the syscall; wait for the used ring / IRQ.
 4. On IRQ: read completion, AccelDevice::poll equivalent, then
    fabric.send(REPLY) to job.completion_ep.
-5. Never accept a PA that did not come from a cap walk.
+5. Never accept a PA that did not come from a cap walk + IommuMap pin.
+6. Honor BankColor: Compute waves stay on the painted bank unless the
+   caller transferred ownership or submitted Phase::Exchange.
 ```
 
-Do **not** map “all of HBM” into the NPU. The arena + cap is the point.
+TODOs left in `PartnerNpuStub` on purpose: BAR probe, SMMU SID, MSI-X
+pop, partner opcode packing. This is not a vendor partnership.
 
 ## Co-scheduling
 
 `TileScheduler` has an `Npu` tile. Init enqueues an `AccelWave` with a
-deadline and bank affinity; `pick(npu0)` returns it before a CPU thread.
+deadline, bank affinity, and arena color; `pick(npu0)` returns it before
+a CPU thread, and refuses a foreign-colored Compute wave.
 Work-stealing will not move a wave onto a CPU tile (`Job::compatible`).
 
 Jobs are fence-ordered and credit-limited per `PartitionProfile`.
@@ -110,9 +171,9 @@ partition that is out of credits refuses submit.
 
 A later cut should:
 
-- block the submitting thread on SYNC + `accel_wait` (fence wait)
-- let the NPU IRQ complete the fence and wake that thread
+- let a real device IRQ (not only kthread poll) complete the fence
 - meter HBM bandwidth as the partition QoS budget already names
+- replace identity IOVA with an SMMU page table
 
 Do not assume cache coherence across chiplets. SRAM on the tile is the
 honest first place; HBM and CXL are other typed spaces, not a wafer-scale

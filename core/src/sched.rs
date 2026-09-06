@@ -4,6 +4,7 @@
 //! places both `Thread` and `AccelWave` on the same fabric scheduler so
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
 
+use crate::color::{admit_wave, BankColor, ColorError};
 use crate::cut::{AffinityGraph, CutError, SpectralCut, MAX_CUTS_SCHED};
 use crate::partition::{PartitionError, PartitionProfile};
 use crate::phase::Phase;
@@ -44,6 +45,8 @@ pub struct Job {
     pub partition_id: Option<u32>,
     /// Fence / timeline id for submit → complete ordering.
     pub fence_id: Option<u64>,
+    /// Arena tenant/bank paint. `None` = unrestricted (legacy jobs).
+    pub arena_color: Option<BankColor>,
 }
 
 impl Job {
@@ -67,6 +70,17 @@ impl Job {
             }
         }
         self.priority.min((N_PRIO - 1) as u8)
+    }
+
+    /// Bank-color gate used by pick and by accel submit.
+    pub fn color_ok(&self, tile_home: BankId) -> Result<(), ColorError> {
+        if self.kind != JobKind::AccelWave {
+            return Ok(());
+        }
+        if self.arena_color.is_none() {
+            return Ok(());
+        }
+        admit_wave(self.tenant, self.phase, self.arena_color, tile_home)
     }
 }
 
@@ -133,6 +147,8 @@ impl TileScheduler {
                 .map(|_| ())?;
         }
         self.partition_ok(job, tile)
+            .map_err(|_| CutError::CrossCut)?;
+        job.color_ok(self.tile(tile).map(|t| t.home_bank).unwrap_or(BankId(0)))
             .map_err(|_| CutError::CrossCut)
     }
 
@@ -315,6 +331,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         assert!(s.pick(TileId(0)).is_none());
         assert!(s.pick(TileId(2)).is_some());
@@ -335,6 +352,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -348,6 +366,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.priority, 1);
@@ -369,6 +388,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -382,6 +402,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.deadline_ticks, Some(100));
@@ -402,6 +423,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         s.enqueue(Job {
             id: 11,
@@ -415,6 +437,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.id, 11);
@@ -435,6 +458,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         // tile 1 has nothing local; steals from the ready pool
         let j = s.steal(TileId(1)).unwrap();
@@ -456,6 +480,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         assert!(s.steal(TileId(1)).is_none());
         assert!(s.pick(TileId(0)).is_some());
@@ -479,6 +504,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         // tile 1 is chiplet 1; bank 0 is chiplet 0 → CrossCut
         assert!(s.pick(TileId(1)).is_none());
@@ -518,6 +544,7 @@ mod tests {
             phase: Phase::Compute,
             partition_id: Some(1),
             fence_id: Some(1),
+            arena_color: None,
         });
         // tile 1 is not in the slice mask
         assert!(s.pick(TileId(1)).is_none());
@@ -539,7 +566,88 @@ mod tests {
             phase: Phase::Compute,
             partition_id: None,
             fence_id: None,
+            arena_color: None,
         });
         assert!(s.steal(TileId(2)).is_none());
+    }
+
+    #[test]
+    fn foreign_bank_wave_refused_without_transfer() {
+        let mut s = setup();
+        s.enqueue(Job {
+            id: 20,
+            kind: JobKind::AccelWave,
+            tile_hint: Some(TileId(2)),
+            bank_affinity: Some(BankId(1)),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
+            arena_color: Some(BankColor::new(crate::types::TenantId(1), BankId(1))),
+        });
+        // NPU tile 2 lives on bank 0; arena color is bank 1.
+        assert!(s.pick(TileId(2)).is_none());
+        assert_eq!(s.ready_count(), 1);
+    }
+
+    #[test]
+    fn exchange_phase_allows_foreign_bank() {
+        let mut s = setup();
+        s.enqueue(Job {
+            id: 21,
+            kind: JobKind::AccelWave,
+            tile_hint: Some(TileId(2)),
+            bank_affinity: Some(BankId(1)),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: None,
+            phase: Phase::Exchange,
+            partition_id: None,
+            fence_id: None,
+            arena_color: Some(BankColor::new(crate::types::TenantId(1), BankId(1))),
+        });
+        let j = s.pick(TileId(2)).unwrap();
+        assert_eq!(j.id, 21);
+        assert_eq!(j.phase, Phase::Exchange);
+    }
+
+    #[test]
+    fn transfer_recolors_and_compute_is_admitted() {
+        use crate::arena::{ArenaAllocator, ArenaRequest};
+        use crate::types::PhysAddr;
+
+        let mut arenas = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * 1024 * 1024)])
+            .unwrap();
+        let ar = arenas
+            .alloc(ArenaRequest::tensor(4096, Some(BankId(0))).for_tenant(crate::types::TenantId(2)))
+            .unwrap();
+        assert_eq!(
+            crate::color::admit_arena_wave(1, Phase::Compute, &ar, BankId(0)).unwrap_err(),
+            crate::color::ColorError::ForeignTenant
+        );
+        arenas.transfer_owner(ar.id, None, 2, 1).unwrap();
+        let painted = *arenas.get(ar.id).unwrap();
+        crate::color::admit_arena_wave(1, Phase::Compute, &painted, BankId(0)).unwrap();
+
+        let mut s = setup();
+        s.enqueue(Job {
+            id: 22,
+            kind: JobKind::AccelWave,
+            tile_hint: Some(TileId(2)),
+            bank_affinity: Some(BankId(0)),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
+            arena_color: Some(painted.color),
+        });
+        assert_eq!(s.pick(TileId(2)).unwrap().id, 22);
     }
 }

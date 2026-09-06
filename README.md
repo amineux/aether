@@ -115,7 +115,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; VirtIO-Accel + SoftNPU; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; IOMMU pin table; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → fence → complete |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected |
@@ -139,10 +139,11 @@ The kernel and `/init` are **separate Cargo projects** so
 
 ## What v0.1 is honest about
 
-- **Research prototype.** No IOMMU, no verified cap derivation tree, no real
+- **Research prototype.** No hardware SMMU, no verified cap derivation tree, no real
   silicon driver, no SMP.
-- **VirtIO-Accel is a protocol + software device**, not a tree in upstream QEMU.
-  The SoftNPU runs in-kernel so the demo does not depend on a custom qemu.
+- **VirtIO-Accel is an in-kernel MMIO virtqueue**, not a tree in upstream QEMU.
+  `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
+  path so the demo does not depend on a custom qemu. Identity IOVA only.
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
   as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
   Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
@@ -158,7 +159,7 @@ team could take into bring-up.
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + FlowHodgeQuota invariants
-- [docs/ACCEL.md](docs/ACCEL.md) — HAL, VirtIO-Accel, how to plug a real NPU
+- [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/ROADMAP.md](docs/ROADMAP.md) — stubs and next cuts
 

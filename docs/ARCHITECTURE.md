@@ -95,7 +95,7 @@ aether-core     alloc-free: caps, fabric, arenas, sched, SoftNPU math, demo
      ▲
 aether-hal      AccelDevice / Console / Timer
      ▲
-aether-drivers  VirtioAccelQueue + SoftNpuDevice
+aether-drivers  AccelMmio virtqueue + SoftNpuDevice + PartnerNpuStub
      ▲
 aether-kernel   arch, mm, syscall/sysret, ELF loader, tasks
 user/init       static non-PIE ELF64 `/init` (embedded blob)
@@ -113,15 +113,17 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
 | `kernel/src/elfload.rs` | Static ELF64 loader (embedded `build/init.elf`) |
-| `kernel/src/world.rs` | Init cap table, fabric, arenas, SoftNPU |
+| `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
 | `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
 | `core/src/sysnr.rs` | Frozen syscall numbers + user C ABI |
 | `core/src/caps.rs` | Cap table |
 | `core/src/fabric.rs` | Endpoints and messages |
-| `core/src/arena.rs` | Bank-aware allocator |
-| `core/src/sched.rs` | Tile scheduler |
+| `core/src/arena.rs` | Bank-aware allocator + tenant color |
+| `core/src/color.rs` | BankColor admit / refuse |
+| `core/src/iommu.rs` | Pin/translate table (identity IOVA) |
+| `core/src/sched.rs` | Tile scheduler + color gate |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph |

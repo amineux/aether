@@ -5,8 +5,9 @@
 //! cache coherence: a transfer from CPU tile to NPU tile is an ownership
 //! handoff, not a shared mapping.
 
+use crate::color::BankColor;
 use crate::space::MemorySpace;
-use crate::types::{BankId, PAGE_2M, PAGE_4K, PhysAddr};
+use crate::types::{BankId, TenantId, PAGE_2M, PAGE_4K, PhysAddr};
 
 pub const MAX_ARENAS: usize = 16;
 pub const MAX_FREE: usize = 24;
@@ -36,6 +37,8 @@ pub struct ArenaRequest {
     pub huge: bool,
     /// Typed place this buffer is bound to. UNIFIED_MEMORY is a cap bit, not a space.
     pub space: MemorySpace,
+    /// Tenant / bank paint. `None` = uncolored until an explicit transfer.
+    pub color: Option<BankColor>,
 }
 
 impl ArenaRequest {
@@ -48,11 +51,27 @@ impl ArenaRequest {
             dma: true,
             huge: size >= PAGE_2M,
             space: MemorySpace::Host,
+            color: None,
         }
     }
 
     pub const fn in_space(mut self, space: MemorySpace) -> Self {
         self.space = space;
+        self
+    }
+
+    /// Paint the allocation with a tenant/bank color at birth.
+    pub const fn with_color(mut self, color: BankColor) -> Self {
+        self.color = Some(color);
+        self
+    }
+
+    pub const fn for_tenant(mut self, tenant: TenantId) -> Self {
+        if let Some(bank) = self.bank_pref {
+            self.color = Some(BankColor::new(tenant, bank));
+        } else {
+            self.color = Some(BankColor::new(tenant, BankId(0)));
+        }
         self
     }
 }
@@ -70,6 +89,8 @@ pub struct Arena {
     pub owner_tile: Option<u16>,
     pub owner_tenant: Option<u32>,
     pub space: MemorySpace,
+    /// Tenant + bank paint. Updated by [`ArenaAllocator::transfer_owner`].
+    pub color: BankColor,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -225,8 +246,12 @@ impl ArenaAllocator {
             dma: req.dma,
             huge: req.huge && align >= PAGE_2M,
             owner_tile: None,
-            owner_tenant: None,
+            owner_tenant: req.color.map(|c| c.tenant.0),
             space: req.space,
+            color: req
+                .color
+                .map(|c| BankColor::new(c.tenant, bank))
+                .unwrap_or(BankColor::unassigned(bank)),
         };
         self.next_id += 1;
         self.arenas[slot] = Some(arena);
@@ -293,6 +318,7 @@ impl ArenaAllocator {
         }
         a.owner_tile = Some(to_tile);
         a.owner_tenant = Some(tenant);
+        a.color = BankColor::new(TenantId(tenant), a.bank);
         Ok(())
     }
 
@@ -357,6 +383,7 @@ mod tests {
             dma: true,
             huge: false,
             space: MemorySpace::Host,
+            color: None,
         })
         .unwrap();
         let ar = a
@@ -375,9 +402,10 @@ mod tests {
                 bank_pref: Some(BankId(0)),
                 pinned: true,
                 dma: true,
-                huge: true,
-                space: MemorySpace::Host,
-            })
+            huge: true,
+            space: MemorySpace::Host,
+            color: None,
+        })
             .unwrap();
         assert!(ar.base.is_aligned(PAGE_2M));
         assert!(ar.huge);
@@ -396,6 +424,25 @@ mod tests {
         );
         a.transfer_owner(ar.id, Some(3), 4, 1).unwrap();
         assert_eq!(a.get(ar.id).unwrap().owner_tile, Some(4));
+        assert_eq!(
+            a.get(ar.id).unwrap().color,
+            crate::color::BankColor::new(crate::types::TenantId(1), BankId(0))
+        );
+    }
+
+    #[test]
+    fn alloc_takes_tenant_color() {
+        let mut a = mk();
+        let ar = a
+            .alloc(
+                ArenaRequest::tensor(4096, Some(BankId(1)))
+                    .for_tenant(crate::types::TenantId(3)),
+            )
+            .unwrap();
+        assert_eq!(ar.bank, BankId(1));
+        assert_eq!(ar.color.tenant.0, 3);
+        assert_eq!(ar.color.bank, BankId(1));
+        assert_eq!(ar.owner_tenant, Some(3));
     }
 
     #[test]
@@ -419,6 +466,7 @@ mod tests {
             dma: false,
             huge: false,
             space: MemorySpace::Host,
+            color: None,
         })
         .unwrap();
         a.alloc(ArenaRequest {
@@ -429,6 +477,7 @@ mod tests {
             dma: false,
             huge: false,
             space: MemorySpace::Host,
+            color: None,
         })
         .unwrap();
         assert_eq!(
