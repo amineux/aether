@@ -26,7 +26,9 @@ virtio-accel and the other stubs remain open (see
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows;
 no higher-half / POSIX MM). A minimal cap CDT / revoke is **done** as
 unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
-not a seL4 CNode, not a calendar milestone).
+not a seL4 CNode, not a calendar milestone). An aarch64 thin HAL
+(`make qemu-aarch64`) is **done** as a RISC-V-shaped bring-up (PL011
++ GICv2 + TTBR; no EL0, not product-class).
 
 ### KEEP / ACTIVE Y1
 
@@ -69,7 +71,7 @@ After AccelDevice bites a real-shaped path — not before:
 - ELF beyond this subset (higher-half, PIE, ramfs). Per-task PML4 +
   SMEP/SMAP + optional `/probe` is landed.
 - Laplacian expansion (n≤32 placement; AffinityLaplacian in sched).
-- aarch64 (thin HAL after the x86 ABI is stable).
+- aarch64 EL0 / GICv3 / virtio (thin HAL landed; userspace is later).
 
 ### PR order for Kernel (revised)
 
@@ -80,8 +82,9 @@ After AccelDevice bites a real-shaped path — not before:
    `PartnerNpuStub` enrichment theater)
 4. SMP smoke (INIT-SIPI, per-CPU `gs`, two-hart work-steal)
 5. Per-task PML4 + SMEP/SMAP (documented x86 subset)
-6. Minimal cap CDT / revoke (internal API + host/QEMU demo) — **this cut**
-7. Optional virtio-accel / MicroPerceptron interop later
+6. Minimal cap CDT / revoke (internal API + host/QEMU demo)
+7. aarch64 thin HAL (QEMU virt, no EL0) — **this cut**
+8. Optional virtio-accel / MicroPerceptron interop later
 
 ### Active file touch map
 
@@ -93,6 +96,7 @@ After AccelDevice bites a real-shaped path — not before:
 | SMP smoke | `kernel/src/arch/{irq,x86_64/{smp,cpu,apic,idt}}.rs`, `Makefile`, `qemu-smp-ci` |
 | Per-task PML4 | `kernel/src/{mm,task,elfload}.rs`, `core/src/aspace.rs`, `user/probe/`, `qemu-ci` |
 | Cap CDT / revoke | `core/src/caps.rs`, `core/src/demo.rs`, `docs/{SECURITY,ROADMAP,YEAR2_PLAN}.md` |
+| aarch64 thin HAL | `boot/aarch64/`, `kernel/src/arch/aarch64/`, `Makefile`, `qemu-aarch64-ci` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
@@ -203,8 +207,8 @@ for new qemu/smp targets.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.
-6. **RISC-V temptation:** Do not block Y1 on `sret` userspace; keep a
-   thin HAL. aarch64 after the x86 ABI is stable.
+6. **RISC-V / aarch64 temptation:** Do not block Y1 on `sret` / EL0
+   userspace; keep the thin HALs. Neither port is a second kernel.
 
 ### PR order (SpecForge original)
 

@@ -473,6 +473,7 @@
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
                 <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
+                <li>aarch64 virt thin boot (kmain + <code>aether_core</code>, no EL0; not product-class)</li>
                 <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
               </ul>
             </div>
@@ -549,29 +550,29 @@
   TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
   RING-3 /init VIA SYSCALL/SYSRET</span>
 
-Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span>
-CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci</pre>
+Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span> · <span class="cmd">make qemu-aarch64</span>
+CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
           </div>
           <div class="proof-list" data-reveal data-d="2">
             <div class="proof">
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V and aarch64 thin ports.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">CI</span>
               <div>
                 <a href="https://github.com/amineux/aether/actions">Actions on every push / PR</a>
-                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>.</p>
+                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>, <code>make qemu-aarch64-ci</code>.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. aarch64 has no EL0. Neither thin port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">

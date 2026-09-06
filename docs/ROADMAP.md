@@ -62,6 +62,26 @@ Honest limits of this cut:
   uses Soft SMMU (`StreamId` + bind/abort). QEMU still demos SoftNPU.
   `PartnerNpuStub` is unchanged.
 
+## Year-2: aarch64 thin HAL (this cut)
+
+Landed as a **thin HAL test**, same recipe as RISC-V — **not** a
+second product kernel, **not** EL0 userspace:
+
+- `boot/aarch64` trampoline + TTBR0 identity map (4 GiB, 1 GiB
+  blocks). Drops EL2→EL1 when QEMU starts us in the hypervisor.
+- `kernel/src/arch/aarch64`: PL011 UART, GICv2 + CNTV (PPI 27),
+  VBAR_EL1. `make qemu-aarch64` / `make qemu-aarch64-ci` use QEMU
+  `-machine virt,gic-version=2 -cpu cortex-a72` (documented in the
+  Makefile).
+- Same `aether_core` self-check as x86 / RISC-V (Soft SMMU pin
+  refuse, CDT banner). `aether-core` / `aether-hal` / syscalls
+  unchanged. Extra PEs stay parked.
+- **No** EL0, no `eret` `/init`, no virtqueue, no GICv3, no FDT
+  mmap parser. Success is Angel semihosting `SYS_EXIT` (`-semihosting`).
+
+aarch64 EL0 / GICv3 / virtio would repeat the x86 userspace cut. Do
+not treat this as a product-class second architecture.
+
 ## Year-1 H1: Soft SMMU
 
 Landed (software only — **not** a hardware SMMU, **not** an SMMUv3 emulator):
@@ -158,7 +178,7 @@ Search for `// STUB:` / `STUB` :
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
-| aarch64 | (none) | Not started; RISC-V was the HAL test |
+| aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
 | OperatorKernelHandle | (none) | Cap for a compiled collective (tree vs ring vs torus); binds a Hodge class |
@@ -186,16 +206,17 @@ kernel thread queue sleeps.
    mappings are still the trampoline identity 4 GiB.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
-6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
+6. **aarch64 EL0.** Thin HAL landed (`make qemu-aarch64`). Repeat the
+   x86 userspace + virtqueue cut only after the x86 ABI stays stable.
 
 ## Two-year plan
 
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
-  SMP smoke, per-task PML4 + SMEP/SMAP, and a minimal cap CDT / revoke
-  (this cut) are landed. ABI stays stable. Custom QEMU virtio-accel,
-  Laplacian expansion, and aarch64 remain deferred.
+  SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
+  and an aarch64 thin HAL (this cut) are landed. ABI stays stable.
+  Custom QEMU virtio-accel and Laplacian expansion remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -203,9 +224,10 @@ kernel thread queue sleeps.
   Y2H1 security work, not a SpecForge clock.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
-per-task PML4 / SMEP / SMAP (PR #10), and cap CDT / revoke (this cut)
-are **done** as research-prototype slices. Custom QEMU virtio-accel
-and the other stubs above are still open.
+per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), and
+the aarch64 thin HAL (this cut) are **done** as research-prototype
+slices. Custom QEMU virtio-accel and the other stubs above are still
+open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track
@@ -222,7 +244,7 @@ booked silicon bring-up, no manufacturing climax.
 - Readiness for tape-out or safety certification
 - Partnerships with silicon vendors (`PartnerNpuStub` is a sketch)
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
-- That the RISC-V port is a product-class second architecture
+- That the RISC-V or aarch64 port is a product-class second architecture
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
 `AccelJobDesc`, and `SoftCommandProcessor` (`CpCmd` in [ACCEL.md](ACCEL.md)),

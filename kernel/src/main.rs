@@ -1,5 +1,5 @@
 //! Aether kernel entry. x86_64 loads `/init` and drops to ring-3.
-//! RISC-V is a thin S-mode port: self-check + serial, no `sret`.
+//! RISC-V / aarch64 are thin ports: self-check + serial, no userspace.
 
 #![no_std]
 #![no_main]
@@ -93,8 +93,10 @@ pub extern "C" fn kmain() -> ! {
         crate::console::nl();
         crate::mm::paging::enable_smep_smap();
     }
-    #[cfg(not(target_arch = "x86_64"))]
+    #[cfg(target_arch = "riscv64")]
     println!("[boot] UP timer armed (100 Hz); RISC-V extra harts stay parked");
+    #[cfg(target_arch = "aarch64")]
+    println!("[boot] UP timer armed (100 Hz); extra PEs stay parked");
     nl();
 
     init::run_kernel_selfcheck();
@@ -128,15 +130,18 @@ pub extern "C" fn kmain() -> ! {
         }
     }
 
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     {
-        // Thin port: no sret / ELF /init. The self-check *is* the demo.
+        // Thin port: no ELF /init. The self-check *is* the demo.
         nl();
         println!("====================================================");
         println!("  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE");
         println!("  CUT BIND + HODGE FLOW CLASS ENFORCED");
         println!("  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB");
+        #[cfg(target_arch = "riscv64")]
         println!("  RISC-V v0.1: kmain + serial (no ring-3)");
+        #[cfg(target_arch = "aarch64")]
+        println!("  aarch64 v0.1: kmain + serial (no EL0)");
         println!("====================================================");
         arch::exit_qemu(true);
         println!("Aether idle. (research prototype -- halt loop)");

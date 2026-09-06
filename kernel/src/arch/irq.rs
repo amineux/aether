@@ -23,6 +23,16 @@ pub fn save_disable() -> bool {
     prev & 2 != 0
 }
 
+#[cfg(target_arch = "aarch64")]
+pub fn save_disable() -> bool {
+    let daif: u64;
+    unsafe {
+        core::arch::asm!("mrs {daif}, daif", daif = out(reg) daif, options(nomem, nostack));
+        core::arch::asm!("msr daifset, #2", options(nostack));
+    }
+    daif & (1 << 7) == 0
+}
+
 #[cfg(target_arch = "x86_64")]
 pub fn restore(were_enabled: bool) {
     if were_enabled {
@@ -41,6 +51,15 @@ pub fn restore(were_enabled: bool) {
     }
 }
 
+#[cfg(target_arch = "aarch64")]
+pub fn restore(were_enabled: bool) {
+    if were_enabled {
+        unsafe {
+            core::arch::asm!("msr daifclr, #2", options(nostack));
+        }
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 pub fn enable() {
     unsafe {
@@ -52,6 +71,13 @@ pub fn enable() {
 pub fn enable() {
     unsafe {
         core::arch::asm!("csrsi sstatus, 2", options(nostack));
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn enable() {
+    unsafe {
+        core::arch::asm!("msr daifclr, #2", options(nostack));
     }
 }
 
@@ -67,7 +93,7 @@ pub fn inc_ticks() -> u64 {
 }
 
 /// Bring up APIC ID 1 via INIT-SIPI when QEMU `-smp 2` (or more) is present.
-/// Times out and stays UP otherwise. RISC-V extra harts stay parked.
+/// Times out and stays UP otherwise. RISC-V / aarch64 extra PEs stay parked.
 #[allow(dead_code)]
 pub fn smp_start_aps() {
     #[cfg(target_arch = "x86_64")]

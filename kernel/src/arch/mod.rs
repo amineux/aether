@@ -1,5 +1,5 @@
-//! Architecture HAL. x86_64 is the full ring-3 path; riscv64 is a thin
-//! S-mode bring-up (kmain + serial + `aether_core` self-check).
+//! Architecture HAL. x86_64 is the full ring-3 path; riscv64 and aarch64
+//! are thin bring-ups (kmain + serial + `aether_core` self-check).
 
 pub mod irq;
 
@@ -7,11 +7,15 @@ pub mod irq;
 pub mod x86_64;
 #[cfg(target_arch = "riscv64")]
 pub mod riscv64;
+#[cfg(target_arch = "aarch64")]
+pub mod aarch64;
 
 #[cfg(target_arch = "x86_64")]
 pub use x86_64::{gdt, idt, serial, syscall, timer};
 #[cfg(target_arch = "riscv64")]
 pub use riscv64::{idt, serial, timer};
+#[cfg(target_arch = "aarch64")]
+pub use aarch64::{idt, serial, timer};
 
 pub fn console_name() -> &'static str {
     #[cfg(target_arch = "x86_64")]
@@ -21,6 +25,10 @@ pub fn console_name() -> &'static str {
     #[cfg(target_arch = "riscv64")]
     {
         riscv64::console_name()
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::console_name()
     }
 }
 
@@ -33,6 +41,10 @@ pub fn idle() -> ! {
     {
         riscv64::idle()
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::idle()
+    }
 }
 
 pub fn exit_qemu(success: bool) {
@@ -43,6 +55,10 @@ pub fn exit_qemu(success: bool) {
     #[cfg(target_arch = "riscv64")]
     {
         riscv64::exit_qemu(success)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::exit_qemu(success)
     }
 }
 
@@ -55,6 +71,10 @@ pub fn kernel_text_va() -> u64 {
     {
         riscv64::KERNEL_VA
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        aarch64::KERNEL_VA
+    }
 }
 
 pub fn frame_window() -> (u64, u64) {
@@ -66,6 +86,10 @@ pub fn frame_window() -> (u64, u64) {
     {
         (riscv64::FRAME_START, riscv64::FRAME_END)
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (aarch64::FRAME_START, aarch64::FRAME_END)
+    }
 }
 
 pub fn identity_map_note() -> &'static str {
@@ -76,5 +100,9 @@ pub fn identity_map_note() -> &'static str {
     #[cfg(target_arch = "riscv64")]
     {
         "[boot] Sv39 identity map 4 GiB (1 GiB pages) from trampoline"
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        "[boot] TTBR0 identity map 4 GiB (1 GiB blocks) from trampoline"
     }
 }
