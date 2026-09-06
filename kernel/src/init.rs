@@ -4,6 +4,9 @@
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
+use aether_drivers::softnpu::IdentityDma;
+use aether_drivers::SoftCommandProcessor;
+use aether_hal::AccelDevice;
 
 use crate::arch::irq;
 use crate::console::{self, write_hex, write_i32, write_str, write_u64};
@@ -64,6 +67,24 @@ pub fn run_kernel_selfcheck() {
     write_str("[map] Soft SMMU pin + Memory-cap refuse  ");
     write_str(flag(report.map_ok));
     console::nl();
+
+    {
+        let mut cp = SoftCommandProcessor::new(IdentityDma);
+        match cp.probe() {
+            Ok(info) => {
+                write_str("[accel] SoftCommandProcessor probe backend=");
+                write_u64(info.backend as u64);
+                write_str(" ");
+                write_str(cp.name());
+                write_str(" (host CP path; QEMU demo stays SoftNPU)");
+                console::nl();
+            }
+            Err(_) => {
+                write_str("[accel] SoftCommandProcessor probe FAIL");
+                console::nl();
+            }
+        }
+    }
 
     write_str("[color] tenant/bank paint  Compute foreign refuse + Exchange ok  ");
     write_str(flag(report.color_ok));

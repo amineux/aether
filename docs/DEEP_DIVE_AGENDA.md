@@ -78,11 +78,12 @@ Files, in this order:
 1. `hal/src/lib.rs` — `AccelDevice` trait. Four methods.
 2. `core/src/accel.rs` — `AccelJobDesc`. Opcode, shape, dtype, place,
    phase, partition, fence. Not a graph.
-3. `docs/ACCEL.md` — how a real NPU driver plugs in.
+3. `docs/ACCEL.md` — how a command processor plugs in (`CpCmd` layout).
 4. `drivers/src/softnpu.rs` + `drivers/src/mmio.rs` — virtqueue BAR + SoftNPU.
-5. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color.
-6. `drivers/src/partner.rs` — no-op sketch they would replace (not a partner).
-7. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` — evidence
+5. `drivers/src/fakecp.rs` — software CP: packed packet + Soft SMMU + IRQ/fence.
+6. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
+7. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
+8. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` — evidence
    the HAL split is real: new UART/timer/page tables, same core.
 
 Questions to ask *them* while the board is up:

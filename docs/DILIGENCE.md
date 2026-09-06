@@ -16,7 +16,8 @@ checklist, or a benchmark brief.
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR) | `hal/`, `drivers/`, `core/src/accel.rs` |
-| Partner sketch `PartnerNpuStub` | No-op `AccelDevice` | `drivers/src/partner.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | RISC-V virt boot | Thin S-mode port | `boot/riscv64/`, `make qemu-riscv` |
@@ -46,17 +47,20 @@ send/recv/map/accel. That is not stubbed on x86; it is stubbed on RISC-V.
 ## How a silicon team plugs `AccelDevice`
 
 ```text
-1. PCI / MMIO / NoC probe. Fill AccelInfo { backend: 2, vendor, ... }.
+1. PCI / MMIO / NoC probe. Fill AccelInfo { backend: 3 (or your id),
+   vendor, ... }. Do not reuse 0 (SoftNPU), 1 (virtqueue SoftNPU),
+   or 2 (PartnerNpuStub).
 2. Implement aether_hal::AccelDevice { probe, submit, poll, map }.
-3. map(): program SMMU / stream IDs from a Memory cap walk. Refuse
-   anything that did not come from the cap table. Refuse a silent
-   remote (place, local) — aether_hal::map_fabric already does.
-   IommuMap is the Soft-SMMU table (per-stream IOVA). A hardware SMMU
-   is still required on silicon; do not treat this as one.
-4. submit(): translate AccelJobDesc (op, MxNxK, strides, dtype, place,
-   phase, partition, fence) into the chip's command packet. Doorbell.
-   The in-tree virtqueue BAR is the shape to match.
-5. IRQ: complete the fence, AccelDevice::poll, fabric REPLY to
+   SoftCommandProcessor is the in-tree worked example.
+3. map(): bind_stream + pin from a Memory cap walk. Refuse anything
+   that did not come from the cap table. Refuse a silent remote
+   (place, local) — aether_hal::map_fabric already does.
+   IommuMap is the Soft-SMMU table (per-stream IOVA; abort until Bound).
+   A hardware SMMU is still required on silicon; do not treat this as one.
+4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
+   uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId.
+   Doorbell. Do not execute in the syscall.
+5. IRQ: AccelDevice::poll, complete the fence, fabric REPLY to
    job.completion_ep.
 ```
 
@@ -66,8 +70,9 @@ The compiler / runtime (IREE, XLA/PJRT, a vendor stack) owns the ISA
 blob (`abi::Executable`). Aether admits the job against a partition,
 a SpectralCut, a bank color, and a fence. It does not fuse a graph.
 
-Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md). `PartnerNpuStub` is
-a no-op sketch, not a partnership.
+Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md). Start from
+`SoftCommandProcessor`. `PartnerNpuStub` is a leftover no-op sketch,
+not a partnership and not this path.
 
 ## Security invariants (what we will defend)
 
@@ -115,7 +120,8 @@ We will not claim:
 - Readiness for tape-out or safety certification
 - That the RISC-V port is a full ring-3 kernel
 - That `AffinityLaplacian` is a production eigensolver
-- That `IommuMap` is a hardware SMMU
+- That `IommuMap` / Soft SMMU is a hardware SMMU
+- That `SoftCommandProcessor` is a silicon driver
 - That `PartnerNpuStub` is a design win
 
 ## Design-win narrative

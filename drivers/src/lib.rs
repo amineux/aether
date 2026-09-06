@@ -1,14 +1,17 @@
-//! In-tree drivers. SoftNPU services the virtqueue MMIO window. A silicon
-//! partner starts from [`PartnerNpuStub`] and replaces the no-op backend
-//! with their command packet + IRQ.
+//! In-tree drivers. SoftNPU services the virtqueue MMIO window.
+//! [`SoftCommandProcessor`] is the host-tested command-processor path
+//! (packed packet + Soft SMMU + IRQ/fence). [`PartnerNpuStub`] remains
+//! a documented no-op sketch.
 
 #![cfg_attr(not(test), no_std)]
 
+pub mod fakecp;
 pub mod mmio;
 pub mod partner;
 pub mod softnpu;
 pub mod virtio_accel;
 
+pub use fakecp::{CpCmd, SoftCommandProcessor, CP_CMD_SIZE, CP_PKT_MAGIC};
 pub use mmio::{AccelMmio, ACCEL_MMIO_SIZE, REG_DOORBELL, REG_IRQ_STATUS, REG_MAGIC};
 pub use partner::{PartnerCmd, PartnerNpuStub};
 pub use softnpu::SoftNpuDevice;

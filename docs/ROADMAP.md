@@ -27,7 +27,8 @@ product kernel.
 | Soft SMMU / software stream IDs | **done** (per-stream IOVA namespaces; not hardware) |
 | Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU) |
 | Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
-| Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership) |
+| Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership; not a CP path) |
+| SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + Soft SMMU SID + IRQ/fence; host tests) |
 
 ## Month 5–6 (this cut): Portability & partners
 
@@ -57,6 +58,9 @@ Honest limits of this cut:
 - Fiedler is integer power iteration on n≤8, not a production eigensolve.
 - Nobody from a silicon team has reviewed this. The agenda is so they
   could.
+- SoftCommandProcessor is a **software CP**, not a silicon driver. It
+  uses Soft SMMU (`StreamId` + bind/abort). QEMU still demos SoftNPU.
+  `PartnerNpuStub` is unchanged.
 
 ## Year-1 H1: Soft SMMU
 
@@ -116,7 +120,8 @@ kernel thread queue sleeps.
 ## Suggested next cuts (technical, not calendar)
 
 1. **Custom QEMU virtio-accel** (or virtio-mmio) that DMA-reads the same
-   BAR layout. SoftNPU can stay the executor behind the device.
+   BAR layout. SoftNPU can stay the executor behind the device. Deferred;
+   Soft-CP already covers a second AccelDevice path on the host.
 2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
    program a real SMMU context / PT walk. Do not claim the software
    table is silicon.
@@ -139,8 +144,9 @@ kernel thread queue sleeps.
   cap CDT-as-calendar, and a Y2 bring-up climax are killed as
   milestones.
 
-Nothing in that file marks Soft SMMU, virtio-accel QEMU, SMP, or the
-other stubs above as done.
+Soft SMMU (PR #7) and SoftCommandProcessor (this cut) are **done** as
+software models. That file's "not done" line is stale for those two.
+Custom QEMU virtio-accel, SMP, and the other stubs above are still open.
 
 ## What we will not claim
 
@@ -155,7 +161,9 @@ other stubs above as done.
 - That the RISC-V port is a product-class second architecture
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
-`AccelJobDesc`, and `PartnerNpuStub`, then tell us which opcode/dtype/route
-fields your command processor already has. The rest of Aether is meant
-to stay out of your way. [DILIGENCE.md](DILIGENCE.md) is the leave-behind;
+`AccelJobDesc`, and `SoftCommandProcessor` (`CpCmd` in [ACCEL.md](ACCEL.md)),
+then tell us which opcode/dtype/route fields your command processor
+already has. `PartnerNpuStub` is a leftover no-op sketch, not a starting
+point. The rest of Aether is meant to stay out of your way.
+[DILIGENCE.md](DILIGENCE.md) is the leave-behind;
 [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) is the meeting.

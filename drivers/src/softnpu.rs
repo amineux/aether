@@ -9,7 +9,7 @@ use aether_core::accel::{AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
 use aether_core::iommu::{IommuMap, MapError, MapRequest, DEFAULT_STREAM};
 use aether_core::types::PhysAddr;
-use aether_hal::{AccelDevice, AccelInfo, HalError};
+use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_VIRTIO_SOFTNPU};
 
 use crate::mmio::AccelMmio;
 
@@ -78,7 +78,7 @@ impl<M: DmaView> SoftNpuDevice<M> {
                 device: 0x0001,
                 n_queues: 1,
                 max_wave: 64,
-                backend: 1, // virtio-shaped MMIO, SoftNPU backend
+                backend: ACCEL_BACKEND_VIRTIO_SOFTNPU,
             },
             mmio: AccelMmio::new(),
             npu: SoftNpu::new(),

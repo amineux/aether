@@ -17,10 +17,10 @@ revision 2026-09-06. Filed on main via PR.
 
 **This is the ACTIVE track.** SpecForge's half-year calendar
 ([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
-only — do not schedule Kernel work against it. Soft SMMU, a second
-real-shaped AccelDevice, custom QEMU virtio-accel, SMP, and the other
-stubs remain **not done** on the current tree (see
-[ROADMAP.md](ROADMAP.md)).
+only — do not schedule Kernel work against it. Soft SMMU (PR #7) and
+the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
+**done** as software models. Custom QEMU virtio-accel, SMP, and the
+other stubs remain open (see [ROADMAP.md](ROADMAP.md)).
 
 ### KEEP / ACTIVE Y1
 

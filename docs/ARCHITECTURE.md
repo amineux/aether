@@ -95,7 +95,7 @@ aether-core     alloc-free: caps, fabric, arenas, sched, SoftNPU math, demo
      ▲
 aether-hal      AccelDevice / Console / Timer
      ▲
-aether-drivers  AccelMmio virtqueue + SoftNpuDevice + PartnerNpuStub
+aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + PartnerNpuStub
      ▲
 aether-kernel   arch, mm, syscall/sysret, ELF loader, tasks
 user/init       static non-PIE ELF64 `/init` (embedded blob)
@@ -123,6 +123,7 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/fence) |
 | `core/src/sched.rs` | Tile scheduler + color gate |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
