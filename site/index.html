@@ -477,7 +477,7 @@
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
-                <li>RISC-V U-mode <code>/init</code> over <code>ecall</code> / <code>sret</code> (Sv39 isolate; in-kernel SoftNPU; no PLIC; not product-class)</li>
+                <li>RISC-V U-mode <code>/init</code> over <code>ecall</code> / <code>sret</code> (Sv39 isolate; in-kernel SoftNPU; PLIC software doorbell, not virtio-mmio; not product-class)</li>
                 <li>aarch64 virt thin boot (kmain + <code>aether_core</code>, no EL0; not product-class)</li>
                 <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
               </ul>
@@ -563,7 +563,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init, in-kernel ramfs for /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, in-kernel ramfs for /init, SMP smoke, per-task PML4, small cap CDT, aarch64 thin port.</p>
               </div>
             </div>
             <div class="proof">
@@ -577,7 +577,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> with the identity 4 GiB kept for DMA — not KASLR / KPTI / PCID / COW. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (no PLIC). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> with the identity 4 GiB kept for DMA — not KASLR / KPTI / PCID / COW. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">

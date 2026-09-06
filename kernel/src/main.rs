@@ -95,7 +95,7 @@ pub extern "C" fn kmain() -> ! {
         crate::mm::paging::enable_smep_smap();
     }
     #[cfg(target_arch = "riscv64")]
-    println!("[boot] UP timer armed (100 Hz); extra harts parked; U-mode /init");
+    println!("[boot] UP timer + PLIC armed (100 Hz); extra harts parked; U-mode /init");
     #[cfg(target_arch = "aarch64")]
     println!("[boot] UP timer armed (100 Hz); extra PEs stay parked");
     nl();

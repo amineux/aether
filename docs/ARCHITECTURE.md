@@ -151,7 +151,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph (n≤32 Fiedler; enum n≤8) |
 | `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`; n≤32 prototype placement) |
-| `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, Sv39 isolate, `sret`/`ecall` |
+| `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, PLIC + SoftNPU doorbell, Sv39 isolate, `sret`/`ecall` |
 | `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/opkernel.rs` | OperatorKernelHandle (collective × Hodge class) |
@@ -167,8 +167,9 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 
 Documented subset — **S-mode kernel + U-mode `/init`**, not a
 product-class second kernel. Same `aether_core` self-check, then
-`sret` into a static ELF. SoftNPU is the in-kernel virtqueue (no
-PLIC). Extra harts stay parked.
+`sret` into a static ELF. SoftNPU is the in-kernel virtqueue (path
+B). Completions are claimed on the PLIC (UART THRE software
+doorbell). Extra harts stay parked.
 
 ```
 QEMU -machine virt -kernel build/aether-riscv.elf
@@ -179,7 +180,7 @@ boot/riscv64/trampoline.S
         │  Sv39 identity-map 4 GiB (1 GiB leaves)
         ▼
 kernel::kmain  (Rust, riscv64gc-unknown-none-elf)
-        │  UART, frames, heap, stvec, SBI timer, World
+        │  UART, frames, heap, stvec, SBI timer, PLIC, World
         ▼
 init::run_kernel_selfcheck   (same aether_core path as x86)
         ▼
@@ -202,14 +203,17 @@ Physical sketch (128 MiB guest, RAM at `0x80000000`):
 | Range | Use |
 | --- | --- |
 | `0x00100000` | sifive_test finisher |
-| `0x10000000` | UART0 (16550) |
+| `0x0c000000` | SiFive PLIC (hart 0 S-mode context 1) |
+| `0x10000000` | UART0 (16550; THRE → PLIC source 10 SoftNPU doorbell) |
 | `0x80200000` | Kernel `.text` (OpenSBI payload) |
 | `0x81000000–0x88000000` | Frame allocator window (arch fallback; no FDT mmap) |
 | `0x8200_0000–0x8220_0000` | `/init` ELF + user stack (U-bit 2 MiB in task satp) |
 | `0x8300_0000–0x8400_0000` | SoftNPU arena banks (identity; reserved) |
 
-No PLIC, no virtio-mmio device, no `/probe`, no FDT mmap parser.
-Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)` and
+PLIC is live; SoftNPU stays the in-kernel BAR (no virtio-mmio
+`-device`, no `/probe`, no FDT mmap parser). Serial prints
+`[plic] claim irq=10 SoftNPU used-ring`,
+`[mm] mmap: fallback (no Multiboot on this HAL)`, and
 `[init] U-mode /init`.
 
 ## Boot (aarch64 / QEMU virt)
@@ -262,8 +266,8 @@ RISC-V and aarch64 are the HAL-split test:
 
 The fabric does not encode x86. aarch64 repeated the original RISC-V
 recipe (PL011 + GIC timer + TTBR) and stays EL1-only. RISC-V now also
-has U-mode `/init` + in-kernel SoftNPU (no PLIC). Neither port is
-product-class.
+has U-mode `/init` + in-kernel SoftNPU + a PLIC software doorbell.
+Neither port is product-class.
 
 ## SMP
 
@@ -333,8 +337,9 @@ The child prints `[init] user-thread share-aspace` and yields;
 `SYS_EXIT` is still guest-wide.
 
 PIE / `ET_DYN` is rejected (no relocator). RISC-V has no `/probe` in
-this cut. SoftNPU on RISC-V is the same in-kernel virtqueue; there is
-no PLIC.
+this cut. SoftNPU on RISC-V is the same in-kernel virtqueue; used-ring
+completions are claimed on the PLIC (UART THRE doorbell), not a
+virtio-mmio device.
 
 Host proof of the aspace clone/walk contract lives in
 `core/src/aspace.rs` (`IdentityAs` for x86, `Sv39As` for RISC-V),

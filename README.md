@@ -16,7 +16,7 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
-make qemu-riscv   # RISC-V virt S-mode + U-mode /init (no PLIC)
+make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
 make qemu-aarch64 # same self-check on QEMU virt (thin EL1 port, no EL0)
 ```
 
@@ -94,10 +94,12 @@ qemu-system-riscv64 \
 OpenSBI loads the ELF at `0x80200000`. The trampoline identity-maps
 4 GiB (Sv39), the same kernel self-check runs, then `sret` drops to
 U-mode `/init` at `0x82000000` (`ecall` syscalls, own satp). SoftNPU
-is the in-kernel virtqueue — **no PLIC**. This is a **documented
-subset**, not a product-class second architecture. Success writes
-`0x5555` to the virt test finisher. `make qemu-riscv-ci` greps
-`[init] U-mode /init` and `U-MODE /init VIA ECALL/SRET`.
+is the in-kernel virtqueue (path B). Completions are claimed on the
+**PLIC** (UART THRE software doorbell, source 10) — not a virtio-mmio
+`-device`. This is a **documented subset**, not a product-class
+second architecture. Success writes `0x5555` to the virt test
+finisher. `make qemu-riscv-ci` greps `[plic] claim irq=10 SoftNPU
+used-ring` plus `[init] U-mode /init` and `U-MODE /init VIA ECALL/SRET`.
 
 **aarch64 virt** (`qemu-system-aarch64`, `rustup target add aarch64-unknown-none`):
 
@@ -212,7 +214,8 @@ The kernel and `/init` are **separate Cargo projects** so
   stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`
   `sret`s into U-mode `/init` over `ecall` with a task-local Sv39
-  window. SoftNPU is in-kernel (no PLIC / virtio-mmio). aarch64 is
+  window. SoftNPU is in-kernel path B; used-ring completions go
+  through a PLIC software doorbell (not virtio-mmio). aarch64 is
   still a thin EL1 port (no EL0). Neither is a product-class second
   architecture.
 

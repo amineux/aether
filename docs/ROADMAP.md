@@ -274,15 +274,16 @@ architecture, not a PLIC virtio port, not `/probe` on this HAL:
 - Per-task Sv39: clone the trampoline identity map, split the RAM 1 GiB
   leaf into 2 MiB pages, U-bit only on that task's window. Host twin in
   `core/src/aspace.rs` (`Sv39As`). `sstatus.SUM` wraps user copies.
-- SoftNPU / virtqueue is the **in-kernel BAR** (same as x86). No PLIC,
-  no virtio-mmio device, no FDT mmap. Extra harts stay parked. No
+- SoftNPU / virtqueue is the **in-kernel BAR** (same as x86). The
+  later PLIC cut (below) adds a software doorbell on that BAR. No
+  virtio-mmio device, no FDT mmap. Extra harts stay parked. No
   `/probe` ELF on this arch.
 - `make qemu-riscv` / `make qemu-riscv-ci` greps
   `[init] U-mode /init`, `ecall debug_print ok`,
   `U-MODE /init VIA ECALL/SRET`, and aspace isolate.
 
-Still stubbed: PLIC, real virtio-mmio, FDT mmap, extra-hart SMP,
-`/probe`, product-class second kernel. aarch64 stays EL1-only.
+Still stubbed after that cut: real virtio-mmio, FDT mmap, extra-hart
+SMP, `/probe`, product-class second kernel. aarch64 stays EL1-only.
 
 ## SpecForge virtio path B (this cut)
 
@@ -399,6 +400,32 @@ driver on x86 would be a larger cut and must not disturb the
 in-kernel SoftNPU BAR. A later cut can copy blocks into a reserved
 window and `seed` the same `/init` / `/probe` names.
 
+## RISC-V PLIC + SoftNPU doorbell (this cut)
+
+Landed as a **documented subset**, not virtio-mmio, not a QEMU
+`-device`, not a product-class second kernel:
+
+- SiFive PLIC at `0x0c000000` on QEMU virt. Hart 0 S-mode is
+  context 1 (OpenSBI keeps M). Priority / enable / threshold /
+  claim-complete are programmed in `kernel/src/arch/riscv64/plic.rs`.
+- SoftNPU stays the **in-kernel AccelMmio BAR** (path B; same
+  frozen offsets). Full virtio-mmio is still open.
+- Software doorbell: after `AccelDevice::submit` kicks the BAR,
+  the kernel raises UART0 THRE → PLIC source 10 (plus SSIP as a
+  second real trap). The SEI handler claims source 10, acks THRE,
+  and `World::run_pending_accel` services the same used ring the
+  x86 kthread poll path does.
+- `make qemu-riscv` / `make qemu-riscv-ci` greps
+  `[boot] PLIC hart0 S-mode`,
+  `[plic] claim irq=10 SoftNPU used-ring`, and
+  `[accel] used-ring IRQ job#`.
+- No new syscall (0–10 frozen). `AccelDevice` / `UserAccelJob`
+  unchanged. x86 higher-half SoftNPU and the aarch64 thin HAL
+  are untouched.
+
+Still stubbed: virtio-mmio BAR, FDT mmap, extra-hart SMP, `/probe`
+on this arch, product-class second kernel.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -412,7 +439,7 @@ Search for `// STUB:` / `STUB` :
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
-| RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** (U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU; no PLIC / virtio-mmio) |
+| RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** as U-mode + PLIC software doorbell (path B AccelMmio; UART THRE → source 10). Real virtio-mmio still stub |
 | Production Fiedler | `core/src/laplacian.rs` | **done** as a prototype (n≤32 host-tested median-cut + sched bind). Not GiFt-Placer; enum stays n≤8 |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
@@ -436,8 +463,9 @@ kernel thread queue sleeps.
 2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
    program a real SMMU context / PT walk. Do not claim the software
    table is silicon.
-3. **RISC-V PLIC + virtio-mmio.** U-mode `/init` + in-kernel SoftNPU
-   landed; a real virtio-mmio BAR behind the PLIC is still open.
+3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
+   (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
+   behind the PLIC is still open.
 4. **KPTI / KASLR / PCID / COW.** Higher-half linker + trampoline
    alias landed; identity 4 GiB is an intentional DMA window. Do not
    claim Meltdown unmap or a random slide.
@@ -464,9 +492,10 @@ kernel thread queue sleeps.
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
   kernel map, user-level threads via `SYS_CLONE`, and in-kernel
-  ramfs for `/init` (this cut) are landed. ABI stays stable
-  (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
-  RISC-V PLIC, KPTI / KASLR remain deferred.
+  ramfs for `/init`, and RISC-V PLIC + SoftNPU software doorbell
+  (this cut) are landed. ABI stays stable (0–10 unchanged). Custom
+  QEMU virtio-accel (path A), virtio-blk, KPTI / KASLR remain
+  deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -481,10 +510,11 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   software IEEE (PR #18), RISC-V S-mode userspace (PR #19),
   AffinityLaplacian n≤32 placement (PR #20), SpecForge virtio
   path B (PR #21), the x86 higher-half kernel map (PR #22),
-  user-level threads / `SYS_CLONE` (PR #23), and in-kernel ramfs
-  for `/init` (this cut) are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), virtio-blk, RISC-V PLIC,
-  KPTI / KASLR, and the other stubs above are still open.
+  user-level threads / `SYS_CLONE` (PR #23), in-kernel ramfs
+  for `/init` (PR #24), and RISC-V PLIC + SoftNPU doorbell
+  (this cut) are **done** as research-prototype slices.
+  Custom QEMU virtio-accel (path A), virtio-blk, KPTI / KASLR,
+  and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track
