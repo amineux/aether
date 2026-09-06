@@ -18,8 +18,10 @@
 //! CR3 so `IdentityDma` still sees the intentional 4 GiB window.
 //!
 //! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy)
-//! plus documented KPTI subset. Not PIE / reloc, not Meltdown-complete,
-//! not PCID, not COW, not a POSIX MM.
+//! plus documented KPTI subset plus documented PCID subset (CR4.PCIDE
+//! when CPUID.1:ECX[17]; INVPCID when CPUID.7:EBX[10]; else full-flush
+//! `mov cr3`). Not PIE / reloc, not Meltdown-complete, not COW, not a
+//! POSIX MM.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -31,8 +33,9 @@ use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
 use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{
-    kaslr_slide_valid, kernel_text_va_slid, KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA,
-    KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS, KPTI_TRAMP_VA, USER_IMAGE_BASE, USER_PROBE_BASE,
+    cr3_tagged, kaslr_slide_valid, kernel_text_va_slid, CR4_PCIDE, INVPCID_SINGLE,
+    KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS,
+    KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_IMAGE_BASE, USER_PROBE_BASE,
 };
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
@@ -61,6 +64,36 @@ static SMAP_ON: AtomicBool = AtomicBool::new(false);
 static SMEP_ON: AtomicBool = AtomicBool::new(false);
 #[cfg(target_arch = "x86_64")]
 static CR3_SWITCH_LOGS: AtomicU32 = AtomicU32::new(0);
+#[cfg(target_arch = "x86_64")]
+static PCID_ON: AtomicBool = AtomicBool::new(false);
+#[cfg(target_arch = "x86_64")]
+static INVPCID_ON: AtomicBool = AtomicBool::new(false);
+#[cfg(target_arch = "x86_64")]
+static NEXT_USER_PCID: AtomicU32 = AtomicU32::new(PCID_USER_BASE as u32);
+#[cfg(target_arch = "x86_64")]
+const PCID_SLOTS: usize = 8;
+#[cfg(target_arch = "x86_64")]
+static PCID_CR3: [AtomicU64; PCID_SLOTS] = [
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+    AtomicU64::new(0),
+];
+#[cfg(target_arch = "x86_64")]
+static PCID_ID: [AtomicU32; PCID_SLOTS] = [
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+    AtomicU32::new(0),
+];
 
 #[derive(Clone, Copy, Debug)]
 pub struct Walk {
@@ -113,6 +146,66 @@ pub fn kernel_cr3() -> u64 {
 }
 
 #[cfg(target_arch = "x86_64")]
+pub fn pcid_enabled() -> bool {
+    PCID_ON.load(Ordering::Acquire)
+}
+
+#[cfg(target_arch = "x86_64")]
+pub fn invpcid_enabled() -> bool {
+    INVPCID_ON.load(Ordering::Acquire)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn register_pcid(cr3_pa: u64) -> u16 {
+    let pa = cr3_pa & !0xFFF;
+    if pa == 0 || pa == kernel_cr3() {
+        return PCID_KERNEL;
+    }
+    for i in 0..PCID_SLOTS {
+        if PCID_CR3[i].load(Ordering::Acquire) == pa {
+            return PCID_ID[i].load(Ordering::Acquire) as u16;
+        }
+    }
+    let raw = NEXT_USER_PCID.fetch_add(1, Ordering::Relaxed);
+    let id = if raw < PCID_USER_BASE as u32 || raw > 4095 {
+        PCID_USER_BASE
+    } else {
+        raw as u16
+    };
+    for i in 0..PCID_SLOTS {
+        if PCID_CR3[i]
+            .compare_exchange(0, pa, Ordering::AcqRel, Ordering::Acquire)
+            .is_ok()
+        {
+            PCID_ID[i].store(id as u32, Ordering::Release);
+            return id;
+        }
+    }
+    id
+}
+
+#[cfg(target_arch = "x86_64")]
+pub fn pcid_of(cr3_pa: u64) -> u16 {
+    let pa = cr3_pa & !0xFFF;
+    if pa == 0 || pa == kernel_cr3() {
+        return PCID_KERNEL;
+    }
+    for i in 0..PCID_SLOTS {
+        if PCID_CR3[i].load(Ordering::Acquire) == pa {
+            return PCID_ID[i].load(Ordering::Acquire) as u16;
+        }
+    }
+    PCID_KERNEL
+}
+
+/// CR3 load value: PA, or PA|PCID|NOFLUSH when CR4.PCIDE is on.
+#[cfg(target_arch = "x86_64")]
+pub fn tagged_cr3(pa: u64) -> u64 {
+    let pa = pa & !0xFFF;
+    cr3_tagged(pa, pcid_of(pa), true, pcid_enabled())
+}
+
+#[cfg(target_arch = "x86_64")]
 pub fn load_cr3(val: u64) {
     unsafe {
         core::arch::asm!("mov cr3, {}", in(reg) val, options(nostack, preserves_flags));
@@ -120,6 +213,7 @@ pub fn load_cr3(val: u64) {
 }
 
 /// Switch CR3 when the next thread's aspace differs. Logs the first few.
+/// With PCID, this is `mov cr3` + NOFLUSH (tagged TLB). Without, full flush.
 #[cfg(target_arch = "x86_64")]
 pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
     let want = if next == 0 { kernel_cr3() } else { next } & !0xFFF;
@@ -127,7 +221,7 @@ pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
     if cur == want {
         return;
     }
-    load_cr3(want);
+    load_cr3(tagged_cr3(want));
     let n = CR3_SWITCH_LOGS.fetch_add(1, Ordering::Relaxed);
     if n < 6 {
         write_str("[mm] cr3 switch tid=");
@@ -136,6 +230,10 @@ pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
         write_u64(to_tid as u64);
         write_str(" cr3=");
         write_hex(want);
+        if pcid_enabled() {
+            write_str(" pcid=");
+            write_u64(pcid_of(want) as u64);
+        }
         console::nl();
     }
 }
@@ -235,6 +333,48 @@ fn invlpg(va: u64) {
     }
 }
 
+/// INVPCID (66 0F 38 82 /r). Descriptor is { pcid, linear }.
+#[cfg(target_arch = "x86_64")]
+fn invpcid(ty: u64, pcid: u64, addr: u64) {
+    #[repr(C, align(16))]
+    struct Desc {
+        pcid: u64,
+        addr: u64,
+    }
+    let desc = Desc {
+        pcid: pcid & 0xFFF,
+        addr,
+    };
+    unsafe {
+        core::arch::asm!(
+            "invpcid {ty}, [{desc}]",
+            ty = in(reg) ty,
+            desc = in(reg) &desc,
+            options(readonly, nostack, preserves_flags)
+        );
+    }
+}
+
+/// Flush one aspace (INVPCID single-context, or MOV-CR3 bit63=0, or full flush).
+/// Used on remap and aspace teardown.
+#[cfg(target_arch = "x86_64")]
+pub fn invalidate_aspace(cr3_pa: u64) {
+    let pa = cr3_pa & !0xFFF;
+    let pcid = pcid_of(pa);
+    if invpcid_enabled() {
+        invpcid(INVPCID_SINGLE, pcid as u64, 0);
+        return;
+    }
+    if pcid_enabled() {
+        let ie = crate::arch::irq::save_disable();
+        let cur = unsafe { cr3() };
+        load_cr3(pa | (pcid as u64));
+        load_cr3(tagged_cr3(cur));
+        crate::arch::irq::restore(ie);
+        return;
+    }
+}
+
 /// Set USER on PML4[0] and PDPT[0] so ring-3 can walk the low 1 GiB.
 /// Leaf pages stay supervisor-only until [`allow_user_2m`].
 /// Operates on the **current** CR3 (the running user aspace during syscall).
@@ -274,6 +414,7 @@ pub fn allow_user_2m(va: u64) {
     let pd = pdpte & 0x000F_FFFF_FFFF_F000;
     write64(pd + i2 as u64 * 8, (va & !0x1F_FFFF) | P | RW | US | PS);
     invlpg(va);
+    invalidate_aspace(root);
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -322,6 +463,7 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
         }
     }
 
+    let _ = register_pcid(pml4);
     Some(pml4)
 }
 
@@ -386,6 +528,83 @@ pub fn enable_smep_smap() {
         write_str(" (CPUID missing bit; try -cpu qemu64,+smep,+smap)");
     }
     console::nl();
+}
+
+/// Enable CR4.PCIDE when CPUID.1:ECX[17]. INVPCID is a separate bit
+/// (CPUID.7:EBX[10]). Stock `qemu64` often has neither — that is the
+/// documented full-flush fallback (`-cpu qemu64,+pcid,+invpcid` arms it).
+#[cfg(target_arch = "x86_64")]
+pub fn enable_pcid() {
+    let ie = crate::arch::irq::save_disable();
+    let (_eax, _ebx, ecx, _edx) = cpuid(1, 0);
+    let have_pcid = ecx & (1 << 17) != 0;
+    let (_eax7, ebx7, _ecx7, _edx7) = cpuid(7, 0);
+    let have_invpcid = ebx7 & (1 << 10) != 0;
+    if have_pcid {
+        // SDM: CR3[11:0] must be 0 when setting CR4.PCIDE.
+        let pa = unsafe { cr3() & !0xFFF };
+        load_cr3(pa);
+        let mut cr4 = read_cr4();
+        cr4 |= CR4_PCIDE;
+        unsafe {
+            core::arch::asm!("mov cr4, {}", in(reg) cr4, options(nostack, preserves_flags));
+        }
+        let now = read_cr4();
+        let on = now & CR4_PCIDE != 0;
+        PCID_ON.store(on, Ordering::Release);
+        INVPCID_ON.store(on && have_invpcid, Ordering::Release);
+        if on {
+            load_cr3(tagged_cr3(kernel_cr3()));
+            crate::arch::x86_64::kpti::sync_cr3_slots();
+        }
+    } else {
+        PCID_ON.store(false, Ordering::Release);
+        INVPCID_ON.store(false, Ordering::Release);
+    }
+    crate::arch::irq::restore(ie);
+    let now = read_cr4();
+    write_str("[mm] pcid cr4=");
+    write_hex(now);
+    write_str(" pcide=");
+    write_u64((now & CR4_PCIDE != 0) as u64);
+    write_str(" invpcid=");
+    write_u64(invpcid_enabled() as u64);
+    if !have_pcid {
+        write_str(" (CPUID.PCID=0; mov cr3 still full-flush; try -cpu qemu64,+pcid,+invpcid)");
+    } else if !have_invpcid {
+        write_str(" (INVPCID missing; remap flushes via mov cr3 bit63=0)");
+    }
+    console::nl();
+}
+
+#[cfg(target_arch = "x86_64")]
+pub fn prove_pcid(init_cr3: u64, probe_cr3: Option<u64>) {
+    let k = kernel_cr3();
+    write_str("[mm] pcid kernel=");
+    write_u64(pcid_of(k) as u64);
+    write_str(" init=");
+    write_u64(pcid_of(init_cr3) as u64);
+    if let Some(p) = probe_cr3 {
+        write_str(" probe=");
+        write_u64(pcid_of(p) as u64);
+    }
+    console::nl();
+    if pcid_enabled() {
+        let cr4_on = read_cr4() & CR4_PCIDE != 0;
+        let distinct = pcid_of(init_cr3) != PCID_KERNEL
+            && probe_cr3
+                .map(|p| pcid_of(p) != pcid_of(init_cr3) && pcid_of(p) != PCID_KERNEL)
+                .unwrap_or(true);
+        if cr4_on && distinct {
+            println!("[mm] pcid ok (tagged TLB; KPTI mov cr3 is not a full flush)");
+        } else {
+            println!("[mm] pcid FAIL");
+        }
+    } else {
+        println!(
+            "[mm] pcid fallback (CPUID.PCID=0; mov cr3 still full-flush; try -cpu qemu64,+pcid,+invpcid)"
+        );
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -522,6 +741,7 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         println!(
             "[mm] kpti ok (user CR3: no HH, no identity DMA; trampoline only; not Meltdown-complete)"
         );
+        prove_pcid(init_cr3, probe_cr3);
     } else {
         println!("[mm] aspace isolate FAIL");
     }

@@ -7,9 +7,10 @@
 //! shadow IDT, entry stack). CR3 switches to the kernel map on enter
 //! and back on exit. SoftNPU kthread-B stays on kernel CR3.
 //!
-//! Not Meltdown-complete (trampoline pages remain mapped; no PCID;
-//! unused KASLR alias stays on the kernel map). RISC-V / aarch64
-//! are unchanged.
+//! Not Meltdown-complete (trampoline pages remain mapped; unused
+//! KASLR alias stays on the kernel map). PCID tags the KPTI `mov cr3`
+//! when CPUID advertises it; otherwise each switch is still a full
+//! flush. RISC-V / aarch64 are unchanged.
 
 use core::arch::global_asm;
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -88,8 +89,18 @@ pub fn set_user_cr3(cr3: u64) {
     let v = cr3 & !0xFFF;
     USER_CR3.store(v, Ordering::Release);
     if ARMED.load(Ordering::Relaxed) {
-        write64(SLOT_UCR3, v);
+        write64(SLOT_UCR3, paging::tagged_cr3(v));
     }
+}
+
+/// Rewrite trampoline CR3 slots after PCIDE is armed (or on AP bring-up).
+pub fn sync_cr3_slots() {
+    if !ARMED.load(Ordering::Relaxed) {
+        return;
+    }
+    write64(SLOT_KCR3, paging::tagged_cr3(paging::kernel_cr3()));
+    let u = USER_CR3.load(Ordering::Acquire);
+    write64(SLOT_UCR3, if u == 0 { 0 } else { paging::tagged_cr3(u) });
 }
 
 pub fn set_rsp0(rsp0: u64) {
@@ -232,7 +243,7 @@ pub fn init() {
         core::ptr::write_bytes((KPTI_TRAMP_VA + n as u64) as *mut u8, 0, 0x1000 - n);
     }
 
-    write64(SLOT_KCR3, paging::kernel_cr3());
+    write64(SLOT_KCR3, paging::tagged_cr3(paging::kernel_cr3()));
     write64(SLOT_UCR3, 0);
     write64(SLOT_URSP, 0);
     write64(SLOT_SCRATCH, 0);
@@ -247,7 +258,7 @@ pub fn init() {
     set_rsp0(KPTI_TRAMP_STACK_TOP);
 
     println!(
-        "[mm] kpti trampoline @ 0x73000 (user CR3: no HH, no identity DMA; not Meltdown-complete)"
+        "[mm] kpti trampoline @ 0x73000 (user CR3: no HH, no identity DMA; PCID if CPUID; not Meltdown-complete)"
     );
 }
 
@@ -284,9 +295,9 @@ global_asm!(
     .macro KPTI_ISR_ENTER
         push rax
         mov rax, cr3
+        xor rax, qword ptr [{slot_kcr3}]
         and rax, 0xFFFFFFFFFFFFF000
-        cmp rax, qword ptr [{slot_kcr3}]
-        je 91f
+        jz 91f
         mov rax, qword ptr [{slot_kcr3}]
         mov cr3, rax
     91:

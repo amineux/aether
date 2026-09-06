@@ -50,7 +50,7 @@ gaps:
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
-| No PCID / COW / PIE-KASLR | HH + boot-time slide + KPTI subset landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA). Identity 4 GiB stays on kernel CR3 for DMA. Unused HH alias stays (not PIE). Not Meltdown-complete |
+| No COW / PIE-KASLR | HH + boot-time slide + KPTI + PCID subset landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush). Identity 4 GiB stays on kernel CR3 for DMA. Unused HH alias stays (not PIE). Not Meltdown-complete |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
@@ -116,11 +116,12 @@ SoftNPU used-ring is claimed on source 10; that is still a software
 doorbell on the path-B BAR, not a silicon MSI. Revoke descendants is host-tested (`revoke` /
 `revoke_in`); there is no `SYS_REVOKE` and no kernel-global CNode walk.
 On x86, isolation is “cap tables + ring-3 + per-task USER leaves +
-SMEP/SMAP + KPTI trampoline + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
+SMEP/SMAP + KPTI trampoline + PCID (if CPUID) + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
 task-local U leaves + SUM off + Soft SMMU.” Soft SMMU is a software
 table a real device can ignore. The kernel runs higher-half; user
 CR3 does not map HH or the identity DMA window (KPTI subset, not
-Meltdown-complete). On aarch64 it is “cap tables + EL0 +
+Meltdown-complete; PCID is a tagged-TLB gate, not a speculation
+barrier). On aarch64 it is “cap tables + EL0 +
 task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 ## CI status
@@ -128,7 +129,9 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, mmap, opkernel, sparsify |
-| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate |
+| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` |
+| x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
+| x86_64 PCID off | `make qemu-nopcid-ci` | `-cpu qemu64,-pcid`; greps `[mm] pcid fallback` |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
 | RISC-V boot | `make qemu-riscv-ci` | U-mode `/init` + `ecall` + PLIC SoftNPU used-ring + aspace isolate + fabric banner |
 | aarch64 boot | `make qemu-aarch64-ci` | EL0 `/init` + `svc` + aspace isolate + fabric banner |

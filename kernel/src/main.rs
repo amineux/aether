@@ -89,6 +89,7 @@ pub extern "C" fn kmain() -> ! {
         crate::console::write_str(" (APs kernel-only; per-task PML4 on BSP user tasks)");
         crate::console::nl();
         crate::mm::paging::enable_smep_smap();
+        crate::mm::paging::enable_pcid();
     }
     #[cfg(target_arch = "riscv64")]
     println!("[boot] UP timer + PLIC armed (100 Hz); extra harts parked; U-mode /init");

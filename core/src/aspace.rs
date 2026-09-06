@@ -9,16 +9,20 @@
 //! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
 //! SIPI / user windows do not move. The kernel is still linked at
 //! `KERNEL_TEXT_VA` (`code-model=kernel`); the unused alias stays so
-//! absolute symbols keep working. This is not PIE / reloc, not PCID,
-//! not COW, not a POSIX `mmap`.
+//! absolute symbols keep working. This is not PIE / reloc, not COW,
+//! not a POSIX `mmap`.
 //!
 //! **KPTI subset:** `clone_user` does **not** copy PML4[511] or the
 //! identity 4 GiB. User CR3 maps the task's 2 MiB ELF window (USER)
 //! plus four supervisor 4 KiB trampoline pages at [`KPTI_TRAMP_VA`]
 //! (syscall/IRQ entry). Kernel CR3 keeps identity + HH so SoftNPU
 //! `IdentityDma`, AP SIPI, and page-table PA walks still work. Not a
-//! Meltdown-complete KAISER claim (trampoline pages stay mapped;
-//! PCID is later).
+//! Meltdown-complete KAISER claim (trampoline pages stay mapped).
+//!
+//! **PCID subset:** [`cr3_tagged`] / [`PcidAlloc`] are the host twin of
+//! kernel CR3 tagging (kernel PCID 1, per-aspace user PCIDs from 2).
+//! `SYS_CLONE` shares a PML4 and therefore a PCID. No PCID is a
+//! full-flush `mov cr3` fallback — not a Meltdown claim.
 //!
 //! `SYS_CLONE` user threads share one of these maps; they do not get
 //! a second PML4.
@@ -151,6 +155,109 @@ pub fn parse_kaslr_cmdline(cmd: &[u8]) -> Option<u32> {
 pub const CR4_SMEP: u64 = 1 << 20;
 /// CR4.SMAP. Supervisor cannot touch USER pages unless RFLAGS.AC (STAC).
 pub const CR4_SMAP: u64 = 1 << 21;
+/// CR4.PCIDE. CR3[11:0] is a PCID; CR3[63] is the no-flush bit.
+pub const CR4_PCIDE: u64 = 1 << 17;
+/// CR3 PCID field (12 bits) when CR4.PCIDE is set.
+pub const CR3_PCID_MASK: u64 = 0xFFF;
+/// MOV-to-CR3 no-invalidate bit (Intel SDM Vol. 3A §4.10.4.1).
+pub const CR3_NOFLUSH: u64 = 1 << 63;
+/// Kernel aspace PCID. 0 is reserved (must be current when enabling PCIDE).
+pub const PCID_KERNEL: u16 = 1;
+/// First user aspace PCID (`/init`). `/probe` and later maps increment.
+pub const PCID_USER_BASE: u16 = 2;
+/// INVPCID type 0: one linear address in one PCID.
+pub const INVPCID_INDIV: u64 = 0;
+/// INVPCID type 1: all translations for one PCID (not global).
+pub const INVPCID_SINGLE: u64 = 1;
+/// INVPCID type 2: all non-global translations, all PCIDs.
+pub const INVPCID_ALL: u64 = 2;
+/// INVPCID type 3: all translations including global.
+pub const INVPCID_ALL_GLOBAL: u64 = 3;
+
+/// Pack a PML4 PA + PCID, optionally setting the no-flush bit.
+///
+/// When `pcid_on` is false this is just the page-aligned PA (full-flush
+/// `mov cr3`). Host twin of the kernel tagged-CR3 helper.
+pub fn cr3_tagged(pa: u64, pcid: u16, noflush: bool, pcid_on: bool) -> u64 {
+    let pa = pa & !CR3_PCID_MASK;
+    if !pcid_on {
+        return pa;
+    }
+    let mut v = pa | (pcid as u64 & CR3_PCID_MASK);
+    if noflush {
+        v |= CR3_NOFLUSH;
+    }
+    v
+}
+
+/// PML4 physical address from a (possibly tagged) CR3 value.
+pub fn cr3_pa(cr3: u64) -> u64 {
+    cr3 & !CR3_PCID_MASK & !CR3_NOFLUSH
+}
+
+/// PCID field from a tagged CR3 value (`0` when the value is PA-only).
+pub fn cr3_pcid(cr3: u64) -> u16 {
+    (cr3 & CR3_PCID_MASK) as u16
+}
+
+/// Tiny PCID allocator: kernel = 1; each distinct CR3 PA gets the next
+/// id from [`PCID_USER_BASE`]. Clone threads that share a PML4 share a
+/// PCID. Host twin of the kernel table in `paging.rs`.
+#[derive(Clone, Debug)]
+pub struct PcidAlloc {
+    next: u16,
+    slots: [(u64, u16); 8],
+    n: usize,
+}
+
+impl PcidAlloc {
+    pub fn new() -> Self {
+        Self {
+            next: PCID_USER_BASE,
+            slots: [(0, 0); 8],
+            n: 0,
+        }
+    }
+
+    pub fn kernel() -> u16 {
+        PCID_KERNEL
+    }
+
+    /// Assign (or look up) a PCID for `cr3_pa`. Kernel PA → 1.
+    pub fn assign(&mut self, cr3_pa: u64, kernel_pa: u64) -> u16 {
+        let pa = cr3_pa & !CR3_PCID_MASK;
+        let k = kernel_pa & !CR3_PCID_MASK;
+        if pa == 0 || pa == k {
+            return PCID_KERNEL;
+        }
+        for i in 0..self.n {
+            if self.slots[i].0 == pa {
+                return self.slots[i].1;
+            }
+        }
+        let id = self.next;
+        self.next = if id >= 4095 { PCID_USER_BASE } else { id + 1 };
+        if self.n < self.slots.len() {
+            self.slots[self.n] = (pa, id);
+            self.n += 1;
+        }
+        id
+    }
+
+    pub fn of(&self, cr3_pa: u64, kernel_pa: u64) -> u16 {
+        let pa = cr3_pa & !CR3_PCID_MASK;
+        let k = kernel_pa & !CR3_PCID_MASK;
+        if pa == 0 || pa == k {
+            return PCID_KERNEL;
+        }
+        for i in 0..self.n {
+            if self.slots[i].0 == pa {
+                return self.slots[i].1;
+            }
+        }
+        PCID_KERNEL
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Walk {
@@ -339,7 +446,50 @@ mod tests {
     fn cr4_bits_match_intel() {
         assert_eq!(CR4_SMEP, 1 << 20);
         assert_eq!(CR4_SMAP, 1 << 21);
+        assert_eq!(CR4_PCIDE, 1 << 17);
         assert_ne!(CR4_SMEP, CR4_SMAP);
+        assert_ne!(CR4_PCIDE, CR4_SMEP);
+        assert_eq!(CR3_NOFLUSH, 1u64 << 63);
+        assert_eq!(INVPCID_INDIV, 0);
+        assert_eq!(INVPCID_SINGLE, 1);
+        assert_eq!(INVPCID_ALL, 2);
+        assert_eq!(INVPCID_ALL_GLOBAL, 3);
+    }
+
+    #[test]
+    fn cr3_tagged_is_pa_only_without_pcid() {
+        let pa = 0xABC000u64;
+        assert_eq!(cr3_tagged(pa | 0xF00, 7, true, false), pa);
+        assert_eq!(cr3_pa(cr3_tagged(pa, 1, true, true)), pa);
+        assert_eq!(cr3_pcid(cr3_tagged(pa, PCID_KERNEL, true, true)), PCID_KERNEL);
+        let tagged = cr3_tagged(pa, 2, true, true);
+        assert_eq!(tagged & CR3_PCID_MASK, 2);
+        assert_eq!(tagged & CR3_NOFLUSH, CR3_NOFLUSH);
+        let flush = cr3_tagged(pa, 2, false, true);
+        assert_eq!(flush & CR3_NOFLUSH, 0);
+        assert_eq!(flush & CR3_PCID_MASK, 2);
+    }
+
+    #[test]
+    fn pcid_kernel_vs_user_and_clone_share() {
+        let kpa = 0x1000u64;
+        let init = 0xA000u64;
+        let probe = 0xB000u64;
+        let mut a = PcidAlloc::new();
+        assert_eq!(a.assign(kpa, kpa), PCID_KERNEL);
+        assert_eq!(a.assign(init, kpa), PCID_USER_BASE);
+        assert_eq!(a.assign(probe, kpa), PCID_USER_BASE + 1);
+        // SYS_CLONE shares the /init PML4 → same PCID.
+        assert_eq!(a.assign(init, kpa), PCID_USER_BASE);
+        assert_eq!(a.of(init, kpa), PCID_USER_BASE);
+        assert_ne!(a.of(init, kpa), a.of(probe, kpa));
+        assert_ne!(a.of(init, kpa), PCID_KERNEL);
+        let kcr3 = cr3_tagged(kpa, a.of(kpa, kpa), true, true);
+        let ucr3 = cr3_tagged(init, a.of(init, kpa), true, true);
+        assert_eq!(cr3_pa(kcr3), kpa);
+        assert_eq!(cr3_pa(ucr3), init);
+        assert_eq!(cr3_pcid(kcr3), PCID_KERNEL);
+        assert_eq!(cr3_pcid(ucr3), PCID_USER_BASE);
     }
 
     #[test]

@@ -110,8 +110,12 @@ silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) plus a
 boot-time KASLR slide (0 / 16 / 32 MiB dual-map; CI forces
 `kaslr=1`) is landed. The unused HH alias stays (not PIE / reloc).
 KPTI user CR3 (no HH, no identity DMA, 4 KiB trampoline) is landed
-as a documented subset — not Meltdown-complete, not PCID. The
-identity 4 GiB stays on the **kernel** CR3 for DMA / SIPI.
+as a documented subset — not Meltdown-complete. PCID tags those
+CR3 switches when CPUID.1:ECX[17] is set. TCG QEMU cannot
+advertise `+pcid` (`make qemu-pcid-ci` requests it and accepts
+the TCG warning + fallback; KVM may print `[mm] pcid ok`).
+`make qemu-nopcid-ci` forces `-pcid`. The identity 4 GiB stays
+on the **kernel** CR3 for DMA / SIPI.
 
 ## Crate graph
 
@@ -330,8 +334,10 @@ loads the user CR3 just before `iretq`. CR4.SMEP and CR4.SMAP are
 enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
 `STAC`/`CLAC` wrap user copies. Kernel `.text` is linked at
 `0xffffffff80400000` and runs at that VA plus a boot-time slide.
-This is **not** Meltdown-complete, PIE KASLR, PCID, COW, or a POSIX
-MM.
+PCID (when CPUID advertises it) tags kernel vs user `mov cr3` so
+the KPTI switch is not a full TLB flush; INVPCID (or bit-63-clear)
+covers remap. This is **not** Meltdown-complete, PIE KASLR, COW, or
+a POSIX MM.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V
