@@ -5,11 +5,13 @@ use aether_core::arena::{Arena, ArenaAllocator, ArenaRequest};
 use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
 use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
+use aether_core::fence::Timeline;
 use aether_core::iommu::MapRequest;
+use aether_core::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 use aether_core::phase::Phase;
 use aether_core::preempt::WaitWhy;
 use aether_core::sysnr::{UserCompletion, UserIpcMsg};
-use aether_core::types::{BankId, PhysAddr, TenantId};
+use aether_core::types::{BankId, ChipletId, PhysAddr, TenantId};
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_IMAGE_BASE, USER_IMAGE_END};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::SoftNpuDevice;
@@ -32,6 +34,8 @@ struct Inner {
     completion: Option<UserCompletion>,
     last_arena: Option<Arena>,
     mapped_va: u64,
+    part: PartitionProfile,
+    timeline: Timeline,
 }
 
 static WORLD: SpinLock<Option<Inner>> = SpinLock::new(None);
@@ -78,6 +82,21 @@ pub fn init() {
         MapRequest::pin(PhysAddr(USER_IMAGE_BASE), USER_IMAGE_END - USER_IMAGE_BASE),
     );
 
+    // Software timeline the used-ring IRQ retires. Not a silicon fence.
+    let part = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b111, 0b11),
+        QosBudget {
+            bw_mbps: 100,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 2,
+        },
+    );
+    let timeline = Timeline::new(part.id);
+
     *WORLD.lock() = Some(Inner {
         caps,
         fabric,
@@ -88,6 +107,8 @@ pub fn init() {
         completion: None,
         last_arena: None,
         mapped_va: 0,
+        part,
+        timeline,
     });
     write_str("[boot] init caps: ep cptr=");
     write_u64(INIT_EP_CPTR as u64);
@@ -143,12 +164,24 @@ pub fn run_pending_accel() {
     let Some(cpl) = serviced else {
         return;
     };
+    let retired = with(|w| w.npu.retire_into(&mut w.timeline));
     write_str("[accel] used-ring IRQ job#");
     write_u64(cpl.job_seq as u64);
     write_str(" status=");
     write_i32(cpl.status);
     write_str(" cycles=");
     write_u64(cpl.cycles as u64);
+    match retired {
+        Ok(Some(f)) => {
+            write_str(" fence#");
+            write_u64(f.seq());
+            write_str(" retire");
+        }
+        Ok(None) => {}
+        Err(_) => {
+            write_str(" fence-retire skip");
+        }
+    }
     console::nl();
     with(|w| {
         w.pending = false;
@@ -366,7 +399,16 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
     );
     desc.op = op;
     with(|w| {
-        w.npu.submit(&desc).map_err(|_| SysError::Again)?;
+        let fence = w
+            .timeline
+            .submit(&w.part, None)
+            .map_err(|_| SysError::Again)?;
+        desc.partition = w.part.id;
+        desc.fence_id = fence.id.0;
+        if w.npu.submit(&desc).is_err() {
+            let _ = w.timeline.timeout(fence.id);
+            return Err(SysError::Again);
+        }
         w.pending = true;
         w.completion = None;
         Ok::<(), SysError>(())

@@ -211,7 +211,9 @@ image.
 4. service() (IRQ / kthread poll): resolve_stream each IOVA, run the
    integer engine, write a Completion, raise IRQ.
 5. poll(): pop the completion and ack the IRQ. The job's fence_id
-   is retired (`completed_fence`); the caller Timeline::complete's it.
+   (a timeline seq) is retired through `Timeline::complete` /
+   `retire_into`. `wait` polls the retired watermark. Do not treat
+   this as a silicon fence unit.
 6. Never accept a PA that did not come from a cap walk + IommuMap pin.
 7. Honor BankColor at the scheduler / SYS_ACCEL_SUBMIT layer (unchanged).
 ```
@@ -234,12 +236,17 @@ a CPU thread, and refuses a foreign-colored Compute wave.
 Work-stealing will not move a wave onto a CPU tile (`Job::compatible`).
 
 Jobs are fence-ordered and credit-limited per `PartitionProfile`.
-That is not a CUDA stream: there is no implicit catch-up, and a
-partition that is out of credits refuses submit.
+`Timeline` is a **software model** of what a CP would retire
+(`TimelineId` + monotonic seq in `fence_id`, `wait` on the retired
+watermark, in-order `complete`). That is not a CUDA stream: there
+is no implicit catch-up, and a partition that is out of credits
+refuses submit. `timeout` is a software overlay — it does not
+claim a device IRQ. SoftCommandProcessor and SoftNPU both retire
+through this API. QEMU's used-ring IRQ is still software.
 
 A later cut should:
 
-- let a real device IRQ (not only kthread poll) complete the fence
+- let a real device IRQ (not only kthread poll) write the seq
 - meter HBM bandwidth as the partition QoS budget already names
 - replace Soft SMMU with a hardware SMMU page table (program a real SID)
 

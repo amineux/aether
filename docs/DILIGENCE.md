@@ -21,6 +21,7 @@ active track the site must match.
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR) | `hal/`, `drivers/`, `core/src/accel.rs` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
@@ -51,6 +52,7 @@ gaps:
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
+| Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
 send/recv/map/accel. That is not stubbed on x86; it is stubbed on RISC-V
@@ -72,8 +74,9 @@ and aarch64.
 4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
    uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId.
    Doorbell. Do not execute in the syscall.
-5. IRQ: AccelDevice::poll, complete the fence, fabric REPLY to
-   job.completion_ep.
+5. IRQ: AccelDevice::poll, retire the job's fence seq through
+   `Timeline::complete` / `retire_into`, fabric REPLY to
+   job.completion_ep. The timeline is a software model.
 ```
 
 Do **not** map all of HBM into the NPU. The arena + cap + color is the point.

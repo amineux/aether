@@ -31,8 +31,9 @@ Supporting rules (implemented in types, not just prose):
    Exchange. The HAL refuses a silent coherent load.
 4. **Partition profiles.** Spatial slice + QoS (bw/credits) + blast-radius
    isolation. Scheduler and accel bind to a partition.
-5. **Fence-ordered jobs.** submit → fence/timeline → complete/timeout,
-   credit-limited per partition — not CUDA streams.
+5. **Fence-ordered jobs.** submit → wait → complete (or timeout),
+   credit-limited per partition — a CP-shaped seq/timeline, not a
+   CUDA stream and not a silicon fence unit. Timeout is software.
 6. **Named phases.** `Compute | Exchange | Barrier` tags on jobs and
    messages. The kernel does not fuse them.
 7. **Kernel = submission shim + resource solver.** No ML graph IR or
@@ -138,7 +139,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
-| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/fence) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
 | `core/src/sched.rs` | Tile scheduler + color gate |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
@@ -152,7 +153,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/space.rs` | Typed `MemorySpace` + `(place, local)` |
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
 | `core/src/partition.rs` | Spatial slice + QoS + blast radius |
-| `core/src/fence.rs` | Timeline / credit-limited submit |
+| `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 
