@@ -289,6 +289,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "svc debug_print ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "EL0 /init VIA SVC/ERET" $(BUILD)/aarch64-serial.log; then \
 		echo "qemu-aarch64-ci: EL0 /init + aspace + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \

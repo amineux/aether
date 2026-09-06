@@ -446,7 +446,8 @@ architecture, not GICv3, not virtio-mmio, not `/probe` on this HAL:
   parked. No `/probe` ELF on this arch.
 - `make qemu-aarch64` / `make qemu-aarch64-ci` greps
   `[init] EL0 /init`, `svc debug_print ok`,
-  `EL0 /init VIA SVC/ERET`, and aspace isolate.
+  `EL0 /init VIA SVC/ERET`, aspace isolate, and
+  `[accel] used-ring IRQ job#`.
 
 Still stubbed: GICv3, real virtio-mmio, FDT mmap, extra-PE SMP,
 `/probe`, product-class second kernel. x86 HH and RISC-V

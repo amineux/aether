@@ -1066,7 +1066,7 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
     }
     let l2 = alloc_zeroed_page()?;
     if l1e & PTE_TABLE == 0 {
-        let gphys = (user_lo & !0x3FFF_FFFF);
+        let gphys = user_lo & !0x3FFF_FFFF;
         for j in 0..512u64 {
             write64(l2 + j * 8, meg_block(gphys + j * 0x20_0000, false));
         }
