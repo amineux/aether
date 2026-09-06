@@ -19,6 +19,11 @@ use aether_core::{
     INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_RV_IMAGE_BASE as USER_IMAGE_BASE,
     USER_RV_IMAGE_END as USER_IMAGE_END,
 };
+#[cfg(target_arch = "aarch64")]
+use aether_core::{
+    INIT_EP_CPTR, INIT_QUEUE_CPTR, USER_AA_IMAGE_BASE as USER_IMAGE_BASE,
+    USER_AA_IMAGE_END as USER_IMAGE_END,
+};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::SoftNpuDevice;
 use aether_hal::AccelDevice;
@@ -69,6 +74,8 @@ pub fn init() {
     let arena_bank0 = 0x0100_0000u64;
     #[cfg(target_arch = "riscv64")]
     let arena_bank0 = 0x8300_0000u64;
+    #[cfg(target_arch = "aarch64")]
+    let arena_bank0 = 0x4300_0000u64;
     crate::mm::frame::reserve_range(arena_bank0, arena_bank0 + 16 * 1024 * 1024);
     let arenas = ArenaAllocator::new(&[
         (BankId(0), PhysAddr(arena_bank0), 8 * 1024 * 1024),

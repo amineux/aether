@@ -60,8 +60,9 @@ Honest limits of this cut:
 
 ## Year-2: aarch64 thin HAL (this cut)
 
-Landed as a **thin HAL test**, same recipe as RISC-V — **not** a
-second product kernel, **not** EL0 userspace:
+Landed as a **thin HAL test**, same recipe as the original RISC-V
+bring-up — **not** a second product kernel. The later EL0 userspace
+cut (below) adds `eret` / `svc` `/init`.
 
 - `boot/aarch64` trampoline + TTBR0 identity map (4 GiB, 1 GiB
   blocks). Drops EL2→EL1 when QEMU starts us in the hypervisor.
@@ -72,11 +73,11 @@ second product kernel, **not** EL0 userspace:
 - Same `aether_core` self-check as x86 / RISC-V (Soft SMMU pin
   refuse, CDT banner). `aether-core` / `aether-hal` / syscalls
   unchanged. Extra PEs stay parked.
-- **No** EL0, no `eret` `/init`, no virtqueue, no GICv3, no FDT
-  mmap parser. Success is Angel semihosting `SYS_EXIT` (`-semihosting`).
+- The thin-HAL cut had **no** EL0. The EL0 userspace cut (below)
+  adds `eret` `/init`. Still no GICv3, no FDT mmap parser.
+  Success is Angel semihosting `SYS_EXIT` (`-semihosting`).
 
-aarch64 EL0 / GICv3 / virtio would repeat the x86 userspace cut. Do
-not treat this as a product-class second architecture.
+Do not treat this as a product-class second architecture.
 
 ## Year-1 H1: Soft SMMU
 
@@ -283,7 +284,8 @@ architecture, not a PLIC virtio port, not `/probe` on this HAL:
   `U-MODE /init VIA ECALL/SRET`, and aspace isolate.
 
 Still stubbed after that cut: real virtio-mmio, FDT mmap, extra-hart
-SMP, `/probe`, product-class second kernel. aarch64 stays EL1-only.
+SMP, `/probe`, product-class second kernel. aarch64 EL0 is a later
+documented subset (below).
 
 ## SpecForge virtio path B (this cut)
 
@@ -420,11 +422,36 @@ Landed as a **documented subset**, not virtio-mmio, not a QEMU
   `[plic] claim irq=10 SoftNPU used-ring`, and
   `[accel] used-ring IRQ job#`.
 - No new syscall (0–10 frozen). `AccelDevice` / `UserAccelJob`
-  unchanged. x86 higher-half SoftNPU and the aarch64 thin HAL
-  are untouched.
+  unchanged. x86 higher-half SoftNPU is untouched. aarch64 EL0
+  (below) is a later cut.
 
 Still stubbed: virtio-mmio BAR, FDT mmap, extra-hart SMP, `/probe`
 on this arch, product-class second kernel.
+
+## aarch64 EL0 userspace (this cut)
+
+Landed as a **documented subset**, not a product-class second
+architecture, not GICv3, not virtio-mmio, not `/probe` on this HAL:
+
+- `eret` into a static non-PIE aarch64 `/init` at `0x4200_0000`
+  (RAM lives at `0x4000_0000`; the x86 `0x0200_0000` hole is not RAM).
+  Syscall via `svc #0` (`x8` = number; numbers 0–10 match [ABI.md](ABI.md)).
+- Per-task TTBR0: clone the trampoline identity map, split the RAM
+  1 GiB block into 2 MiB pages, AP_EL0 only on that task's window.
+  Host twin in `core/src/aspace.rs` (`Ttbr0As`). No PAN (cortex-a72
+  is v8.0); EL1 copies do not need a SUM analogue.
+- SoftNPU / virtqueue is the **in-kernel BAR** (same as x86).
+  Completions drain on the CNTV tick and kthread poll — not a GIC
+  SPI doorbell. No virtio-mmio device, no FDT mmap. Extra PEs stay
+  parked. No `/probe` ELF on this arch.
+- `make qemu-aarch64` / `make qemu-aarch64-ci` greps
+  `[init] EL0 /init`, `svc debug_print ok`,
+  `EL0 /init VIA SVC/ERET`, aspace isolate, and
+  `[accel] used-ring IRQ job#`.
+
+Still stubbed: GICv3, real virtio-mmio, FDT mmap, extra-PE SMP,
+`/probe`, product-class second kernel. x86 HH and RISC-V
+U-mode / PLIC are untouched.
 
 ## STUB markers in the tree
 
@@ -438,7 +465,7 @@ Search for `// STUB:` / `STUB` :
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
-| aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | Thin HAL landed; no EL0, no virtqueue |
+| aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | **done** as EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). GICv3 / virtio-mmio still stub |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** as U-mode + PLIC software doorbell (path B AccelMmio; UART THRE → source 10). Real virtio-mmio still stub |
 | Production Fiedler | `core/src/laplacian.rs` | **done** as a prototype (n≤32 host-tested median-cut + sched bind). Not GiFt-Placer; enum stays n≤8 |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
@@ -471,8 +498,8 @@ kernel thread queue sleeps.
    claim Meltdown unmap or a random slide.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
-6. **aarch64 EL0.** Thin HAL landed (`make qemu-aarch64`). Repeat the
-   x86 userspace + virtqueue cut only after the x86 ABI stays stable.
+6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
+   landed; a real virtio-mmio BAR behind GICv3 is still open.
 7. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
    with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
    that does not kill the guest are still open.
@@ -492,10 +519,10 @@ kernel thread queue sleeps.
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
   kernel map, user-level threads via `SYS_CLONE`, and in-kernel
-  ramfs for `/init`, and RISC-V PLIC + SoftNPU software doorbell
-  (this cut) are landed. ABI stays stable (0–10 unchanged). Custom
-  QEMU virtio-accel (path A), virtio-blk, KPTI / KASLR remain
-  deferred.
+  ramfs for `/init`, RISC-V PLIC + SoftNPU software doorbell, and
+  aarch64 EL0 `/init` (this cut) are landed. ABI stays stable
+  (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
+  KPTI / KASLR remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -511,8 +538,9 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   AffinityLaplacian n≤32 placement (PR #20), SpecForge virtio
   path B (PR #21), the x86 higher-half kernel map (PR #22),
   user-level threads / `SYS_CLONE` (PR #23), in-kernel ramfs
-  for `/init` (PR #24), and RISC-V PLIC + SoftNPU doorbell
-  (this cut) are **done** as research-prototype slices.
+  for `/init` (PR #24), RISC-V PLIC + SoftNPU doorbell (PR #25),
+  and aarch64 EL0 `/init` (this cut) are **done** as
+  research-prototype slices.
   Custom QEMU virtio-accel (path A), virtio-blk, KPTI / KASLR,
   and the other stubs above are still open.
 

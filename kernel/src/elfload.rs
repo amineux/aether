@@ -12,6 +12,8 @@ use aether_core::ramfs::{RamFs, INIT_PATH};
 use aether_core::{USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END};
 #[cfg(target_arch = "riscv64")]
 use aether_core::{USER_RV_IMAGE_BASE, USER_RV_IMAGE_END};
+#[cfg(target_arch = "aarch64")]
+use aether_core::{USER_AA_IMAGE_BASE, USER_AA_IMAGE_END};
 
 use crate::console::{self, write_hex, write_str, write_u64};
 use crate::mm::{frame, paging};
@@ -20,6 +22,8 @@ use crate::mm::{frame, paging};
 static INIT_ELF: &[u8] = include_bytes!(env!("AETHER_INIT_ELF"));
 #[cfg(target_arch = "riscv64")]
 static INIT_ELF: &[u8] = include_bytes!(env!("AETHER_INIT_ELF_RISCV"));
+#[cfg(target_arch = "aarch64")]
+static INIT_ELF: &[u8] = include_bytes!(env!("AETHER_INIT_ELF_AARCH64"));
 #[cfg(target_arch = "x86_64")]
 static PROBE_ELF: &[u8] = include_bytes!(env!("AETHER_PROBE_ELF"));
 
@@ -106,6 +110,8 @@ pub fn load_init(fs: &RamFs) -> Result<LoadedImage, &'static str> {
     let (base, end, unmap) = (USER_IMAGE_BASE, USER_IMAGE_END, [USER_PROBE_BASE]);
     #[cfg(target_arch = "riscv64")]
     let (base, end, unmap) = (USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, [0u64; 0]);
+    #[cfg(target_arch = "aarch64")]
+    let (base, end, unmap) = (USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, [0u64; 0]);
     let elf = fs.bytes(INIT_PATH).map_err(|_| "ramfs /init missing")?;
     let entry = load_into(elf, base, end, INIT_PATH)?;
     let cr3 =

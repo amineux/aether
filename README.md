@@ -17,7 +17,7 @@ make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
-make qemu-aarch64 # same self-check on QEMU virt (thin EL1 port, no EL0)
+make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
 ```
 
 ## Why this exists
@@ -114,10 +114,14 @@ qemu-system-aarch64 \
 ```
 
 QEMU loads the ELF at `0x40080000`. The trampoline identity-maps
-4 GiB (TTBR0, 1 GiB blocks), then the same kernel self-check runs.
-This is a **thin port**: kmain + serial + `aether_core`, not EL0.
-Success is Angel semihosting `SYS_EXIT`. Not a product-class second
-architecture.
+4 GiB (TTBR0, 1 GiB blocks), the same kernel self-check runs, then
+`eret` drops to EL0 `/init` at `0x42000000` (`svc` syscalls, own
+TTBR0). SoftNPU is the in-kernel virtqueue (path B), drained on the
+CNTV tick / kthread poll — not a GIC doorbell and not virtio-mmio.
+This is a **documented subset**, not a product-class second
+architecture. Success is Angel semihosting `SYS_EXIT`.
+`make qemu-aarch64-ci` greps `[init] EL0 /init` and
+`EL0 /init VIA SVC/ERET`.
 
 ## Architecture
 
@@ -179,8 +183,8 @@ boot/aarch64/    QEMU virt EL1 trampoline + TTBR0 linker script
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor
-kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 thin port)
-user/init/       `/init` (static ELF64; x86_64 @ 0x2000000, riscv64 @ 0x82000000)
+kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
+user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
 docs/            architecture, fabric, accel, security, diligence, roadmap
 ```
@@ -215,9 +219,10 @@ The kernel and `/init` are **separate Cargo projects** so
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`
   `sret`s into U-mode `/init` over `ecall` with a task-local Sv39
   window. SoftNPU is in-kernel path B; used-ring completions go
-  through a PLIC software doorbell (not virtio-mmio). aarch64 is
-  still a thin EL1 port (no EL0). Neither is a product-class second
-  architecture.
+  through a PLIC software doorbell (not virtio-mmio). aarch64
+  `eret`s into EL0 `/init` over `svc` with a task-local TTBR0
+  window (in-kernel SoftNPU; no GIC doorbell). Neither is a
+  product-class second architecture.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) for the path toward something a silicon
 team could take into bring-up.

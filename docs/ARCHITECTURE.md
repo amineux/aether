@@ -152,7 +152,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph (n≤32 Fiedler; enum n≤8) |
 | `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`; n≤32 prototype placement) |
 | `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, PLIC + SoftNPU doorbell, Sv39 isolate, `sret`/`ecall` |
-| `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 walk |
+| `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 isolate, EL0 `svc`/`eret` |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/opkernel.rs` | OperatorKernelHandle (collective × Hodge class) |
 | `core/src/sparsify.rs` | SparsifiedCollective (drop below-threshold harmonic) |
@@ -218,9 +218,8 @@ PLIC is live; SoftNPU stays the in-kernel BAR (no virtio-mmio
 
 ## Boot (aarch64 / QEMU virt)
 
-Thin v0.1 of the port — **kmain + serial + `aether_core` self-check**,
-not EL0. Same fabric, map API, bank-color, and CDT checks. New
-trampoline only. **Not** a product-class second kernel.
+Documented subset — **EL1 kernel + EL0 `/init`**, same fabric, map API,
+bank-color, and CDT checks. **Not** a product-class second kernel.
 
 ```
 QEMU -machine virt,gic-version=2 -cpu cortex-a72 -kernel build/aether-aarch64.elf
@@ -232,8 +231,9 @@ boot/aarch64/trampoline.S
         ▼
 kernel::kmain  (Rust, aarch64-unknown-none)
         │  UART, frames, heap, VBAR, GICv2 + CNTV
+        │  load /init @ 0x42000000 (own TTBR0, AP_EL0 on 2 MiB)
         ▼
-init::run_kernel_selfcheck   (same aether_core path as x86)
+eret → EL0 /init   (svc #0, numbers 0–10)
         │  Angel SYS_EXIT 0 on success
         ▼
 wfi idle
@@ -252,9 +252,13 @@ Physical sketch (128 MiB guest, RAM at `0x40000000`):
 | `0x09000000` | PL011 UART |
 | `0x40080000` | Kernel `.text` |
 | `0x41000000–0x48000000` | Frame allocator window (arch fallback; no FDT mmap) |
+| `0x42000000–0x42200000` | `/init` ELF + user stack (AP_EL0 2 MiB in task TTBR0) |
+| `0x43000000–0x44000000` | SoftNPU arena banks (identity; reserved) |
 
-No EL0, no virtqueue, no GICv3, no FDT mmap parser. Extra PEs stay
-parked. Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)`.
+SoftNPU stays the in-kernel BAR (no virtio-mmio `-device`, no GICv3
+doorbell, no `/probe`, no FDT mmap parser). Extra PEs stay parked.
+Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)`,
+`[mm] aspace isolate ok`, and `[init] EL0 /init`.
 
 ## HAL ports
 
@@ -264,10 +268,10 @@ RISC-V and aarch64 are the HAL-split test:
 2. Implement `kernel/src/arch/<arch>`: console, timer, irq ack, page tables.
 3. Keep `aether-core` / `aether-hal` unchanged.
 
-The fabric does not encode x86. aarch64 repeated the original RISC-V
-recipe (PL011 + GIC timer + TTBR) and stays EL1-only. RISC-V now also
-has U-mode `/init` + in-kernel SoftNPU + a PLIC software doorbell.
-Neither port is product-class.
+The fabric does not encode x86. aarch64 now also has EL0 `/init` +
+`svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread
+drain, not a GIC doorbell). RISC-V has U-mode `/init` + in-kernel
+SoftNPU + a PLIC software doorbell. Neither port is product-class.
 
 ## SMP
 

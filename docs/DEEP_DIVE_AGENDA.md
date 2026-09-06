@@ -45,7 +45,7 @@ make qemu
 # 3. RISC-V S-mode + U-mode /init. OpenSBI chatter first, then ecall.
 make qemu-riscv
 
-# 4. aarch64 thin port. Same self-check; QEMU virt EL1. No EL0.
+# 4. aarch64 EL1 + EL0 /init. QEMU virt; svc / eret. Documented subset.
 make qemu-aarch64
 ```
 
@@ -63,6 +63,8 @@ What to point at on the serial:
    `[init] ring-3 /init` and `RING-3 /init VIA SYSCALL/SYSRET`.
    RISC-V: `[mm] aspace isolate ok`, `[init] U-mode /init`,
    `U-MODE /init VIA ECALL/SRET`.
+   aarch64: `[mm] aspace isolate ok`, `[init] EL0 /init`,
+   `EL0 /init VIA SVC/ERET`.
 9. `FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE`.
 
 If QEMU is blocked, `cargo test -p aether-core laplacian -- --nocapture`
@@ -137,8 +139,8 @@ Questions to ask *them* while the board is up:
 ## What we will not say in the room
 
 - That we have a design win, a joint roadmap, or a shared customer.
-- That RISC-V U-mode `/init` is a product-class second kernel, or
-  that aarch64 EL0 is done.
+- That RISC-V U-mode `/init` or aarch64 EL0 `/init` is a
+  product-class second kernel.
 - That SoftNPU predicts their silicon latency.
 - That seL4 proofs are “in progress.”
 

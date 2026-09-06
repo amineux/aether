@@ -9,6 +9,8 @@ use aether_core::preempt::{CpuQueue, WaitWhy};
 use aether_core::{USER_IMAGE_BASE, USER_STACK_TOP};
 #[cfg(target_arch = "riscv64")]
 use aether_core::{USER_IMAGE_BASE, USER_RV_STACK_TOP};
+#[cfg(target_arch = "aarch64")]
+use aether_core::{USER_AA_STACK_TOP, USER_IMAGE_BASE};
 
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -94,6 +96,15 @@ const EMPTY_FRAME: InterruptFrame = InterruptFrame {
     scause: 0,
     sstatus: 0,
 };
+#[cfg(target_arch = "aarch64")]
+const EMPTY_FRAME: InterruptFrame = InterruptFrame {
+    regs: [0; 31],
+    elr: 0,
+    spsr: 0,
+    esr: 0,
+    sp: 0,
+    _pad: 0,
+};
 
 const fn empty_thread() -> Thread {
     Thread {
@@ -148,6 +159,11 @@ fn apply_hw(t: &Tasks, from: u32, id: u32) {
         let user = th.saved.sstatus & crate::arch::riscv64::idt::SSTATUS_SPP == 0;
         crate::mm::paging::write_sscratch(if user { th.kstack_top } else { 0 });
     }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let user = th.saved.spsr & 0xf == 0;
+        crate::mm::paging::write_tpidr(if user { th.kstack_top } else { 0 });
+    }
     crate::mm::paging::switch_cr3(th.cr3, from, id);
 }
 
@@ -171,6 +187,15 @@ fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
     f
 }
 
+#[cfg(target_arch = "aarch64")]
+fn kernel_frame(rip: u64, rsp: u64) -> InterruptFrame {
+    let mut f = EMPTY_FRAME;
+    f.elr = rip;
+    f.set_sp(rsp);
+    f.spsr = crate::arch::aarch64::idt::SPSR_EL1H;
+    f
+}
+
 #[cfg(target_arch = "x86_64")]
 fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
     let mut f = EMPTY_FRAME;
@@ -188,6 +213,15 @@ fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
     f.sepc = rip;
     f.set_sp(rsp);
     f.sstatus = crate::arch::riscv64::idt::SSTATUS_SPIE;
+    f
+}
+
+#[cfg(target_arch = "aarch64")]
+fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
+    let mut f = EMPTY_FRAME;
+    f.elr = rip;
+    f.set_sp(rsp);
+    f.spsr = 0;
     f
 }
 
@@ -217,14 +251,23 @@ unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
     );
 }
 
-#[cfg(target_arch = "riscv64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
     extern "C" {
         fn trap_return();
     }
+    #[cfg(target_arch = "riscv64")]
     core::arch::asm!(
         "mv sp, {f}",
         "j {ret}",
+        f = in(reg) frame as u64,
+        ret = sym trap_return,
+        options(noreturn)
+    );
+    #[cfg(target_arch = "aarch64")]
+    core::arch::asm!(
+        "mov sp, {f}",
+        "b {ret}",
         f = in(reg) frame as u64,
         ret = sym trap_return,
         options(noreturn)
@@ -269,6 +312,8 @@ pub fn spawn_user(entry: u64, cr3: u64) {
     spawn_user_task(TID_USER, entry, USER_STACK_TOP, cr3);
     #[cfg(target_arch = "riscv64")]
     spawn_user_task(TID_USER, entry, USER_RV_STACK_TOP, cr3);
+    #[cfg(target_arch = "aarch64")]
+    spawn_user_task(TID_USER, entry, USER_AA_STACK_TOP, cr3);
     let _ = USER_IMAGE_BASE;
 }
 
@@ -292,7 +337,7 @@ fn set_user_arg0(id: u32, val: u64) {
     {
         f.rdi = val;
     }
-    #[cfg(target_arch = "riscv64")]
+    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
     {
         f.set_ret(val);
     }
@@ -445,6 +490,8 @@ pub fn enter_user() -> ! {
     println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task CR3)");
     #[cfg(target_arch = "riscv64")]
     println!("[boot] dropping to U-mode /init (sret, timer armed, per-task satp)");
+    #[cfg(target_arch = "aarch64")]
+    println!("[boot] dropping to EL0 /init (eret, timer armed, per-task TTBR0)");
     unsafe {
         resume_to(core::ptr::addr_of!(frame));
     }
@@ -470,13 +517,15 @@ fn kthread_b() -> ! {
         // x86: kthread poll is the used-ring path (PIC has no SoftNPU line).
         // RISC-V: PLIC/SSIP (or the timer fallback in trap_dispatch) services
         // AccelMmio. Do not poll here — SIE is on and WORLD is a spinlock.
-        #[cfg(target_arch = "x86_64")]
+        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
         crate::world::run_pending_accel();
         unsafe {
             #[cfg(target_arch = "x86_64")]
             core::arch::asm!("sti; hlt", options(nomem, nostack));
             #[cfg(target_arch = "riscv64")]
             core::arch::asm!("csrsi sstatus, 2; wfi", options(nomem, nostack));
+            #[cfg(target_arch = "aarch64")]
+            core::arch::asm!("msr daifclr, #2; wfi", options(nomem, nostack));
         }
     }
 }

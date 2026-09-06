@@ -14,6 +14,8 @@
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+#[cfg(target_arch = "aarch64")]
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 
 #[cfg(target_arch = "x86_64")]
 use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
@@ -21,11 +23,11 @@ use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
 use aether_core::{KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, USER_IMAGE_BASE, USER_PROBE_BASE};
 
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::console::{self, write_hex, write_str, write_u64};
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::mm::frame;
-#[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
+#[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::println;
 
 #[cfg(target_arch = "x86_64")]
@@ -869,6 +871,23 @@ pub fn prove_aspace(init_root: u64, _probe: Option<u64>) -> bool {
 const PTE_VALID: u64 = 1;
 #[cfg(target_arch = "aarch64")]
 const PTE_TABLE: u64 = 1 << 1;
+#[cfg(target_arch = "aarch64")]
+const PTE_ATTR_NORMAL: u64 = 1 << 2;
+#[cfg(target_arch = "aarch64")]
+const PTE_AP_EL0: u64 = 1 << 6;
+#[cfg(target_arch = "aarch64")]
+const PTE_SH_ISH: u64 = 3 << 8;
+#[cfg(target_arch = "aarch64")]
+const PTE_AF: u64 = 1 << 10;
+#[cfg(target_arch = "aarch64")]
+const PTE_PXN: u64 = 1 << 53;
+#[cfg(target_arch = "aarch64")]
+const PTE_UXN: u64 = 1 << 54;
+
+#[cfg(target_arch = "aarch64")]
+static KERNEL_TTBR0: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "aarch64")]
+static TTBR_SWITCH_LOGS: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn ttbr0() -> u64 {
@@ -877,25 +896,286 @@ pub unsafe fn ttbr0() -> u64 {
     v
 }
 
-/// 4K / T0SZ=25 walk. A 1 GiB L1 identity block is `huge_2m = true`.
 #[cfg(target_arch = "aarch64")]
-pub unsafe fn walk(va: u64) -> Option<Walk> {
-    let root = (ttbr0() & 0x0000_FFFF_FFFF_F000) as *const u64;
+pub fn ttbr0_root() -> u64 {
+    unsafe { ttbr0() & 0x0000_FFFF_FFFF_F000 }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn capture_kernel_ttbr() {
+    KERNEL_TTBR0.store(ttbr0_root(), Ordering::Release);
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn kernel_cr3() -> u64 {
+    let v = KERNEL_TTBR0.load(Ordering::Acquire);
+    if v == 0 {
+        ttbr0_root()
+    } else {
+        v
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn load_ttbr0(root: u64) {
+    let root = root & 0x0000_FFFF_FFFF_F000;
+    unsafe {
+        core::arch::asm!(
+            "dsb sy",
+            "msr ttbr0_el1, {0}",
+            "isb",
+            "tlbi vmalle1",
+            "dsb sy",
+            "isb",
+            in(reg) root,
+            options(nostack)
+        );
+    }
+}
+
+/// Switch TTBR0 when the next thread's aspace differs. Logs the first few.
+#[cfg(target_arch = "aarch64")]
+pub fn switch_cr3(next: u64, from_tid: u32, to_tid: u32) {
+    let want = if next == 0 { kernel_cr3() } else { next } & 0x0000_FFFF_FFFF_F000;
+    let cur = ttbr0_root();
+    if cur == want {
+        return;
+    }
+    load_ttbr0(want);
+    let n = TTBR_SWITCH_LOGS.fetch_add(1, Ordering::Relaxed);
+    if n < 6 {
+        write_str("[mm] ttbr0 switch tid=");
+        write_u64(from_tid as u64);
+        write_str("->");
+        write_u64(to_tid as u64);
+        write_str(" ttbr0=");
+        write_hex(want);
+        console::nl();
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn write_tpidr(v: u64) {
+    unsafe {
+        core::arch::asm!("msr tpidr_el1, {0}", in(reg) v, options(nostack));
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn read64(pa: u64) -> u64 {
+    unsafe { core::ptr::read_volatile(pa as *const u64) }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn write64(pa: u64, v: u64) {
+    unsafe {
+        core::ptr::write_volatile(pa as *mut u64, v);
+    }
+}
+
+#[cfg(target_arch = "aarch64")]
+fn alloc_zeroed_page() -> Option<u64> {
+    let p = frame::alloc()?;
+    unsafe {
+        core::ptr::write_bytes(p.0 as *mut u8, 0, 4096);
+    }
+    Some(p.0)
+}
+
+#[cfg(target_arch = "aarch64")]
+fn is_el0(pte: u64) -> bool {
+    (pte >> 6) & 3 == 1
+}
+
+#[cfg(target_arch = "aarch64")]
+fn meg_block(phys: u64, user: bool) -> u64 {
+    let mut e = PTE_VALID | PTE_AF | PTE_ATTR_NORMAL | PTE_SH_ISH | (phys & !0x1F_FFFF);
+    if user {
+        e |= PTE_AP_EL0 | PTE_PXN;
+    } else {
+        e |= PTE_UXN;
+    }
+    e
+}
+
+/// Walk `va` in `root` (identity-mapped TTBR0 tables).
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
+    let l1 = (root & 0x0000_FFFF_FFFF_F000) as *const u64;
     let i1 = ((va >> 30) & 0x1FF) as usize;
-    let pte = core::ptr::read_volatile(root.add(i1));
-    if pte & PTE_VALID == 0 {
+    let pte1 = core::ptr::read_volatile(l1.add(i1));
+    if pte1 & PTE_VALID == 0 {
         return None;
     }
-    if pte & PTE_TABLE == 0 {
-        let phys = (pte & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
+    if pte1 & PTE_TABLE == 0 {
+        let phys = (pte1 & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
         return Some(Walk {
-            pml4e: pte,
+            pml4e: pte1,
             pdpte: 0,
             pde: 0,
             phys: PhysAddr(phys),
             huge_2m: true,
-            user: false,
+            user: is_el0(pte1),
+        });
+    }
+    let l2 = (pte1 & 0x0000_FFFF_FFFF_F000) as *const u64;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let pte2 = core::ptr::read_volatile(l2.add(i2));
+    if pte2 & PTE_VALID == 0 {
+        return None;
+    }
+    if pte2 & PTE_TABLE == 0 {
+        let phys = (pte2 & 0x0000_FFFF_FFE0_0000) | (va & 0x1F_FFFF);
+        return Some(Walk {
+            pml4e: pte1,
+            pdpte: pte2,
+            pde: 0,
+            phys: PhysAddr(phys),
+            huge_2m: true,
+            user: is_el0(pte2),
         });
     }
     None
+}
+
+/// 4K / T0SZ=25 walk. A 1 GiB L1 or 2 MiB L2 identity block is
+/// `huge_2m = true`.
+#[cfg(target_arch = "aarch64")]
+pub unsafe fn walk(va: u64) -> Option<Walk> {
+    walk_in(ttbr0_root(), va)
+}
+
+#[cfg(target_arch = "aarch64")]
+pub fn user_mapped(root: u64, va: u64) -> bool {
+    unsafe { walk_in(root, va).map(|w| w.user).unwrap_or(false) }
+}
+
+/// Clone the kernel identity map into a new TTBR0. AP_EL0 only on
+/// `[user_lo, user_hi)`; each VA in `unmap` loses valid on its 2 MiB leaf.
+#[cfg(target_arch = "aarch64")]
+pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u64> {
+    let kroot = kernel_cr3();
+    let new_l1 = alloc_zeroed_page()?;
+    unsafe {
+        core::ptr::copy_nonoverlapping(kroot as *const u8, new_l1 as *mut u8, 4096);
+    }
+    let i1 = ((user_lo >> 30) & 0x1FF) as usize;
+    let l1e = read64(new_l1 + i1 as u64 * 8);
+    if l1e & PTE_VALID == 0 {
+        return None;
+    }
+    let l2 = alloc_zeroed_page()?;
+    if l1e & PTE_TABLE == 0 {
+        let gphys = user_lo & !0x3FFF_FFFF;
+        for j in 0..512u64 {
+            write64(l2 + j * 8, meg_block(gphys + j * 0x20_0000, false));
+        }
+    } else {
+        let old_l2 = l1e & 0x0000_FFFF_FFFF_F000;
+        unsafe {
+            core::ptr::copy_nonoverlapping(old_l2 as *const u8, l2 as *mut u8, 4096);
+        }
+        for j in 0..512u64 {
+            let e = read64(l2 + j * 8);
+            write64(l2 + j * 8, (e & !PTE_AP_EL0) | PTE_UXN);
+        }
+    }
+    let mut va = user_lo & !0x1F_FFFF;
+    while va < user_hi {
+        if ((va >> 30) & 0x1FF) as usize == i1 {
+            let i2 = ((va >> 21) & 0x1FF) as usize;
+            write64(l2 + i2 as u64 * 8, meg_block(va, true));
+        }
+        va += 0x20_0000;
+    }
+    for &u in unmap {
+        if ((u >> 30) & 0x1FF) as usize == i1 {
+            let i2 = ((u >> 21) & 0x1FF) as usize;
+            write64(l2 + i2 as u64 * 8, read64(l2 + i2 as u64 * 8) & !PTE_VALID);
+        }
+    }
+    write64(new_l1 + i1 as u64 * 8, (l2 & 0x0000_FFFF_FFFF_F000) | PTE_VALID | PTE_TABLE);
+    Some(new_l1)
+}
+
+/// Mark the 2 MiB page covering `va` EL0-accessible (current TTBR0).
+#[cfg(target_arch = "aarch64")]
+pub fn allow_user_2m(va: u64) {
+    let root = ttbr0_root();
+    let i1 = ((va >> 30) & 0x1FF) as usize;
+    let l1e = read64(root + i1 as u64 * 8);
+    if l1e & PTE_VALID == 0 || l1e & PTE_TABLE == 0 {
+        return;
+    }
+    let l2 = l1e & 0x0000_FFFF_FFFF_F000;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let e = read64(l2 + i2 as u64 * 8);
+    if e & PTE_VALID == 0 {
+        return;
+    }
+    write64(
+        l2 + i2 as u64 * 8,
+        (e | PTE_AP_EL0 | PTE_PXN) & !PTE_UXN,
+    );
+    unsafe {
+        core::arch::asm!(
+            "dsb sy",
+            "tlbi vmalle1",
+            "dsb sy",
+            "isb",
+            options(nostack)
+        );
+    }
+}
+
+/// cortex-a72 has no PAN. EL1 can already load AP_EL0 pages.
+#[cfg(target_arch = "aarch64")]
+pub fn with_user_access<T>(f: impl FnOnce() -> T) -> T {
+    f()
+}
+
+#[cfg(target_arch = "aarch64")]
+fn print_walk(label: &str, root: u64, va: u64) {
+    write_str(label);
+    write_hex(va);
+    match unsafe { walk_in(root, va) } {
+        Some(w) => {
+            write_str(" present=1 user=");
+            write_u64(w.user as u64);
+        }
+        None => {
+            write_str(" present=0 user=0");
+        }
+    }
+}
+
+/// Serial proof: AP_EL0 leaves are task-local; kernel TTBR0 has none.
+#[cfg(target_arch = "aarch64")]
+pub fn prove_aspace(init_root: u64, _probe: Option<u64>) -> bool {
+    let k = kernel_cr3();
+    write_str("[mm] kernel ttbr0=");
+    write_hex(k);
+    write_str(" (EL1 identity, no AP_EL0 leaves)");
+    console::nl();
+
+    write_str("[mm] /init  ttbr0=");
+    write_hex(init_root);
+    write_str(" ");
+    print_walk("USER ", init_root, aether_core::USER_AA_IMAGE_BASE);
+    write_str(" ");
+    print_walk("ktext ", init_root, crate::arch::aarch64::KERNEL_VA);
+    console::nl();
+
+    let init_ok = user_mapped(init_root, aether_core::USER_AA_IMAGE_BASE)
+        && !user_mapped(init_root, crate::arch::aarch64::KERNEL_VA)
+        && unsafe { walk_in(init_root, crate::arch::aarch64::KERNEL_VA) }.is_some()
+        && !user_mapped(k, aether_core::USER_AA_IMAGE_BASE);
+
+    let ok = init_ok;
+    if ok {
+        println!("[mm] aspace isolate ok (task-local EL0 leaves; no PAN on cortex-a72)");
+    } else {
+        println!("[mm] aspace isolate FAIL");
+    }
+    ok
 }

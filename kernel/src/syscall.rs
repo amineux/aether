@@ -1,7 +1,7 @@
 //! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is `SYS_CLONE`.
 //!
-//! User enters here through `syscall`/`sysret` (x86) or `ecall`/`sret`
-//! (RISC-V). Cap checks sit on
+//! User enters here through `syscall`/`sysret` (x86), `ecall`/`sret`
+//! (RISC-V), or `svc`/`eret` (aarch64). Cap checks sit on
 //! send / recv / map / accel before any fabric or SoftNPU work.
 
 #![allow(dead_code)]
@@ -49,7 +49,7 @@ pub fn yield_now() {
     unsafe {
         #[cfg(target_arch = "x86_64")]
         core::arch::asm!("pause");
-        #[cfg(target_arch = "riscv64")]
+        #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
         core::arch::asm!("nop");
     }
 }
@@ -165,13 +165,13 @@ fn dispatch_trap(
             crate::console::nl();
             #[cfg(target_arch = "x86_64")]
             outb(0xF4, a0 as u8);
-            #[cfg(target_arch = "riscv64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
             crate::arch::exit_qemu(a0 == 0);
             loop {
                 unsafe {
                     #[cfg(target_arch = "x86_64")]
                     core::arch::asm!("hlt");
-                    #[cfg(target_arch = "riscv64")]
+                    #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
                     core::arch::asm!("wfi");
                 }
             }
