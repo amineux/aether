@@ -361,7 +361,8 @@ KPTI, not PCID, not COW, not Meltdown unmap:
 - The trampoline picks a slide from `{0, 16 MiB, 32 MiB}` — all
   inside the last 2 GiB so `code-model=kernel` 32-bit signed
   addresses still resolve. Multiboot cmdline `kaslr=0|1|2|off`
-  selects the index (`off` = 0). No cmdline → RDRAND, else TSC.
+  selects the index (`off` = 0). No cmdline → RDRAND if CPUID.1:ECX[30],
+  else TSC (stock `qemu64` has no RDRAND; `#UD` is avoided).
   `make qemu-ci` / `qemu-smp-ci` pass `-append kaslr=1` so the
   16 MiB slot is deterministic.
 - HH PDs are **cloned** (`0x71000` / `0x72000`). Identity PDs at
