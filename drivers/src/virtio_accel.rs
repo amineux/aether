@@ -2,9 +2,9 @@
 //!
 //! Host-tested ring model. The live QEMU path uses [`crate::mmio::AccelMmio`]
 //! (doorbell + used-ring IRQ). SpecForge Y1H1 path B: that in-kernel BAR
-//! is the canonical demo; this module keeps the same frozen ABI in Rust
-//! structs so unit tests do not need a byte BAR. Path A (a custom QEMU
-//! `-device`) stays optional later.
+//! is the canonical demo for stock QEMU; this module keeps the same
+//! frozen ABI in Rust structs so unit tests do not need a byte BAR.
+//! Path A is the optional QEMU device in `qemu/` (`make qemu-accel`).
 //!
 //! ```text
 //! MMIO cfg @ BAR0 (frozen)

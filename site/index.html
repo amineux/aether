@@ -465,7 +465,7 @@
               <h3>Working vertical slice</h3>
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
-                <li>SoftNPU virtqueue path B (in-kernel BAR is the canonical demo; golden MMIO trace; stock QEMU); I32 plus software F16/F32 (not a tensor ISA)</li>
+                <li>SoftNPU virtqueue path B (in-kernel BAR is the canonical stock-QEMU demo; golden MMIO trace); I32 plus software F16/F32 (not a tensor ISA). Path A is an optional in-tree QEMU device model (<code>qemu/</code>; <code>make accel-test</code>)</li>
                 <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
@@ -473,7 +473,7 @@
                 <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
                 <li>Growable user <code>mmap</code> — additive <code>SYS_MMAP=11</code> anonymous 4 KiB USER pages (not POSIX <code>mmap</code>; no file / no <code>MAP_SHARED</code>)</li>
                 <li>In-kernel ramfs — loader <code>open</code>s <code>/init</code> (and x86 <code>/probe</code>); seeded from x86 virtio-blk (AETHFS01) or embedded blobs; not POSIX</li>
-                <li>Higher-half + KASLR slide + PIE reloc + KPTI + PCID + one-page COW — <code>ffffffff80000000+PA</code> plus 0/16/32 MiB dual-map on x86; <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped. User CR3 has no HH / no identity DMA (4 KiB trampoline). PCID tags KPTI <code>mov cr3</code> when CPUID advertises it (else full flush). Identity 4 GiB stays on kernel CR3 for SoftNPU DMA (not a secret slide / Meltdown-complete / POSIX <code>mmap</code>)</li>
+                <li>Higher-half + KASLR slide + PIE reloc + KPTI + PCID + one-page COW + identity teardown — <code>ffffffff80000000+PA</code> plus 0/16/32 MiB dual-map on x86; <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped. User CR3 has no HH / no identity DMA (4 KiB trampoline). PCID tags KPTI <code>mov cr3</code> when CPUID advertises it (else full flush). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH (not a secret slide / Meltdown-complete / POSIX <code>mmap</code>)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
@@ -491,7 +491,7 @@
               <h3>If a silicon team implements AccelDevice</h3>
               <ul>
                 <li>Hardware SMMU — program a real SID / PT; Soft SMMU is software only</li>
-                <li>Optional custom QEMU virtio-accel (path A; deferred). Path B landed: in-kernel BAR + golden MMIO trace</li>
+                <li>Guest PCI bind for path A (<code>-device aether-accel</code> model landed; stock QEMU stays path B)</li>
                 <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen</li>
                 <li>Not a signed vendor path. <code>PartnerNpuStub</code> stays a labeled sketch — no second-stub enrichment theater</li>
               </ul>
@@ -564,21 +564,21 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SMP smoke, per-task PML4, small cap CDT.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SMP smoke, per-task PML4, small cap CDT.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">CI</span>
               <div>
                 <a href="https://github.com/amineux/aether/actions">Actions on every push / PR</a>
-                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-blk-ci</code>, <code>make qemu-pcid-ci</code>, <code>make qemu-nopcid-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>, <code>make qemu-aarch64-ci</code>.</p>
+                <p><code>cargo test --workspace</code>, <code>make accel-test</code> (path-A device model; no QEMU rebuild), <code>make qemu-ci</code>, <code>make qemu-blk-ci</code>, <code>make qemu-pcid-ci</code>, <code>make qemu-nopcid-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>, <code>make qemu-aarch64-ci</code>.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Identity 4 GiB stays on the kernel CR3 for DMA. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree; the guest does not yet bind PCI BAR0. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">

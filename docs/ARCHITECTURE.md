@@ -168,6 +168,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU pin/translate (per-stream, non-identity IOVA) |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
+| `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
@@ -330,7 +331,9 @@ names from the reserved window at `0x02A0_0000`; without a drive it
 seeds the embedded blobs (`include_bytes!`). The loader `open`s
 `/init` from ramfs and copies `PT_LOAD` into the identity-mapped
 user window, then drops to user (`iretq` / `sret`). This is not
-POSIX and not a general block layer. SoftNPU stays path B.
+POSIX and not a general block layer. SoftNPU stays path B on stock
+`make qemu`. Path A is an optional QEMU device (`qemu/`,
+`make qemu-accel`).
 
 An optional second static ELF, `/probe`, is linked at `0x0240_0000`
 (`user/probe`, `build/probe.elf`). It yields only and does not

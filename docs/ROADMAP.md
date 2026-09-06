@@ -22,8 +22,8 @@ product kernel.
 
 | Item | Status |
 | --- | --- |
-| Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend; path B canonical) |
-| Custom QEMU `virtio-accel` device | deferred (path A optional later; golden MMIO trace locks the BAR) |
+| Virtqueue-shaped MMIO (doorbell + used-ring IRQ) | **done** (in-kernel BAR; SoftNPU backend; path B canonical for stock QEMU) |
+| Custom QEMU `virtio-accel` device | **done** as optional path A (`qemu/aether_accel.c`; `make accel-test` / `make qemu-accel`). Stock `make qemu` stays path B. CI does not rebuild QEMU. |
 | `IommuMap` pin/translate; refuse without Memory+MAP | **done** (Soft SMMU; non-identity IOVA) |
 | Soft SMMU / software stream IDs | **done** (per-stream IOVA namespaces; not hardware) |
 | Hardware SMMU / stream IDs | not started (no SID programmed on a real SMMU) |
@@ -294,19 +294,23 @@ documented subset (below).
 
 ## SpecForge virtio path B (this cut)
 
-Landed as the Y1H1 virtio **path B** decision — **not** a QEMU
-`-device`, **not** an upstream virtio device:
+Landed as the Y1H1 virtio **path B** decision — **not** an upstream
+virtio device. Path A later landed as optional:
 
 - [ACCEL.md](ACCEL.md) ADR: path A (custom QEMU virtio-accel) vs path B
-  (in-kernel BAR is the canonical demo). **B chosen.** Path A stays
-  optional later.
+  (in-kernel BAR is the canonical demo). **B remains what `make qemu`
+  runs** (stock QEMU). Path A is `qemu/aether_accel.c` +
+  `make qemu-accel`.
 - BAR layout is **frozen** (`magic`, `version`, `status`, `qsize`,
-  `doorbell`, `used_idx`). SoftNPU behind `AccelMmio` remains what
-  `make qemu` runs. Stock QEMU only.
+  `doorbell`, `used_idx`). SoftNPU behind `AccelMmio` remains the
+  stock demo. Changing an offset is a dual SoftNPU + path-A + golden
+  update.
 - Host golden MMIO trace records cfg / doorbell / used-ring accesses
   for one SoftNPU submit/complete
-  (`drivers/src/{mmio,softnpu,virtio_accel}.rs`).
-- No new QEMU device C code. No vendor claim.
+  (`drivers/src/{mmio,softnpu,virtio_accel}.rs`). Path A’s C test
+  checks the same published cfg values.
+- Path A is a QEMU patch/plugin-shaped softmmu device, not a CI QEMU
+  rebuild. No vendor claim.
 
 ## AffinityLaplacian n≤32 placement
 
@@ -772,10 +776,11 @@ kernel thread queue sleeps.
 
 ## Suggested next cuts (technical, not calendar)
 
-1. **Custom QEMU virtio-accel** (path A) that DMA-reads the frozen BAR.
-   SoftNPU can stay the executor behind the device. Optional later;
-   path B (in-kernel BAR + golden MMIO trace) is the canonical demo.
-   Soft-CP already covers a second AccelDevice path on the host.
+1. **Guest driver for path A.** The QEMU `aether-accel` device and
+   host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
+   stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
+   (GPA in the job wire; Soft SMMU stays the cap table) is still
+   open. Soft-CP already covers a second AccelDevice path on the host.
 2. **Hardware SMMU.** Soft SMMU already allocates per-stream IOVAs;
    program a real SMMU context / PT walk. Do not claim the software
    table is silicon.
@@ -815,8 +820,9 @@ kernel thread queue sleeps.
   in-kernel ramfs for `/init`, x86 virtio-blk → ramfs seed,
   RISC-V PLIC + SoftNPU software
   doorbell, and aarch64 EL0 `/init` are landed. ABI stays stable
-  (0–10 unchanged; `SYS_MMAP=11` additive). Custom QEMU virtio-accel
-  (path A) and `fork` remain deferred.
+  (0–10 unchanged; `SYS_MMAP=11` additive). Path A (optional QEMU
+  `aether-accel` device) landed as a host-tested model + optional
+  softmmu build. `fork` remains deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -840,8 +846,10 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   (PR #31), and x86 virtio-blk → ramfs
   (this cut)
   are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), `fork`, and the other stubs
-  above are still open. Growable anonymous `SYS_MMAP` landed.
+  Optional path-A QEMU `aether-accel` (this cut) landed as a
+  host-tested device model; stock QEMU stays path B. `fork` and
+  the other stubs above are still open. Growable anonymous
+  `SYS_MMAP` landed.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

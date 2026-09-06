@@ -55,6 +55,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-debug qemu-ci qemu-pcid-ci qemu-nopcid-ci \
         qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         qemu-blk qemu-blk-ci \
+        accel-test qemu-accel qemu-accel-run \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
@@ -74,6 +75,8 @@ help:
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
 	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + aspace + fabric"
+	@echo "  make accel-test   - path-A QEMU device model (host; no QEMU rebuild)"
+	@echo "  make qemu-accel   - accel-test; if QEMU_ACCEL is set, boot with -device aether-accel"
 	@echo "  make clean"
 
 target:
@@ -89,6 +92,59 @@ test: test-host
 
 test-host:
 	cargo test --workspace
+
+# Path A: portable BAR + SoftNPU I32 model. No QEMU headers.
+ACCEL_TEST := $(BUILD)/aether-accel-test
+ACCEL_CC   := $(CC)
+
+$(ACCEL_TEST): qemu/aether_accel.c qemu/aether_accel_test.c qemu/aether_accel.h
+	mkdir -p $(BUILD)
+	$(ACCEL_CC) -std=c11 -Wall -Wextra -Werror -O2 -I qemu \
+		-o $@ qemu/aether_accel.c qemu/aether_accel_test.c
+
+accel-test: $(ACCEL_TEST)
+	$(ACCEL_TEST)
+
+# Stock make qemu stays path B. Path A attaches only when a patched
+# qemu-system-x86_64 is named in QEMU_ACCEL (see qemu/README.md).
+qemu-accel: accel-test
+	@if [ -z "$(QEMU_ACCEL)" ]; then \
+		echo "qemu-accel: path-A device model ok (host). Stock make qemu stays path B."; \
+		echo "qemu-accel: set QEMU_ACCEL=/path/to/patched/qemu-system-x86_64 to attach -device aether-accel."; \
+		echo "qemu-accel: build steps are in qemu/README.md (optional; not a CI QEMU rebuild)."; \
+	else \
+		$(MAKE) qemu-accel-run QEMU_ACCEL=$(QEMU_ACCEL); \
+	fi
+
+qemu-accel-run: $(LOADER_ELF) accel-test
+	@if [ -z "$(QEMU_ACCEL)" ]; then \
+		echo "qemu-accel-run: QEMU_ACCEL is empty"; \
+		exit 2; \
+	fi
+	@if ! "$(QEMU_ACCEL)" -device help 2>/dev/null | grep -q aether-accel; then \
+		echo "qemu-accel-run: $(QEMU_ACCEL) does not list -device aether-accel"; \
+		echo "qemu-accel-run: see qemu/README.md (install-into-qemu.sh)"; \
+		exit 1; \
+	fi
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/qemu-accel-serial.log
+	set +e; \
+	timeout --signal=KILL 45s $(QEMU_ACCEL) $(QEMU_FLAGS) -device aether-accel $(QEMU_CI_APPEND) \
+		> $(BUILD)/qemu-accel-serial.log 2>&1; \
+	ec=$$?; \
+	set -e; \
+	cat $(BUILD)/qemu-accel-serial.log; \
+	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
+	   && grep -q "\\[mm\\] identity teardown ok" $(BUILD)/qemu-accel-serial.log \
+	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-accel-serial.log \
+	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-accel-serial.log \
+	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-accel-serial.log \
+	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-accel-serial.log; then \
+		echo "qemu-accel: path-A -device present; path-B SoftNPU /init still ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-accel: guest demo missing or device broke path B (qemu exit $$ec)"; \
+	exit 1
 
 user-init: target $(INIT_BLOB)
 user-probe: target $(PROBE_BLOB)
