@@ -1,7 +1,8 @@
 //! x86_64 SMP smoke: INIT-SIPI AP 1, per-CPU `gs`, IPI, work-steal.
 //!
 //! APs stay in kernel mode. Ring-3 `/init` and kthread-B remain BSP-only.
-//! Per-task PML4 is deliberately not in this cut.
+//! Per-task PML4 is a follow-up on the BSP user path; APs stay on the
+//! kernel CR3. SMEP/SMAP are armed here so CR4 matches the BSP.
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
@@ -212,6 +213,7 @@ pub extern "C" fn ap_entry() -> ! {
     idt::load();
     gdt::load_ap();
     cpu::set_gs(1);
+    crate::mm::paging::enable_smep_smap();
     apic::enable();
     AP_ONLINE.store(true, Ordering::Release);
     irq::enable();

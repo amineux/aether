@@ -54,7 +54,8 @@ What to point at on the serial:
 5. `[map] Soft SMMU pin + Memory-cap refuse ok`.
 6. `[color] tenant/bank paint  Compute foreign refuse + Exchange ok`.
 7. `[laplace] L=D-A n=6 … chiplet-split=ok`.
-8. x86 only: `[init] ring-3 /init` then `RING-3 /init VIA SYSCALL/SYSRET`.
+8. x86 only: `[mm] SMEP+SMAP` + `[mm] aspace isolate ok`, then
+   `[init] ring-3 /init` and `RING-3 /init VIA SYSCALL/SYSRET`.
 9. `FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE`.
 
 If QEMU is blocked, `cargo test -p aether-core laplacian -- --nocapture`

@@ -20,6 +20,7 @@ checklist, or a benchmark brief.
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
+| Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | RISC-V virt boot | Thin S-mode port | `boot/riscv64/`, `make qemu-riscv` |
 
 The portable specification is `aether-core`. Host tests execute the same
@@ -37,7 +38,8 @@ gaps:
 | Custom QEMU virtio-accel | In-kernel BAR + SoftNPU; stock QEMU is enough to demo |
 | RISC-V is thin | kmain + UART + Sv39 + `aether_core` self-check. No ring-3, no PLIC virtio |
 | Fiedler is integer power iteration | Cut construction for n≤8 still enumerates |
-| SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only; no per-task PML4 |
+| SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
+| No higher-half / KPTI | Per-task PML4 clones the identity 4 GiB; kernel can still name every PA |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | Descendants survive parent revoke |
 
@@ -91,15 +93,17 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 
 Not enforced in hardware yet: SMMU stream IDs, RISC-V ring-3, revocation
 broadcast, measured boot. On x86, isolation is “cap tables + ring-3 +
-Soft SMMU.” Soft SMMU is a software table a real device can ignore.
-On RISC-V it is still “the cap tables do the right thing.”
+per-task USER leaves + SMEP/SMAP + Soft SMMU.” Soft SMMU is a software
+table a real device can ignore. The kernel identity map still lets a
+forged kernel pointer name a physical address. On RISC-V it is still
+“the cap tables do the right thing.”
 
 ## CI status
 
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, preempt |
-| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; isa-debug-exit |
+| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps SMEP/SMAP + aspace isolate |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
 | RISC-V boot | `make qemu-riscv-ci` | OpenSBI S-mode + self-check banner on virt UART |
 

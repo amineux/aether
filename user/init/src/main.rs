@@ -50,7 +50,7 @@ fn exit(code: u64) -> ! {
 #[link_section = ".text.boot"]
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
-    debug_print(b"[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000)\r\n");
+    debug_print(b"[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000, own PML4)\r\n");
     debug_print(b"[init] syscall debug_print ok\r\n");
 
     // Recv first: empty inbox → block until kthread-B sends ping-fabric.
