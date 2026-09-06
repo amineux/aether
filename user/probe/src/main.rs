@@ -6,7 +6,7 @@
 #![no_std]
 #![no_main]
 
-use aether_core::sysnr::{SYS_DEBUG_PRINT, SYS_YIELD};
+use aether_core::sysnr::{COW_TEMPLATE_WORD, SYS_DEBUG_PRINT, SYS_YIELD, USER_COW_BASE};
 
 fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
     let ret: i64;
@@ -33,9 +33,21 @@ fn debug_print(s: &[u8]) {
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     debug_print(b"[probe] ring-3 /probe (static ELF64 non-PIE @ 0x2400000, own PML4)\r\n");
+    let cow = unsafe { core::ptr::read_volatile(USER_COW_BASE as *const u64) };
+    if cow == COW_TEMPLATE_WORD {
+        debug_print(b"[probe] cow still template\r\n");
+    } else {
+        debug_print(b"[probe] cow FAIL\r\n");
+    }
     for _ in 0..3 {
         debug_print(b"[probe] yield\r\n");
         let _ = sys(SYS_YIELD, 0, 0, 0);
+    }
+    let cow = unsafe { core::ptr::read_volatile(USER_COW_BASE as *const u64) };
+    if cow == COW_TEMPLATE_WORD {
+        debug_print(b"[probe] cow still template\r\n");
+    } else {
+        debug_print(b"[probe] cow FAIL\r\n");
     }
     // Stay Ready and yield. Do not SYS_EXIT (that isa-debug-exits QEMU)
     // and do not share /init's recv waiter.

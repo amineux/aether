@@ -99,6 +99,19 @@ pub const USER_PROBE_BASE: u64 = 0x0240_0000;
 pub const USER_PROBE_END: u64 = 0x0260_0000;
 pub const USER_PROBE_STACK_TOP: u64 = USER_PROBE_END;
 
+/// Shared copy-on-write template (x86 documented subset).
+///
+/// One 4 KiB USER page, present and read-only, same PA in `/init` and
+/// `/probe` until a write fault allocates a private copy. Not `fork`,
+/// not POSIX `mmap`, not a second ELF window. RISC-V / aarch64 do
+/// not map this VA.
+pub const USER_COW_BASE: u64 = 0x0280_0000;
+pub const USER_COW_END: u64 = USER_COW_BASE + 0x1000;
+/// Word at offset 0 of the template page (kernel-filled).
+pub const COW_TEMPLATE_WORD: u64 = 0xC0C0_0001;
+/// Word `/init` stores after the fault handler breaks the share.
+pub const COW_PRIVATE_WORD: u64 = 0xC0C0_BEEF;
+
 /// RISC-V `/init` window. QEMU virt RAM starts at `0x8000_0000`; the
 /// x86 `0x0200_0000` hole is not RAM. Identity-mapped 2 MiB, U-bit
 /// only on this leaf in the task satp. Not a second ABI.
@@ -133,6 +146,7 @@ pub fn user_range_ok(ptr: u64, len: u64) -> bool {
 pub fn user_range_known(ptr: u64, len: u64) -> bool {
     user_range_ok(ptr, len)
         || user_range_ok_in(USER_PROBE_BASE, USER_PROBE_END, ptr, len)
+        || user_range_ok_in(USER_COW_BASE, USER_COW_END, ptr, len)
         || user_range_ok_in(USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, ptr, len)
         || user_range_ok_in(USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, ptr, len)
 }
@@ -189,6 +203,10 @@ mod tests {
         assert!(user_range_known(USER_AA_IMAGE_BASE, 16));
         assert!(!user_range_ok(USER_AA_IMAGE_BASE, 16));
         assert!(!user_range_known(USER_AA_IMAGE_END, 1));
+        assert!(user_range_known(USER_COW_BASE, 8));
+        assert!(!user_range_ok(USER_COW_BASE, 8));
+        assert!(!user_range_known(USER_COW_END, 1));
+        assert!(!user_clone_pair_ok(USER_COW_BASE, USER_COW_END));
     }
 
     #[test]

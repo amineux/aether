@@ -73,6 +73,13 @@ sifive_test), so the child must not call it. World still has one
 shared `CapTable`. `/probe` remains a second ELF with its own PML4
 — that is not this syscall.
 
+No new syscall for COW. The kernel maps one shared 4 KiB USER page
+at `USER_COW_BASE` (`0x0280_0000`) read-only into x86 `/init` and
+`/probe`. A write fault allocates a private copy on that aspace.
+`user_range_known` accepts the page so a later copy helper can name
+it; `SYS_CLONE` entry/stack must still sit in an ELF window.
+Numbers **0–10 stay frozen**. RISC-V / aarch64 do not map the VA.
+
 User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 `core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1
 (accel queue) before the ring-3 drop.

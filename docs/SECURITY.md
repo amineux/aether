@@ -69,6 +69,7 @@ These are marked so a security review does not assume them:
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity 4 GiB kept on kernel CR3 | Kernel CR3 still names every low PA (intentional DMA / SIPI window). User CR3 does not (KPTI subset). HH is `ffffffff80000000+PA` plus a dual-mapped slide | PIE-reloc KASLR (unmap unused alias) |
+| COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone / growable `mmap` |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
 ## Multi-tenant weights / KV
@@ -99,7 +100,11 @@ pointer is not present there. That is a KPTI subset, not
 Meltdown-complete (trampoline pages remain mapped). PCID tags
 KPTI `mov cr3` when CPUID advertises it so the switch is not a
 full TLB flush; stock `qemu64` often falls back to a full flush.
-PCID is not a speculation barrier.
+PCID is not a speculation barrier. A documented **COW subset**
+maps one shared 4 KiB USER page (`0x0280_0000`) read-only in
+`/init` and `/probe`; a write fault copies the frame on that
+aspace only. That is not `fork` and not POSIX `mmap`. RISC-V /
+aarch64 do not map it. SoftNPU DMA still uses kernel CR3.
 
 ## Covert channels
 

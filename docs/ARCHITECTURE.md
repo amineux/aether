@@ -100,6 +100,7 @@ Physical sketch (128 MiB guest):
 | `0x400000` | Kernel `.text` LMA (after copy); VMA `0xffffffff80400000+slide` |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
+| `0x0280_0000–0x0280_1000` | Shared COW template (USER 4 KiB, RO until write; same PA in `/init` + `/probe`) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
 
 The boot path parses the Multiboot1 mmap (Multiboot2 parser is
@@ -114,7 +115,9 @@ as a documented subset — not Meltdown-complete. PCID tags those
 CR3 switches when CPUID.1:ECX[17] is set. TCG QEMU cannot
 advertise `+pcid` (`make qemu-pcid-ci` requests it and accepts
 the TCG warning + fallback; KVM may print `[mm] pcid ok`).
-`make qemu-nopcid-ci` forces `-pcid`. The identity 4 GiB stays
+`make qemu-nopcid-ci` forces `-pcid`. A documented COW subset maps
+one shared 4 KiB USER page at `0x0280_0000` into `/init` and
+`/probe`; a write fault copies the frame. The identity 4 GiB stays
 on the **kernel** CR3 for DMA / SIPI.
 
 ## Crate graph
@@ -336,8 +339,10 @@ enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
 `0xffffffff80400000` and runs at that VA plus a boot-time slide.
 PCID (when CPUID advertises it) tags kernel vs user `mov cr3` so
 the KPTI switch is not a full TLB flush; INVPCID (or bit-63-clear)
-covers remap. This is **not** Meltdown-complete, PIE KASLR, COW, or
-a POSIX MM.
+covers remap. A documented COW subset maps one shared 4 KiB USER
+page at `0x0280_0000` read-only in `/init` and `/probe`; a write
+fault copies the frame on that aspace only. This is **not**
+Meltdown-complete, PIE KASLR, `fork`, or a POSIX MM.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V

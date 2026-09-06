@@ -470,8 +470,44 @@ Honest limits (do not market these as done):
 - Unused KASLR alias stays (not PIE). Identity 4 GiB stays on the
   kernel CR3 for DMA.
 
-Still stubbed: PIE / unmap of the unused alias, COW, tearing down
-the kernel identity 4 GiB.
+Still stubbed at the PCID cut: PIE / unmap of the unused alias, COW
+(later subset), tearing down the kernel identity 4 GiB.
+
+## Copy-on-write page subset (this cut)
+
+Landed as a **documented subset**, not `fork`, not POSIX `mmap`,
+not a general writable-share, not RISC-V / aarch64:
+
+- One 4 KiB USER page at `0x0280_0000` (`USER_COW_BASE`). Boot
+  fills a template word (`COW_TEMPLATE_WORD`) and maps the **same
+  PA** read-only into `/init` and `/probe` (separate KPTI PML4s).
+  The rest of that 2 MiB slot stays unmapped. SoftNPU kthread-B
+  stays on kernel CR3 (`IdentityDma` / identity 4 GiB untouched).
+- A ring-3 write is a present + write + user `#PF`. The handler
+  (after the KPTI trampoline has already loaded kernel CR3)
+  allocates a private frame, copies 4 KiB, sets RW on **that**
+  aspace only, INVPCID / tagged flush of the user PCID, and
+  resumes. `/probe` still names the template.
+- `SYS_CLONE` shares the caller's PML4, so a sibling sees the
+  private page after the break — they are not a second isolation
+  domain. No new syscall (0–10 frozen).
+- Host tests: `core/src/aspace.rs` (`cow_shared_until_write`,
+  `clone_threads_share_cow_break`). QEMU:
+  `[mm] cow ok`, `[init] cow write ok (private page)`,
+  `[probe] cow still template`. `make qemu-ci` greps those.
+- RISC-V / aarch64 do not map the VA. KPTI trampoline, PCID,
+  KASLR slide, and SoftNPU path B are unchanged.
+
+Honest limits (do not market these as done):
+
+- One page, one template, x86 only. Not file-backed COW, not
+  `fork` of the whole aspace, not growable `mmap`.
+- Unused KASLR alias stays (not PIE). Identity 4 GiB stays on
+  the kernel CR3 for DMA.
+
+Sequenced follow-ups: PIE + reloc (unmap unused alias),
+growable `mmap` / `fork`-shaped aspace clone, tearing down the
+kernel identity 4 GiB.
 
 ## User-level threads / `SYS_CLONE` (this cut)
 
@@ -585,7 +621,7 @@ Search for `// STUB:` / `STUB` :
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
-| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + KPTI + PCID subset (tagged `mov cr3` when CPUID.PCID; else full flush). COW / PIE-reloc still stub |
+| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault). PIE-reloc / `fork` / growable `mmap` still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
@@ -617,9 +653,10 @@ kernel thread queue sleeps.
 3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.
-4. **COW / PIE-KASLR.** KPTI + PCID landed (tagged TLB when CPUID
-   advertises PCID; full flush otherwise). Do not claim
-   Meltdown-complete, PIE reloc, or a secret slide.
+4. **PIE-KASLR / growable `mmap` / `fork`.** One-page COW + KPTI +
+   PCID landed (tagged TLB when CPUID advertises PCID; full flush
+   otherwise). Do not claim Meltdown-complete, PIE reloc, a secret
+   slide, or a POSIX MM.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
@@ -643,8 +680,8 @@ kernel thread queue sleeps.
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
   virtio path-B ADR + golden MMIO trace, the x86 higher-half
   kernel map, the KASLR boot-time slide, the KPTI user-CR3 subset,
-  the PCID tagged-TLB subset (this cut), user-level
-  threads via `SYS_CLONE`, and in-kernel
+  the PCID tagged-TLB subset, the one-page COW subset (this cut),
+  user-level threads via `SYS_CLONE`, and in-kernel
   ramfs for `/init`, RISC-V PLIC + SoftNPU software doorbell, and
   aarch64 EL0 `/init` are landed. ABI stays stable
   (0–10 unchanged). Custom QEMU virtio-accel (path A), virtio-blk,
@@ -666,11 +703,12 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   user-level threads / `SYS_CLONE` (PR #23), in-kernel ramfs
   for `/init` (PR #24), RISC-V PLIC + SoftNPU doorbell (PR #25),
   aarch64 EL0 `/init` (PR #26), the x86 KASLR boot-time
-  slide (PR #27), the x86 KPTI user-CR3 subset (PR #28), and the
-  x86 PCID tagged-TLB subset (this cut)
+  slide (PR #27), the x86 KPTI user-CR3 subset (PR #28), the
+  x86 PCID tagged-TLB subset (PR #29), and the one-page COW
+  subset (this cut)
   are **done** as research-prototype slices.
   Custom QEMU virtio-accel (path A), virtio-blk, PIE-reloc
-  KASLR, and the other stubs above are still open.
+  KASLR / `fork`, and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

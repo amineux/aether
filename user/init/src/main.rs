@@ -13,6 +13,8 @@ use aether_core::sysnr::{
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV,
     SYS_SEND, SYS_YIELD,
 };
+#[cfg(target_arch = "x86_64")]
+use aether_core::sysnr::{COW_PRIVATE_WORD, COW_TEMPLATE_WORD, USER_COW_BASE};
 
 fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
     let ret: i64;
@@ -130,6 +132,24 @@ pub extern "C" fn _start() -> ! {
     // serial proof is not a race with kthread-B's ping.
     for _ in 0..4 {
         yield_now();
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Shared RO template with /probe. The store #PFs; the kernel
+        // copies the page and this aspace becomes private. /probe
+        // still names the template.
+        let p = USER_COW_BASE as *mut u64;
+        let before = unsafe { core::ptr::read_volatile(p) };
+        unsafe {
+            core::ptr::write_volatile(p, COW_PRIVATE_WORD);
+        }
+        let after = unsafe { core::ptr::read_volatile(p) };
+        if before != COW_TEMPLATE_WORD || after != COW_PRIVATE_WORD {
+            debug_print(b"[init] cow FAIL\r\n");
+            exit(1);
+        }
+        debug_print(b"[init] cow write ok (private page)\r\n");
     }
 
     // Recv: empty inbox → block until kthread-B sends ping-fabric.
