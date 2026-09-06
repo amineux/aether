@@ -95,7 +95,7 @@ pub fn frame_window() -> (u64, u64) {
 pub fn identity_map_note() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     {
-        "[boot] higher-half + KASLR slide + identity 4 GiB (2 MiB pages) from trampoline"
+        "[boot] higher-half + KASLR slide + identity 4 GiB (kernel CR3); KPTI user trampoline"
     }
     #[cfg(target_arch = "riscv64")]
     {

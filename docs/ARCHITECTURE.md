@@ -94,6 +94,7 @@ Physical sketch (128 MiB guest):
 | `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD identity) |
 | `0x7000–0x700B` | Multiboot mailbox + KASLR slide bytes |
 | `0x71000–0x72FFF` | Dedicated HH PD0/PD1 (KASLR dual-map; identity PDs untouched) |
+| `0x73000–0x76FFF` | KPTI trampoline (code + shadow IDT + entry stack); supervisor 4 KiB in user CR3 |
 | `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
 | `0x400000` | Kernel `.text` LMA (after copy); VMA `0xffffffff80400000+slide` |
@@ -108,8 +109,9 @@ free pool. Missing mmap is an explicit arch-window fallback, not a
 silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) plus a
 boot-time KASLR slide (0 / 16 / 32 MiB dual-map; CI forces
 `kaslr=1`) is landed. The unused HH alias stays (not PIE / reloc).
-KPTI / PCID / COW are still not. The identity 4 GiB is an
-intentional DMA / SIPI / user-window.
+KPTI user CR3 (no HH, no identity DMA, 4 KiB trampoline) is landed
+as a documented subset — not Meltdown-complete, not PCID. The
+identity 4 GiB stays on the **kernel** CR3 for DMA / SIPI.
 
 ## Crate graph
 
@@ -317,16 +319,19 @@ An optional second static ELF, `/probe`, is linked at `0x0240_0000`
 (`user/probe`, `build/probe.elf`). It yields only and does not
 `SYS_EXIT`.
 
-Each ring-3 task has its **own PML4**: the trampoline identity 4 GiB
-plus the higher-half alias (`PML4[511]`) is cloned, USER is set only
-on that task's 2 MiB window, and the other user window is unmapped.
-The kernel CR3 (boot tables at `0x1000`) stays supervisor-only.
-Context switch writes CR3. CR4.SMEP and CR4.SMAP are enabled on the
-BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and `STAC`/`CLAC` wrap
-user copies. Kernel `.text` is linked at `0xffffffff80400000` and
-runs at that VA plus a boot-time slide. This is **not** KPTI, PIE
-KASLR, PCID, COW, or a POSIX MM. The identity 4 GiB stays mapped so
-SoftNPU DMA and the AP trampoline keep working.
+Each ring-3 task has its **own KPTI PML4**: USER is set only on that
+task's 2 MiB window, the other user window is unmapped, `PML4[511]`
+is empty (no kernel HH), and the identity 4 GiB is not present.
+Four supervisor 4 KiB pages at `0x73000` are the syscall/IRQ
+trampoline. The kernel CR3 (boot tables at `0x1000`) keeps identity
++ HH so SoftNPU `IdentityDma` and AP SIPI keep working. Context
+switch stays on kernel CR3 while in the kernel; the trampoline
+loads the user CR3 just before `iretq`. CR4.SMEP and CR4.SMAP are
+enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
+`STAC`/`CLAC` wrap user copies. Kernel `.text` is linked at
+`0xffffffff80400000` and runs at that VA plus a boot-time slide.
+This is **not** Meltdown-complete, PIE KASLR, PCID, COW, or a POSIX
+MM.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V

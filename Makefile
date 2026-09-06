@@ -60,7 +60,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + KPTI + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
@@ -142,6 +142,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
@@ -151,7 +152,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + KPTI + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -183,6 +184,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \

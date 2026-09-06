@@ -151,8 +151,13 @@ fn apply_hw(t: &Tasks, from: u32, id: u32) {
     let th = &t.threads[slot_index(id)];
     #[cfg(target_arch = "x86_64")]
     {
-        gdt::set_rsp0(th.kstack_top);
+        // IRQ from ring-3 uses the identity trampoline stack (user CR3
+        // does not map the HH kstack). Syscall still uses the HH kstack
+        // after the trampoline switches to kernel CR3.
+        gdt::set_rsp0(aether_core::KPTI_TRAMP_STACK_TOP);
         sc::set_kstack(th.kstack_top);
+        let user = th.cr3 != 0 && th.cr3 != crate::mm::paging::kernel_cr3();
+        crate::arch::x86_64::kpti::set_user_cr3(if user { th.cr3 } else { 0 });
     }
     #[cfg(target_arch = "riscv64")]
     {
@@ -164,6 +169,12 @@ fn apply_hw(t: &Tasks, from: u32, id: u32) {
         let user = th.saved.spsr & 0xf == 0;
         crate::mm::paging::write_tpidr(if user { th.kstack_top } else { 0 });
     }
+    // KPTI: kernel code always runs on kernel CR3. The exit trampoline
+    // loads the user CR3 just before iretq. SoftNPU kthread-B therefore
+    // always sees the identity DMA window.
+    #[cfg(target_arch = "x86_64")]
+    crate::mm::paging::switch_cr3(crate::mm::paging::kernel_cr3(), from, id);
+    #[cfg(not(target_arch = "x86_64"))]
     crate::mm::paging::switch_cr3(th.cr3, from, id);
 }
 
@@ -226,6 +237,7 @@ fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
 }
 
 #[cfg(target_arch = "x86_64")]
+#[allow(dead_code)]
 unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
     core::arch::asm!(
         "mov rsp, {f}",
@@ -487,12 +499,15 @@ pub fn enter_user() -> ! {
     t.started = true;
     apply_hw(t, 0, t.current);
     #[cfg(target_arch = "x86_64")]
-    println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task CR3)");
+    println!("[boot] dropping to ring-3 /init (PIT preemption armed, per-task KPTI CR3)");
     #[cfg(target_arch = "riscv64")]
     println!("[boot] dropping to U-mode /init (sret, timer armed, per-task satp)");
     #[cfg(target_arch = "aarch64")]
     println!("[boot] dropping to EL0 /init (eret, timer armed, per-task TTBR0)");
     unsafe {
+        #[cfg(target_arch = "x86_64")]
+        crate::arch::x86_64::kpti::enter_user(&frame);
+        #[cfg(not(target_arch = "x86_64"))]
         resume_to(core::ptr::addr_of!(frame));
     }
 }

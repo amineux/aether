@@ -214,10 +214,11 @@ The kernel and `/init` are **separate Cargo projects** so
   `0xffffffff80400000` (classic `-2 GiB` map). The trampoline picks a
   0 / 16 / 32 MiB slide (`-append kaslr=1` in CI), dual-maps an 8 MiB
   kernel span, and runs at the slid RIP. The identity 4 GiB stays
-  mapped on purpose (SoftNPU DMA, AP SIPI, user windows). The unused
-  HH alias stays (not PIE / reloc). Not KPTI / PCID / COW. SMP is a
-  QEMU `-smp 2` smoke; APs do not run `/init`. `make qemu-smp` proves
-  two harts; `make qemu` stays uniprocessor.
+  mapped on the **kernel** CR3 on purpose (SoftNPU DMA, AP SIPI).
+  User CR3 is a KPTI subset: ELF window + 4 KiB supervisor trampoline,
+  no HH, no identity DMA. Not Meltdown-complete / PIE / PCID / COW.
+  SMP is a QEMU `-smp 2` smoke; APs do not run `/init`.
+  `make qemu-smp` proves two harts; `make qemu` stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`
   `sret`s into U-mode `/init` over `ecall` with a task-local Sv39
   window. SoftNPU is in-kernel path B; used-ring completions go

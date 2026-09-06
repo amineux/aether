@@ -110,6 +110,7 @@ pub fn set_rsp0(rsp0: u64) {
     unsafe {
         core::ptr::write_unaligned(core::ptr::addr_of_mut!(TSS.rsp0), rsp0);
     }
+    super::kpti::set_rsp0(rsp0);
 }
 
 pub fn rsp0() -> u64 {

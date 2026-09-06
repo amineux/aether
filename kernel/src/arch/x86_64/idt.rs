@@ -303,12 +303,11 @@ global_asm!(
         push 48
         jmp isr_common
 
+    .global isr_common
     isr_common:
         PUSH_REGS
         mov rdi, rsp
         call isr_dispatch
-        POP_REGS
-        add rsp, 16
-        iretq
+        jmp kpti_exit
     "#
 );

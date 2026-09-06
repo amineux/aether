@@ -9,7 +9,8 @@
  * or rdrand/rdtsc), dual-map an 8 MiB kernel span at +slide, and jump
  * to VA 0xffffffff80400000+slide. Identity stays for DMA / SIPI / user
  * windows. The canonical HH alias stays so code-model=kernel absolute
- * symbols still resolve. Not PIE, not KPTI, not PCID, not COW.
+ * symbols still resolve. KPTI (user CR3 without HH / identity DMA) is
+ * a later kernel cut. Not PIE, not PCID, not COW.
  */
     .set ALIGN,    1
     .set MEMINFO,  2
