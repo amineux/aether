@@ -1,0 +1,13 @@
+[package]
+name = "aether-hal"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Portable HAL traits for Aether (console, time, accelerator)"
+publish = false
+
+[dependencies]
+aether-core = { path = "../core" }
+
+[lints]
+workspace = true

@@ -1,0 +1,27 @@
+# Rust
+/target
+**/target
+**/*.rs.bk
+
+# Build artifacts
+/build
+boot/x86_64/kernel.bin
+
+# Editor / OS
+.idea
+.vscode
+*.swp
+*.swo
+*~
+.DS_Store
+
+# QEMU / disk images
+*.img
+*.iso
+*.qcow2
+
+# Debug
+*.ll
+*.o
+*.elf
+!boot/**/*.ld

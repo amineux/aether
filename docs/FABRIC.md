@@ -1,0 +1,66 @@
+# Fabric IPC
+
+The fabric is the **only** IPC in Aether. There are no signals, no
+`AF_UNIX`, no global named ports, and no “just write this PA.” If two
+tasks communicate, a capability was minted or transferred.
+
+## Messages
+
+```
+MsgHeader
+  dest          EndpointId     object table, not a CPtr
+  badge         u64            set at mint; receiver sees sender's badge
+  flags         SYNC | ASYNC | GRANT | REPLY
+  n_caps        0..4           caps moved/copied with the message
+  payload_len   ≤ 64 bytes     control plane only
+  route         ChipletRoute   die / chiplet / tile / hop_hint
+  sender_tenant TenantId
+```
+
+Bulk tensor data does **not** ride in the payload. It rides in a Memory
+cap attached to the message (`GRANT`) or already mapped to an accel queue.
+
+### Sync vs async
+
+- **ASYNC**: enqueue and return. If the queue is full, `QueueFull`
+  (a blocking send waiter list is the next cut).
+- **SYNC**: same queue; the flag tells the scheduler the sender is waiting
+  for a matching `recv` (or a reply). v0.1 records the flag; a real block
+  is only meaningful once we have multiple runnable threads.
+
+### Chiplet route tags
+
+`ChipletRoute { die, chiplet, tile, hop_hint }` is ignored by the v0.1
+single-package router except for being copied end-to-end. The point is the
+**ABI**: a mesh, EMIB, or UALink hop can steer on the header without
+parsing tensors. Silicon partners should treat these four bytes as
+architectural.
+
+## Endpoints
+
+An endpoint is a kernel object with a small circular queue (8 messages).
+Creating one returns an `EndpointId` and a cap in the creator's table.
+`send` looks up the destination object (the sender needs a cap to *some*
+endpoint that names that id — in v0.1 the built-in init holds both ends;
+a later cut checks the sender's `CPtr` on every send).
+
+## Cap transfer
+
+`Message::attach_cap` plus `MsgFlags::GRANT` is how a tensor arena moves
+from a runtime to an NPU queue:
+
+1. Tenant A allocates an arena, holds a Memory cap.
+2. A derives `READ|WRITE|MAP` (cannot escalate).
+3. A sends a GRANT message to the NPU driver's endpoint.
+4. The kernel inserts the cap into the driver's table with the **driver's
+   tenant id** (or a trusted driver identity).
+5. A's original slot is emptied if the transfer was a move.
+
+See [SECURITY.md](SECURITY.md) for the isolation argument.
+
+## Why not shared memory IPC?
+
+On a coherent SMP, shared memory is cheap. On a package where the NPU's
+view of HBM is not in the CPU's coherence domain, “we both have the
+pointer” is a bug. The fabric makes the transfer **visible** so a later
+IOMMU / cache-maintenance hook has a place to run.
