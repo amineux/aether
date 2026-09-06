@@ -1,8 +1,9 @@
 //! Physical frames, a tiny kernel heap, and page-table helpers.
 //!
-//! On x86_64 the trampoline stashes Multiboot EAX/EBX at `0x7000`.
-//! We parse the mmap (Multiboot1, or Multiboot2 if a loader handed
-//! us that magic) and feed type-1 regions to the bitmap allocator.
+//! On x86_64 the trampoline stashes Multiboot EAX/EBX at `0x7000`
+//! and the KASLR slide at `0x7008`. We parse the mmap (Multiboot1,
+//! or Multiboot2 if a loader handed us that magic) and feed type-1
+//! regions to the bitmap allocator.
 //!
 //! Documented subset, not a full MM:
 //! - usable RAM below 16 MiB is printed, then clipped (boot tables,
@@ -28,8 +29,8 @@ use aether_core::mmap::{
     parse_boot_mmap, MB1_BOOT_MAGIC, MB1_FLAG_MMAP, MB2_BOOT_MAGIC,
 };
 
-/// Trampoline mailbox: magic at +0, info PA at +4. Between boot PDs
-/// (`0x1000–0x6FFF`) and the AP SIPI page (`0x8000`).
+/// Trampoline mailbox: magic at +0, info PA at +4, slide bytes at +8.
+/// Between boot PDs (`0x1000–0x6FFF`) and the AP SIPI page (`0x8000`).
 #[cfg(target_arch = "x86_64")]
 const MB_MAILBOX: u64 = 0x7000;
 #[cfg(target_arch = "x86_64")]

@@ -2,15 +2,20 @@
 //!
 //! Boot identity-maps 4 GiB with 2 MiB leaves (trampoline PML4 at
 //! 0x1000) and aliases the first 2 GiB at the classic `-2 GiB` kernel
-//! map (`KERNEL_VMA + PA`). Kernel code/data run at those higher-half
-//! VAs. The identity 4 GiB stays mapped on purpose: SoftNPU DMA, page-
-//! table walks (tables are still addressed by PA), AP SIPI, Multiboot
-//! mailbox, and user ELF windows. That table stays the **kernel CR3**
+//! map (`KERNEL_VMA + PA`) on dedicated HH PDs. A boot-time KASLR
+//! slide dual-maps an 8 MiB kernel span at `KERNEL_VMA + slide + PA`
+//! and `_start` runs at that RIP. The canonical alias stays so
+//! `code-model=kernel` absolute symbols still resolve. The identity
+//! 4 GiB stays mapped on purpose: SoftNPU DMA, page-table walks
+//! (tables are still addressed by PA), AP SIPI, Multiboot mailbox,
+//! and user ELF windows. That table stays the **kernel CR3**
 //! (supervisor-only). Each ring-3 task gets a cloned PML4: same
 //! identity + HH kernel mappings, USER only on that task's 2 MiB ELF
 //! window, other known user windows unmapped.
 //!
-//! Not KASLR, not KPTI, not PCID, not COW, not a POSIX MM.
+//! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy).
+//! Not PIE / reloc (cannot unmap the unused alias), not KPTI, not
+//! PCID, not COW, not a POSIX MM.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -21,7 +26,10 @@ use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
 use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
-use aether_core::{KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, USER_IMAGE_BASE, USER_PROBE_BASE};
+use aether_core::{
+    kaslr_slide_valid, kernel_text_va_slid, KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA,
+    KERNEL_TEXT_VA, KERNEL_VMA, USER_IMAGE_BASE, USER_PROBE_BASE,
+};
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
 use crate::console::{self, write_hex, write_str, write_u64};
@@ -41,6 +49,8 @@ const PS: u64 = 1 << 7;
 
 #[cfg(target_arch = "x86_64")]
 static KERNEL_CR3: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "x86_64")]
+static KASLR_SLIDE: AtomicU64 = AtomicU64::new(u64::MAX);
 #[cfg(target_arch = "x86_64")]
 static SMAP_ON: AtomicBool = AtomicBool::new(false);
 #[cfg(target_arch = "x86_64")]
@@ -63,6 +73,23 @@ pub unsafe fn cr3() -> u64 {
     let v: u64;
     core::arch::asm!("mov {}, cr3", out(reg) v, options(nomem, nostack, preserves_flags));
     v
+}
+
+#[cfg(target_arch = "x86_64")]
+pub fn kaslr_slide() -> u64 {
+    let cached = KASLR_SLIDE.load(Ordering::Acquire);
+    if cached != u64::MAX {
+        return cached;
+    }
+    let raw = unsafe { core::ptr::read_volatile(KASLR_MAILBOX_SLIDE as *const u32) } as u64;
+    let slide = if kaslr_slide_valid(raw) { raw } else { 0 };
+    KASLR_SLIDE.store(slide, Ordering::Release);
+    slide
+}
+
+#[cfg(target_arch = "x86_64")]
+pub fn kernel_text_va() -> u64 {
+    kernel_text_va_slid(kaslr_slide()).unwrap_or(KERNEL_TEXT_VA)
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -458,7 +485,11 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     print_walk("probe ", init_cr3, USER_PROBE_BASE);
     console::nl();
 
-    let hh_in_user = unsafe { walk_in(init_cr3, KERNEL_TEXT_VA) }
+    let slid = kernel_text_va();
+    let hh_in_user = unsafe { walk_in(init_cr3, slid) }
+        .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
+        .unwrap_or(false);
+    let canon_in_user = unsafe { walk_in(init_cr3, KERNEL_TEXT_VA) }
         .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
         .unwrap_or(false);
 
@@ -466,7 +497,8 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
         && !user_mapped(init_cr3, USER_PROBE_BASE)
         && unsafe { walk_in(init_cr3, USER_PROBE_BASE) }.is_none()
         && !user_mapped(k, USER_IMAGE_BASE)
-        && hh_in_user;
+        && hh_in_user
+        && canon_in_user;
 
     let probe_ok = if let Some(p) = probe_cr3 {
         write_str("[mm] /probe CR3=");
@@ -492,16 +524,23 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     ok
 }
 
-/// Serial proof: RIP is in the `-2 GiB` map; identity still names the LMA.
+/// Serial proof: RIP is at the slid HH text; identity still names the LMA.
 #[cfg(target_arch = "x86_64")]
 pub fn prove_higher_half() -> bool {
     let rip: u64;
     unsafe {
         core::arch::asm!("lea {0}, [rip]", out(reg) rip, options(nomem, nostack, preserves_flags));
     }
-    let w_hh = unsafe { walk(KERNEL_TEXT_VA) };
+    let slide = kaslr_slide();
+    let slid_text = kernel_text_va();
+    let w_hh = unsafe { walk(slid_text) };
+    let w_canon = unsafe { walk(KERNEL_TEXT_VA) };
     let w_id = unsafe { walk(KERNEL_LMA) };
     let hh_ok = w_hh
+        .as_ref()
+        .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
+        .unwrap_or(false);
+    let canon_ok = w_canon
         .as_ref()
         .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
         .unwrap_or(false);
@@ -509,8 +548,16 @@ pub fn prove_higher_half() -> bool {
         .as_ref()
         .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
         .unwrap_or(false);
-    let rip_ok = rip >= KERNEL_VMA;
+    let rip_ok = rip >= slid_text && rip < slid_text + KASLR_KERNEL_SPAN && rip >= KERNEL_VMA;
+    write_str("[mm] kaslr slide=");
+    write_hex(slide);
+    write_str(" idx=");
+    write_u64(slide / aether_core::KASLR_SLIDE_STRIDE);
+    write_str(" (dual-map HH; identity 4 GiB kept)");
+    console::nl();
     write_str("[mm] higher-half kernel VA=");
+    write_hex(slid_text);
+    write_str(" linked=");
     write_hex(KERNEL_TEXT_VA);
     write_str(" PA=");
     write_hex(KERNEL_LMA);
@@ -519,9 +566,9 @@ pub fn prove_higher_half() -> bool {
     write_str(" identity=");
     write_hex(KERNEL_LMA);
     console::nl();
-    if hh_ok && id_ok && rip_ok {
+    if hh_ok && canon_ok && id_ok && rip_ok {
         println!(
-            "[mm] higher-half ok (ffffffff80000000+PA; identity 4 GiB kept for DMA)"
+            "[mm] higher-half ok (ffffffff80000000+PA + slide; identity 4 GiB kept for DMA)"
         );
         true
     } else {

@@ -18,6 +18,9 @@ QEMU_FLAGS  := -kernel $(LOADER_ELF) -serial stdio -display none \
                -no-reboot -no-shutdown -m 128M \
                -cpu qemu64,+smep,+smap \
                -device isa-debug-exit,iobase=0xf4,iosize=0x04
+# CI forces slide index 1 (16 MiB). Interactive `make qemu` may use
+# rdrand/rdtsc when `-append` is omitted.
+QEMU_CI_APPEND := -append kaslr=1
 
 RV_TARGET   := riscv64gc-unknown-none-elf
 RV_KERNEL   := $(KERNEL_DIR)/target/$(RV_TARGET)/release/aether
@@ -57,7 +60,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + SMEP/SMAP + aspace greps)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
@@ -127,7 +130,7 @@ qemu-ci: $(LOADER_ELF)
 	mkdir -p $(BUILD)
 	rm -f $(BUILD)/qemu-serial.log
 	set +e; \
-	timeout --signal=KILL 45s $(QEMU) $(QEMU_FLAGS) \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_FLAGS) $(QEMU_CI_APPEND) \
 		> $(BUILD)/qemu-serial.log 2>&1; \
 	ec=$$?; \
 	set -e; \
@@ -136,6 +139,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] mmap: multiboot1" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] frames mmap clip=16MiB cap=128MiB" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] SMEP+SMAP" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
@@ -147,7 +151,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs + clone + mmap + HH + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs + clone + mmap + HH + KASLR + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
@@ -168,7 +172,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	mkdir -p $(BUILD)
 	rm -f $(BUILD)/smp-serial.log
 	set +e; \
-	timeout --signal=KILL 45s $(QEMU) $(QEMU_SMP_FLAGS) \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_SMP_FLAGS) $(QEMU_CI_APPEND) \
 		> $(BUILD)/smp-serial.log 2>&1; \
 	ec=$$?; \
 	set -e; \
@@ -176,6 +180,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	if grep -q "\\[smp\\] AP 1 online" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[smp\\] SMP smoke ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] mmap: multiboot1" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] kaslr slide=0x1000000" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] higher-half ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \

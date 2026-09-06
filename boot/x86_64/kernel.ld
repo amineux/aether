@@ -1,10 +1,12 @@
 /* Aether kernel — higher-half VMA, physical LMA 4 MiB.
  *
- * VA = 0xffffffff80000000 + PA  (classic x86_64 -2 GiB kernel map).
- * The trampoline copies the flat binary to 0x400000 and jumps to
- * 0xffffffff80400000 after installing PML4[511] (alias of the first
- * 2 GiB). The identity 4 GiB stays mapped for SoftNPU DMA, page-table
- * walks, AP SIPI, Multiboot mailbox, and user ELF windows.
+ * Linked VA = 0xffffffff80000000 + PA  (classic x86_64 -2 GiB map).
+ * The trampoline copies the flat binary to 0x400000, dual-maps an
+ * 8 MiB kernel span at +KASLR slide (0 / 16 MiB / 32 MiB), and jumps
+ * to 0xffffffff80400000+slide. The canonical alias stays so
+ * code-model=kernel absolute symbols still resolve. The identity 4 GiB
+ * stays mapped for SoftNPU DMA, page-table walks, AP SIPI, Multiboot
+ * mailbox, and user ELF windows. Not PIE / reloc, not KPTI.
  */
 KERNEL_OFFSET = 0xFFFFFFFF80000000;
 KERNEL_LMA    = 0x400000;

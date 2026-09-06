@@ -4,14 +4,16 @@
 //! The kernel clones the trampoline's 4 GiB identity map into a fresh
 //! PML4 / PDPT / PD set and sets USER only on one 2 MiB window. Other
 //! known user windows are unmapped (`P=0`). PML4[511] aliases the first
-//! 2 GiB at the classic `-2 GiB` kernel map (`KERNEL_VMA + PA`). This
-//! module is the same walk / flag logic the kernel uses, so host tests
-//! can prove task-local USER leaves and the HH alias without QEMU.
+//! 2 GiB at the classic `-2 GiB` kernel map (`KERNEL_VMA + PA`). A
+//! boot-time KASLR slide dual-maps an 8 MiB kernel span at
+//! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
+//! SIPI / user windows do not move. The kernel is still linked at
+//! `KERNEL_TEXT_VA` (`code-model=kernel`); the unused alias stays so
+//! absolute symbols keep working. This is not PIE / reloc, not KPTI,
+//! not PCID, not COW, not a POSIX `mmap`.
 //!
-//! Honest limits: no KASLR, no KPTI, no PCID, no COW, no POSIX `mmap`.
-//! The identity 4 GiB stays mapped on purpose (SoftNPU DMA, page-table
-//! walks, AP SIPI, user ELF windows). `SYS_CLONE` user threads share
-//! one of these maps; they do not get a second PML4.
+//! `SYS_CLONE` user threads share one of these maps; they do not get
+//! a second PML4.
 
 pub const PTE_P: u64 = 1;
 pub const PTE_RW: u64 = 1 << 1;
@@ -28,6 +30,24 @@ pub const KERNEL_TEXT_VA: u64 = KERNEL_VMA + KERNEL_LMA;
 /// HH window covers PA `0..2 GiB` (the canonical `-2 GiB` hole).
 pub const KERNEL_HH_SPAN: u64 = 0x8000_0000;
 
+/// Boot-time slide stride. Three slots: 0, 16 MiB, 32 MiB.
+/// All stay inside the last 2 GiB so `code-model=kernel` 32-bit
+/// signed addresses still resolve on the canonical alias.
+pub const KASLR_SLIDE_STRIDE: u64 = 0x0100_0000;
+/// Number of legal slide indices (`kaslr=0|1|2`).
+pub const KASLR_SLIDE_COUNT: u32 = 3;
+/// Dual-mapped kernel span on the HH PDs (covers `.text` + BSS stack).
+pub const KASLR_KERNEL_SPAN: u64 = 0x80_0000;
+/// Trampoline mailbox: Multiboot magic at `+0`, info PA at `+4`,
+/// selected slide bytes at `+8`.
+pub const KASLR_MAILBOX: u64 = 0x7000;
+/// Slide bytes written by the trampoline (u32).
+pub const KASLR_MAILBOX_SLIDE: u64 = KASLR_MAILBOX + 8;
+/// Dedicated HH PD0 (identity PDs stay at `0x3000`…).
+pub const KASLR_HH_PD0: u64 = 0x7_1000;
+/// Dedicated HH PD1.
+pub const KASLR_HH_PD1: u64 = 0x7_2000;
+
 /// `PA → KERNEL_VMA + PA` when `PA` fits in the HH 2 GiB window.
 pub fn phys_to_hh(pa: u64) -> Option<u64> {
     if pa < KERNEL_HH_SPAN {
@@ -37,9 +57,72 @@ pub fn phys_to_hh(pa: u64) -> Option<u64> {
     }
 }
 
-/// Inverse of [`phys_to_hh`].
+/// Inverse of [`phys_to_hh`] (canonical alias only; ignores a slide).
 pub fn hh_to_phys(va: u64) -> Option<u64> {
     va.checked_sub(KERNEL_VMA).filter(|&p| p < KERNEL_HH_SPAN)
+}
+
+/// Slide bytes for index `0..KASLR_SLIDE_COUNT`, or `None`.
+pub fn kaslr_slide(index: u32) -> Option<u64> {
+    if index < KASLR_SLIDE_COUNT {
+        Some(index as u64 * KASLR_SLIDE_STRIDE)
+    } else {
+        None
+    }
+}
+
+/// True when `slide` is one of the three CI-legal offsets.
+pub fn kaslr_slide_valid(slide: u64) -> bool {
+    slide % KASLR_SLIDE_STRIDE == 0 && slide / KASLR_SLIDE_STRIDE < KASLR_SLIDE_COUNT as u64
+}
+
+/// `PA → KERNEL_VMA + slide + PA` when both fit the HH window.
+pub fn phys_to_hh_slid(pa: u64, slide: u64) -> Option<u64> {
+    if pa < KERNEL_HH_SPAN && kaslr_slide_valid(slide) {
+        KERNEL_VMA.checked_add(slide)?.checked_add(pa)
+    } else {
+        None
+    }
+}
+
+/// Linked `_start` plus a legal slide.
+pub fn kernel_text_va_slid(slide: u64) -> Option<u64> {
+    if kaslr_slide_valid(slide) {
+        KERNEL_TEXT_VA.checked_add(slide)
+    } else {
+        None
+    }
+}
+
+/// Parse a Multiboot cmdline for `kaslr=0|1|2|off`.
+///
+/// `None` means the trampoline should pick entropy (RDRAND / TSC).
+/// Unknown values (`kaslr=9`) are also `None`. `kaslr=off` is index 0.
+pub fn parse_kaslr_cmdline(cmd: &[u8]) -> Option<u32> {
+    let needle = b"kaslr=";
+    let mut i = 0;
+    while i + needle.len() <= cmd.len() {
+        let at_token = i == 0 || cmd[i - 1] == b' ' || cmd[i - 1] == b'\t';
+        if at_token && cmd[i..].starts_with(needle) {
+            let rest = &cmd[i + needle.len()..];
+            if rest.starts_with(b"off") {
+                let after = rest.get(3).copied().unwrap_or(0);
+                if after == 0 || after == b' ' || after == b'\t' {
+                    return Some(0);
+                }
+            }
+            if let Some(&b) = rest.first() {
+                if (b == b'0' || b == b'1' || b == b'2')
+                    && rest.get(1).map(|c| !c.is_ascii_digit()).unwrap_or(true)
+                {
+                    return Some((b - b'0') as u32);
+                }
+            }
+            return None;
+        }
+        i += 1;
+    }
+    None
 }
 
 /// CR4.SMEP (Intel SDM Vol. 3A). Supervisor cannot execute USER pages.
@@ -57,11 +140,16 @@ pub struct Walk {
 }
 
 /// Software 4 GiB identity map (PML4[0] + 4× 1 GiB PDs of 2 MiB leaves).
+/// HH uses its own PDs (`hh_pd`) so a KASLR dual-map cannot disturb
+/// identity DMA / SIPI / user windows.
 #[derive(Clone, Debug)]
 pub struct IdentityAs {
     pub pml4: [u64; 512],
     pub pdpt: [u64; 512],
     pub pd: [[u64; 512]; 4],
+    pub hh_pd: [[u64; 512]; 2],
+    /// Boot-time slide applied to the HH kernel span (bytes).
+    pub slide: u64,
 }
 
 impl IdentityAs {
@@ -70,12 +158,22 @@ impl IdentityAs {
             pml4: [0; 512],
             pdpt: [0; 512],
             pd: [[0; 512]; 4],
+            hh_pd: [[0; 512]; 2],
+            slide: 0,
         }
     }
 
     /// Trampoline-shaped kernel map: 4 GiB identity + HH alias, no USER bits.
     pub fn kernel() -> Self {
+        Self::kernel_with_slide(0)
+    }
+
+    /// Same as [`kernel`], plus a dual-map of [`KASLR_KERNEL_SPAN`] at
+    /// `KERNEL_VMA + slide + PA`. Identity PDs are never rewritten.
+    pub fn kernel_with_slide(slide: u64) -> Self {
+        let slide = if kaslr_slide_valid(slide) { slide } else { 0 };
         let mut s = Self::empty();
+        s.slide = slide;
         s.pml4[0] = 0x2000 | PTE_P | PTE_RW;
         s.pml4[511] = 0x2000 | PTE_P | PTE_RW;
         for i in 0..4 {
@@ -85,9 +183,21 @@ impl IdentityAs {
                 s.pd[i][j] = phys | PTE_P | PTE_RW | PTE_PS;
             }
         }
-        // -2 GiB window aliases the first 2 GiB of identity PDs.
-        s.pdpt[510] = 0x3000 | PTE_P | PTE_RW;
-        s.pdpt[511] = 0x4000 | PTE_P | PTE_RW;
+        s.hh_pd[0] = s.pd[0];
+        s.hh_pd[1] = s.pd[1];
+        // Dedicated HH PDs (trampoline: 0x71000 / 0x72000).
+        s.pdpt[510] = KASLR_HH_PD0 | PTE_P | PTE_RW;
+        s.pdpt[511] = KASLR_HH_PD1 | PTE_P | PTE_RW;
+        if slide != 0 {
+            let src = (KERNEL_LMA / PAGE_2M) as usize;
+            let dest = src + (slide / PAGE_2M) as usize;
+            let n = (KASLR_KERNEL_SPAN / PAGE_2M) as usize;
+            for i in 0..n {
+                if dest + i < 512 {
+                    s.hh_pd[0][dest + i] = s.hh_pd[0][src + i];
+                }
+            }
+        }
         s
     }
 
@@ -119,11 +229,11 @@ impl IdentityAs {
         s
     }
 
-    fn pd_slot(i3: usize) -> Option<usize> {
-        match i3 {
-            0..=3 => Some(i3),
-            510 => Some(0),
-            511 => Some(1),
+    fn pd_leaf(&self, i4: usize, i3: usize) -> Option<&[u64; 512]> {
+        match (i4, i3) {
+            (0, 0..=3) => Some(&self.pd[i3]),
+            (511, 510) => Some(&self.hh_pd[0]),
+            (511, 511) => Some(&self.hh_pd[1]),
             _ => None,
         }
     }
@@ -135,7 +245,7 @@ impl IdentityAs {
             return None;
         }
         let i3 = ((va >> 30) & 0x1FF) as usize;
-        let Some(pd_i) = Self::pd_slot(i3) else {
+        let Some(pd) = self.pd_leaf(i4, i3) else {
             return None;
         };
         let pdpte = self.pdpt[i3];
@@ -143,7 +253,7 @@ impl IdentityAs {
             return None;
         }
         let i2 = ((va >> 21) & 0x1FF) as usize;
-        let pde = self.pd[pd_i][i2];
+        let pde = pd[i2];
         if pde & PTE_P == 0 {
             return None;
         }
@@ -205,6 +315,58 @@ mod tests {
         assert!(!init.user_mapped(KERNEL_TEXT_VA));
         assert_eq!(init.walk(KERNEL_TEXT_VA).unwrap().phys, KERNEL_LMA);
         assert!(init.user_mapped(USER_IMAGE_BASE));
+    }
+
+    #[test]
+    fn kaslr_slides_are_legal_and_in_last_2gib() {
+        assert_eq!(kaslr_slide(0), Some(0));
+        assert_eq!(kaslr_slide(1), Some(KASLR_SLIDE_STRIDE));
+        assert_eq!(kaslr_slide(2), Some(2 * KASLR_SLIDE_STRIDE));
+        assert!(kaslr_slide(3).is_none());
+        assert!(kaslr_slide_valid(0));
+        assert!(kaslr_slide_valid(KASLR_SLIDE_STRIDE));
+        assert!(!kaslr_slide_valid(PAGE_2M));
+        let slid = kernel_text_va_slid(2 * KASLR_SLIDE_STRIDE).unwrap();
+        assert!(slid >= KERNEL_VMA);
+        assert!(slid > KERNEL_TEXT_VA);
+        // Last 2 GiB is [KERNEL_VMA, u64::MAX]; +2 GiB wraps.
+        assert_eq!(
+            phys_to_hh_slid(KERNEL_LMA, KASLR_SLIDE_STRIDE),
+            Some(KERNEL_TEXT_VA + KASLR_SLIDE_STRIDE)
+        );
+    }
+
+    #[test]
+    fn parse_kaslr_cmdline_tokens() {
+        assert_eq!(parse_kaslr_cmdline(b"kaslr=0"), Some(0));
+        assert_eq!(parse_kaslr_cmdline(b"kaslr=off"), Some(0));
+        assert_eq!(parse_kaslr_cmdline(b"console=tty kaslr=1 extra"), Some(1));
+        assert_eq!(parse_kaslr_cmdline(b"kaslr=2"), Some(2));
+        assert!(parse_kaslr_cmdline(b"").is_none());
+        assert!(parse_kaslr_cmdline(b"kaslr=9").is_none());
+        assert!(parse_kaslr_cmdline(b"nokaslr=1").is_none());
+    }
+
+    #[test]
+    fn kaslr_dual_map_keeps_identity() {
+        let slide = KASLR_SLIDE_STRIDE;
+        let k = IdentityAs::kernel_with_slide(slide);
+        let slid_text = KERNEL_TEXT_VA + slide;
+        assert_eq!(k.walk(KERNEL_TEXT_VA).unwrap().phys, KERNEL_LMA);
+        assert_eq!(k.walk(slid_text).unwrap().phys, KERNEL_LMA);
+        assert!(!k.user_mapped(slid_text));
+        // Identity of the overwritten HH slot is untouched.
+        let id_va = KERNEL_LMA + slide;
+        assert_eq!(k.walk(id_va).unwrap().phys, id_va);
+        assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
+        // Canonical HH of that RAM page now aliases the kernel (documented).
+        assert_eq!(k.walk(KERNEL_VMA + id_va).unwrap().phys, KERNEL_LMA);
+
+        let init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        assert!(!init.user_mapped(slid_text));
+        assert_eq!(init.walk(slid_text).unwrap().phys, KERNEL_LMA);
+        assert!(init.user_mapped(USER_IMAGE_BASE));
+        assert_eq!(init.walk(USER_IMAGE_BASE).unwrap().phys, USER_IMAGE_BASE);
     }
 
     #[test]

@@ -50,7 +50,7 @@ gaps:
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
-| No KASLR / KPTI / PCID / COW | HH subset landed (`ffffffff80000000+PA`); identity 4 GiB is an intentional DMA window. Kernel CR3 can still name every low PA |
+| No KPTI / PCID / COW / PIE-KASLR | HH + boot-time slide landed (`ffffffff80000000+PA` + 16 MiB slots, dual-map). Identity 4 GiB is an intentional DMA window. Unused HH alias stays (not PIE). Kernel CR3 can still name every low PA |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |

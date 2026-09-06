@@ -28,8 +28,10 @@ virtio path B (in-kernel BAR canonical + golden MMIO trace) is
 remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows).
 The higher-half kernel map (`ffffffff80000000+PA`) is **done** as
-the next documented subset (identity 4 GiB kept for SoftNPU DMA;
-not KASLR / KPTI / PCID / COW / POSIX MM). A minimal cap CDT / revoke is **done** as
+a documented subset (identity 4 GiB kept for SoftNPU DMA). A
+boot-time KASLR slide (0 / 16 / 32 MiB dual-map; cmdline / entropy;
+not PIE / KPTI / PCID / COW) is **done** as the next documented
+subset. A minimal cap CDT / revoke is **done** as
 unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
 not a seL4 CNode, not a calendar milestone). An aarch64 thin HAL
 (`make qemu-aarch64`) is **done** as a RISC-V-shaped bring-up (PL011
@@ -58,8 +60,9 @@ path. Neither is product-class. AffinityLaplacian n≤32 placement is
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
 trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
 x86 higher-half kernel map is **done** as a documented subset
-(`ffffffff80000000+PA`; identity 4 GiB kept for DMA; not KASLR /
-KPTI / PCID / COW). User-level threads via `SYS_CLONE` (nr 10) are
+(`ffffffff80000000+PA`; identity 4 GiB kept for DMA). The KASLR
+boot-time slide is **done** as a documented subset (16 MiB slots,
+dual-map; not PIE / KPTI / PCID / COW). User-level threads via `SYS_CLONE` (nr 10) are
 **done** as a documented subset (share caller PML4/satp; `flags=0`;
 not Linux clone / fork; `SYS_EXIT` still guest-wide).
 In-kernel ramfs for `/init` (and x86 `/probe`) is **done** as a
@@ -106,9 +109,10 @@ After AccelDevice bites a real-shaped path — not before:
   the canonical demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
   BAR behind the PLIC is still open. Path A stays optional later.
-- ELF beyond this subset (KASLR / KPTI / PIE). In-kernel ramfs for
-  `/init` + `/probe` landed (seed from embedded blobs; no user
-  `open`/`read`). virtio-blk is still open. Per-task PML4 +
+- ELF beyond this subset (KPTI / PIE-reloc KASLR). Boot-time slide
+  + dual-map landed (16 MiB slots; unused alias stays). In-kernel
+  ramfs for `/init` + `/probe` landed (seed from embedded blobs; no
+  user `open`/`read`). virtio-blk is still open. Per-task PML4 +
   SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
   landed. Identity 4 GiB remains an intentional DMA window.
 - aarch64 GICv3 / virtio-mmio (EL0 `/init` landed; virtqueue BAR is
@@ -211,7 +215,8 @@ above override what Kernel actually sequences. Criteria below are
    SMEP/SMAP on x86; `/init` still static ELF; optional second user
    binary; no PIE required. **Landed** as the documented subset
    (per-user CR3, USER-local 2 MiB windows, `/probe`). Higher-half
-   (`ffffffff80000000+PA`) landed as a later documented subset.
+   (`ffffffff80000000+PA`) plus a boot-time KASLR slide (dual-map)
+   landed as later documented subsets.
 
 ### Y2H1 — Package scale + revoke
 

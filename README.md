@@ -208,14 +208,16 @@ The kernel and `/init` are **separate Cargo projects** so
   the loader opens `/init` (and x86 `/probe`) by name. Not POSIX.
   virtio-blk is still open. Ring-3 entry is `syscall`/`sysret`; cap
   checks sit on send/recv/map/accel.
-- **Per-task PML4 + higher-half are documented subsets.** Each
+- **Per-task PML4 + higher-half + KASLR are documented subsets.** Each
   ring-3 task has its own CR3; USER is only on that task's 2 MiB ELF
   window; SMEP/SMAP are on. The kernel is linked at
-  `0xffffffff80400000` (classic `-2 GiB` map). The trampoline identity
-  4 GiB stays mapped on purpose (SoftNPU DMA, AP SIPI, user windows).
-  Not KASLR / KPTI / PCID / COW. SMP is a QEMU `-smp 2` smoke; APs
-  do not run `/init`. `make qemu-smp` proves two harts; `make qemu`
-  stays uniprocessor.
+  `0xffffffff80400000` (classic `-2 GiB` map). The trampoline picks a
+  0 / 16 / 32 MiB slide (`-append kaslr=1` in CI), dual-maps an 8 MiB
+  kernel span, and runs at the slid RIP. The identity 4 GiB stays
+  mapped on purpose (SoftNPU DMA, AP SIPI, user windows). The unused
+  HH alias stays (not PIE / reloc). Not KPTI / PCID / COW. SMP is a
+  QEMU `-smp 2` smoke; APs do not run `/init`. `make qemu-smp` proves
+  two harts; `make qemu` stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`
   `sret`s into U-mode `/init` over `ecall` with a task-local Sv39
   window. SoftNPU is in-kernel path B; used-ring completions go
