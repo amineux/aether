@@ -174,8 +174,12 @@ pub fn run_pending_accel() {
         if !w.pending && !w.npu.doorbell_pending() && !w.npu.irq_pending() {
             return;
         }
-        let _ = w.npu.service();
-        w.npu.poll()
+        // IRQ may fire on a user satp/CR3. IdentityDma is PA=VA through
+        // the trampoline map; U-bit / SMAP leaves need SUM / STAC.
+        crate::mm::paging::with_user_access(|| {
+            let _ = w.npu.service();
+            w.npu.poll()
+        })
     };
     let Some(cpl) = serviced else {
         return;
