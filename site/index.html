@@ -469,7 +469,8 @@
                 <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
-                <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB); no higher-half / KPTI</li>
+                <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
+                <li>Higher-half kernel map — <code>ffffffff80000000+PA</code> on x86; identity 4 GiB kept for SoftNPU DMA (not KASLR / KPTI / PCID / COW)</li>
                 <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
@@ -499,7 +500,7 @@
               <div class="tl-when">Deferred · after this subset</div>
               <h3>Remaining isolation (not a product MM)</h3>
               <ul>
-                <li>Higher-half / KPTI / KASLR — per-task PML4 still clones the identity 4 GiB</li>
+                <li>KPTI / KASLR / PCID / COW — HH subset landed; identity 4 GiB is an intentional DMA window</li>
                 <li>Per-task cap tables — World still shares one <code>CapTable</code>; no <code>SYS_REVOKE</code></li>
                 <li>ELF past this subset — <code>/probe</code> exists; no PIE, no ramfs</li>
               </ul>
@@ -574,7 +575,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset, not higher-half / KPTI. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (no PLIC). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is software only). Soft-CP is a software model, not a silicon driver. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> with the identity 4 GiB kept for DMA — not KASLR / KPTI / PCID / COW. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel is the in-kernel BAR (path B + golden MMIO trace), not a QEMU <code>-device</code>. RISC-V U-mode /init is a documented subset (no PLIC). aarch64 has no EL0. Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">

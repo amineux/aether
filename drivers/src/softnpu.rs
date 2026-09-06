@@ -16,8 +16,9 @@ use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_VIRTIO_SOFTNPU}
 
 use crate::mmio::AccelMmio;
 
-/// Kernel CPU view of guest RAM (trampoline identity map). Soft SMMU
-/// resolves device IOVAs back to these PAs before [`DmaView`] loads.
+/// Kernel CPU view of guest RAM (intentional trampoline identity map).
+/// Soft SMMU resolves device IOVAs back to these PAs before [`DmaView`]
+/// loads. Higher-half kernel VAs are not used here — DMA stays PA.
 pub struct IdentityDma;
 
 impl DmaView for IdentityDma {

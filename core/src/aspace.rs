@@ -1,20 +1,44 @@
-//! Per-task address-space contract (x86_64 2 MiB identity subset).
+//! Per-task address-space contract (x86_64 2 MiB identity + HH subset).
 //!
 //! The kernel clones the trampoline's 4 GiB identity map into a fresh
 //! PML4 / PDPT / PD set and sets USER only on one 2 MiB window. Other
-//! known user windows are unmapped (`P=0`). This module is the same
-//! walk / flag logic the kernel uses, so host tests can prove
-//! task-local USER leaves without QEMU.
+//! known user windows are unmapped (`P=0`). PML4[511] aliases the first
+//! 2 GiB at the classic `-2 GiB` kernel map (`KERNEL_VMA + PA`). This
+//! module is the same walk / flag logic the kernel uses, so host tests
+//! can prove task-local USER leaves and the HH alias without QEMU.
 //!
-//! Honest limits: no higher-half, no KASLR, no PCID, no COW, no
-//! POSIX `mmap`. Kernel mappings stay identity-mapped and
-//! supervisor-only.
+//! Honest limits: no KASLR, no KPTI, no PCID, no COW, no POSIX `mmap`.
+//! The identity 4 GiB stays mapped on purpose (SoftNPU DMA, page-table
+//! walks, AP SIPI, user ELF windows).
 
 pub const PTE_P: u64 = 1;
 pub const PTE_RW: u64 = 1 << 1;
 pub const PTE_US: u64 = 1 << 2;
 pub const PTE_PS: u64 = 1 << 7;
 pub const PAGE_2M: u64 = 0x20_0000;
+
+/// Classic x86_64 `-2 GiB` kernel map (Linux `__START_KERNEL_map`).
+pub const KERNEL_VMA: u64 = 0xFFFF_FFFF_8000_0000;
+/// Physical load address of the kernel image (trampoline copy).
+pub const KERNEL_LMA: u64 = 0x40_0000;
+/// Linked VA of kernel `_start` (`KERNEL_VMA + KERNEL_LMA`).
+pub const KERNEL_TEXT_VA: u64 = KERNEL_VMA + KERNEL_LMA;
+/// HH window covers PA `0..2 GiB` (the canonical `-2 GiB` hole).
+pub const KERNEL_HH_SPAN: u64 = 0x8000_0000;
+
+/// `PA → KERNEL_VMA + PA` when `PA` fits in the HH 2 GiB window.
+pub fn phys_to_hh(pa: u64) -> Option<u64> {
+    if pa < KERNEL_HH_SPAN {
+        Some(KERNEL_VMA + pa)
+    } else {
+        None
+    }
+}
+
+/// Inverse of [`phys_to_hh`].
+pub fn hh_to_phys(va: u64) -> Option<u64> {
+    va.checked_sub(KERNEL_VMA).filter(|&p| p < KERNEL_HH_SPAN)
+}
 
 /// CR4.SMEP (Intel SDM Vol. 3A). Supervisor cannot execute USER pages.
 pub const CR4_SMEP: u64 = 1 << 20;
@@ -47,10 +71,11 @@ impl IdentityAs {
         }
     }
 
-    /// Trampoline-shaped kernel map: 4 GiB identity, no USER bits.
+    /// Trampoline-shaped kernel map: 4 GiB identity + HH alias, no USER bits.
     pub fn kernel() -> Self {
         let mut s = Self::empty();
         s.pml4[0] = 0x2000 | PTE_P | PTE_RW;
+        s.pml4[511] = 0x2000 | PTE_P | PTE_RW;
         for i in 0..4 {
             s.pdpt[i] = (0x3000 + i as u64 * 0x1000) | PTE_P | PTE_RW;
             for j in 0..512 {
@@ -58,6 +83,9 @@ impl IdentityAs {
                 s.pd[i][j] = phys | PTE_P | PTE_RW | PTE_PS;
             }
         }
+        // -2 GiB window aliases the first 2 GiB of identity PDs.
+        s.pdpt[510] = 0x3000 | PTE_P | PTE_RW;
+        s.pdpt[511] = 0x4000 | PTE_P | PTE_RW;
         s
     }
 
@@ -89,6 +117,15 @@ impl IdentityAs {
         s
     }
 
+    fn pd_slot(i3: usize) -> Option<usize> {
+        match i3 {
+            0..=3 => Some(i3),
+            510 => Some(0),
+            511 => Some(1),
+            _ => None,
+        }
+    }
+
     pub fn walk(&self, va: u64) -> Option<Walk> {
         let i4 = ((va >> 39) & 0x1FF) as usize;
         let pml4e = self.pml4[i4];
@@ -96,15 +133,15 @@ impl IdentityAs {
             return None;
         }
         let i3 = ((va >> 30) & 0x1FF) as usize;
-        if i3 >= 4 {
+        let Some(pd_i) = Self::pd_slot(i3) else {
             return None;
-        }
+        };
         let pdpte = self.pdpt[i3];
         if pdpte & PTE_P == 0 {
             return None;
         }
         let i2 = ((va >> 21) & 0x1FF) as usize;
-        let pde = self.pd[i3][i2];
+        let pde = self.pd[pd_i][i2];
         if pde & PTE_P == 0 {
             return None;
         }
@@ -144,8 +181,28 @@ mod tests {
         assert!(!w.user);
         assert!(!k.user_mapped(USER_IMAGE_BASE));
         assert!(!k.user_mapped(USER_PROBE_BASE));
-        assert!(!k.user_mapped(0x400000));
-        assert_eq!(k.walk(0x400000).unwrap().phys, 0x400000);
+        assert!(!k.user_mapped(KERNEL_LMA));
+        assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
+    }
+
+    #[test]
+    fn higher_half_aliases_low_phys() {
+        assert_eq!(phys_to_hh(KERNEL_LMA), Some(KERNEL_TEXT_VA));
+        assert_eq!(hh_to_phys(KERNEL_TEXT_VA), Some(KERNEL_LMA));
+        assert!(phys_to_hh(KERNEL_HH_SPAN).is_none());
+
+        let k = IdentityAs::kernel();
+        let w = k.walk(KERNEL_TEXT_VA).unwrap();
+        assert!(w.present && w.huge_2m);
+        assert!(!w.user);
+        assert_eq!(w.phys, KERNEL_LMA);
+        assert!(!k.user_mapped(KERNEL_TEXT_VA));
+        assert_eq!(k.walk(KERNEL_LMA).unwrap().phys, KERNEL_LMA);
+
+        let init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        assert!(!init.user_mapped(KERNEL_TEXT_VA));
+        assert_eq!(init.walk(KERNEL_TEXT_VA).unwrap().phys, KERNEL_LMA);
+        assert!(init.user_mapped(USER_IMAGE_BASE));
     }
 
     #[test]

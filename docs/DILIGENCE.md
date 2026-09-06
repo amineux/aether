@@ -48,7 +48,7 @@ gaps:
 | aarch64 is thin | kmain + PL011 + TTBR + GICv2/CNTV + `aether_core` self-check. No EL0, no virtio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
-| No higher-half / KPTI | Per-task PML4 clones the identity 4 GiB; kernel can still name every PA |
+| No KASLR / KPTI / PCID / COW | HH subset landed (`ffffffff80000000+PA`); identity 4 GiB is an intentional DMA window. Kernel CR3 can still name every low PA |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
@@ -113,9 +113,10 @@ EL0, measured boot. Revoke descendants is host-tested (`revoke` /
 On x86, isolation is “cap tables + ring-3 + per-task USER leaves +
 SMEP/SMAP + Soft SMMU.” On RISC-V it is “cap tables + U-mode +
 task-local U leaves + SUM off + Soft SMMU.” Soft SMMU is a software
-table a real device can ignore. The kernel identity map still lets a
-forged kernel pointer name a physical address. aarch64 is still “the
-cap tables do the right thing.”
+table a real device can ignore. The kernel runs higher-half, but the
+intentional identity 4 GiB still lets a forged low pointer name a
+physical address (not KPTI). aarch64 is still “the cap tables do the
+right thing.”
 
 ## CI status
 

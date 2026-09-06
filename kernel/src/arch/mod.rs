@@ -65,7 +65,7 @@ pub fn exit_qemu(success: bool) {
 pub fn kernel_text_va() -> u64 {
     #[cfg(target_arch = "x86_64")]
     {
-        0x400000
+        aether_core::KERNEL_TEXT_VA
     }
     #[cfg(target_arch = "riscv64")]
     {
@@ -95,7 +95,7 @@ pub fn frame_window() -> (u64, u64) {
 pub fn identity_map_note() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     {
-        "[boot] identity map 4 GiB (2 MiB pages) from trampoline"
+        "[boot] higher-half + identity 4 GiB (2 MiB pages) from trampoline"
     }
     #[cfg(target_arch = "riscv64")]
     {

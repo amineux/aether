@@ -1,10 +1,16 @@
 //! Page-table walk, per-task PML4 clone, and SMEP/SMAP.
 //!
-//! Boot still identity-maps 4 GiB with 2 MiB leaves (trampoline PML4
-//! at 0x1000). That table stays the **kernel CR3** (supervisor-only).
-//! Each ring-3 task gets a cloned PML4: same identity kernel mappings,
-//! USER only on that task's 2 MiB ELF window, other known user windows
-//! unmapped. Not a higher-half / KPTI / POSIX MM.
+//! Boot identity-maps 4 GiB with 2 MiB leaves (trampoline PML4 at
+//! 0x1000) and aliases the first 2 GiB at the classic `-2 GiB` kernel
+//! map (`KERNEL_VMA + PA`). Kernel code/data run at those higher-half
+//! VAs. The identity 4 GiB stays mapped on purpose: SoftNPU DMA, page-
+//! table walks (tables are still addressed by PA), AP SIPI, Multiboot
+//! mailbox, and user ELF windows. That table stays the **kernel CR3**
+//! (supervisor-only). Each ring-3 task gets a cloned PML4: same
+//! identity + HH kernel mappings, USER only on that task's 2 MiB ELF
+//! window, other known user windows unmapped.
+//!
+//! Not KASLR, not KPTI, not PCID, not COW, not a POSIX MM.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -13,7 +19,7 @@ use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use aether_core::aspace::{CR4_SMAP, CR4_SMEP};
 use aether_core::types::PhysAddr;
 #[cfg(target_arch = "x86_64")]
-use aether_core::{USER_IMAGE_BASE, USER_PROBE_BASE};
+use aether_core::{KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, USER_IMAGE_BASE, USER_PROBE_BASE};
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use crate::console::{self, write_hex, write_str, write_u64};
@@ -247,8 +253,9 @@ fn alloc_zeroed_page() -> Option<u64> {
     Some(p.0)
 }
 
-/// Clone the kernel identity map into a new PML4. USER only on
+/// Clone the kernel identity + HH map into a new PML4. USER only on
 /// `[user_lo, user_hi)`; each VA in `unmap` loses Present on its 2 MiB leaf.
+/// PML4[511] is copied with the rest of the kernel PML4 (shared HH PDPT).
 #[cfg(target_arch = "x86_64")]
 pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u64> {
     let kcr3 = kernel_cr3();
@@ -438,7 +445,7 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     let k = kernel_cr3();
     write_str("[mm] kernel CR3=");
     write_hex(k);
-    write_str(" (supervisor identity, no USER leaves)");
+    write_str(" (supervisor identity+HH, no USER leaves)");
     console::nl();
 
     write_str("[mm] /init  CR3=");
@@ -449,10 +456,15 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
     print_walk("probe ", init_cr3, USER_PROBE_BASE);
     console::nl();
 
+    let hh_in_user = unsafe { walk_in(init_cr3, KERNEL_TEXT_VA) }
+        .map(|w| w.phys.0 == KERNEL_LMA && !w.user)
+        .unwrap_or(false);
+
     let init_ok = user_mapped(init_cr3, USER_IMAGE_BASE)
         && !user_mapped(init_cr3, USER_PROBE_BASE)
         && unsafe { walk_in(init_cr3, USER_PROBE_BASE) }.is_none()
-        && !user_mapped(k, USER_IMAGE_BASE);
+        && !user_mapped(k, USER_IMAGE_BASE)
+        && hh_in_user;
 
     let probe_ok = if let Some(p) = probe_cr3 {
         write_str("[mm] /probe CR3=");
@@ -471,11 +483,49 @@ pub fn prove_aspace(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
 
     let ok = init_ok && probe_ok && smep_enabled() && smap_enabled();
     if ok {
-        println!("[mm] aspace isolate ok (task-local USER leaves + SMEP/SMAP)");
+        println!("[mm] aspace isolate ok (task-local USER leaves + SMEP/SMAP + HH in user CR3)");
     } else {
         println!("[mm] aspace isolate FAIL");
     }
     ok
+}
+
+/// Serial proof: RIP is in the `-2 GiB` map; identity still names the LMA.
+#[cfg(target_arch = "x86_64")]
+pub fn prove_higher_half() -> bool {
+    let rip: u64;
+    unsafe {
+        core::arch::asm!("lea {0}, [rip]", out(reg) rip, options(nomem, nostack, preserves_flags));
+    }
+    let w_hh = unsafe { walk(KERNEL_TEXT_VA) };
+    let w_id = unsafe { walk(KERNEL_LMA) };
+    let hh_ok = w_hh
+        .as_ref()
+        .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
+        .unwrap_or(false);
+    let id_ok = w_id
+        .as_ref()
+        .map(|w| w.phys.0 == KERNEL_LMA && w.huge_2m && !w.user)
+        .unwrap_or(false);
+    let rip_ok = rip >= KERNEL_VMA;
+    write_str("[mm] higher-half kernel VA=");
+    write_hex(KERNEL_TEXT_VA);
+    write_str(" PA=");
+    write_hex(KERNEL_LMA);
+    write_str(" rip=");
+    write_hex(rip);
+    write_str(" identity=");
+    write_hex(KERNEL_LMA);
+    console::nl();
+    if hh_ok && id_ok && rip_ok {
+        println!(
+            "[mm] higher-half ok (ffffffff80000000+PA; identity 4 GiB kept for DMA)"
+        );
+        true
+    } else {
+        println!("[mm] higher-half FAIL");
+        false
+    }
 }
 
 #[cfg(target_arch = "x86_64")]

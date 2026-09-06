@@ -35,7 +35,7 @@ ap_pm32:
     movw    %ax, %ds
     movw    %ax, %es
     movw    %ax, %ss
-    /* Reuse the BSP identity map (PML4 @ 0x1000). */
+    /* Reuse the BSP tables (identity 4 GiB + HH alias; PML4 @ 0x1000). */
     movl    $0x1000, %eax
     movl    %eax, %cr3
     movl    %cr4, %eax

@@ -38,7 +38,10 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
-pub use aspace::{IdentityAs, Sv39As, CR4_SMAP, CR4_SMEP};
+pub use aspace::{
+    hh_to_phys, phys_to_hh, IdentityAs, Sv39As, CR4_SMAP, CR4_SMEP, KERNEL_HH_SPAN, KERNEL_LMA,
+    KERNEL_TEXT_VA, KERNEL_VMA,
+};
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
 pub use cut::{AffinityGraph, CutError, CutId, SpectralCut};
