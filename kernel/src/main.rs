@@ -110,6 +110,13 @@ pub extern "C" fn kmain() -> ! {
     }) {
         Ok((init, probe)) => {
             let probe_cr3 = probe.as_ref().map(|p| p.cr3);
+            #[cfg(target_arch = "x86_64")]
+            if !crate::mm::paging::install_shared_cow(init.cr3, probe_cr3) {
+                write_str("[boot] COW map failed");
+                crate::console::nl();
+                arch::exit_qemu(false);
+                arch::idle();
+            }
             crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
             task::spawn_kthread();
             task::spawn_user(init.entry, init.cr3);

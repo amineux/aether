@@ -20,8 +20,9 @@
 //! Documented KASLR subset (fixed 16 MiB slots + cmdline / entropy)
 //! plus documented KPTI subset plus documented PCID subset (CR4.PCIDE
 //! when CPUID.1:ECX[17]; INVPCID when CPUID.7:EBX[10]; else full-flush
-//! `mov cr3`). Not PIE / reloc, not Meltdown-complete, not COW, not a
-//! POSIX MM.
+//! `mov cr3`). Documented COW subset: one shared 4 KiB USER page at
+//! `USER_COW_BASE`, read-only until a write fault copies the frame.
+//! Not PIE / reloc, not Meltdown-complete, not POSIX `mmap` / `fork`.
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64"))]
 use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -35,7 +36,8 @@ use aether_core::types::PhysAddr;
 use aether_core::{
     cr3_tagged, kaslr_slide_valid, kernel_text_va_slid, CR4_PCIDE, INVPCID_SINGLE,
     KASLR_KERNEL_SPAN, KASLR_MAILBOX_SLIDE, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_TRAMP_PAS,
-    KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_IMAGE_BASE, USER_PROBE_BASE,
+    KPTI_TRAMP_VA, PCID_KERNEL, PCID_USER_BASE, USER_COW_BASE, USER_IMAGE_BASE, USER_PROBE_BASE,
+    COW_TEMPLATE_WORD,
 };
 
 #[cfg(any(target_arch = "x86_64", target_arch = "riscv64", target_arch = "aarch64"))]
@@ -94,6 +96,16 @@ static PCID_ID: [AtomicU32; PCID_SLOTS] = [
     AtomicU32::new(0),
     AtomicU32::new(0),
 ];
+#[cfg(target_arch = "x86_64")]
+static COW_TEMPLATE: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "x86_64")]
+static COW_PROBE_CR3: AtomicU64 = AtomicU64::new(0);
+#[cfg(target_arch = "x86_64")]
+const PF_P: u64 = 1;
+#[cfg(target_arch = "x86_64")]
+const PF_W: u64 = 1 << 1;
+#[cfg(target_arch = "x86_64")]
+const PF_U: u64 = 1 << 2;
 
 #[derive(Clone, Copy, Debug)]
 pub struct Walk {
@@ -103,6 +115,7 @@ pub struct Walk {
     pub phys: PhysAddr,
     pub huge_2m: bool,
     pub user: bool,
+    pub writable: bool,
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -276,6 +289,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: false,
             user: pml4e & US != 0 && pdpte & US != 0,
+            writable: pml4e & RW != 0 && pdpte & RW != 0,
         });
     }
     let pd = (pdpte & 0x000F_FFFF_FFFF_F000) as *const u64;
@@ -292,6 +306,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: true,
             user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0,
+            writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0,
         });
     }
     let i1 = ((va >> 12) & 0x1FF) as usize;
@@ -308,6 +323,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
         phys: PhysAddr(phys),
         huge_2m: false,
         user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0 && pte & US != 0,
+        writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0 && pte & RW != 0,
     })
 }
 
@@ -465,6 +481,182 @@ pub fn clone_user_aspace(user_lo: u64, user_hi: u64, unmap: &[u64]) -> Option<u6
 
     let _ = register_pcid(pml4);
     Some(pml4)
+}
+
+/// PTE address of the 4 KiB leaf at `va`, or `None` if the walk is a
+/// huge page / missing. Tables are identity-mapped on kernel CR3.
+#[cfg(target_arch = "x86_64")]
+fn cow_pte_pa(root: u64, va: u64) -> Option<u64> {
+    let root = root & !0xFFF;
+    let i3 = ((va >> 30) & 0x1FF) as usize;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let i1 = ((va >> 12) & 0x1FF) as usize;
+    if i3 != 0 {
+        return None;
+    }
+    let pml4e = read64(root);
+    if pml4e & P == 0 {
+        return None;
+    }
+    let pdpt = pml4e & 0x000F_FFFF_FFFF_F000;
+    let pdpte = read64(pdpt);
+    if pdpte & P == 0 || pdpte & PS != 0 {
+        return None;
+    }
+    let pd = pdpte & 0x000F_FFFF_FFFF_F000;
+    let pde = read64(pd + i2 as u64 * 8);
+    if pde & P == 0 || pde & PS != 0 {
+        return None;
+    }
+    let pt = pde & 0x000F_FFFF_FFFF_F000;
+    Some(pt + i1 as u64 * 8)
+}
+
+/// Map one USER + present + !RW 4 KiB page at `va` in `root`.
+#[cfg(target_arch = "x86_64")]
+fn map_cow_4k(root: u64, va: u64, phys: u64) -> bool {
+    let root = root & !0xFFF;
+    let i3 = ((va >> 30) & 0x1FF) as usize;
+    let i2 = ((va >> 21) & 0x1FF) as usize;
+    let i1 = ((va >> 12) & 0x1FF) as usize;
+    if i3 != 0 || i2 == 0 {
+        return false;
+    }
+    let pml4e = read64(root);
+    if pml4e & P == 0 {
+        return false;
+    }
+    write64(root, pml4e | US);
+    let pdpt = pml4e & 0x000F_FFFF_FFFF_F000;
+    let pdpte = read64(pdpt);
+    if pdpte & P == 0 || pdpte & PS != 0 {
+        return false;
+    }
+    write64(pdpt, pdpte | US);
+    let pd = pdpte & 0x000F_FFFF_FFFF_F000;
+    let pde = read64(pd + i2 as u64 * 8);
+    let pt = if pde & P != 0 && pde & PS == 0 {
+        pde & 0x000F_FFFF_FFFF_F000
+    } else {
+        let Some(pt) = alloc_zeroed_page() else {
+            return false;
+        };
+        write64(pd + i2 as u64 * 8, (pt & !0xFFF) | P | RW | US);
+        pt
+    };
+    write64(pt + i1 as u64 * 8, (phys & !0xFFF) | P | US);
+    invalidate_aspace(root);
+    true
+}
+
+/// Shared 4 KiB template in `/init` and optional `/probe`. Same PA,
+/// USER + RO, until a write fault. SoftNPU stays on kernel CR3.
+#[cfg(target_arch = "x86_64")]
+pub fn install_shared_cow(init_cr3: u64, probe_cr3: Option<u64>) -> bool {
+    let Some(pa) = alloc_zeroed_page() else {
+        println!("[mm] cow FAIL (no frame for template)");
+        return false;
+    };
+    unsafe {
+        core::ptr::write_volatile(pa as *mut u64, COW_TEMPLATE_WORD);
+    }
+    if !map_cow_4k(init_cr3, USER_COW_BASE, pa) {
+        println!("[mm] cow FAIL (map /init)");
+        return false;
+    }
+    if let Some(p) = probe_cr3 {
+        if !map_cow_4k(p, USER_COW_BASE, pa) {
+            println!("[mm] cow FAIL (map /probe)");
+            return false;
+        }
+    }
+    COW_TEMPLATE.store(pa, Ordering::Release);
+    COW_PROBE_CR3.store(probe_cr3.unwrap_or(0) & !0xFFF, Ordering::Release);
+    write_str("[mm] cow shared va=");
+    write_hex(USER_COW_BASE);
+    write_str(" pa=");
+    write_hex(pa);
+    write_str(" ro (/init + /probe; not POSIX mmap)");
+    console::nl();
+    true
+}
+
+/// #PF from ring-3: present + write + user on the shared COW VA.
+/// Copies the template, sets RW on this aspace only, resumes.
+#[cfg(target_arch = "x86_64")]
+pub fn handle_user_cow(cr2: u64, err: u64) -> bool {
+    if err & (PF_P | PF_W | PF_U) != (PF_P | PF_W | PF_U) {
+        return false;
+    }
+    if cr2 & !0xFFF != USER_COW_BASE {
+        return false;
+    }
+    let root = crate::arch::x86_64::kpti::user_cr3();
+    if root == 0 {
+        return false;
+    }
+    handle_cow_fault(root, cr2)
+}
+
+#[cfg(target_arch = "x86_64")]
+fn handle_cow_fault(root: u64, va: u64) -> bool {
+    let Some(slot) = cow_pte_pa(root, va) else {
+        return false;
+    };
+    let pte = read64(slot);
+    if pte & P == 0 || pte & US == 0 || pte & RW != 0 {
+        return false;
+    }
+    let old = pte & 0x000F_FFFF_FFFF_F000;
+    let ie = crate::arch::irq::save_disable();
+    let Some(new) = alloc_zeroed_page() else {
+        crate::arch::irq::restore(ie);
+        return false;
+    };
+    unsafe {
+        core::ptr::copy_nonoverlapping(old as *const u8, new as *mut u8, 4096);
+    }
+    write64(slot, (new & !0xFFF) | P | RW | US);
+    invalidate_aspace(root);
+    crate::arch::irq::restore(ie);
+    write_str("[mm] cow fault va=");
+    write_hex(va & !0xFFF);
+    write_str(" old=");
+    write_hex(old);
+    write_str(" new=");
+    write_hex(new);
+    console::nl();
+    let _ = prove_cow(root, old, new);
+    true
+}
+
+/// Serial proof: this aspace is private; `/probe` still names the template.
+#[cfg(target_arch = "x86_64")]
+fn prove_cow(broken_root: u64, old: u64, new: u64) -> bool {
+    let template = COW_TEMPLATE.load(Ordering::Acquire);
+    let probe = COW_PROBE_CR3.load(Ordering::Acquire);
+    let init_w = unsafe { walk_in(broken_root, USER_COW_BASE) };
+    let init_ok = init_w
+        .as_ref()
+        .map(|w| w.user && w.writable && w.phys.0 == new && new != old && new != template)
+        .unwrap_or(false);
+    let probe_ok = if probe == 0 {
+        true
+    } else {
+        unsafe { walk_in(probe, USER_COW_BASE) }
+            .map(|w| w.user && !w.writable && w.phys.0 == template && w.phys.0 == old)
+            .unwrap_or(false)
+    };
+    let word_ok = unsafe { core::ptr::read_volatile(new as *const u64) } == COW_TEMPLATE_WORD;
+    let k = kernel_cr3();
+    let k_ok = !user_mapped(k, USER_COW_BASE);
+    if init_ok && probe_ok && word_ok && k_ok {
+        println!("[mm] cow ok (init private; probe still template; not fork / mmap)");
+        true
+    } else {
+        println!("[mm] cow FAIL");
+        false
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -955,6 +1147,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: true,
             user: pte2 & PTE_U != 0,
+            writable: pte2 & PTE_W != 0,
         });
     }
     let l1 = ((pte2 >> 10) << 12) as *const u64;
@@ -973,6 +1166,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: true,
             user: pte1 & PTE_U != 0,
+            writable: pte1 & PTE_W != 0,
         });
     }
     let l0 = ((pte1 >> 10) << 12) as *const u64;
@@ -990,6 +1184,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
         phys: PhysAddr(phys),
         huge_2m: false,
         user: pte0 & PTE_U != 0,
+        writable: pte0 & PTE_W != 0,
     })
 }
 
@@ -1287,6 +1482,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: true,
             user: is_el0(pte1),
+            writable: pte1 & (1 << 7) == 0,
         });
     }
     let l2 = (pte1 & 0x0000_FFFF_FFFF_F000) as *const u64;
@@ -1304,6 +1500,7 @@ pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
             phys: PhysAddr(phys),
             huge_2m: true,
             user: is_el0(pte2),
+            writable: pte2 & (1 << 7) == 0,
         });
     }
     None

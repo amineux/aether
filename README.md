@@ -218,7 +218,9 @@ The kernel and `/init` are **separate Cargo projects** so
   User CR3 is a KPTI subset: ELF window + 4 KiB supervisor trampoline,
   no HH, no identity DMA. PCID tags those CR3 switches when the CPU
   advertises it (`-cpu qemu64,+pcid,+invpcid`); otherwise `mov cr3`
-  still full-flushes. Not Meltdown-complete / PIE / COW.
+  still full-flushes. One shared 4 KiB COW page (`0x0280_0000`) is
+  read-only in `/init` and `/probe` until a write fault. Not
+  Meltdown-complete / PIE / POSIX `mmap`.
   SMP is a QEMU `-smp 2` smoke; APs do not run `/init`.
   `make qemu-smp` proves two harts; `make qemu` stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`

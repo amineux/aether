@@ -190,6 +190,11 @@ pub extern "C" fn isr_dispatch(frame: &mut InterruptFrame) {
             crate::arch::x86_64::apic::eoi();
         }
         0..=31 => {
+            if frame.vec == 14
+                && crate::mm::paging::handle_user_cow(read_cr2(), frame.err)
+            {
+                return;
+            }
             FAULTS.fetch_add(1, Ordering::Relaxed);
             crate::console::write_str("[fault] vec=");
             crate::console::write_u64(frame.vec);

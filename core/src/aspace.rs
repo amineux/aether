@@ -9,8 +9,10 @@
 //! `KERNEL_VMA + slide + PA` on **separate** HH PDs so identity DMA /
 //! SIPI / user windows do not move. The kernel is still linked at
 //! `KERNEL_TEXT_VA` (`code-model=kernel`); the unused alias stays so
-//! absolute symbols keep working. This is not PIE / reloc, not COW,
-//! not a POSIX `mmap`.
+//! absolute symbols keep working. This is not PIE / reloc, not a
+//! POSIX `mmap`. A documented **COW subset** maps one shared 4 KiB
+//! USER page (`USER_COW_BASE`) read-only in `/init` and `/probe`; a
+//! write fault copies the frame and sets RW on that aspace only.
 //!
 //! **KPTI subset:** `clone_user` does **not** copy PML4[511] or the
 //! identity 4 GiB. User CR3 maps the task's 2 MiB ELF window (USER)
@@ -25,13 +27,14 @@
 //! full-flush `mov cr3` fallback — not a Meltdown claim.
 //!
 //! `SYS_CLONE` user threads share one of these maps; they do not get
-//! a second PML4.
+//! a second PML4. After a COW break they see the same private page.
 
 pub const PTE_P: u64 = 1;
 pub const PTE_RW: u64 = 1 << 1;
 pub const PTE_US: u64 = 1 << 2;
 pub const PTE_PS: u64 = 1 << 7;
 pub const PAGE_2M: u64 = 0x20_0000;
+pub const PAGE_4K: u64 = 0x1000;
 
 /// Classic x86_64 `-2 GiB` kernel map (Linux `__START_KERNEL_map`).
 pub const KERNEL_VMA: u64 = 0xFFFF_FFFF_8000_0000;
@@ -266,6 +269,7 @@ pub struct Walk {
     pub user: bool,
     pub present: bool,
     pub huge_2m: bool,
+    pub writable: bool,
 }
 
 /// Software 4 GiB identity map (PML4[0] + 4× 1 GiB PDs of 2 MiB leaves).
@@ -282,6 +286,10 @@ pub struct IdentityAs {
     /// KPTI user map: first 2 MiB is a 4 KiB PT (trampoline only).
     /// `None` on the kernel CR3 (2 MiB identity leaves).
     pub tramp_pt: Option<[u64; 512]>,
+    /// Optional 4 KiB PT for the shared COW 2 MiB slot (`USER_COW_BASE`).
+    pub cow_pt: Option<[u64; 512]>,
+    /// PD index (`va >> 21`) that `cow_pt` covers, or `usize::MAX`.
+    pub cow_i2: usize,
 }
 
 impl IdentityAs {
@@ -293,6 +301,8 @@ impl IdentityAs {
             hh_pd: [[0; 512]; 2],
             slide: 0,
             tramp_pt: None,
+            cow_pt: None,
+            cow_i2: usize::MAX,
         }
     }
 
@@ -416,6 +426,33 @@ impl IdentityAs {
                             && pte & PTE_US != 0,
                         present: true,
                         huge_2m: false,
+                        writable: pml4e & PTE_RW != 0
+                            && pdpte & PTE_RW != 0
+                            && pde & PTE_RW != 0
+                            && pte & PTE_RW != 0,
+                    });
+                }
+            }
+            if i4 == 0 && i3 == 0 && i2 == self.cow_i2 {
+                if let Some(pt) = &self.cow_pt {
+                    let i1 = ((va >> 12) & 0x1FF) as usize;
+                    let pte = pt[i1];
+                    if pte & PTE_P == 0 {
+                        return None;
+                    }
+                    return Some(Walk {
+                        pde: pte,
+                        phys: (pte & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF),
+                        user: pml4e & PTE_US != 0
+                            && pdpte & PTE_US != 0
+                            && pde & PTE_US != 0
+                            && pte & PTE_US != 0,
+                        present: true,
+                        huge_2m: false,
+                        writable: pml4e & PTE_RW != 0
+                            && pdpte & PTE_RW != 0
+                            && pde & PTE_RW != 0
+                            && pte & PTE_RW != 0,
                     });
                 }
             }
@@ -427,7 +464,53 @@ impl IdentityAs {
             user: pml4e & PTE_US != 0 && pdpte & PTE_US != 0 && pde & PTE_US != 0,
             present: true,
             huge_2m: pde & PTE_PS != 0,
+            writable: pml4e & PTE_RW != 0 && pdpte & PTE_RW != 0 && pde & PTE_RW != 0,
         })
+    }
+
+    /// Map one 4 KiB USER read-only page at `va` (shared COW template).
+    /// Splits the covering 2 MiB slot into a PT. Host twin of the kernel
+    /// `map_cow_4k`.
+    pub fn map_cow_ro(&mut self, va: u64, phys: u64) -> bool {
+        if va & (PAGE_4K - 1) != 0 || phys & (PAGE_4K - 1) != 0 {
+            return false;
+        }
+        let i4 = ((va >> 39) & 0x1FF) as usize;
+        let i3 = ((va >> 30) & 0x1FF) as usize;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let i1 = ((va >> 12) & 0x1FF) as usize;
+        if i4 != 0 || i3 != 0 || i2 == 0 {
+            return false;
+        }
+        self.pml4[0] |= PTE_P | PTE_RW | PTE_US;
+        self.pdpt[0] |= PTE_P | PTE_RW | PTE_US;
+        let mut pt = self.cow_pt.unwrap_or([0; 512]);
+        pt[i1] = (phys & !0xFFF) | PTE_P | PTE_US;
+        self.cow_pt = Some(pt);
+        self.cow_i2 = i2;
+        self.pd[0][i2] = PTE_P | PTE_RW | PTE_US;
+        true
+    }
+
+    /// Write-fault break: if the leaf is USER + present + !RW, retarget
+    /// it to `new_phys` and set RW. Returns the old frame PA.
+    pub fn try_cow_break(&mut self, va: u64, new_phys: u64) -> Option<u64> {
+        if new_phys & (PAGE_4K - 1) != 0 {
+            return None;
+        }
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let i1 = ((va >> 12) & 0x1FF) as usize;
+        if i2 != self.cow_i2 {
+            return None;
+        }
+        let pt = self.cow_pt.as_mut()?;
+        let pte = pt[i1];
+        if pte & PTE_P == 0 || pte & PTE_US == 0 || pte & PTE_RW != 0 {
+            return None;
+        }
+        let old = pte & 0x000F_FFFF_FFFF_F000;
+        pt[i1] = (new_phys & !0xFFF) | PTE_P | PTE_RW | PTE_US;
+        Some(old)
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
@@ -653,6 +736,64 @@ mod tests {
         assert!(u.user_mapped(USER_IMAGE_BASE));
         assert!(u.walk(USER_PROBE_BASE).is_none());
     }
+
+    #[test]
+    fn cow_shared_until_write() {
+        use crate::sysnr::{USER_COW_BASE, USER_COW_END};
+
+        assert_eq!(USER_COW_END - USER_COW_BASE, PAGE_4K);
+        assert!(USER_COW_BASE >= USER_PROBE_END);
+        assert_ne!((USER_COW_BASE >> 21) & 0x1FF, 0);
+
+        let k = IdentityAs::kernel();
+        let mut init = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        let mut probe = k.clone_user(USER_PROBE_BASE, USER_PROBE_END, &[USER_IMAGE_BASE]);
+        let template = 0x9_0000u64;
+        let private = 0xA_0000u64;
+        assert!(init.map_cow_ro(USER_COW_BASE, template));
+        assert!(probe.map_cow_ro(USER_COW_BASE, template));
+
+        let iw = init.walk(USER_COW_BASE).unwrap();
+        let pw = probe.walk(USER_COW_BASE).unwrap();
+        assert!(iw.present && iw.user && !iw.writable && !iw.huge_2m);
+        assert!(pw.present && pw.user && !pw.writable);
+        assert_eq!(iw.phys, template);
+        assert_eq!(pw.phys, template);
+        assert!(!k.user_mapped(USER_COW_BASE));
+        assert!(init.user_mapped(USER_IMAGE_BASE));
+        assert!(init.walk(USER_PROBE_BASE).is_none());
+        assert!(probe.walk(USER_IMAGE_BASE).is_none());
+
+        let old = init.try_cow_break(USER_COW_BASE, private).unwrap();
+        assert_eq!(old, template);
+        let iw = init.walk(USER_COW_BASE).unwrap();
+        let pw = probe.walk(USER_COW_BASE).unwrap();
+        assert!(iw.writable && iw.user);
+        assert_eq!(iw.phys, private);
+        assert!(!pw.writable);
+        assert_eq!(pw.phys, template);
+        // Second write is already private — not a COW fault.
+        assert!(init.try_cow_break(USER_COW_BASE, 0xB_0000).is_none());
+        assert_eq!(init.walk(USER_COW_BASE).unwrap().phys, private);
+    }
+
+    #[test]
+    fn clone_threads_share_cow_break() {
+        use crate::sysnr::USER_COW_BASE;
+
+        // SYS_CLONE shares the /init PML4, so a COW break is visible
+        // to the sibling — they are not a second isolation domain.
+        let k = IdentityAs::kernel();
+        let mut shared = k.clone_user(USER_IMAGE_BASE, USER_IMAGE_END, &[USER_PROBE_BASE]);
+        assert!(shared.map_cow_ro(USER_COW_BASE, 0x9_0000));
+        assert_eq!(
+            shared.try_cow_break(USER_COW_BASE, 0xA_0000).unwrap(),
+            0x9_0000
+        );
+        assert_eq!(shared.walk(USER_COW_BASE).unwrap().phys, 0xA_0000);
+        assert!(shared.walk(USER_COW_BASE).unwrap().writable);
+        assert!(shared.user_mapped(USER_IMAGE_END - 0x2000));
+    }
 }
 
 /// Sv39 PTE bits (privileged spec). U is only meaningful on a leaf.
@@ -750,6 +891,7 @@ impl Sv39As {
                 user: pte2 & SV39_U != 0,
                 present: true,
                 huge_2m: true,
+                writable: pte2 & SV39_W != 0,
             });
         }
         if i2 != self.split_vpn2 {
@@ -766,6 +908,7 @@ impl Sv39As {
             user: pte1 & SV39_U != 0,
             present: true,
             huge_2m: pte1 & SV39_LEAF != 0,
+            writable: pte1 & SV39_W != 0,
         })
     }
 
@@ -928,6 +1071,7 @@ impl Ttbr0As {
                 user: Self::is_user(pte1),
                 present: true,
                 huge_2m: true,
+                writable: pte1 & (1 << 7) == 0,
             });
         }
         if i1 != self.split_i1 {
@@ -944,6 +1088,7 @@ impl Ttbr0As {
             user: Self::is_user(pte2),
             present: true,
             huge_2m: pte2 & AA_TABLE == 0,
+            writable: pte2 & (1 << 7) == 0,
         })
     }
 
