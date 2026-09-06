@@ -198,12 +198,14 @@ The kernel and `/init` are **separate Cargo projects** so
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000` and **embedded
   as a kernel blob** (`build/init.elf`). There is no ramfs or virtio-blk yet.
   Ring-3 entry is `syscall`/`sysret`; cap checks sit on send/recv/map/accel.
-- **Per-task PML4 is a documented subset.** Each ring-3 task has its
-  own CR3; USER is only on that task's 2 MiB ELF window; SMEP/SMAP
-  are on. Kernel mappings are still the trampoline identity 4 GiB
-  (no higher-half / KPTI). SMP is a QEMU `-smp 2` smoke; APs do not
-  run `/init`. `make qemu-smp` proves two harts; `make qemu` stays
-  uniprocessor.
+- **Per-task PML4 + higher-half are documented subsets.** Each
+  ring-3 task has its own CR3; USER is only on that task's 2 MiB ELF
+  window; SMEP/SMAP are on. The kernel is linked at
+  `0xffffffff80400000` (classic `-2 GiB` map). The trampoline identity
+  4 GiB stays mapped on purpose (SoftNPU DMA, AP SIPI, user windows).
+  Not KASLR / KPTI / PCID / COW. SMP is a QEMU `-smp 2` smoke; APs
+  do not run `/init`. `make qemu-smp` proves two harts; `make qemu`
+  stays uniprocessor.
 - **RISC-V userspace is a documented subset.** `make qemu-riscv`
   `sret`s into U-mode `/init` over `ecall` with a task-local Sv39
   window. SoftNPU is in-kernel (no PLIC / virtio-mmio). aarch64 is

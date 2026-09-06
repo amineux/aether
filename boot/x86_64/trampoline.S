@@ -1,9 +1,11 @@
-/* Aether multiboot1 trampoline: 32-bit PM → long mode → kernel @ 4 MiB.
+/* Aether multiboot1 trampoline: 32-bit PM → long mode → higher-half kernel.
  *
  * QEMU -kernel loads this ELF32 with paging off. We stash the Multiboot
  * EAX/EBX mailbox at 0x7000 so the kernel can parse the mmap, identity-
- * map 4 GiB with 2 MiB pages, copy the embedded kernel blob to 0x400000,
- * and jump.
+ * map 4 GiB with 2 MiB pages, alias the first 2 GiB at the classic
+ * -2 GiB kernel map (PML4[511] → same PDPT; PDPT[510/511] → PD0/PD1),
+ * copy the embedded kernel blob to LMA 0x400000, and jump to
+ * VA 0xffffffff80400000. Identity stays for DMA / SIPI / user windows.
  */
     .set ALIGN,    1
     .set MEMINFO,  2
@@ -77,6 +79,16 @@ _start:
     addl    $8, %edi
     loop    .fill_pd
 
+    /* Higher-half alias: 0xffffffff80000000 + PA → PA for the first 2 GiB.
+     * Same PDPT as identity (entries 0..3 stay the low map). The -2 GiB
+     * window is only 2 GiB; QEMU -m 128M and the kernel image fit in PD0. */
+    movl    $0x2003, 0x1FF8          /* PML4[511] → PDPT @ 0x2000 */
+    movl    $0, 0x1FFC
+    movl    $0x3003, 0x2FF0          /* PDPT[510] → PD0 (phys 0-1 GiB) */
+    movl    $0, 0x2FF4
+    movl    $0x4003, 0x2FF8          /* PDPT[511] → PD1 (phys 1-2 GiB) */
+    movl    $0, 0x2FFC
+
     movl    $0x1000, %eax
     movl    %eax, %cr3
 
@@ -110,7 +122,7 @@ long_mode:
     movl    $lm_msg, %esi
     call    puts64
 
-    /* Copy embedded kernel to 4 MiB. */
+    /* Copy embedded kernel to LMA 4 MiB (HH VA is 0xffffffff80400000). */
     movl    $payload_start, %esi
     movl    $payload_end, %ecx
     subl    %esi, %ecx
@@ -121,7 +133,9 @@ long_mode:
     movl    $jump_msg, %esi
     call    puts64
 
-    movl    $0x400000, %eax
+    /* ELF32 object: 32-bit immediates sign-extend under REX.W. */
+    movq    $0x80000000, %rax        /* 0xffffffff80000000 */
+    addq    $0x400000, %rax          /* + LMA → _start */
     jmp     *%rax
 
 /* --- tiny polling UART (32-bit) --- */
@@ -190,9 +204,9 @@ gdt_desc:
 boot_msg:
     .asciz  "[boot] Aether trampoline (multiboot1, 32-bit)\r\n"
 lm_msg:
-    .asciz  "[boot] long mode, copying kernel to 0x400000\r\n"
+    .asciz  "[boot] long mode, copying kernel to LMA 0x400000\r\n"
 jump_msg:
-    .asciz  "[boot] jumping to kmain\r\n"
+    .asciz  "[boot] jumping to higher-half _start\r\n"
 
     .section .payload, "a"
     .align  4096

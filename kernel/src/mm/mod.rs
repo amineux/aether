@@ -7,7 +7,8 @@
 //! Documented subset, not a full MM:
 //! - usable RAM below 16 MiB is printed, then clipped (boot tables,
 //!   AP SIPI, trampoline, kernel image);
-//! - regions above the 4 GiB identity map are ignored;
+//! - regions above the 4 GiB identity map are ignored (HH is only a
+//!   2 GiB alias of low PA, not a second physical window);
 //! - the bitmap caps at 128 MiB of frames.
 //!
 //! If the mmap is missing or empty after clipping, we use the arch
@@ -93,6 +94,14 @@ pub fn init() {
     }
     crate::console::write_str(crate::arch::identity_map_note());
     crate::console::nl();
+    #[cfg(target_arch = "x86_64")]
+    {
+        if !paging::prove_higher_half() {
+            println!("[mm] higher-half map missing; refusing to continue");
+            crate::arch::exit_qemu(false);
+            crate::arch::idle();
+        }
+    }
 }
 
 fn discover() -> FramePlan {

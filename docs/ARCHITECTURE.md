@@ -60,10 +60,12 @@ QEMU -kernel build/aether.elf
 boot/x86_64/trampoline.S
         │  stash Multiboot EAX/EBX at 0x7000
         │  identity-map 4 GiB (2 MiB pages)
+        │  PML4[511] aliases first 2 GiB at 0xffffffff80000000
         │  enable PAE + EFER.LME + paging
-        │  copy payload → 0x400000
+        │  copy payload → LMA 0x400000
+        │  jump to VA 0xffffffff80400000
         ▼
-kernel::_start  (Rust, x86_64-unknown-none)
+kernel::_start  (Rust, x86_64-unknown-none, higher-half)
         │  stack in BSS, serial, mmap → frames, heap, IDT, GDT/TSS, SYSCALL, PIT
         │  smp_start_aps: INIT-SIPI AP 1, per-CPU gs, IPI, work-steal smoke
         ▼
@@ -90,7 +92,7 @@ Physical sketch (128 MiB guest):
 | `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD) |
 | `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
-| `0x400000` | Kernel `.text` (after copy) |
+| `0x400000` | Kernel `.text` LMA (after copy); VMA `0xffffffff80400000` |
 | `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
 | `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
 | mmap type-1, clip 16 MiB, cap 128 MiB | Frame allocator (user images reserved). QEMU `-m 128M` is typically `0x0100_0000–0x07fe_0000` (ACPI reserved at the top) |
@@ -99,7 +101,9 @@ The boot path parses the Multiboot1 mmap (Multiboot2 parser is
 host-tested). Type-1 regions below 16 MiB are printed then clipped so
 the trampoline / page tables / AP SIPI / kernel image stay out of the
 free pool. Missing mmap is an explicit arch-window fallback, not a
-silent 128 MiB map. Higher-half and KASLR are still not in v0.1.
+silent 128 MiB map. Higher-half (`ffffffff80000000+PA`) is landed;
+KASLR / KPTI / PCID / COW are still not. The identity 4 GiB is an
+intentional DMA / SIPI / user-window.
 
 ## Crate graph
 
@@ -123,7 +127,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | Path | Responsibility |
 | --- | --- |
 | `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
-| `kernel/src/mm` | Multiboot mmap → frames, bump heap, per-task PML4 clone, SMEP/SMAP, USER bits |
+| `kernel/src/mm` | Multiboot mmap → frames, bump heap, HH + per-task PML4 clone, SMEP/SMAP, USER bits |
 | `core/src/mmap.rs` | Host-tested Multiboot1 / Multiboot2 mmap parser + frame plan |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
@@ -131,7 +135,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
 | `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
-| `core/src/aspace.rs` | Host-tested identity-map clone + USER-local walk |
+| `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
 | `core/src/sysnr.rs` | Frozen syscall numbers + user C ABI |
 | `core/src/caps.rs` | Cap table |
@@ -297,12 +301,14 @@ An optional second static ELF, `/probe`, is linked at `0x0240_0000`
 `SYS_EXIT`.
 
 Each ring-3 task has its **own PML4**: the trampoline identity 4 GiB
-is cloned, USER is set only on that task's 2 MiB window, and the other
-user window is unmapped. The kernel CR3 (boot tables at `0x1000`) stays
-supervisor-only. Context switch writes CR3. CR4.SMEP and CR4.SMAP are
-enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
-`STAC`/`CLAC` wrap user copies. This is **not** higher-half, KPTI,
-KASLR, or a POSIX MM.
+plus the higher-half alias (`PML4[511]`) is cloned, USER is set only
+on that task's 2 MiB window, and the other user window is unmapped.
+The kernel CR3 (boot tables at `0x1000`) stays supervisor-only.
+Context switch writes CR3. CR4.SMEP and CR4.SMAP are enabled on the
+BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and `STAC`/`CLAC` wrap
+user copies. Kernel `.text` runs at `0xffffffff80400000`. This is
+**not** KPTI, KASLR, PCID, COW, or a POSIX MM. The identity 4 GiB
+stays mapped so SoftNPU DMA and the AP trampoline keep working.
 
 x86 entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread
 return is `sysretq`; a context switch returns via `iretq`. RISC-V

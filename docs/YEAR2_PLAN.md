@@ -26,8 +26,10 @@ two-hart work-steal) is **done** as a QEMU `-smp 2` slice. SpecForge
 virtio path B (in-kernel BAR canonical + golden MMIO trace) is
 **done**; custom QEMU virtio-accel (path A) and the other stubs
 remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
-an x86 documented subset (CR3 switch, task-local USER 2 MiB windows;
-no higher-half / POSIX MM). A minimal cap CDT / revoke is **done** as
+an x86 documented subset (CR3 switch, task-local USER 2 MiB windows).
+The higher-half kernel map (`ffffffff80000000+PA`) is **done** as
+the next documented subset (identity 4 GiB kept for SoftNPU DMA;
+not KASLR / KPTI / PCID / COW / POSIX MM). A minimal cap CDT / revoke is **done** as
 unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
 not a seL4 CNode, not a calendar milestone). An aarch64 thin HAL
 (`make qemu-aarch64`) is **done** as a RISC-V-shaped bring-up (PL011
@@ -50,7 +52,10 @@ PLIC; not product-class). AffinityLaplacian n≤32 placement is
 **done** as a prototype eigensolve (`from_placement` +
 `bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer). SpecForge
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
-trace on SoftNPU submit/complete; BAR frozen). Path A is not.
+trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
+x86 higher-half kernel map is **done** as a documented subset
+(`ffffffff80000000+PA`; identity 4 GiB kept for DMA; not KASLR /
+KPTI / PCID / COW).
 
 ### KEEP / ACTIVE Y1
 
@@ -90,8 +95,9 @@ After AccelDevice bites a real-shaped path — not before:
 - Custom QEMU virtio-accel (path A: `-device` / virtio-mmio DMA of the
   frozen [ACCEL.md](ACCEL.md) BAR). Path B landed: in-kernel BAR is
   the canonical demo + golden MMIO trace. Path A stays optional later.
-- ELF beyond this subset (higher-half, PIE, ramfs). Per-task PML4 +
-  SMEP/SMAP + optional `/probe` is landed.
+- ELF beyond this subset (KASLR / KPTI / PIE, ramfs). Per-task PML4 +
+  SMEP/SMAP + optional `/probe` + higher-half linker/trampoline is
+  landed. Identity 4 GiB remains an intentional DMA window.
 - aarch64 EL0 / GICv3 / virtio (thin HAL landed; userspace is later).
 
 ### PR order for Kernel (revised)
@@ -186,7 +192,8 @@ above override what Kernel actually sequences. Criteria below are
 3. ELF userspace maturity: per-task PML4 (or documented subset) +
    SMEP/SMAP on x86; `/init` still static ELF; optional second user
    binary; no PIE required. **Landed** as the documented subset
-   (per-user CR3, USER-local 2 MiB windows, `/probe`, no higher-half).
+   (per-user CR3, USER-local 2 MiB windows, `/probe`). Higher-half
+   (`ffffffff80000000+PA`) landed as a later documented subset.
 
 ### Y2H1 — Package scale + revoke
 

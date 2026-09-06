@@ -126,7 +126,7 @@ RISC-V extra harts stay parked.
 ## Year-1 H2: per-task PML4 + SMEP/SMAP (this cut)
 
 Landed on x86_64 only — **documented subset**, not a POSIX MM, not
-higher-half / KPTI / KASLR:
+KPTI / KASLR (higher-half alias is a later cut):
 
 - Each ring-3 task (`/init` @ `0x2000000`, optional `/probe` @
   `0x2400000`) gets its own PML4: trampoline identity map cloned,
@@ -140,9 +140,9 @@ higher-half / KPTI / KASLR:
 - Host test: `core/src/aspace.rs` walks two synthetic maps.
 - QEMU: `[mm] aspace isolate ok` + `make qemu-ci` greps SMEP/SMAP.
 
-Still stubbed: higher-half, KASLR, PCID, COW, growable `mmap`,
+Still stubbed: KASLR, KPTI, PCID, COW, growable `mmap`,
 per-task cap tables, APs in ring-3. SoftNPU still touches `/init`
-tensors through the kernel identity map.
+tensors through the **intentional** kernel identity window (DMA).
 
 ## Year-2 H1: cap CDT / revoke (this cut)
 
@@ -178,8 +178,8 @@ Landed as a **documented subset**, not a general physical MM:
 - Host tests in `core/src/mmap.rs`. QEMU: `[mm] mmap: multiboot1` plus
   the planned window. `make qemu-ci` greps the parse line.
 
-Still stubbed: higher-half / KASLR, hotplug, FDT, managing RAM past
-the identity 4 GiB.
+Still stubbed: KASLR, hotplug, FDT, managing RAM past the identity
+4 GiB (HH is only a 2 GiB alias of low PA).
 
 ## OperatorKernelHandle (this cut)
 
@@ -318,6 +318,34 @@ production package solver, **not** an EDA replacement:
 - Complexity (dense integer): iterate O(iters·n²), commute O(n³).
   No libm. No new syscall. AccelDevice / qemu arch CI unchanged.
 
+## Higher-half kernel map (this cut)
+
+Landed as a **documented subset**, not KASLR, not KPTI, not PCID,
+not COW, not a POSIX MM:
+
+- x86_64 kernel is linked at the classic `-2 GiB` map
+  (`0xffffffff80400000` = `0xffffffff80000000 + 4 MiB` LMA).
+  The trampoline still copies the flat binary to physical `0x400000`,
+  then jumps to the higher-half `_start`.
+- `PML4[511]` aliases the first 2 GiB of the identity PDs into that
+  window (`PDPT[510/511] → PD0/PD1`). QEMU `-m 128M` and the kernel
+  image fit. `code-model=kernel`.
+- **Identity 4 GiB stays mapped on purpose.** SoftNPU `IdentityDma`,
+  page-table walks (tables addressed by PA), AP SIPI @ `0x8000`,
+  Multiboot mailbox @ `0x7000`, and user ELF windows (`0x2000000` /
+  `0x2400000`) still use the low map. Do not treat the leftover
+  identity window as a bug.
+- Per-task PML4 clones copy `PML4[511]`, so syscall/IRQ handlers
+  remain reachable after CR3 switch. USER bits stay off on HH.
+- Host test: `core/src/aspace.rs` walks the HH alias. QEMU:
+  `[mm] higher-half ok` + RIP in the `-2 GiB` map.
+  `make qemu-ci` greps that line.
+- RISC-V / aarch64 keep their identity maps. No new syscall.
+  `AccelDevice` unchanged.
+
+Still stubbed: KASLR (slide the image), KPTI (separate user CR3
+without kernel HH), PCID, COW, tearing down the identity window.
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -326,7 +354,7 @@ Search for `// STUB:` / `STUB` :
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
-| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
+| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | **done** as HH subset (`ffffffff80000000+PA` + identity kept for DMA). KASLR / KPTI / PCID / COW still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
@@ -355,8 +383,9 @@ kernel thread queue sleeps.
    table is silicon.
 3. **RISC-V PLIC + virtio-mmio.** U-mode `/init` + in-kernel SoftNPU
    landed; a real virtio-mmio BAR behind the PLIC is still open.
-4. **Higher-half + KPTI.** Per-task PML4 + SMEP/SMAP landed; kernel
-   mappings are still the trampoline identity 4 GiB.
+4. **KPTI / KASLR / PCID / COW.** Higher-half linker + trampoline
+   alias landed; identity 4 GiB is an intentional DMA window. Do not
+   claim Meltdown unmap or a random slide.
 5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64 EL0.** Thin HAL landed (`make qemu-aarch64`). Repeat the
@@ -372,9 +401,9 @@ kernel thread queue sleeps.
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
   fence/timeline, SoftNPU F16/F32 software IEEE, RISC-V S-mode
   userspace, AffinityLaplacian n≤32 placement, and the SpecForge
-  virtio path-B ADR + golden MMIO trace (this cut) are landed. ABI
-  stays stable. Custom QEMU virtio-accel (path A) and RISC-V PLIC
-  remain deferred.
+  virtio path-B ADR + golden MMIO trace, and the x86 higher-half
+  kernel map (this cut) are landed. ABI stays stable. Custom QEMU
+  virtio-accel (path A), RISC-V PLIC, KPTI / KASLR remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
   and a Y2 bring-up climax stay killed as milestones. Cap CDT was
@@ -387,10 +416,11 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
   the hardware-shaped fence/timeline (PR #17), SoftNPU F16/F32
   software IEEE (PR #18), RISC-V S-mode userspace (PR #19),
-  AffinityLaplacian n≤32 placement (PR #20), and SpecForge virtio
-  path B (this cut) are **done** as research-prototype slices.
-  Custom QEMU virtio-accel (path A), RISC-V PLIC, and the other
-  stubs above are still open.
+  AffinityLaplacian n≤32 placement (PR #20), SpecForge virtio
+  path B (PR #21), and the x86 higher-half kernel map (this cut)
+  are **done** as research-prototype slices.
+  Custom QEMU virtio-accel (path A), RISC-V PLIC, KPTI / KASLR,
+  and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track
