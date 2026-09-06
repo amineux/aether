@@ -41,6 +41,10 @@ impl UserIpcMsg {
 
 /// Compact accel job the kernel copies from ring-3 (`SYS_ACCEL_SUBMIT`).
 /// Addresses are user VAs; the kernel identity-maps the init image.
+///
+/// No `dtype` field: this wire is unchanged. `/init` submits I32.
+/// F16/F32 live on [`crate::accel::AccelJobDesc`] / `CpCmd` (additive
+/// values 1 and 2). Do not reshape this struct without an ACCEL.md bump.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct UserAccelJob {

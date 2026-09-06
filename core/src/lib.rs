@@ -28,13 +28,14 @@ pub mod partition;
 pub mod phase;
 pub mod preempt;
 pub mod sched;
+pub mod softfloat;
 pub mod space;
 pub mod sparsify;
 pub mod sysnr;
 pub mod types;
 
 pub use abi::{Buffer, Device, Event, Executable};
-pub use accel::{AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
+pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{IdentityAs, CR4_SMAP, CR4_SMEP};
@@ -61,6 +62,7 @@ pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, Spati
 pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};
 pub use sched::{Job, JobKind, TileKind, TileScheduler};
+pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
 pub use sysnr::{

@@ -39,7 +39,8 @@ threshold; drop below-threshold harmonic before inject; Hodge refuse
 still wins; not an eigensolve). The hardware-shaped fence/timeline
 is **done** as a software model (`TimelineId` + seq / wait /
 complete; timeout is software; QEMU IRQ is still software; not a
-silicon fence).
+silicon fence). SoftNPU F16/F32 is **done** as software IEEE
+(`DType` 1/2; FTZ; not a tensor ISA; `UserAccelJob` still I32).
 
 ### KEEP / ACTIVE Y1
 

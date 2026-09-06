@@ -465,7 +465,7 @@
               <h3>Working vertical slice</h3>
               <ul>
                 <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
-                <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU)</li>
+                <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU); I32 plus software F16/F32 (not a tensor ISA)</li>
                 <li>Soft SMMU — per-stream non-identity IOVA (software table, not hardware SMMU)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
@@ -560,7 +560,7 @@ CI: cargo test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU, Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V and aarch64 thin ports.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), Soft-CP, Soft SMMU, SpectralCut, Laplacian, Hodge, OperatorKernelHandle, SparsifiedCollective, x86 ring-3, SMP smoke, per-task PML4, small cap CDT, RISC-V and aarch64 thin ports.</p>
               </div>
             </div>
             <div class="proof">

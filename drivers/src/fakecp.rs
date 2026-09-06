@@ -108,9 +108,10 @@ impl CpCmd {
         } else {
             PhysAddr(0)
         };
-        let a_bytes = 4u64.saturating_mul(job.elems_a() as u64).max(4);
-        let b_bytes = 4u64.saturating_mul(job.elems_b() as u64).max(4);
-        let c_bytes = 4u64.saturating_mul(job.elems_c() as u64).max(4);
+        let es = job.elem_bytes().max(1);
+        let a_bytes = job.bytes_a().max(es);
+        let b_bytes = job.bytes_b().max(es);
+        let c_bytes = job.bytes_c().max(es);
         if !iommu.covers_stream(sid.raw(), job.a, a_bytes)
             || !iommu.covers_stream(sid.raw(), job.b, b_bytes)
             || !iommu.covers_stream(sid.raw(), job.c, c_bytes)
@@ -121,7 +122,7 @@ impl CpCmd {
             && !iommu.covers_stream(
                 sid.raw(),
                 job.bias,
-                4u64.saturating_mul(job.n as u64).max(4),
+                es.saturating_mul(job.n as u64).max(es),
             )
         {
             return Err(HalError::Fault);
@@ -405,7 +406,7 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::accel::SliceMem;
+    use aether_core::accel::{DType, SliceMem};
     use aether_core::caps::{CapKind, CapRights, Capability};
     use aether_core::fence::{FenceId, Timeline};
     use aether_core::iommu::{StreamState, SOFT_SMMU_IOVA_BASE};
@@ -580,6 +581,32 @@ mod tests {
         assert!(!d.irq_pending());
         let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn submit_packs_f32_dtype_and_executes() {
+        let mut backing = [0u8; 256];
+        for (i, v) in [1.0f32, 2.0, 3.0, 4.0].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+        }
+        for (i, v) in [5.0f32, 6.0, 7.0, 8.0].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_bits().to_le_bytes());
+        }
+        let mut job = AccelJobDesc::matmul_f32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job.place = job.place.with_tile(2);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.dtype, DType::F32 as u8);
+        assert_eq!(cmd.to_le_bytes()[5], 2);
+        assert_eq!(d.service().unwrap().status, 0);
+        let out0 = f32::from_bits(u32::from_le_bytes(backing[32..36].try_into().unwrap()));
+        assert_eq!(out0, 19.0);
     }
 
     #[test]
