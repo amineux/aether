@@ -1,0 +1,603 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aether — fabric kernel for AI silicon</title>
+  <meta name="description" content="Aether is an accelerator-first fabric kernel: a research prototype for operating systems on chiplet packages of CPU, NPU, GPU, and custom ASIC tiles.">
+  <meta name="theme-color" content="#070809">
+  <link rel="canonical" href="https://amineux.github.io/aether/">
+  <meta property="og:title" content="Aether — fabric kernel for AI silicon">
+  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. A research kernel for chiplet packages.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://amineux.github.io/aether/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Aether — fabric kernel for AI silicon">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/fonts.css">
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="#hero">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#10131a"/><path d="M20 44 L32 16 L44 44" stroke="#3DDC97" stroke-width="3.2" fill="none" stroke-linejoin="round"/><path d="M24.6 34.2 H39.4" stroke="#6AA8FF" stroke-width="2.2"/><circle cx="32" cy="16" r="2.4" fill="#6AA8FF"/></svg>
+        Aether
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false"><span></span></button>
+      <ul class="nav-links">
+        <li><a href="#problem">Problem</a></li>
+        <li><a href="#solution">Solution</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#market">Market</a></li>
+        <li><a href="#partners">Partners</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#status">Status</a></li>
+      </ul>
+      <a class="nav-cta" href="https://github.com/amineux/aether">GitHub</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="hero">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <div>
+          <p class="eyebrow"><i></i> Research prototype · v0.1 · not production silicon</p>
+          <h1><span>Aether</span></h1>
+          <p class="one-liner">Fabric kernel for AI silicon.</p>
+          <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://github.com/amineux/aether">View on GitHub</a>
+            <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Read the docs</a>
+          </div>
+          <div class="hero-meta">
+            <span><strong>make qemu</strong> · x86_64 ring-3</span>
+            <span><strong>MIT OR Apache-2.0</strong></span>
+            <span><strong>No vendor partnership claimed</strong></span>
+          </div>
+        </div>
+
+        <aside class="package-card" data-reveal>
+          <div class="vis-label"><span>Package fabric · illustrative QEMU topology</span><span class="pulse" aria-hidden="true"></span></div>
+          <svg viewBox="0 0 520 360" role="img" aria-label="Chiplet package: two dies with CPU, NPU, GPU, ASIC tiles and HBM banks connected by a capability fabric. A SpectralCut runs between the chiplets.">
+            <defs>
+              <linearGradient id="pkg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#161b24"/>
+                <stop offset="1" stop-color="#0c0f14"/>
+              </linearGradient>
+              <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="3" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <rect x="16" y="12" width="488" height="336" rx="22" fill="url(#pkg)" stroke="rgba(255,255,255,0.08)"/>
+            <text x="36" y="40" fill="#5c6272" font-size="11" font-family="IBM Plex Mono, monospace">PACKAGE</text>
+            <text x="400" y="40" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">UCIe / EMIB</text>
+
+            <rect x="36" y="56" width="200" height="200" rx="16" fill="#121722" stroke="rgba(61,220,151,0.28)"/>
+            <text x="52" y="80" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">CHIPLET 0</text>
+            <rect x="52" y="96" width="78" height="58" rx="10" fill="#182033" stroke="rgba(106,168,255,0.4)"/>
+            <text x="76" y="122" fill="#6AA8FF" font-size="12" font-weight="700" font-family="Syne, sans-serif">CPU 0</text>
+            <text x="68" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">tile</text>
+            <rect x="142" y="96" width="78" height="58" rx="10" fill="#13261d" stroke="rgba(61,220,151,0.45)"/>
+            <text x="163" y="122" fill="#3DDC97" font-size="12" font-weight="700" font-family="Syne, sans-serif">NPU 2</text>
+            <text x="158" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">waves</text>
+            <rect x="52" y="168" width="168" height="68" rx="10" fill="#1a1710" stroke="rgba(240,195,106,0.35)"/>
+            <text x="104" y="198" fill="#f0c36a" font-size="12" font-weight="700" font-family="Syne, sans-serif">HBM bank 0</text>
+            <text x="92" y="216" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">typed DEVICE_HBM</text>
+
+            <rect x="284" y="56" width="200" height="200" rx="16" fill="#121722" stroke="rgba(106,168,255,0.28)"/>
+            <text x="300" y="80" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">CHIPLET 1</text>
+            <rect x="300" y="96" width="78" height="58" rx="10" fill="#182033" stroke="rgba(106,168,255,0.4)"/>
+            <text x="324" y="122" fill="#6AA8FF" font-size="12" font-weight="700" font-family="Syne, sans-serif">CPU 1</text>
+            <text x="316" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">tile</text>
+            <rect x="390" y="96" width="78" height="58" rx="10" fill="#23181c" stroke="rgba(240,113,141,0.4)"/>
+            <text x="413" y="122" fill="#f0718d" font-size="12" font-weight="700" font-family="Syne, sans-serif">GPU 3</text>
+            <text x="408" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">ASIC ok</text>
+            <rect x="300" y="168" width="168" height="68" rx="10" fill="#1a1710" stroke="rgba(240,195,106,0.35)"/>
+            <text x="348" y="198" fill="#f0c36a" font-size="12" font-weight="700" font-family="Syne, sans-serif">HBM bank 1</text>
+            <text x="336" y="216" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">typed DEVICE_HBM</text>
+
+            <line x1="236" y1="125" x2="284" y2="125" stroke="rgba(255,255,255,0.18)" stroke-dasharray="4 5"/>
+            <line x1="220" y1="200" x2="300" y2="200" stroke="rgba(255,255,255,0.18)" stroke-dasharray="4 5"/>
+            <line x1="260" y1="56" x2="260" y2="256" stroke="#3DDC97" stroke-opacity="0.85" stroke-dasharray="3 7" filter="url(#glow)"/>
+            <text x="244" y="274" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">SPECTRALCUT</text>
+
+            <rect x="36" y="292" width="448" height="40" rx="10" fill="#0e131b" stroke="rgba(61,220,151,0.2)"/>
+            <circle cx="62" cy="312" r="4" fill="#3DDC97"/>
+            <text x="78" y="317" fill="#c6cad4" font-size="12" font-family="Manrope, sans-serif">Capability fabric · endpoints · FlowClass · no ioctl surface</text>
+
+            <circle class="pkt" r="4" fill="#3DDC97" filter="url(#glow)"/>
+            <circle class="pkt pkt-b" r="3.5" fill="#6AA8FF"/>
+          </svg>
+        </aside>
+      </div>
+    </section>
+
+    <section class="band" id="problem">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">01 — Problem</p>
+          <h2>Linux + ioctl was not designed for this package.</h2>
+          <p class="lede">Traditional kernels treat GPUs and NPUs as PCIe endpoints: a userspace runtime, an ioctl, and a hope the driver flushed the right caches. That model is already strained on a discrete GPU. It fails on a mesh of chiplets.</p>
+        </div>
+        <div class="problem-grid">
+          <article class="glass" data-reveal data-d="1">
+            <div class="icon-dot">⏱</div>
+            <h3>Deadlines, not best-effort</h3>
+            <p>Inference latency is a deadline. A best-effort ioctl and a userspace poll loop are the wrong primitive when a wave must complete against a partition quota.</p>
+          </article>
+          <article class="glass" data-reveal data-d="2">
+            <div class="icon-dot blue">◎</div>
+            <h3>Typed memory, not one VA</h3>
+            <p>Tile SRAM, HBM, and a CXL region are different places. “Shared memory” across dies is often not cache-coherent. A pointer both sides “have” is a bug.</p>
+          </article>
+          <article class="glass" data-reveal data-d="3">
+            <div class="icon-dot">⚿</div>
+            <h3>Weights and KV are secrets</h3>
+            <p>Multi-tenant packages hold other people’s models. Isolation has to be spatial — slices, banks, blast radius — not a file permission and a hope.</p>
+          </article>
+          <article class="glass" data-reveal data-d="4">
+            <div class="icon-dot blue">⬡</div>
+            <h3>UCIe is transport</h3>
+            <p>Chiplets extend the NoC. UCIe, EMIB, and UALink move bytes. They are not a programming model, and they do not name tenants, cuts, or fences.</p>
+          </article>
+        </div>
+        <div class="fail-row" data-reveal>
+          <div class="fail-card old">
+            <h3>CUDA-as-device / ioctl host</h3>
+            <ul>
+              <li>Host CPU owns the story; accelerators are endpoints</li>
+              <li>Unified VA as the default fiction</li>
+              <li>Time-sliced isolation (MIG-class) bolted onto a device driver</li>
+              <li>Compiler runtime papers over the OS gap</li>
+            </ul>
+          </div>
+          <div class="fail-vs">VS</div>
+          <div class="fail-card new">
+            <h3>What the package actually is</h3>
+            <ul>
+              <li>Tiles are first-class peers on a fabric</li>
+              <li>Memory is a typed place; UNIFIED is a cap bit</li>
+              <li>The scarce resource is HBM banks and NPU waves</li>
+              <li>The OS must schedule partitions — compilers keep FLOPs</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="solution">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">02 — Solution</p>
+          <h2>Five thesis lines. One kernel bet.</h2>
+          <p class="lede">Aether is a capability machine whose primitive is a typed message, not a POSIX process. The interfaces and invariants are what we would pitch to an AI-chip OS team — not a claim of production silicon.</p>
+        </div>
+        <div class="thesis">
+          <article class="thesis-line" data-reveal>
+            <div>
+              <strong>Accelerators are activities, not devices.</strong>
+              <p>A CPU tile and a virt accel share one Activity / EndpointId. There is no <code>/dev</code> ioctl surface. The fabric is the only IPC.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="1">
+            <div>
+              <strong>Memory is a typed place.</strong>
+              <p>HOST, DEVICE_HBM, TILE_SRAM, CXL_REGION, SCRATCH, STREAMING. Unified memory is an explicit capability bit, never the default. Remote access is an Exchange.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="2">
+            <div>
+              <strong>The kernel schedules partitions and fences.</strong>
+              <p>Compilers schedule FLOPs. No in-kernel graph IR. The host ABI is shaped like PJRT / IREE HAL — Device, MemorySpace, Buffer, Executable, Event.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="3">
+            <div>
+              <strong>Chiplets extend the NoC; UCIe is transport.</strong>
+              <p>Route tags (die / chiplet / tile / hop) are architectural. Silicon steers on the header without parsing tensors.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="4">
+            <div>
+              <strong>Isolation is spatial first.</strong>
+              <p>Slices, columns, bank color, SpectralCut, blast radius. QoS is an invariant, not a hint. Temporal sharing comes second.</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="arch" data-reveal>
+          <div class="arch-caption">
+            <h3>Architecture</h3>
+            <span>Tenants → caps / fabric / sched / arenas / HAL → tiles</span>
+          </div>
+          <div class="arch-board">
+            <div class="arch-row tenants">
+              <div class="node tenant"><small>Tenant A</small><b>init / runtime</b></div>
+              <div class="node tenant"><small>Tenant B</small><b>isolated · no forge</b></div>
+            </div>
+            <div class="arch-flow" aria-hidden="true">↓ CPtr only</div>
+            <div class="arch-row kernel">
+              <div class="node mod"><small>Caps</small><b>Capability spaces</b></div>
+              <div class="node mod"><small>Fabric</small><b>IPC + FlowClass</b></div>
+              <div class="node mod"><small>Sched</small><b>prio · deadline · steal</b></div>
+              <div class="node mod"><small>Arenas</small><b>bank-aware tensors</b></div>
+              <div class="node mod"><small>HAL</small><b>AccelDevice</b></div>
+            </div>
+            <div class="arch-flow" aria-hidden="true">↓ ownership transfer · refuse CrossCut</div>
+            <div class="arch-row tiles">
+              <div class="node tile"><small>Tile</small><b>CPU</b></div>
+              <div class="node tile"><small>Tile</small><b>NPU / wave</b></div>
+              <div class="node tile"><small>Tile</small><b>GPU</b></div>
+              <div class="node tile"><small>Tile</small><b>Custom ASIC</b></div>
+            </div>
+            <p class="arch-note">Event ring observes fabric, scheduler, and HAL. Cross-tenant mint is rejected. Tenant B cannot hold A’s Memory, SpectralCut, or Activity.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="how">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">03 — How it works</p>
+          <h2>The programming model, made visible.</h2>
+          <p class="lede">Four surfaces a silicon OS actually has to get right. Implemented as types and refusal rules in <code>aether-core</code> — not slideware.</p>
+        </div>
+        <div class="how-grid">
+          <article class="explainer" data-reveal>
+            <div class="copy">
+              <h3>Activities, not ioctls</h3>
+              <p>Every compute unit is an Activity behind a uniform endpoint. Drivers may still talk MMIO; the ABI does not. Send, recv, map, and accel require a CPtr. Bulk tensors ride in a Memory cap, not the 64-byte control payload.</p>
+              <div class="chip-row">
+                <span class="chip on">SYNC / ASYNC</span>
+                <span class="chip on">GRANT</span>
+                <span class="chip">ChipletRoute</span>
+                <span class="chip">badge</span>
+              </div>
+            </div>
+            <svg viewBox="0 0 420 220" role="img" aria-label="Two fabric endpoints exchanging a capability-checked message with a Memory cap grant.">
+              <rect x="8" y="20" width="130" height="150" rx="14" fill="#121722" stroke="rgba(106,168,255,0.35)"/>
+              <text x="28" y="48" fill="#6AA8FF" font-size="13" font-family="Syne, sans-serif" font-weight="700">Endpoint A</text>
+              <text x="28" y="70" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">Activity</text>
+              <rect x="24" y="88" width="98" height="28" rx="6" fill="#182033" stroke="rgba(61,220,151,0.3)"/>
+              <text x="36" y="107" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">CPtr · send</text>
+              <rect x="24" y="124" width="98" height="28" rx="6" fill="#1a1710"/>
+              <text x="36" y="143" fill="#f0c36a" font-size="11" font-family="IBM Plex Mono, monospace">Memory cap</text>
+
+              <path d="M148 95 H272" stroke="#3DDC97" stroke-width="1.5" fill="none"/>
+              <polygon points="272,95 262,90 262,100" fill="#3DDC97"/>
+              <rect x="176" y="62" width="72" height="50" rx="8" fill="#0e1612" stroke="#3DDC97"/>
+              <text x="188" y="84" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">MSG</text>
+              <text x="186" y="100" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">+ GRANT</text>
+
+              <rect x="282" y="20" width="130" height="150" rx="14" fill="#121722" stroke="rgba(61,220,151,0.35)"/>
+              <text x="300" y="48" fill="#3DDC97" font-size="13" font-family="Syne, sans-serif" font-weight="700">Endpoint B</text>
+              <text x="300" y="70" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">NPU queue</text>
+              <rect x="298" y="88" width="98" height="28" rx="6" fill="#13261d"/>
+              <text x="310" y="107" fill="#c6cad4" font-size="11" font-family="IBM Plex Mono, monospace">recv · badge</text>
+              <rect x="298" y="124" width="98" height="28" rx="6" fill="#1a1710"/>
+              <text x="310" y="143" fill="#f0c36a" font-size="11" font-family="IBM Plex Mono, monospace">cap inserted</text>
+              <text x="8" y="202" fill="#5c6272" font-size="11" font-family="IBM Plex Mono, monospace">No AF_UNIX · no signals · no “just write this PA”</text>
+            </svg>
+          </article>
+
+          <article class="explainer reverse" data-reveal>
+            <div class="copy">
+              <h3>Typed places</h3>
+              <p>A buffer binds to a space. <code>(place, local)</code> addresses refuse a silent remote load — the HAL will not pretend HBM is in the CPU coherence domain. UNIFIED is never implied by MEM_FULL.</p>
+              <div class="chip-row">
+                <span class="chip on">place + local</span>
+                <span class="chip">UNIFIED cap bit</span>
+                <span class="chip">Exchange = DMA/NoC</span>
+              </div>
+            </div>
+            <div class="places" aria-label="Six typed memory spaces">
+              <div class="place"><span class="tag">HOST</span><b>Host DRAM</b><span>CPU-local</span></div>
+              <div class="place"><span class="tag">DEVICE_HBM</span><b>HBM banks</b><span>color + tenant</span></div>
+              <div class="place"><span class="tag">TILE_SRAM</span><b>On-tile</b><span>honest first place</span></div>
+              <div class="place"><span class="tag">CXL_REGION</span><b>CXL.mem</b><span>typed; no window yet</span></div>
+              <div class="place"><span class="tag">SCRATCH</span><b>Scratch</b><span>ephemeral</span></div>
+              <div class="place"><span class="tag">STREAMING</span><b>Streaming</b><span>no random load</span></div>
+            </div>
+          </article>
+
+          <article class="explainer" data-reveal>
+            <div class="copy">
+              <h3>Fence-ordered jobs</h3>
+              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
+            </div>
+            <div class="fence" aria-label="Submit, fence, complete">
+              <div class="fence-step">
+                <div class="n">01</div>
+                <b>Submit</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">AccelJobDesc against a partition + cut</p>
+              </div>
+              <div class="fence-step">
+                <div class="n">02</div>
+                <b>Fence</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">Timeline + credits; doorbell, not a stream</p>
+              </div>
+              <div class="fence-step">
+                <div class="n">03</div>
+                <b>Complete</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">Used-ring IRQ · reply to completion_ep</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="explainer reverse" data-reveal>
+            <div class="copy">
+              <h3>SpectralCut + Hodge</h3>
+              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks.</p>
+              <div class="cut-legend">
+                <span><i class="swatch" style="background:#3DDC97"></i>Strong on-die</span>
+                <span><i class="swatch" style="background:#6AA8FF"></i>Weak EMIB</span>
+                <span><i class="swatch" style="background:#f0718d"></i>Harmonic + TREE refused</span>
+              </div>
+            </div>
+            <div>
+              <svg viewBox="0 0 420 168" role="img" aria-label="Two-chiplet affinity graph with a SpectralCut through weak EMIB edges.">
+                <line x1="70" y1="44" x2="130" y2="44" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="70" y1="44" x2="100" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="130" y1="44" x2="100" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="290" y1="44" x2="350" y2="44" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="290" y1="44" x2="320" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="350" y1="44" x2="320" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="130" y1="44" x2="290" y2="44" stroke="#6AA8FF" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <line x1="100" y1="108" x2="320" y2="108" stroke="#6AA8FF" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <line x1="210" y1="16" x2="210" y2="140" stroke="#3DDC97" stroke-dasharray="2 6" stroke-opacity="0.85"/>
+                <circle cx="70" cy="44" r="16" fill="#182033" stroke="#6AA8FF"/><text x="58" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">CPU0</text>
+                <circle cx="130" cy="44" r="16" fill="#13261d" stroke="#3DDC97"/><text x="118" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">NPU</text>
+                <circle cx="100" cy="108" r="16" fill="#1a1710" stroke="#f0c36a"/><text x="86" y="112" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">bank0</text>
+                <circle cx="290" cy="44" r="16" fill="#182033" stroke="#6AA8FF"/><text x="278" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">CPU1</text>
+                <circle cx="350" cy="44" r="16" fill="#23181c" stroke="#f0718d"/><text x="339" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">GPU</text>
+                <circle cx="320" cy="108" r="16" fill="#1a1710" stroke="#f0c36a"/><text x="306" y="112" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">bank1</text>
+                <text x="168" y="160" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">L = D − A · refuse CrossCut</text>
+              </svg>
+              <div class="hodge">
+                <div class="hodge-card">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><path d="M16 44 L60 12 L104 44" fill="none" stroke="#3DDC97" stroke-width="1.6"/><circle cx="16" cy="44" r="4" fill="#3DDC97"/><circle cx="60" cy="12" r="4" fill="#3DDC97"/><circle cx="104" cy="44" r="4" fill="#3DDC97"/></svg>
+                  <h4>Gradient</h4>
+                  <p>Trees, broadcast, allreduce.</p>
+                  <div class="ok">TREE_OFFLOAD ok</div>
+                </div>
+                <div class="hodge-card">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><circle cx="60" cy="30" r="18" fill="none" stroke="#6AA8FF" stroke-width="1.6"/><circle cx="78" cy="18" r="3.5" fill="#6AA8FF"/></svg>
+                  <h4>Curl</h4>
+                  <p>Cycles that must stay cycles.</p>
+                  <div class="ok">RING_RESERVE · no tree</div>
+                </div>
+                <div class="hodge-card bad">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><circle cx="48" cy="30" r="16" fill="none" stroke="#f0718d" stroke-width="1.6"/><path d="M78 16 L104 44 M104 16 L78 44" stroke="#f0718d" stroke-width="1.8"/></svg>
+                  <h4>Harmonic</h4>
+                  <p>Persistent homology. Do not fold.</p>
+                  <div class="no">TREE_OFFLOAD refused</div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="market">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">04 — Market need</p>
+          <h2>The gap is a missing package OS.</h2>
+          <p class="lede">No invented TAM. The argument is structural: custom silicon is proliferating, the interconnect era is chiplet-shaped, and the OS layer under heterogeneous packages is still a Linux device driver plus a vendor runtime.</p>
+        </div>
+        <div class="market-grid">
+          <div data-reveal>
+            <p class="callout">CUDA’s moat is real — and it has left the <em>package operating system</em> underserved. Vendor compilers already schedule FLOPs. What they do not have is a kernel that can name tiles, banks, tenants, and cuts as first-class objects.</p>
+            <p class="muted">Linux still sees an NPU as a device. Runtimes still see the OS as a driver host. Hyperscalers already isolate tenants in time. Weights and KV caches on a multi-die package need isolation in <em>space</em> — a capability, a bank color, a blast radius — not another ioctl.</p>
+            <p class="note-box"><strong>Illustrative, not a forecast.</strong> As more inference moves onto heterogeneous packages, the scarce layer is the one that can refuse a CrossCut and a silent remote load. That is an OS problem. It is not a bigger CUDA library.</p>
+          </div>
+          <div class="dyn" data-reveal data-d="2">
+            <article>
+              <h3>Custom ASICs are no longer rare</h3>
+              <p>Training and inference houses, hyperscalers, and startups are tape-outing domain silicon. Each package still inherits a host-centric OS story.</p>
+            </article>
+            <article>
+              <h3>UCIe / EMIB is the assembly era</h3>
+              <p>Dies are mixed after the fact. The programming model cannot be “whatever the interposer happens to make coherent.” Transport is not ABI.</p>
+            </article>
+            <article>
+              <h3>Multi-tenant secrets on-package</h3>
+              <p>Weights and KV are the crown jewels. Spatial isolation generalized beyond a single-GPU MIG slice is the OS work the stack still treats as driver folklore.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="partners">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">05 — Partnerships</p>
+          <h2>How a partnership with companies like NVIDIA could accelerate bring-up.</h2>
+        </div>
+        <div class="disclaimer" data-reveal>
+          <strong>Aspirational, not claimed.</strong>
+          <span>Aether has no partnership with NVIDIA or any silicon vendor. <code>PartnerNpuStub</code> is a no-op sketch. This section is a design-win narrative: what collaboration could look like if a partner chose to engage.</span>
+        </div>
+        <div class="partner-grid">
+          <article class="glass" data-reveal>
+            <h3>Co-design AccelDevice on a real command processor</h3>
+            <p>Probe / submit / poll / map is the doorbell. The job descriptor is opcode, shape, typed places, phase, fence. A partner fills those fields from silicon they already have — Aether stays out of the ISA.</p>
+          </article>
+          <article class="glass" data-reveal data-d="1">
+            <h3>Package OS under their runtime</h3>
+            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether admits the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose.</p>
+          </article>
+          <article class="glass" data-reveal data-d="2">
+            <h3>MIG-like isolation, generalized to chiplets</h3>
+            <p>Spatial slices + QoS + blast radius as capabilities, not a single-GPU product feature. Tenants cannot mint across each other. Cross-die placement is a cut, not a hint.</p>
+          </article>
+          <article class="glass" data-reveal data-d="3">
+            <h3>Shared bring-up with foundry and OS teams</h3>
+            <p>Manufacturing and silicon bring-up is partner work. Aether’s offer is a HAL, a diligence pack, and a vertical slice they can boot in QEMU before anyone books lab time.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="roadmap">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">06 — Two-year roadmap</p>
+            <h2>Research → partner-ready → manufacturing support.</h2>
+            <p class="lede">Honest sequence. We do not tape out chips. We want the package OS ready when partners do.</p>
+          </div>
+          <div class="honest-pill" data-reveal>Not a tape-out plan</div>
+        </div>
+        <div class="timeline">
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Now · Year 0 · done</div>
+              <h3>Working vertical slice</h3>
+              <ul>
+                <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
+                <li>SoftNPU virtqueue path (in-kernel BAR; stock QEMU)</li>
+                <li>Bank coloring — Compute refuse, Exchange may transfer</li>
+                <li>RISC-V virt thin boot (kmain + <code>aether_core</code>, no ring-3)</li>
+                <li>Diligence docs, deep-dive agenda, host-tested invariants</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Year 1 · H1</div>
+              <h3>Partner-shaped device path</h3>
+              <ul>
+                <li>Real virtio-accel QEMU device, or an MMIO partner path</li>
+                <li>IOMMU / SMMU hardening — stream IDs, not identity IOVA</li>
+                <li>Bank QoS beyond admit/refuse</li>
+                <li>Second partner stub (still a sketch until someone implements it)</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Year 1 · H2</div>
+              <h3>Production-shaped HAL</h3>
+              <ul>
+                <li>HAL shaped for 1–2 NPU/GPU command processors — bring-up <em>with</em> partners</li>
+                <li>SMP (INIT-SIPI, per-CPU state; work-steal already exists as a structure)</li>
+                <li>ELF userspace maturity — past a single embedded <code>/init</code></li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Year 2 · H1</div>
+              <h3>Package topology as a solver input</h3>
+              <ul>
+                <li>Multi-chiplet topology + AffinityLaplacian-driven placement in scheduling</li>
+                <li>CXL region objects (today: a typed place, not a window)</li>
+                <li>Formal subset of caps — inspired by seL4, not a proof claim</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Year 2 · H2</div>
+              <h3>Bring-up support, not a foundry</h3>
+              <ul>
+                <li>Manufacturing / silicon bring-up playbook for OS + partner HAL</li>
+                <li>Reference platform story</li>
+                <li>Open AccelDevice ecosystem</li>
+                <li>Optional certification-oriented docs — orientation, not a certificate</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="status">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">07 — Status / proof</p>
+          <h2>What you can boot. What is stubbed.</h2>
+          <p class="lede">v0.1 is a working vertical slice, not a product kernel. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+        </div>
+        <div class="status-grid">
+          <div class="term" data-reveal>
+            <div class="term-bar"><i></i><i></i><i></i><span>make qemu</span></div>
+            <pre><span class="cmd">$ make qemu</span>
+[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000)
+[sched] kthread-B tick=…
+<span class="ok">FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
+  CUT BIND + HODGE FLOW CLASS ENFORCED
+  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
+  RING-3 /init VIA SYSCALL/SYSRET</span>
+
+Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span>
+CI: cargo test + qemu-ci + qemu-riscv-ci</pre>
+          </div>
+          <div class="proof-list" data-reveal data-d="2">
+            <div class="proof">
+              <span class="badge done">Ships</span>
+              <div>
+                <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
+                <p>Caps, fabric, arenas, SoftNPU, SpectralCut, Laplacian, Hodge, x86 ring-3, RISC-V thin port.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge done">CI</span>
+              <div>
+                <a href="https://github.com/amineux/aether/actions">Actions on every push / PR</a>
+                <p><code>cargo test --workspace</code>, <code>make qemu-ci</code>, <code>make qemu-riscv-ci</code>.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge stub">Stub</span>
+              <div>
+                <strong>Honest limits</strong>
+                <p>No hardware SMMU (identity IOVA). No SMP. VirtIO-Accel is in-kernel, not upstream QEMU. RISC-V has no ring-3. No CXL.mem window. Cap revoke does not kill descendants. No FLOP benchmarks. No vendor deal.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge done">Docs</span>
+              <div>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · FABRIC · CUT · ACCEL · DILIGENCE</a>
+                <p>Leave-behind for a silicon OS team. Deep-dive agenda is a script, not a meeting that happened.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <div>
+        <a class="brand" href="#hero">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#10131a"/><path d="M20 44 L32 16 L44 44" stroke="#3DDC97" stroke-width="3.2" fill="none" stroke-linejoin="round"/><path d="M24.6 34.2 H39.4" stroke="#6AA8FF" stroke-width="2.2"/><circle cx="32" cy="16" r="2.4" fill="#6AA8FF"/></svg>
+          Aether
+        </a>
+        <p>Accelerator-first fabric kernel. Research prototype. Dual-licensed MIT OR Apache-2.0. Contact via GitHub issues or the repo owner.</p>
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/amineux/aether">GitHub</a>
+        <a href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Docs</a>
+        <a href="https://github.com/amineux/aether/blob/main/LICENSE">License</a>
+        <a href="https://github.com/amineux/aether/issues">Contact</a>
+      </div>
+    </div>
+  </footer>
+  <script src="./js/app.js"></script>
+</body>
+</html>
