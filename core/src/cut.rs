@@ -12,7 +12,7 @@
 //! is wired as the optional constructor. The QEMU topology is two chiplets
 //! with weak inter-die edges; the min-conductance split is the chiplet cut.
 
-use crate::caps::{CapError, CapKind, CapRights, CapTable, CPtr};
+use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable};
 use crate::laplacian::AffinityLaplacian;
 use crate::types::{BankId, TileId};
 
@@ -218,9 +218,7 @@ impl SpectralCut {
         if sl.abs_diff(sr) > 1 {
             return Err(CutError::Unbalanced);
         }
-        let phi = g
-            .conductance_milli(left)
-            .ok_or(CutError::EmptyPart)?;
+        let phi = g.conductance_milli(left).ok_or(CutError::EmptyPart)?;
         if phi > bound_milli {
             return Err(CutError::ConductanceExceeded);
         }
@@ -243,22 +241,14 @@ impl SpectralCut {
 
     /// Sign-split of [`AffinityLaplacian::fiedler_mask`]. Used as the
     /// intended large-n constructor; for n ≤ 8 prefer [`Self::min_balanced`].
-    pub fn from_fiedler(
-        id: CutId,
-        g: &AffinityGraph,
-        bound_milli: u32,
-    ) -> Result<Self, CutError> {
+    pub fn from_fiedler(id: CutId, g: &AffinityGraph, bound_milli: u32) -> Result<Self, CutError> {
         let lap = AffinityLaplacian::from_graph(g);
         Self::from_mask(id, g, lap.fiedler_mask(), bound_milli)
     }
 
     /// Enumerate balanced masks; pick minimum conductance. This is what a
     /// Fiedler sweep approximates when n is large.
-    pub fn min_balanced(
-        id: CutId,
-        g: &AffinityGraph,
-        bound_milli: u32,
-    ) -> Result<Self, CutError> {
+    pub fn min_balanced(id: CutId, g: &AffinityGraph, bound_milli: u32) -> Result<Self, CutError> {
         if g.n == 0 || g.n > MAX_VERTS {
             return Err(CutError::EmptyPart);
         }
@@ -397,28 +387,24 @@ mod tests {
         let mut tab = CapTable::new(t);
         let (g, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
         let p = tab
-            .mint(Capability {
-                kind: CapKind::SpectralCut,
-                rights: CapRights(CapRights::READ), // no BIND
-                object: cut.id.0,
-                badge: 0,
-                generation: 0,
-                tenant: t,
-            })
+            .mint(Capability::new(
+                CapKind::SpectralCut,
+                CapRights(CapRights::READ), // no BIND
+                cut.id.0,
+                t,
+            ))
             .unwrap();
         assert_eq!(
             bind_place(&tab, p, &cut, &g, TileId(2), Some(BankId(0))).unwrap_err(),
             CutError::NotBound
         );
         let q = tab
-            .mint(Capability {
-                kind: CapKind::SpectralCut,
-                rights: CapRights::CUT_FULL,
-                object: cut.id.0,
-                badge: 0,
-                generation: 0,
-                tenant: t,
-            })
+            .mint(Capability::new(
+                CapKind::SpectralCut,
+                CapRights::CUT_FULL,
+                cut.id.0,
+                t,
+            ))
             .unwrap();
         assert!(bind_place(&tab, q, &cut, &g, TileId(2), Some(BankId(0))).is_ok());
     }

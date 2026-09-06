@@ -142,7 +142,7 @@ flowchart TB
 | **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU; SoftCommandProcessor (`CpCmd`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → fence → complete |
-| **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected |
+| **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
 | **Observability** | COM1 console + structured `EventRing` |
 
 ## Repository layout

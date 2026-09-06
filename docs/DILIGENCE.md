@@ -41,7 +41,7 @@ gaps:
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No higher-half / KPTI | Per-task PML4 clones the identity 4 GiB; kernel can still name every PA |
 | No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
-| Cap CDT / revoke | Descendants survive parent revoke |
+| Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
 send/recv/map/accel. That is not stubbed on x86; it is stubbed on RISC-V.
@@ -90,13 +90,16 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 8. `UNIFIED` is never implied by `MEM_FULL`.
 9. `IommuMap` refuses a pin without Memory+MAP.
 10. Compute waves with a foreign bank color are refused; Exchange may transfer.
+11. Revoke of a parent empties derived children in that table;
+    `revoke_in` empties GRANT-children in named tables. Unrelated caps live.
 
-Not enforced in hardware yet: SMMU stream IDs, RISC-V ring-3, revocation
-broadcast, measured boot. On x86, isolation is “cap tables + ring-3 +
-per-task USER leaves + SMEP/SMAP + Soft SMMU.” Soft SMMU is a software
-table a real device can ignore. The kernel identity map still lets a
-forged kernel pointer name a physical address. On RISC-V it is still
-“the cap tables do the right thing.”
+Not enforced in hardware yet: SMMU stream IDs, RISC-V ring-3, measured
+boot. Revoke descendants is host-tested (`revoke` / `revoke_in`); there
+is no `SYS_REVOKE` and no kernel-global CNode walk. On x86, isolation
+is “cap tables + ring-3 + per-task USER leaves + SMEP/SMAP + Soft SMMU.”
+Soft SMMU is a software table a real device can ignore. The kernel
+identity map still lets a forged kernel pointer name a physical address.
+On RISC-V it is still “the cap tables do the right thing.”
 
 ## CI status
 

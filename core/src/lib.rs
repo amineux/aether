@@ -35,7 +35,7 @@ pub use accel::{AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{IdentityAs, CR4_SMAP, CR4_SMEP};
-pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
+pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
 pub use cut::{AffinityGraph, CutError, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};

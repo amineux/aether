@@ -156,14 +156,9 @@ mod tests {
 
     #[test]
     fn cap_authorizes_classes() {
-        let cap = Capability {
-            kind: CapKind::FlowQuota,
-            rights: CapRights::HODGE_FULL,
-            object: 1,
-            badge: CLASS_GRADIENT | CLASS_CURL,
-            generation: 1,
-            tenant: TenantId(1),
-        };
+        let cap = Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 1, TenantId(1))
+            .with_badge(CLASS_GRADIENT | CLASS_CURL)
+            .with_generation(1);
         assert!(authorize(&cap, FlowClass::Gradient).is_ok());
         assert!(authorize(&cap, FlowClass::Curl).is_ok());
         assert_eq!(

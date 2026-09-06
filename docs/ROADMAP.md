@@ -128,6 +128,24 @@ Still stubbed: higher-half, KASLR, PCID, COW, growable `mmap`,
 per-task cap tables, APs in ring-3. SoftNPU still touches `/init`
 tensors through the kernel identity map.
 
+## Year-2 H1: cap CDT / revoke (this cut)
+
+Landed as a **small** derivation tree — inspired by seL4, **not** a
+CNode/MDB and **not** a proof claim:
+
+- `Capability` stores `cdt` (owner + node) and `parent`.
+- `derive` and GRANT-copy set the parent edge; GRANT-move relocates a
+  slot and does not walk descendants.
+- `revoke(parent)` empties the lineage in that table.
+  `revoke_in(parent, others)` empties grant-children in named tables.
+- Host tests: mint child → revoke parent → child unusable; unrelated
+  caps live. Boot demo + QEMU `[cdt] revoke descendants ok`.
+- No new syscall (0–8 frozen). Kernel World still has one shared
+  `CapTable`.
+
+Do not treat this as the SpecForge Y2H1 calendar (CXL objects and
+Laplacian-in-sched stay unscheduled).
+
 ## STUB markers in the tree
 
 Search for `// STUB:` / `STUB` :
@@ -139,7 +157,7 @@ Search for `// STUB:` / `STUB` :
 | Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
-| Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
+| Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 | (none) | Not started; RISC-V was the HAL test |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
@@ -166,7 +184,8 @@ kernel thread queue sleeps.
    Only worth it after the x86 ABI stays stable.
 4. **Higher-half + KPTI.** Per-task PML4 + SMEP/SMAP landed; kernel
    mappings are still the trampoline identity 4 GiB.
-5. **Cap CDT / revoke.** Descendants die with the parent.
+5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
+   Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
 ## Two-year plan
@@ -174,18 +193,19 @@ kernel thread queue sleeps.
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
-  SMP smoke, and per-task PML4 + SMEP/SMAP (this cut) are landed. ABI
-  stays stable. Custom QEMU virtio-accel, Laplacian expansion, and
-  aarch64 remain deferred.
+  SMP smoke, per-task PML4 + SMEP/SMAP, and a minimal cap CDT / revoke
+  (this cut) are landed. ABI stays stable. Custom QEMU virtio-accel,
+  Laplacian expansion, and aarch64 remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
-  cap CDT-as-calendar, and a Y2 bring-up climax are killed as
-  milestones.
+  and a Y2 bring-up climax stay killed as milestones. Cap CDT was
+  killed *as a calendar item*; the small revoke slice is unscheduled
+  Y2H1 security work, not a SpecForge clock.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
-and per-task PML4 / SMEP / SMAP (this cut) are **done** as
-research-prototype slices. Custom QEMU virtio-accel and the other
-stubs above are still open.
+per-task PML4 / SMEP / SMAP (PR #10), and cap CDT / revoke (this cut)
+are **done** as research-prototype slices. Custom QEMU virtio-accel
+and the other stubs above are still open.
 
 ## What we will not claim
 

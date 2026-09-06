@@ -274,9 +274,7 @@ impl Fabric {
                 return Err(FabricError::QueueFull);
             }
         }
-        self.hodge
-            .admit(flow, tree)
-            .map_err(FabricError::Hodge)?;
+        self.hodge.admit(flow, tree).map_err(FabricError::Hodge)?;
         self.ep_mut(dest)?.push(msg)
     }
 
@@ -357,14 +355,10 @@ mod tests {
             b"tensor",
         )
         .unwrap();
-        msg.attach_cap(Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: 7,
-            badge: 0,
-            generation: 1,
-            tenant: TenantId(2),
-        })
+        msg.attach_cap(
+            Capability::new(CapKind::Memory, CapRights::MEM_FULL, 7, TenantId(2))
+                .with_generation(1),
+        )
         .unwrap();
         f.send(msg).unwrap();
         let got = f.recv(ep).unwrap();
