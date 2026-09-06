@@ -3,14 +3,19 @@
 //! The kernel prints this report; host tests assert the same path.
 
 use crate::accel::{AccelJobDesc, AccelOp, SliceMem, SoftNpu};
+use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
 use crate::cut::{bind_place, CutError, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
+use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
 use crate::observe::{EventKind, EventRing};
+use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
+use crate::phase::Phase;
 use crate::sched::{Job, JobKind, TileKind, TileScheduler};
-use crate::types::{BankId, PhysAddr, TenantId, TileId};
+use crate::space::{map_place, FabricAddr, MemorySpace, Place, SpaceError};
+use crate::types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DemoReport {
@@ -21,6 +26,9 @@ pub struct DemoReport {
     pub sched_ok: bool,
     pub cut_ok: bool,
     pub hodge_ok: bool,
+    pub space_ok: bool,
+    pub activity_ok: bool,
+    pub fence_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -28,6 +36,7 @@ pub struct DemoReport {
     pub arena_bank: u8,
     pub events: u32,
     pub cut_phi_milli: u32,
+    pub fence_id: u64,
 }
 
 impl DemoReport {
@@ -39,6 +48,9 @@ impl DemoReport {
             && self.sched_ok
             && self.cut_ok
             && self.hodge_ok
+            && self.space_ok
+            && self.activity_ok
+            && self.fence_ok
     }
 }
 
@@ -111,8 +123,9 @@ pub fn run_boot_demo() -> DemoReport {
         (BankId(1), PhysAddr(0x0180_0000), 8 * 1024 * 1024),
     ])
     .unwrap();
+    let here = Place::new(ChipletId(0), MemorySpace::TileSram).with_tile(2);
     let arena = arenas
-        .alloc(ArenaRequest::tensor(64 * 1024, Some(BankId(0))))
+        .alloc(ArenaRequest::tensor(64 * 1024, Some(BankId(0))).in_space(MemorySpace::TileSram))
         .unwrap();
     events.emit(EventKind::ArenaAlloc, arena.base.0, arena.size);
     arenas
@@ -149,7 +162,18 @@ pub fn run_boot_demo() -> DemoReport {
         )
         .is_ok();
     events.emit(EventKind::CapGrant, arena.id.0 as u64, granted as u64);
+    let remote = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x2000);
+    let silent = map_place(here, remote);
+    if silent == Err(SpaceError::SilentRemoteLoad) {
+        events.emit(EventKind::SpaceRefuse, 1, 0);
+    }
+    let local_ok = map_place(here, FabricAddr::new(here, arena.base.0)).is_ok();
+    let unified_default = CapRights::MEM_FULL.contains(CapRights::UNIFIED);
     let arena_ok = arena.pinned && arena.dma && arena.bank == BankId(0) && granted;
+    let space_ok = arena.space == MemorySpace::TileSram
+        && silent == Err(SpaceError::SilentRemoteLoad)
+        && local_ok
+        && !unified_default;
 
     let (graph, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
     let cut_cap = caps_a
@@ -188,9 +212,40 @@ pub fn run_boot_demo() -> DemoReport {
     let b_no_cut = !caps_b.holds(CapKind::SpectralCut, cut.id.0);
     let cut_ok = place_ok && cut_refuse && b_no_cut && cut.phi_milli <= cut.bound_milli;
 
+    let part = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), (1 << 0) | (1 << 2), 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 2,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let part_cap = part.mint(&mut caps_a).unwrap();
+    let act = Activity::new(ActivityId(1), ActivityKind::VirtAccel, ep_a)
+        .bind_partition(part.id);
+    let act_cap = act.publish(&mut caps_a).unwrap();
+    events.emit(EventKind::ActivityBind, act.id.0 as u64, act.endpoint.0 as u64);
+    let activity_ok = caps_a
+        .require(act_cap, CapKind::Activity, CapRights::SUBMIT)
+        .is_ok()
+        && caps_a
+            .require(part_cap, CapKind::Partition, CapRights::BIND)
+            .is_ok()
+        && !caps_b.holds(CapKind::Activity, act.id.0)
+        && act.kind == ActivityKind::VirtAccel;
+
+    let mut timeline = Timeline::new(part.id);
+    let fence = timeline.submit(&part, None).unwrap();
+    events.emit(EventKind::FenceSubmit, fence.id.0, part.id.0 as u64);
+
     let mut sched = TileScheduler::new();
     sched.set_graph(graph);
     sched.install_cut(cut);
+    sched.bind_partition(part);
     sched.add_tile(TileId(0), TileKind::Cpu, BankId(0));
     sched.add_tile(TileId(1), TileKind::Cpu, BankId(1));
     sched.add_tile(TileId(2), TileKind::Npu, BankId(0));
@@ -203,6 +258,9 @@ pub fn run_boot_demo() -> DemoReport {
         deadline_ticks: Some(1_000),
         tenant: tenant_a.0,
         cut_id: Some(cut.id.0),
+        phase: Phase::Compute,
+        partition_id: Some(part.id.0),
+        fence_id: Some(fence.id.0),
     });
     sched.enqueue(Job {
         id: 0,
@@ -213,6 +271,9 @@ pub fn run_boot_demo() -> DemoReport {
         deadline_ticks: Some(50),
         tenant: tenant_a.0,
         cut_id: Some(cut.id.0),
+        phase: Phase::Compute,
+        partition_id: Some(part.id.0),
+        fence_id: Some(fence.id.0),
     });
     let wave = sched.pick(TileId(2));
     events.emit(
@@ -255,6 +316,11 @@ pub fn run_boot_demo() -> DemoReport {
         dtype: crate::accel::DType::I32,
         tenant: tenant_a.0,
         completion_ep: ep_a.0,
+        space: MemorySpace::TileSram,
+        place: here,
+        phase: Phase::Compute,
+        partition: part.id,
+        fence_id: fence.id.0,
     };
     let qcap = caps_a
         .mint(Capability {
@@ -272,6 +338,14 @@ pub fn run_boot_demo() -> DemoReport {
     let mut npu = SoftNpu::new();
     let cpl = npu.execute(&job, &mut mem).unwrap();
     events.emit(EventKind::AccelComplete, cpl.job_seq as u64, cpl.cycles as u64);
+    let fence_done = timeline.complete(fence.id).unwrap();
+    events.emit(EventKind::FenceComplete, fence_done.id.0, 1);
+    let fence_ok = fence.submitted
+        && fence_done.completed
+        && !fence_done.timed_out
+        && job.phase == Phase::Compute
+        && job.space == MemorySpace::TileSram
+        && timeline.in_flight() == 0;
 
     let hodge_cap = caps_a
         .mint(Capability {
@@ -296,7 +370,8 @@ pub fn run_boot_demo() -> DemoReport {
         b"allreduce",
     )
     .unwrap()
-    .with_flow(FlowClass::Gradient);
+    .with_flow(FlowClass::Gradient)
+    .with_phase(Phase::Exchange);
     let grad_ok = fabric.send(grad_msg).is_ok();
     events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 1);
     let _ = fabric.recv(ep_a);
@@ -363,7 +438,8 @@ pub fn run_boot_demo() -> DemoReport {
         && done.payload() == b"accel-done"
         && c00 == DEMO_B[0]
         && c11 == DEMO_B[5]
-        && npu.jobs_retired == 1;
+        && npu.jobs_retired == 1
+        && job.fence_id == fence.id.0;
 
     DemoReport {
         ipc_ok,
@@ -373,6 +449,9 @@ pub fn run_boot_demo() -> DemoReport {
         sched_ok,
         cut_ok,
         hodge_ok,
+        space_ok,
+        activity_ok,
+        fence_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -380,6 +459,7 @@ pub fn run_boot_demo() -> DemoReport {
         arena_bank: arena.bank.0,
         events: events.len() as u32,
         cut_phi_milli: cut.phi_milli,
+        fence_id: fence.id.0,
     }
 }
 
@@ -397,7 +477,11 @@ mod tests {
         assert!(r.sched_ok, "sched");
         assert!(r.cut_ok, "cut");
         assert!(r.hodge_ok, "hodge");
+        assert!(r.space_ok, "space");
+        assert!(r.activity_ok, "activity");
+        assert!(r.fence_ok, "fence");
         assert!(r.all_ok());
+        assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);
         assert_eq!(r.c00, 2);
         assert_eq!(r.c11, 13);

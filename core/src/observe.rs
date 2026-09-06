@@ -21,6 +21,10 @@ pub enum EventKind {
     CutRefuse = 15,
     HodgeAdmit = 16,
     HodgeRefuse = 17,
+    ActivityBind = 18,
+    FenceSubmit = 19,
+    FenceComplete = 20,
+    SpaceRefuse = 21,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

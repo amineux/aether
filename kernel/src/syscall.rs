@@ -1,6 +1,10 @@
 //! Minimal syscall surface. v0.1 is invoked as kernel functions from the
 //! built-in init task. The numbers are the ABI a future `syscall` gate will use.
 //!
+//! The kernel is a submission shim + resource solver. Compilers own the ISA;
+//! there is no ML graph IR or fusion here. Host objects are PJRT/IREE-shaped
+//! (Device, MemorySpace, Buffer, Executable, Event).
+//!
 //! ```text
 //! 0 debug_print(ptr, len)
 //! 1 yield()

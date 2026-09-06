@@ -10,18 +10,42 @@ It does not invent performance numbers.
 
 ## Thesis
 
-1. **Tiles are peers.** A CPU thread and an NPU wave are both `Job`s. The
-   scheduler sees deadlines and bank affinity for both.
-2. **Capabilities are the only names.** You cannot speak to an endpoint, map
-   a tensor, or ring an accel doorbell without a `CPtr` in *your* table.
-3. **Memory is owned, not shared.** Crossing a tile boundary is an ownership
-   transfer. The kernel does not promise cache coherence.
-4. **The HAL is the silicon contract.** Drivers implement `AccelDevice`. The
-   rest of the kernel does not know if the backend is SoftNPU, VirtIO, or a
-   real command processor.
-5. **Cuts and Hodge classes are capabilities.** A `SpectralCut` is a bound
-   partition of the package graph; a `FlowClass` on every message selects
-   gradient / curl / harmonic policy. See [CUT.md](CUT.md).
+Accelerators are activities on a capability fabric, not devices behind ioctl.
+
+Memory is a typed place: tile SRAM, HBM, CXL region—never a single address space by default.
+
+The kernel schedules partitions and fences; compilers schedule FLOPs.
+
+Chiplets extend the NoC; UCIe is transport, not the programming model.
+
+Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.
+
+Supporting rules (implemented in types, not just prose):
+
+1. **Activities are endpoints.** A CPU tile and a virt accel share one
+   `Activity` / `EndpointId` object. There is no `/dev` ioctl surface.
+2. **Typed memory spaces.** Buffers bind to
+   `HOST | DEVICE_HBM | TILE_SRAM | CXL_REGION | SCRATCH | STREAMING`.
+   `UNIFIED_MEMORY` is an explicit capability bit, never the default.
+3. **`(place, local)` addresses.** Remote access is an explicit DMA/NoC
+   Exchange. The HAL refuses a silent coherent load.
+4. **Partition profiles.** Spatial slice + QoS (bw/credits) + blast-radius
+   isolation. Scheduler and accel bind to a partition.
+5. **Fence-ordered jobs.** submit → fence/timeline → complete/timeout,
+   credit-limited per partition — not CUDA streams.
+6. **Named phases.** `Compute | Exchange | Barrier` tags on jobs and
+   messages. The kernel does not fuse them.
+7. **Kernel = submission shim + resource solver.** No ML graph IR or
+   fusion in-kernel. Compilers own the ISA. The host ABI is shaped like
+   PJRT/IREE HAL (Device, MemorySpace, Buffer, Executable, Event). See
+   [ABI.md](ABI.md).
+8. **Cuts and Hodge classes remain capabilities.** A `SpectralCut` is a
+   bound partition of the package graph; a `FlowClass` on every message
+   selects gradient / curl / harmonic policy. See [CUT.md](CUT.md).
+
+What this document will not claim: a CUDA-style unified virtual address
+space; seL4-level formal proofs; wafer-scale marketing that hides SRAM-first
+placement; or cache coherence across chiplets.
 
 ## Boot (x86_64 / QEMU)
 
@@ -89,6 +113,12 @@ aether-kernel   arch, mm, console, syscall ABI, built-in init
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
+| `core/src/space.rs` | Typed `MemorySpace` + `(place, local)` |
+| `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
+| `core/src/partition.rs` | Spatial slice + QoS + blast radius |
+| `core/src/fence.rs` | Timeline / credit-limited submit |
+| `core/src/phase.rs` | Compute / Exchange / Barrier tags |
+| `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 
 ## HAL ports (future arches)
 

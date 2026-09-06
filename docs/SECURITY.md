@@ -12,8 +12,10 @@ table. There is no global “handle namespace” to guess.
 
 Each `Capability` stores:
 
-- `kind` — Memory, Endpoint, AccelQueue, Notification
-- `rights` — subset of READ/WRITE/GRANT/MAP/SUBMIT/WAIT/EXECUTE
+- `kind` — Memory, Endpoint, AccelQueue, Notification, SpectralCut,
+  FlowQuota, Activity, Partition
+- `rights` — subset of READ/WRITE/GRANT/MAP/SUBMIT/WAIT/EXECUTE/BIND/UNIFIED
+  (`UNIFIED` is never in `MEM_FULL`)
 - `object` — kernel object id
 - `generation` — bumped at mint; revoke empties the slot
 - `tenant` — must match the table owner at lookup
@@ -33,6 +35,15 @@ Each `Capability` stores:
    A's cut. Cross-cut placements are `CutError::CrossCut`.
 7. **Hodge class.** `FlowQuota` badge is a class mask. Harmonic +
    `TREE_OFFLOAD` is refused even if the tenant is authorized (`deadlock`).
+8. **Activity + partition.** A virt accel is an `Activity` cap, not an
+   ioctl. Jobs bind a `PartitionProfile` (spatial slice, credits, blast
+   radius). Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.
+9. **Typed spaces.** A Memory cap does not imply a unified VAS.
+   `CapRights::UNIFIED` must be granted explicitly.
+
+This is a research-prototype capability machine (Helios / M3 / Barrelfish /
+Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
+seL4-level proofs.
 
 Host tests in `core/src/caps.rs` and `core/src/demo.rs` lock these down.
 

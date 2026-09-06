@@ -24,6 +24,9 @@ Search for `// STUB:` / `STUB` :
 | AffinityLaplacian | (none) | First-class `L` object; heat-kernel / commute-time distances for placement |
 | OperatorKernelHandle | (none) | Cap for a compiled collective (tree vs ring vs torus); binds a Hodge class |
 | SparsifiedCollective | (none) | Drop harmonic components below a spectral threshold before inject |
+| Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
+| Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
+| Hardware fence/timeline | `core/src/fence.rs` | Software credits on QEMU; doorbell IRQ later |
 
 ## Suggested next cuts (technical, not calendar)
 
@@ -41,8 +44,13 @@ Search for `// STUB:` / `STUB` :
 ## What we will not claim
 
 - Benchmarks vs Linux / seL4 / CUDA / any NPU SDK
+- seL4-level formal proofs (the cap table is inspired, not verified)
+- A CUDA-style unified virtual address space
+- Wafer-scale marketing; tile SRAM is the honest first place
+- Cache coherence across chiplets (UCIe/EMIB are transport)
 - Readiness for tape-out or safety certification
 - Partnerships with silicon vendors
+- In-kernel ML graph IR / fusion (compilers schedule FLOPs)
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice` and
 `AccelJobDesc`, then tell us which opcode/dtype/route fields your command

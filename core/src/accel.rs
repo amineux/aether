@@ -3,8 +3,13 @@
 //! The descriptor is the contract silicon partners implement. SoftNpu is the
 //! reference model: integer matmul and a "wave" that is a batched matmul
 //! plus a bias add — enough to show ownership + completion, not a BLAS.
+//!
+//! This is a dispatch record, not a graph IR. Compilers own fusion and ISA.
 
-use crate::types::PhysAddr;
+use crate::partition::PartitionId;
+use crate::phase::Phase;
+use crate::space::{MemorySpace, Place};
+use crate::types::{ChipletId, PhysAddr};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u32)]
@@ -50,6 +55,13 @@ pub struct AccelJobDesc {
     pub dtype: DType,
     pub tenant: u32,
     pub completion_ep: u32,
+    /// Typed memory space the buffers are bound to. Not a unified VAS.
+    pub space: MemorySpace,
+    /// Fabric place for `(place, local)` addressing. Remote ≠ silent load.
+    pub place: Place,
+    pub phase: Phase,
+    pub partition: PartitionId,
+    pub fence_id: u64,
 }
 
 impl AccelJobDesc {
@@ -78,6 +90,11 @@ impl AccelJobDesc {
             dtype: DType::I32,
             tenant,
             completion_ep: 0,
+            space: MemorySpace::Host,
+            place: Place::new(ChipletId(0), MemorySpace::Host),
+            phase: Phase::Compute,
+            partition: PartitionId(0),
+            fence_id: 0,
         }
     }
 

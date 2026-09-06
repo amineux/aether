@@ -10,6 +10,7 @@
 
 use crate::caps::Capability;
 use crate::hodge::{FlowClass, HodgeError, HodgeQuota};
+use crate::phase::Phase;
 use crate::types::{TenantId, TileId};
 
 pub const MAX_ENDPOINTS: usize = 16;
@@ -85,6 +86,8 @@ pub struct MsgHeader {
     pub route: ChipletRoute,
     pub sender_tenant: TenantId,
     pub flow: FlowClass,
+    /// Named phase (Compute / Exchange / Barrier). Kernel does not fuse these.
+    pub phase: Phase,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -118,6 +121,7 @@ impl Message {
                 route,
                 sender_tenant,
                 flow: FlowClass::Gradient,
+                phase: Phase::Compute,
             },
             caps: [None; MAX_MSG_CAPS],
             payload,
@@ -140,6 +144,11 @@ impl Message {
 
     pub fn with_flow(mut self, flow: FlowClass) -> Self {
         self.header.flow = flow;
+        self
+    }
+
+    pub fn with_phase(mut self, phase: Phase) -> Self {
+        self.header.phase = phase;
         self
     }
 }

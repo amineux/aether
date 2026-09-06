@@ -26,7 +26,9 @@ chiplet cut (weak inter-die edges).
 
 Tasks bind via `Job.cut_id`. `TileScheduler::pick` scores a violating
 tile as impossible (`i32::MIN`) — same as a CPU tile trying to run an
-NPU wave.
+NPU wave. A `PartitionProfile` is the spatial/QoS object the scheduler
+and accel also bind; the cut is the graph bipartition, the partition is
+the isolation quota. Both are capabilities.
 
 QEMU topology (static):
 

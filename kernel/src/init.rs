@@ -2,7 +2,10 @@
 
 use aether_core::accel::{AccelJobDesc, AccelOp, DType, SoftNpu};
 use aether_core::demo::{run_boot_demo, DEMO_B};
-use aether_core::types::PhysAddr;
+use aether_core::partition::PartitionId;
+use aether_core::phase::Phase;
+use aether_core::space::{MemorySpace, Place};
+use aether_core::types::{ChipletId, PhysAddr};
 use aether_drivers::softnpu::IdentityDma;
 use aether_drivers::{SoftNpuDevice, VIRTIO_ACCEL_MAGIC};
 use aether_hal::AccelDevice;
@@ -59,6 +62,20 @@ pub fn run_demo() {
     write_str(flag(report.hodge_ok));
     console::nl();
 
+    write_str("[space] TILE_SRAM place (chiplet0,tile2)  UNIFIED=never  ");
+    write_str(flag(report.space_ok));
+    console::nl();
+
+    write_str("[activity] VIRT_ACCEL fabric endpoint (not ioctl)  ");
+    write_str(flag(report.activity_ok));
+    console::nl();
+
+    write_str("[fence] submit#");
+    write_u64(report.fence_id);
+    write_str(" -> complete  phase=COMPUTE  credits/partition  ");
+    write_str(flag(report.fence_ok));
+    console::nl();
+
     write_str("[fabric] SoftNPU job#");
     write_u64(report.job_seq as u64);
     write_str(" C[0,0]=");
@@ -89,6 +106,7 @@ pub fn run_demo() {
         println!("====================================================");
         println!("  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE");
         println!("  CUT BIND + HODGE FLOW CLASS ENFORCED");
+        println!("  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB");
         println!("====================================================");
         crate::arch::x86_64::io::outb(0xF4, 0x00);
     } else {
@@ -128,6 +146,11 @@ fn live_accel_path() {
         dtype: DType::I32,
         tenant: 1,
         completion_ep: 1,
+        space: MemorySpace::Host,
+        place: Place::new(ChipletId(0), MemorySpace::Host),
+        phase: Phase::Compute,
+        partition: PartitionId(1),
+        fence_id: 1,
     };
 
     let mut dev = SoftNpuDevice::new(IdentityDma);

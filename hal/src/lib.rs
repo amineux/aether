@@ -10,6 +10,7 @@
 #![cfg_attr(not(test), no_std)]
 
 use aether_core::accel::{AccelJobDesc, Completion};
+use aether_core::space::{map_place, FabricAddr, Place, SpaceError};
 use aether_core::types::PhysAddr;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -38,8 +39,17 @@ pub trait AccelDevice {
     fn poll(&mut self) -> Option<Completion>;
     /// Pin a physical range the device may DMA. Ownership must already
     /// have been transferred via the fabric (arena + cap).
+    ///
+    /// This is a *local* pin. Remote `(place, local)` addresses must go
+    /// through [`map_fabric`] — never a silent coherent load.
     fn map(&mut self, base: PhysAddr, size: u64) -> Result<(), HalError>;
     fn name(&self) -> &'static str;
+}
+
+/// Refuse a silent remote load. Callers that want a remote byte use an
+/// explicit DMA/NoC Exchange job, not this helper.
+pub fn map_fabric(here: Place, addr: FabricAddr) -> Result<PhysAddr, SpaceError> {
+    map_place(here, addr)
 }
 
 pub trait Console {
@@ -85,5 +95,16 @@ mod tests {
         let mut d = Dummy;
         assert_eq!(d.probe().unwrap().vendor, 0xAE7E);
         assert_eq!(d.name(), "dummy");
+    }
+
+    #[test]
+    fn map_fabric_refuses_silent_remote() {
+        use aether_core::space::MemorySpace;
+        use aether_core::types::ChipletId;
+        let here = Place::new(ChipletId(0), MemorySpace::TileSram);
+        let there = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x80);
+        assert_eq!(map_fabric(here, there), Err(SpaceError::SilentRemoteLoad));
+        let local = FabricAddr::new(here, 0x40);
+        assert_eq!(map_fabric(here, local).unwrap().0, 0x40);
     }
 }

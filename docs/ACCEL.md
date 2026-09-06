@@ -1,7 +1,15 @@
 # Accelerator HAL and VirtIO-Accel
 
-Aether does not special-case “the GPU driver.” Every tile that is not a
-CPU implements `aether_hal::AccelDevice`:
+Accelerators are activities on a capability fabric, not devices behind ioctl.
+Every compute unit — CPU tile, virt accel, SoftNPU — is an `Activity`
+behind a uniform `EndpointId`. Drivers may still talk MMIO; the ABI does
+not.
+
+The kernel schedules partitions and fences; compilers schedule FLOPs.
+`AccelJobDesc` is a dispatch record (op, shape, `(place, local)` buffers,
+phase, fence). It is not a graph IR.
+
+Every activity that is not a CPU tile implements `aether_hal::AccelDevice`:
 
 ```text
 probe()  -> AccelInfo
@@ -11,8 +19,14 @@ map(pa, len)                       // pin / IOMMU map; requires Memory cap
 ```
 
 The job descriptor is the architectural contract (see
-`aether_core::accel::AccelJobDesc`): opcode, MxNxK, physical bases,
-strides, dtype, tenant, completion endpoint.
+`aether_core::accel::AccelJobDesc`): opcode, MxNxK, physical bases
+(`PhysAddr` is the *local* field of a fabric address), typed
+`MemorySpace`, `Place`, `Phase`, partition, fence, strides, dtype,
+tenant, completion endpoint.
+
+Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
+refuses a silent coherent load across places. `UNIFIED_MEMORY` is a
+capability bit (`CapRights::UNIFIED`), never implied by `MEM_FULL`.
 
 v0.1 opcodes:
 
@@ -90,8 +104,16 @@ Do **not** map “all of HBM” into the NPU. The arena + cap is the point.
 deadline and bank affinity; `pick(npu0)` returns it before a CPU thread.
 Work-stealing will not move a wave onto a CPU tile (`Job::compatible`).
 
+Jobs are fence-ordered and credit-limited per `PartitionProfile`.
+That is not a CUDA stream: there is no implicit catch-up, and a
+partition that is out of credits refuses submit.
+
 A later cut should:
 
-- block the submitting thread on SYNC + `accel_wait`
-- let the NPU IRQ wake that thread
-- account HBM bandwidth as a first-class resource
+- block the submitting thread on SYNC + `accel_wait` (fence wait)
+- let the NPU IRQ complete the fence and wake that thread
+- meter HBM bandwidth as the partition QoS budget already names
+
+Do not assume cache coherence across chiplets. SRAM on the tile is the
+honest first place; HBM and CXL are other typed spaces, not a wafer-scale
+flat address space.

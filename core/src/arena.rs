@@ -5,6 +5,7 @@
 //! cache coherence: a transfer from CPU tile to NPU tile is an ownership
 //! handoff, not a shared mapping.
 
+use crate::space::MemorySpace;
 use crate::types::{BankId, PAGE_2M, PAGE_4K, PhysAddr};
 
 pub const MAX_ARENAS: usize = 16;
@@ -33,6 +34,8 @@ pub struct ArenaRequest {
     pub pinned: bool,
     pub dma: bool,
     pub huge: bool,
+    /// Typed place this buffer is bound to. UNIFIED_MEMORY is a cap bit, not a space.
+    pub space: MemorySpace,
 }
 
 impl ArenaRequest {
@@ -44,7 +47,13 @@ impl ArenaRequest {
             pinned: true,
             dma: true,
             huge: size >= PAGE_2M,
+            space: MemorySpace::Host,
         }
+    }
+
+    pub const fn in_space(mut self, space: MemorySpace) -> Self {
+        self.space = space;
+        self
     }
 }
 
@@ -60,6 +69,7 @@ pub struct Arena {
     /// Owning tile. `None` means kernel / unassigned.
     pub owner_tile: Option<u16>,
     pub owner_tenant: Option<u32>,
+    pub space: MemorySpace,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -216,6 +226,7 @@ impl ArenaAllocator {
             huge: req.huge && align >= PAGE_2M,
             owner_tile: None,
             owner_tenant: None,
+            space: req.space,
         };
         self.next_id += 1;
         self.arenas[slot] = Some(arena);
@@ -345,6 +356,7 @@ mod tests {
             pinned: true,
             dma: true,
             huge: false,
+            space: MemorySpace::Host,
         })
         .unwrap();
         let ar = a
@@ -364,6 +376,7 @@ mod tests {
                 pinned: true,
                 dma: true,
                 huge: true,
+                space: MemorySpace::Host,
             })
             .unwrap();
         assert!(ar.base.is_aligned(PAGE_2M));
@@ -405,6 +418,7 @@ mod tests {
             pinned: true,
             dma: false,
             huge: false,
+            space: MemorySpace::Host,
         })
         .unwrap();
         a.alloc(ArenaRequest {
@@ -414,6 +428,7 @@ mod tests {
             pinned: true,
             dma: false,
             huge: false,
+            space: MemorySpace::Host,
         })
         .unwrap();
         assert_eq!(

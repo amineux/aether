@@ -15,6 +15,7 @@ make qemu    # boot Aether in QEMU; serial demo on stdio
 
 ## Why this exists
 
+Accelerators are activities on a capability fabric, not devices behind ioctl.
 Traditional kernels treat GPUs and NPUs as PCIe endpoints: `ioctl`, a userspace
 runtime, and a hope that the driver got cache flushing right. That model is
 already strained on a discrete GPU. It breaks down on a **package** of chiplets
@@ -59,6 +60,7 @@ You should see the trampoline enter long mode, then:
 ```
 FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
   CUT BIND + HODGE FLOW CLASS ENFORCED
+  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
 ```
 
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
@@ -109,7 +111,9 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; VirtIO-Accel ring ABI + SoftNPU matmul/wave |
+| **Accel HAL** | `probe / submit / poll / map`; VirtIO-Accel + SoftNPU; `(place, local)` map refuses silent remote load |
+| **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
+| **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → fence → complete |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected |
 | **Observability** | COM1 console + structured `EventRing` |
 
@@ -143,6 +147,7 @@ team could take into bring-up.
 ## Docs
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
+- [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + FlowHodgeQuota invariants
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, VirtIO-Accel, how to plug a real NPU

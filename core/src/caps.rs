@@ -27,6 +27,10 @@ pub enum CapKind {
     Notification = 4,
     SpectralCut = 5,
     FlowQuota = 6,
+    /// A compute unit (CPU tile, virt accel, …) published as a fabric object.
+    Activity = 7,
+    /// Spatial slice + QoS + blast-radius profile.
+    Partition = 8,
 }
 
 impl CapKind {
@@ -39,6 +43,8 @@ impl CapKind {
             4 => Some(Self::Notification),
             5 => Some(Self::SpectralCut),
             6 => Some(Self::FlowQuota),
+            7 => Some(Self::Activity),
+            8 => Some(Self::Partition),
             _ => None,
         }
     }
@@ -56,16 +62,21 @@ impl CapRights {
     pub const SUBMIT: u16 = 1 << 4;
     pub const WAIT: u16 = 1 << 5;
     pub const EXECUTE: u16 = 1 << 6;
-    /// Bind a task / job to a SpectralCut (placement refusal).
+    /// Bind a task / job to a SpectralCut or Partition (placement refusal).
     pub const BIND: u16 = 1 << 7;
+    /// Explicit UNIFIED_MEMORY. Never implied by [`Self::MEM_FULL`].
+    /// A buffer in a typed space stays non-coherent unless this bit is granted.
+    pub const UNIFIED: u16 = 1 << 8;
 
     pub const NONE: Self = Self(0);
-    pub const ALL: Self = Self(0xFF);
+    pub const ALL: Self = Self(0x1FF);
     pub const MEM_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT | Self::MAP);
     pub const EP_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT);
     pub const ACCEL_FULL: Self = Self(Self::SUBMIT | Self::WAIT | Self::GRANT | Self::READ);
     pub const CUT_FULL: Self = Self(Self::READ | Self::BIND | Self::GRANT);
     pub const HODGE_FULL: Self = Self(Self::READ | Self::WRITE | Self::GRANT);
+    pub const ACTIVITY_FULL: Self = Self(Self::SUBMIT | Self::WAIT | Self::BIND | Self::GRANT);
+    pub const PARTITION_FULL: Self = Self(Self::BIND | Self::SUBMIT | Self::GRANT);
 
     pub const fn contains(self, bits: u16) -> bool {
         self.0 & bits == bits
@@ -362,5 +373,13 @@ mod tests {
             tab.lookup(CPtr(CAP_SLOTS as u16)).unwrap_err(),
             CapError::InvalidCptr
         );
+    }
+
+    #[test]
+    fn unified_is_not_in_mem_full() {
+        assert!(!CapRights::MEM_FULL.contains(CapRights::UNIFIED));
+        assert!(CapRights::ALL.contains(CapRights::UNIFIED));
+        assert_eq!(CapKind::from_u8(7), Some(CapKind::Activity));
+        assert_eq!(CapKind::from_u8(8), Some(CapKind::Partition));
     }
 }

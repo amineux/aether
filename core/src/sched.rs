@@ -5,6 +5,8 @@
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
 
 use crate::cut::{AffinityGraph, CutError, SpectralCut, MAX_CUTS_SCHED};
+use crate::partition::{PartitionError, PartitionProfile};
+use crate::phase::Phase;
 use crate::types::{BankId, TileId, MAX_TILES};
 
 pub const MAX_JOBS: usize = 32;
@@ -36,6 +38,12 @@ pub struct Job {
     pub tenant: u32,
     /// Bound `SpectralCut` object id. `None` = unrestricted (legacy jobs).
     pub cut_id: Option<u32>,
+    /// Named phase tag. The kernel admits the tag; it does not fuse phases.
+    pub phase: Phase,
+    /// Bound partition profile. `None` = unrestricted (legacy jobs).
+    pub partition_id: Option<u32>,
+    /// Fence / timeline id for submit → complete ordering.
+    pub fence_id: Option<u64>,
 }
 
 impl Job {
@@ -79,6 +87,7 @@ pub struct TileScheduler {
     now: u64,
     graph: AffinityGraph,
     cuts: [Option<SpectralCut>; MAX_CUTS_SCHED],
+    partition: Option<PartitionProfile>,
 }
 
 impl TileScheduler {
@@ -91,7 +100,12 @@ impl TileScheduler {
             now: 0,
             graph: AffinityGraph::empty(),
             cuts: [None; MAX_CUTS_SCHED],
+            partition: None,
         }
+    }
+
+    pub fn bind_partition(&mut self, p: PartitionProfile) {
+        self.partition = Some(p);
     }
 
     pub fn set_graph(&mut self, g: AffinityGraph) {
@@ -111,14 +125,26 @@ impl TileScheduler {
         self.cuts.iter().flatten().find(|c| c.id.0 == id)
     }
 
-    /// Placement gate used by pick/steal. Unbound jobs always pass.
+    /// Placement gate used by pick/steal. Unbound cut/partition always pass.
     pub fn place_ok(&self, job: &Job, tile: TileId) -> Result<(), CutError> {
-        let Some(cid) = job.cut_id else {
+        if let Some(cid) = job.cut_id {
+            let cut = self.cut(cid).ok_or(CutError::NoCut)?;
+            cut.allow_place(&self.graph, tile, job.bank_affinity)
+                .map(|_| ())?;
+        }
+        self.partition_ok(job, tile)
+            .map_err(|_| CutError::CrossCut)
+    }
+
+    fn partition_ok(&self, job: &Job, tile: TileId) -> Result<(), PartitionError> {
+        let Some(pid) = job.partition_id else {
             return Ok(());
         };
-        let cut = self.cut(cid).ok_or(CutError::NoCut)?;
-        cut.allow_place(&self.graph, tile, job.bank_affinity)
-            .map(|_| ())
+        let p = self.partition.ok_or(PartitionError::Unbound)?;
+        if p.id.0 != pid {
+            return Err(PartitionError::Unbound);
+        }
+        p.admit_place(tile, job.bank_affinity)
     }
 
     pub fn add_tile(&mut self, id: TileId, kind: TileKind, home_bank: BankId) -> bool {
@@ -286,6 +312,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         assert!(s.pick(TileId(0)).is_none());
         assert!(s.pick(TileId(2)).is_some());
@@ -303,6 +332,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -313,6 +345,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.priority, 1);
@@ -331,6 +366,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -341,6 +379,9 @@ mod tests {
             deadline_ticks: Some(100),
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.deadline_ticks, Some(100));
@@ -358,6 +399,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         s.enqueue(Job {
             id: 11,
@@ -368,6 +412,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.id, 11);
@@ -385,6 +432,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         // tile 1 has nothing local; steals from the ready pool
         let j = s.steal(TileId(1)).unwrap();
@@ -403,6 +453,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         assert!(s.steal(TileId(1)).is_none());
         assert!(s.pick(TileId(0)).is_some());
@@ -423,10 +476,51 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: Some(cut.id.0),
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         // tile 1 is chiplet 1; bank 0 is chiplet 0 → CrossCut
         assert!(s.pick(TileId(1)).is_none());
         // tile 0 + bank 0 is legal
+        assert!(s.pick(TileId(0)).is_some());
+    }
+
+    #[test]
+    fn bound_partition_rejects_foreign_tile() {
+        let mut s = setup();
+        let p = crate::partition::PartitionProfile::new(
+            crate::partition::PartitionId(1),
+            crate::partition::SpatialSlice::single_chiplet(
+                crate::types::ChipletId(0),
+                1 << 0,
+                0b1,
+            ),
+            crate::partition::QosBudget {
+                bw_mbps: 100,
+                credits: 2,
+            },
+            crate::partition::BlastRadius {
+                max_nodes: 2,
+                max_hops: 1,
+            },
+        );
+        s.bind_partition(p);
+        s.enqueue(Job {
+            id: 3,
+            kind: JobKind::Thread,
+            tile_hint: None,
+            bank_affinity: Some(BankId(0)),
+            priority: 0,
+            deadline_ticks: None,
+            tenant: 1,
+            cut_id: None,
+            phase: Phase::Compute,
+            partition_id: Some(1),
+            fence_id: Some(1),
+        });
+        // tile 1 is not in the slice mask
+        assert!(s.pick(TileId(1)).is_none());
         assert!(s.pick(TileId(0)).is_some());
     }
 
@@ -442,6 +536,9 @@ mod tests {
             deadline_ticks: None,
             tenant: 1,
             cut_id: None,
+            phase: Phase::Compute,
+            partition_id: None,
+            fence_id: None,
         });
         assert!(s.steal(TileId(2)).is_none());
     }

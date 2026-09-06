@@ -16,6 +16,7 @@ MsgHeader
   route         ChipletRoute   die / chiplet / tile / hop_hint
   sender_tenant TenantId
   flow          FlowClass      Gradient | Curl | Harmonic
+  phase         Phase          Compute | Exchange | Barrier
 ```
 
 Bulk tensor data does **not** ride in the payload. It rides in a Memory
@@ -77,3 +78,8 @@ On a coherent SMP, shared memory is cheap. On a package where the NPU's
 view of HBM is not in the CPU's coherence domain, “we both have the
 pointer” is a bug. The fabric makes the transfer **visible** so a later
 IOMMU / cache-maintenance hook has a place to run.
+
+Memory is a typed place: tile SRAM, HBM, CXL region—never a single address space by default.
+A `FabricAddr` is `(place, local)`. Crossing a place is an Exchange
+phase, not a load. Chiplets extend the NoC; UCIe is transport, not the
+programming model.

@@ -19,6 +19,11 @@ impl PhysAddr {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct BankId(pub u8);
 
+/// Package chiplet. A place and a partition slice name chiplets explicitly;
+/// the kernel does not assume cache coherence across this boundary.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct ChipletId(pub u8);
+
 /// Compute tile: CPU core, NPU, GPU shader array, or custom ASIC.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TileId(pub u16);
