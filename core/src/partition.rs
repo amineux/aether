@@ -4,7 +4,7 @@
 //! The scheduler and every accel activity bind to a partition; jobs that
 //! escape the slice or exceed QoS / blast radius are refused.
 
-use crate::caps::{CapError, CapKind, CapRights, CapTable, Capability, CPtr};
+use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
 use crate::types::{BankId, ChipletId, TileId};
 
 /// Namespace-local partition identifier.
@@ -92,14 +92,12 @@ impl PartitionProfile {
     }
 
     pub fn mint(&self, table: &mut CapTable) -> Result<CPtr, CapError> {
-        table.mint(Capability {
-            kind: CapKind::Partition,
-            rights: CapRights::PARTITION_FULL,
-            object: self.id.0,
-            badge: 0,
-            generation: 0,
-            tenant: table.owner(),
-        })
+        table.mint(Capability::new(
+            CapKind::Partition,
+            CapRights::PARTITION_FULL,
+            self.id.0,
+            table.owner(),
+        ))
     }
 
     pub fn admit_chiplet(&self, c: ChipletId) -> Result<(), PartitionError> {

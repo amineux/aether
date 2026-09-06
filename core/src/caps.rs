@@ -6,6 +6,9 @@
 //!
 //! This is the seL4-inspired invariant Aether bets the fabric on:
 //! **no communication or DMA exists outside a capability**.
+//!
+//! Derivation edges (`parent` / `cdt`) let `revoke` empty descendants. This is
+//! a small capability derivation tree, not a seL4 CNode/MDB and not a proof.
 
 use crate::types::TenantId;
 
@@ -92,6 +95,25 @@ impl CapRights {
     }
 }
 
+/// Derivation-tree identity. Unique among caps minted in one table
+/// (`owner` + `node`). Children store the parent's node, including when
+/// the child lives in another table after GRANT.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CdtNode {
+    pub owner: TenantId,
+    pub node: u32,
+}
+
+impl CdtNode {
+    pub const fn new(owner: TenantId, node: u32) -> Self {
+        Self { owner, node }
+    }
+
+    pub const fn is_set(self) -> bool {
+        self.node != 0
+    }
+}
+
 /// Kernel-internal capability. Stored only inside a `CapTable`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Capability {
@@ -101,6 +123,37 @@ pub struct Capability {
     pub badge: u64,
     pub generation: u32,
     pub tenant: TenantId,
+    /// Parent in the derivation tree. `None` = minted root.
+    pub parent: Option<CdtNode>,
+}
+
+impl Capability {
+    /// Derivation identity: table owner at mint + generation.
+    pub const fn cdt(self) -> CdtNode {
+        CdtNode::new(self.tenant, self.generation)
+    }
+
+    pub const fn new(kind: CapKind, rights: CapRights, object: u32, tenant: TenantId) -> Self {
+        Self {
+            kind,
+            rights,
+            object,
+            badge: 0,
+            generation: 0,
+            tenant,
+            parent: None,
+        }
+    }
+
+    pub const fn with_badge(mut self, badge: u64) -> Self {
+        self.badge = badge;
+        self
+    }
+
+    pub const fn with_generation(mut self, generation: u32) -> Self {
+        self.generation = generation;
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,6 +166,40 @@ pub enum CapError {
     GenerationMismatch,
     CrossTenant,
     WouldEscalate,
+}
+
+/// Fixed-size kill set for revoke walks. `CAP_SLOTS` per table × two tables
+/// covers the host/QEMU demo (one table, or parent + grant target).
+const CDT_KILL_CAP: usize = CAP_SLOTS * 2;
+
+struct KillSet {
+    nodes: [Option<CdtNode>; CDT_KILL_CAP],
+    len: usize,
+}
+
+impl KillSet {
+    fn new() -> Self {
+        Self {
+            nodes: [None; CDT_KILL_CAP],
+            len: 0,
+        }
+    }
+
+    fn contains(&self, n: CdtNode) -> bool {
+        self.nodes.iter().take(self.len).any(|s| *s == Some(n))
+    }
+
+    fn insert(&mut self, n: CdtNode) -> bool {
+        if self.contains(n) {
+            return false;
+        }
+        if self.len >= CDT_KILL_CAP {
+            return false;
+        }
+        self.nodes[self.len] = Some(n);
+        self.len += 1;
+        true
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -181,12 +268,7 @@ impl CapTable {
         self.slots[i].as_mut().ok_or(CapError::EmptySlot)
     }
 
-    pub fn require(
-        &self,
-        cptr: CPtr,
-        kind: CapKind,
-        need: u16,
-    ) -> Result<&Capability, CapError> {
+    pub fn require(&self, cptr: CPtr, kind: CapKind, need: u16) -> Result<&Capability, CapError> {
         let cap = self.lookup(cptr)?;
         if cap.kind != kind {
             return Err(CapError::WrongKind);
@@ -200,8 +282,8 @@ impl CapTable {
         Ok(cap)
     }
 
-    /// Delete a slot and bump so a stale CPtr cannot be reused on the same index.
-    pub fn revoke(&mut self, cptr: CPtr) -> Result<Capability, CapError> {
+    /// Empty one slot without walking descendants. Used for GRANT-move.
+    fn take_slot(&mut self, cptr: CPtr) -> Result<Capability, CapError> {
         let i = cptr.0 as usize;
         if i >= CAP_SLOTS {
             return Err(CapError::InvalidCptr);
@@ -209,7 +291,68 @@ impl CapTable {
         self.slots[i].take().ok_or(CapError::EmptySlot)
     }
 
+    /// Delete `cptr` and every descendant in this table.
+    ///
+    /// A stale CPtr cannot be reused on the same index: the slot is empty
+    /// until a later mint. Cross-table children need [`Self::revoke_in`].
+    pub fn revoke(&mut self, cptr: CPtr) -> Result<Capability, CapError> {
+        self.revoke_in(cptr, &mut [])
+    }
+
+    /// Revoke `cptr` in this table and empty descendants in `others` too.
+    ///
+    /// Caller must not pass `self` in `others`. This is an explicit walk of
+    /// named tables — not a kernel-global CNode broadcast.
+    pub fn revoke_in(
+        &mut self,
+        cptr: CPtr,
+        others: &mut [&mut CapTable],
+    ) -> Result<Capability, CapError> {
+        let cap = self.take_slot(cptr)?;
+        let mut kill = KillSet::new();
+        kill.insert(cap.cdt());
+        loop {
+            let before = kill.len;
+            self.collect_into(&mut kill);
+            for t in others.iter() {
+                t.collect_into(&mut kill);
+            }
+            if kill.len == before {
+                break;
+            }
+        }
+        self.empty_killed(&kill);
+        for t in others.iter_mut() {
+            t.empty_killed(&kill);
+        }
+        Ok(cap)
+    }
+
+    fn collect_into(&self, kill: &mut KillSet) {
+        for cap in self.slots.iter().flatten() {
+            if let Some(parent) = cap.parent {
+                if kill.contains(parent) {
+                    kill.insert(cap.cdt());
+                }
+            }
+        }
+    }
+
+    fn empty_killed(&mut self, kill: &KillSet) {
+        for slot in self.slots.iter_mut() {
+            if let Some(cap) = slot {
+                if kill.contains(cap.cdt()) {
+                    *slot = None;
+                }
+            }
+        }
+    }
+
     /// Move (GRANT) or copy-with-subset (derive) a cap into `dest`.
+    ///
+    /// A copy records a derivation edge so later [`Self::revoke_in`] of `src`
+    /// empties the dest child. A move relocates the slot and does not revoke
+    /// existing descendants.
     pub fn transfer(
         &mut self,
         src: CPtr,
@@ -224,14 +367,17 @@ impl CapTable {
         let mut minted = cap;
         minted.rights = new_rights;
         minted.tenant = dest.owner;
-        let cptr = dest.mint(minted)?;
         if r#move {
-            let _ = self.revoke(src);
+            let cptr = dest.mint(minted)?;
+            let _ = self.take_slot(src);
+            Ok(cptr)
+        } else {
+            minted.parent = Some(cap.cdt());
+            dest.mint(minted)
         }
-        Ok(cptr)
     }
 
-    /// Derive a weaker cap in the *same* table.
+    /// Derive a weaker cap in the *same* table. Child stores `src` as parent.
     pub fn derive(&mut self, src: CPtr, new_rights: CapRights) -> Result<CPtr, CapError> {
         let cap = *self.lookup(src)?;
         if !cap.rights.can_derive(new_rights) {
@@ -242,12 +388,16 @@ impl CapTable {
         }
         let mut child = cap;
         child.rights = new_rights;
+        child.parent = Some(cap.cdt());
         self.mint(child)
     }
 
     /// Isolation helper: does this table hold any cap to `object` of `kind`?
     pub fn holds(&self, kind: CapKind, object: u32) -> bool {
-        self.slots.iter().flatten().any(|c| c.kind == kind && c.object == object)
+        self.slots
+            .iter()
+            .flatten()
+            .any(|c| c.kind == kind && c.object == object)
     }
 }
 
@@ -256,14 +406,11 @@ mod tests {
     use super::*;
 
     fn mem_cap(obj: u32, tenant: TenantId) -> Capability {
-        Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: obj,
-            badge: 0,
-            generation: 0,
-            tenant,
-        }
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, obj, tenant)
+    }
+
+    fn ep_cap(obj: u32, tenant: TenantId) -> Capability {
+        Capability::new(CapKind::Endpoint, CapRights::EP_FULL, obj, tenant)
     }
 
     #[test]
@@ -299,9 +446,7 @@ mod tests {
         let t = TenantId(1);
         let mut tab = CapTable::new(t);
         let p = tab.mint(mem_cap(1, t)).unwrap();
-        let weak = tab
-            .derive(p, CapRights(CapRights::READ))
-            .unwrap();
+        let weak = tab.derive(p, CapRights(CapRights::READ)).unwrap();
         assert!(tab.lookup(weak).unwrap().rights.contains(CapRights::READ));
         assert!(!tab.lookup(weak).unwrap().rights.contains(CapRights::WRITE));
         assert_eq!(
@@ -318,7 +463,12 @@ mod tests {
         let mut tb = CapTable::new(b);
         let p = ta.mint(mem_cap(42, a)).unwrap();
         let q = ta
-            .transfer(p, &mut tb, CapRights(CapRights::READ | CapRights::MAP), true)
+            .transfer(
+                p,
+                &mut tb,
+                CapRights(CapRights::READ | CapRights::MAP),
+                true,
+            )
             .unwrap();
         assert_eq!(ta.lookup(p).unwrap_err(), CapError::EmptySlot);
         let got = tb.lookup(q).unwrap();
@@ -381,5 +531,95 @@ mod tests {
         assert!(CapRights::ALL.contains(CapRights::UNIFIED));
         assert_eq!(CapKind::from_u8(7), Some(CapKind::Activity));
         assert_eq!(CapKind::from_u8(8), Some(CapKind::Partition));
+    }
+
+    #[test]
+    fn derive_records_parent() {
+        let t = TenantId(1);
+        let mut tab = CapTable::new(t);
+        let parent = tab.mint(mem_cap(1, t)).unwrap();
+        let child = tab.derive(parent, CapRights(CapRights::READ)).unwrap();
+        let p = tab.lookup(parent).unwrap();
+        let c = tab.lookup(child).unwrap();
+        assert_eq!(c.parent, Some(p.cdt()));
+        assert_ne!(c.cdt(), p.cdt());
+        assert!(c.cdt().is_set());
+    }
+
+    #[test]
+    fn revoke_parent_empties_descendants_unrelated_lives() {
+        let t = TenantId(1);
+        let mut tab = CapTable::new(t);
+        let parent = tab.mint(mem_cap(1, t)).unwrap();
+        let child = tab
+            .derive(parent, CapRights(CapRights::READ | CapRights::GRANT))
+            .unwrap();
+        let grandchild = tab.derive(child, CapRights(CapRights::READ)).unwrap();
+        let other = tab.mint(mem_cap(99, t)).unwrap();
+        tab.revoke(parent).unwrap();
+        assert_eq!(tab.lookup(parent).unwrap_err(), CapError::EmptySlot);
+        assert_eq!(
+            tab.require(child, CapKind::Memory, CapRights::READ)
+                .unwrap_err(),
+            CapError::EmptySlot
+        );
+        assert_eq!(
+            tab.require(grandchild, CapKind::Memory, CapRights::READ)
+                .unwrap_err(),
+            CapError::EmptySlot
+        );
+        assert!(tab.require(other, CapKind::Memory, CapRights::READ).is_ok());
+    }
+
+    #[test]
+    fn revoke_child_does_not_kill_parent() {
+        let t = TenantId(1);
+        let mut tab = CapTable::new(t);
+        let parent = tab.mint(mem_cap(1, t)).unwrap();
+        let child = tab.derive(parent, CapRights(CapRights::READ)).unwrap();
+        tab.revoke(child).unwrap();
+        assert_eq!(tab.lookup(child).unwrap_err(), CapError::EmptySlot);
+        assert!(tab
+            .require(parent, CapKind::Memory, CapRights::READ)
+            .is_ok());
+    }
+
+    #[test]
+    fn revoke_parent_empties_grant_child_in_other_table() {
+        let a = TenantId(1);
+        let b = TenantId(2);
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let parent = ta.mint(mem_cap(7, a)).unwrap();
+        let child = ta
+            .transfer(parent, &mut tb, CapRights(CapRights::READ), false)
+            .unwrap();
+        let unrelated = tb.mint(ep_cap(3, b)).unwrap();
+        ta.revoke_in(parent, &mut [&mut tb]).unwrap();
+        assert_eq!(ta.lookup(parent).unwrap_err(), CapError::EmptySlot);
+        assert_eq!(
+            tb.require(child, CapKind::Memory, CapRights::READ)
+                .unwrap_err(),
+            CapError::EmptySlot
+        );
+        assert!(tb
+            .require(unrelated, CapKind::Endpoint, CapRights::READ)
+            .is_ok());
+        assert!(!tb.holds(CapKind::Memory, 7));
+    }
+
+    #[test]
+    fn revoke_without_others_leaves_foreign_child() {
+        let a = TenantId(1);
+        let b = TenantId(2);
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let parent = ta.mint(mem_cap(7, a)).unwrap();
+        let child = ta
+            .transfer(parent, &mut tb, CapRights(CapRights::READ), false)
+            .unwrap();
+        ta.revoke(parent).unwrap();
+        assert_eq!(ta.lookup(parent).unwrap_err(), CapError::EmptySlot);
+        assert!(tb.require(child, CapKind::Memory, CapRights::READ).is_ok());
     }
 }

@@ -24,7 +24,9 @@ two-hart work-steal) is **done** as a QEMU `-smp 2` slice. Custom QEMU
 virtio-accel and the other stubs remain open (see
 [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows;
-no higher-half / POSIX MM).
+no higher-half / POSIX MM). A minimal cap CDT / revoke is **done** as
+unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
+not a seL4 CNode, not a calendar milestone).
 
 ### KEEP / ACTIVE Y1
 
@@ -51,8 +53,9 @@ Kernel calendar items:
   (`PartnerNpuStub` stays a labeled sketch).
 - CXL region objects — keep the typed `MemorySpace::CxlRegion` place
   only; no pin/map productization, no CXL.mem claim.
-- Cap CDT as a calendar item (revoke-descendants remains a STUB, not a
-  scheduled milestone).
+- Cap CDT as a *calendar* item. A small derivation-edge revoke landed
+  as unscheduled Y2H1 security work; do not treat it as a SpecForge
+  half-year clock, a seL4 clone, or a reason to pull CXL / Laplacian.
 - Y2 manufacturing / bring-up playbook as a climax goal
   ([DILIGENCE.md](DILIGENCE.md) already exists).
 
@@ -76,8 +79,9 @@ After AccelDevice bites a real-shaped path — not before:
 3. Second AccelDevice software CP with a real command packet (not
    `PartnerNpuStub` enrichment theater)
 4. SMP smoke (INIT-SIPI, per-CPU `gs`, two-hart work-steal)
-5. Per-task PML4 + SMEP/SMAP (documented x86 subset) — **this cut**
-6. Optional virtio-accel / MicroPerceptron interop later
+5. Per-task PML4 + SMEP/SMAP (documented x86 subset)
+6. Minimal cap CDT / revoke (internal API + host/QEMU demo) — **this cut**
+7. Optional virtio-accel / MicroPerceptron interop later
 
 ### Active file touch map
 
@@ -88,10 +92,12 @@ After AccelDevice bites a real-shaped path — not before:
 | Cross-cutting | this file, ROADMAP status rows, CI only if a new host test target appears |
 | SMP smoke | `kernel/src/arch/{irq,x86_64/{smp,cpu,apic,idt}}.rs`, `Makefile`, `qemu-smp-ci` |
 | Per-task PML4 | `kernel/src/{mm,task,elfload}.rs`, `core/src/aspace.rs`, `user/probe/`, `qemu-ci` |
+| Cap CDT / revoke | `core/src/caps.rs`, `core/src/demo.rs`, `docs/{SECURITY,ROADMAP,YEAR2_PLAN}.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
-arch PR on the revised track. Still do not open CXL or CDT PRs here.
+arch PR on the revised track. CDT landed as a small `aether-core`
+slice. Still do not open CXL PRs here.
 
 ---
 
@@ -148,6 +154,10 @@ above override what Kernel actually sequences. Criteria below are
    UNIFIED; QEMU stub window OK — no claim of real CXL.mem.
 3. Cap CDT/revoke: revoke parent empties descendants across tables;
    host tests lock it; [SECURITY.md](SECURITY.md) gap table updated.
+   **Landed** as a small derivation tree (`parent` + `(tenant, generation)`, `revoke_in`
+   of named tables). Not a seL4 CNode/MDB. No `SYS_REVOKE`. Kernel
+   World is still one shared `CapTable`. CXL / Laplacian items above
+   are **not** done.
 
 ### Y2H2 — Bring-up + ecosystem docs
 
@@ -190,8 +200,9 @@ for new qemu/smp targets.
    (n≤8). Wiring into sched before a stable placement API will churn
    `cut.rs`/`sched.rs` under Y2H1 — freeze `SpectralCut` BIND semantics
    in Y1H2.
-5. **Cap CDT:** Touches every mint/derive path; land behind tests
-   before CXL/multi-chiplet demos that mint many caps.
+5. **Cap CDT:** Touches every mint/derive path. The small revoke
+   slice is landed behind host + boot-demo tests; still land any
+   later CXL/multi-chiplet demos on that API, not a new tree.
 6. **RISC-V temptation:** Do not block Y1 on `sret` userspace; keep a
    thin HAL. aarch64 after the x86 ABI is stable.
 

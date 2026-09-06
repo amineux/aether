@@ -33,6 +33,7 @@ pub struct DemoReport {
     pub fence_ok: bool,
     pub map_ok: bool,
     pub color_ok: bool,
+    pub revoke_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -57,6 +58,7 @@ impl DemoReport {
             && self.fence_ok
             && self.map_ok
             && self.color_ok
+            && self.revoke_ok
     }
 }
 
@@ -77,24 +79,16 @@ pub fn run_boot_demo() -> DemoReport {
     let ep_b = fabric.create_endpoint(tenant_b).unwrap();
 
     let ep_cap_a = caps_a
-        .mint(Capability {
-            kind: CapKind::Endpoint,
-            rights: CapRights::EP_FULL,
-            object: ep_a.0,
-            badge: 0xA3,
-            generation: 0,
-            tenant: tenant_a,
-        })
+        .mint(
+            Capability::new(CapKind::Endpoint, CapRights::EP_FULL, ep_a.0, tenant_a)
+                .with_badge(0xA3),
+        )
         .unwrap();
-    let _ep_cap_b = caps_b
-        .mint(Capability {
-            kind: CapKind::Endpoint,
-            rights: CapRights::EP_FULL,
-            object: ep_b.0,
-            badge: 0xB7,
-            generation: 0,
-            tenant: tenant_b,
-        })
+    let ep_cap_b = caps_b
+        .mint(
+            Capability::new(CapKind::Endpoint, CapRights::EP_FULL, ep_b.0, tenant_b)
+                .with_badge(0xB7),
+        )
         .unwrap();
     events.emit(EventKind::CapMint, ep_a.0 as u64, ep_b.0 as u64);
 
@@ -146,14 +140,12 @@ pub fn run_boot_demo() -> DemoReport {
     events.emit(EventKind::ArenaXfer, arena.id.0 as u64, 2);
 
     let mem_cap = caps_a
-        .mint(Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: arena.id.0,
-            badge: 0,
-            generation: 0,
-            tenant: tenant_a,
-        })
+        .mint(Capability::new(
+            CapKind::Memory,
+            CapRights::MEM_FULL,
+            arena.id.0,
+            tenant_a,
+        ))
         .unwrap();
     let mut iommu = IommuMap::new();
     let pin = iommu
@@ -162,14 +154,13 @@ pub fn run_boot_demo() -> DemoReport {
             MapRequest::pin(arena.base, arena.size),
         )
         .unwrap();
-    let no_map_cap = Capability {
-        kind: CapKind::Memory,
-        rights: CapRights(CapRights::READ | CapRights::WRITE),
-        object: arena.id.0,
-        badge: 0,
-        generation: 1,
-        tenant: tenant_a,
-    };
+    let no_map_cap = Capability::new(
+        CapKind::Memory,
+        CapRights(CapRights::READ | CapRights::WRITE),
+        arena.id.0,
+        tenant_a,
+    )
+    .with_generation(1);
     let map_refused = iommu.map(&no_map_cap, MapRequest::pin(PhysAddr(0x2000_0000), 0x1000))
         == Err(MapError::NoMemoryCap);
     let map_ok = pin.iova != arena.base
@@ -191,8 +182,7 @@ pub fn run_boot_demo() -> DemoReport {
         );
     }
 
-    // Grant a read+map view to the NPU queue owner (still tenant A) — then
-    // move write into an accel-queue cap's world by transferring a derived cap.
+    // Grant a read+map view to the NPU queue owner (still tenant A).
     let granted = caps_a
         .derive(
             mem_cap,
@@ -200,6 +190,41 @@ pub fn run_boot_demo() -> DemoReport {
         )
         .is_ok();
     events.emit(EventKind::CapGrant, arena.id.0 as u64, granted as u64);
+
+    // CDT: mint a dedicated Memory parent, derive in-table, GRANT a child to B,
+    // revoke parent across both tables. Unrelated caps (B's endpoint, A's
+    // arena Memory) must survive.
+    let cdt_parent = caps_a
+        .mint(Capability::new(
+            CapKind::Memory,
+            CapRights::MEM_FULL,
+            0xCD7,
+            tenant_a,
+        ))
+        .unwrap();
+    let cdt_child = caps_a
+        .derive(cdt_parent, CapRights(CapRights::READ | CapRights::MAP))
+        .unwrap();
+    let cdt_b = caps_a
+        .transfer(cdt_parent, &mut caps_b, CapRights(CapRights::READ), false)
+        .unwrap();
+    caps_a.revoke_in(cdt_parent, &mut [&mut caps_b]).unwrap();
+    let revoke_ok = caps_a.lookup(cdt_parent).is_err()
+        && caps_a
+            .require(cdt_child, CapKind::Memory, CapRights::READ)
+            .is_err()
+        && caps_b
+            .require(cdt_b, CapKind::Memory, CapRights::READ)
+            .is_err()
+        && caps_a
+            .require(mem_cap, CapKind::Memory, CapRights::READ)
+            .is_ok()
+        && caps_b
+            .require(ep_cap_b, CapKind::Endpoint, CapRights::READ)
+            .is_ok();
+    if revoke_ok {
+        events.emit(EventKind::CapRevoke, 0xCD7, cdt_child.0 as u64);
+    }
     let remote = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x2000);
     let silent = map_place(here, remote);
     if silent == Err(SpaceError::SilentRemoteLoad) {
@@ -215,14 +240,12 @@ pub fn run_boot_demo() -> DemoReport {
 
     let (graph, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
     let cut_cap = caps_a
-        .mint(Capability {
-            kind: CapKind::SpectralCut,
-            rights: CapRights::CUT_FULL,
-            object: cut.id.0,
-            badge: 0,
-            generation: 0,
-            tenant: tenant_a,
-        })
+        .mint(Capability::new(
+            CapKind::SpectralCut,
+            CapRights::CUT_FULL,
+            cut.id.0,
+            tenant_a,
+        ))
         .unwrap();
     events.emit(EventKind::CutBind, cut.id.0 as u64, cut.phi_milli as u64);
     let place_ok = bind_place(&caps_a, cut_cap, &cut, &graph, TileId(2), Some(BankId(0))).is_ok();
@@ -349,14 +372,12 @@ pub fn run_boot_demo() -> DemoReport {
         fence_id: fence.id.0,
     };
     let qcap = caps_a
-        .mint(Capability {
-            kind: CapKind::AccelQueue,
-            rights: CapRights::ACCEL_FULL,
-            object: 1,
-            badge: 0,
-            generation: 0,
-            tenant: tenant_a,
-        })
+        .mint(Capability::new(
+            CapKind::AccelQueue,
+            CapRights::ACCEL_FULL,
+            1,
+            tenant_a,
+        ))
         .unwrap();
     let _ = caps_a.require(qcap, CapKind::AccelQueue, CapRights::SUBMIT);
 
@@ -405,14 +426,10 @@ pub fn run_boot_demo() -> DemoReport {
         && timeline.in_flight() == 0;
 
     let hodge_cap = caps_a
-        .mint(Capability {
-            kind: CapKind::FlowQuota,
-            rights: CapRights::HODGE_FULL,
-            object: 1,
-            badge: CLASS_ALL,
-            generation: 0,
-            tenant: tenant_a,
-        })
+        .mint(
+            Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 1, tenant_a)
+                .with_badge(CLASS_ALL),
+        )
         .unwrap();
     let hodge_grad = authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Gradient).is_ok();
     // Tenant B has no FlowQuota cap: cannot authorize harmonic.
@@ -466,14 +483,9 @@ pub fn run_boot_demo() -> DemoReport {
         && harm_refused
         && b_no_hodge
         && authorize(
-            &Capability {
-                kind: CapKind::FlowQuota,
-                rights: CapRights::HODGE_FULL,
-                object: 1,
-                badge: CLASS_GRADIENT | CLASS_CURL,
-                generation: 1,
-                tenant: tenant_b,
-            },
+            &Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 1, tenant_b)
+                .with_badge(CLASS_GRADIENT | CLASS_CURL)
+                .with_generation(1),
             FlowClass::Harmonic,
         )
         .is_err();
@@ -515,6 +527,7 @@ pub fn run_boot_demo() -> DemoReport {
         fence_ok,
         map_ok,
         color_ok,
+        revoke_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -545,6 +558,7 @@ mod tests {
         assert!(r.fence_ok, "fence");
         assert!(r.map_ok, "map");
         assert!(r.color_ok, "color");
+        assert!(r.revoke_ok, "cdt revoke");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);

@@ -25,7 +25,9 @@ use aether_core::{NAME, VERSION};
 use crate::console::{nl, write_str, write_u64};
 
 #[cfg(target_arch = "x86_64")]
-const KERNEL_STACK_SIZE: usize = 64 * 1024;
+// Fabric + two CapTables live on this stack in run_boot_demo.
+// parent edges grew Capability; 64 KiB (and 128 KiB on GH rustc) overflowed.
+const KERNEL_STACK_SIZE: usize = 256 * 1024;
 #[cfg(target_arch = "x86_64")]
 #[repr(align(16))]
 struct Stack([u8; KERNEL_STACK_SIZE]);

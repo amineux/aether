@@ -116,7 +116,11 @@ impl CpCmd {
             return Err(HalError::Fault);
         }
         if job.bias.0 != 0
-            && !iommu.covers_stream(sid.raw(), job.bias, 4u64.saturating_mul(job.n as u64).max(4))
+            && !iommu.covers_stream(
+                sid.raw(),
+                job.bias,
+                4u64.saturating_mul(job.n as u64).max(4),
+            )
         {
             return Err(HalError::Fault);
         }
@@ -402,14 +406,7 @@ mod tests {
     };
 
     fn mem_cap() -> Capability {
-        Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: 3,
-            badge: 0,
-            generation: 1,
-            tenant: TenantId(1),
-        }
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, 3, TenantId(1)).with_generation(1)
     }
 
     fn matmul_backing() -> ([u8; 256], AccelJobDesc) {
@@ -424,10 +421,7 @@ mod tests {
         (backing, job)
     }
 
-    fn pin_job(
-        dev: &mut SoftCommandProcessor<SliceMem<'_>>,
-        job: &AccelJobDesc,
-    ) -> PhysAddr {
+    fn pin_job(dev: &mut SoftCommandProcessor<SliceMem<'_>>, job: &AccelJobDesc) -> PhysAddr {
         let sid = stream_for_job(job);
         dev.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 256, sid))
             .unwrap()
@@ -464,14 +458,13 @@ mod tests {
                 .unwrap_err(),
             HalError::NoMemoryCap
         );
-        let no_map = Capability {
-            kind: CapKind::Memory,
-            rights: CapRights(CapRights::READ | CapRights::WRITE),
-            object: 1,
-            badge: 0,
-            generation: 1,
-            tenant: TenantId(1),
-        };
+        let no_map = Capability::new(
+            CapKind::Memory,
+            CapRights(CapRights::READ | CapRights::WRITE),
+            1,
+            TenantId(1),
+        )
+        .with_generation(1);
         assert_eq!(
             d.map_with_cap(
                 &no_map,
@@ -489,9 +482,7 @@ mod tests {
         assert!(iova.0 >= SOFT_SMMU_IOVA_BASE);
         assert_ne!(iova.0, 0x1000);
         assert_eq!(
-            d.translate_stream(sid.raw(), PhysAddr(0x1400))
-                .unwrap()
-                .0,
+            d.translate_stream(sid.raw(), PhysAddr(0x1400)).unwrap().0,
             iova.0 + 0x400
         );
         assert_eq!(

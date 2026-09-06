@@ -42,25 +42,16 @@ pub fn init() {
     let mut fabric = Fabric::new();
     let ep = fabric.create_endpoint(tenant).expect("ep");
     let ep_cptr = caps
-        .mint(Capability {
-            kind: CapKind::Endpoint,
-            rights: CapRights::EP_FULL,
-            object: ep.0,
-            badge: 0xA3,
-            generation: 0,
-            tenant,
-        })
+        .mint(Capability::new(CapKind::Endpoint, CapRights::EP_FULL, ep.0, tenant).with_badge(0xA3))
         .expect("ep cap");
     assert_eq!(ep_cptr.0, INIT_EP_CPTR);
     let q = caps
-        .mint(Capability {
-            kind: CapKind::AccelQueue,
-            rights: CapRights::ACCEL_FULL,
-            object: 1,
-            badge: 0,
-            generation: 0,
+        .mint(Capability::new(
+            CapKind::AccelQueue,
+            CapRights::ACCEL_FULL,
+            1,
             tenant,
-        })
+        ))
         .expect("q cap");
     assert_eq!(q.0, INIT_QUEUE_CPTR);
 
@@ -74,14 +65,12 @@ pub fn init() {
     let _ = npu.probe();
     // Soft-SMMU pin the /init image so stack tensors remain legal DMA targets.
     let user_mem = caps
-        .mint(Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: 0xFFFF,
-            badge: 0,
-            generation: 0,
+        .mint(Capability::new(
+            CapKind::Memory,
+            CapRights::MEM_FULL,
+            0xFFFF,
             tenant,
-        })
+        ))
         .expect("user-image mem cap");
     let user_cap = *caps.lookup(user_mem).expect("user mem");
     let _ = npu.map_with_cap(
@@ -318,14 +307,12 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     let cptr = with(|w| {
         w.last_arena = Some(arena);
         w.caps
-            .mint(Capability {
-                kind: CapKind::Memory,
-                rights: CapRights::MEM_FULL,
-                object: arena.id.0,
-                badge: 0,
-                generation: 0,
-                tenant: TenantId(1),
-            })
+            .mint(Capability::new(
+                CapKind::Memory,
+                CapRights::MEM_FULL,
+                arena.id.0,
+                TenantId(1),
+            ))
             .map_err(|_| SysError::Inval)
     })?;
     write_str("[mm] arena_alloc cptr=");

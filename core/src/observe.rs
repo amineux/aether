@@ -25,6 +25,7 @@ pub enum EventKind {
     FenceSubmit = 19,
     FenceComplete = 20,
     SpaceRefuse = 21,
+    CapRevoke = 22,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

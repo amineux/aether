@@ -169,14 +169,7 @@ mod tests {
     use aether_hal::AccelDevice;
 
     fn mem_cap() -> Capability {
-        Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: 9,
-            badge: 0,
-            generation: 1,
-            tenant: TenantId(1),
-        }
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, 9, TenantId(1)).with_generation(1)
     }
 
     #[test]

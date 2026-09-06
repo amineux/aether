@@ -4,7 +4,7 @@
 //! fabric's point of view: an [`Activity`] behind an [`EndpointId`]. Drivers
 //! may talk MMIO underneath; the kernel ABI never exposes `/dev/*` ioctls.
 
-use crate::caps::{CapError, CapKind, CapRights, CapTable, Capability, CPtr};
+use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
 use crate::fabric::EndpointId;
 use crate::partition::PartitionId;
 
@@ -59,14 +59,15 @@ impl Activity {
 
     /// Publish this activity as a fabric capability (uniform object, not ioctl).
     pub fn publish(&self, table: &mut CapTable) -> Result<CPtr, CapError> {
-        table.mint(Capability {
-            kind: CapKind::Activity,
-            rights: CapRights::ACTIVITY_FULL,
-            object: self.id.0,
-            badge: self.endpoint.0 as u64,
-            generation: 0,
-            tenant: table.owner(),
-        })
+        table.mint(
+            Capability::new(
+                CapKind::Activity,
+                CapRights::ACTIVITY_FULL,
+                self.id.0,
+                table.owner(),
+            )
+            .with_badge(self.endpoint.0 as u64),
+        )
     }
 }
 
