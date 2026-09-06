@@ -14,7 +14,7 @@ product kernel.
 | Preemptive threads on PIT; `SYS_YIELD` / blocking wait | **done** |
 | CI: `cargo test --workspace` + `make qemu` (isa-debug-exit) | **done** |
 | ramfs / virtio-blk for `/init` | not started (blob is enough) |
-| Per-task PML4 / SMEP / SMAP | not started |
+| Per-task PML4 / SMEP / SMAP | **done** (x86 subset: CR3 switch + USER-local 2 MiB windows) |
 | User-level threads (clone) | not started — kthread-B + `/init` mix |
 
 ## Month 3–4
@@ -105,8 +105,46 @@ per-task isolation:
 - APs stay in kernel mode. `/init` + SoftNPU virtqueue stay BSP-only.
   `make qemu-ci` is still UP and must keep working.
 
-Per-task PML4 / SMEP / SMAP is the follow-up (same `arch/x86_64` +
-`task.rs` files — do not combine). RISC-V extra harts stay parked.
+RISC-V extra harts stay parked.
+
+## Year-1 H2: per-task PML4 + SMEP/SMAP (this cut)
+
+Landed on x86_64 only — **documented subset**, not a POSIX MM, not
+higher-half / KPTI / KASLR:
+
+- Each ring-3 task (`/init` @ `0x2000000`, optional `/probe` @
+  `0x2400000`) gets its own PML4: trampoline identity map cloned,
+  USER only on that task's 2 MiB ELF window, the other user window
+  unmapped (`P=0`). Kernel CR3 stays the boot tables (supervisor-only).
+- Context switch writes CR3 for user↔kernel and user↔user.
+- CR4.SMEP + CR4.SMAP on the BSP and on AP 1. `SFMASK` clears
+  `RFLAGS.AC`; `STAC`/`CLAC` wrap user copies.
+- `/init` is still a static non-PIE ELF. `/probe` is a second static
+  non-PIE ELF that yields only (does not `SYS_EXIT`).
+- Host test: `core/src/aspace.rs` walks two synthetic maps.
+- QEMU: `[mm] aspace isolate ok` + `make qemu-ci` greps SMEP/SMAP.
+
+Still stubbed: higher-half, KASLR, PCID, COW, growable `mmap`,
+per-task cap tables, APs in ring-3. SoftNPU still touches `/init`
+tensors through the kernel identity map.
+
+## Year-2 H1: cap CDT / revoke (this cut)
+
+Landed as a **small** derivation tree — inspired by seL4, **not** a
+CNode/MDB and **not** a proof claim:
+
+- `Capability` stores `parent`; the node is `(tenant, generation)`.
+- `derive` and GRANT-copy set the parent edge; GRANT-move relocates a
+  slot and does not walk descendants.
+- `revoke(parent)` empties the lineage in that table.
+  `revoke_in(parent, others)` empties grant-children in named tables.
+- Host tests: mint child → revoke parent → child unusable; unrelated
+  caps live. Boot demo + QEMU `[cdt] revoke descendants ok`.
+- No new syscall (0–8 frozen). Kernel World still has one shared
+  `CapTable`.
+
+Do not treat this as the SpecForge Y2H1 calendar (CXL objects and
+Laplacian-in-sched stay unscheduled).
 
 ## STUB markers in the tree
 
@@ -114,13 +152,12 @@ Search for `// STUB:` / `STUB` :
 
 | Item | Where | Intent |
 | --- | --- | --- |
-| Per-task PML4 / SMEP / SMAP | `kernel/src/{mm,task,elfload}.rs` | Follow-up to SMP; do not mix in the same PR |
 | F16/F32 dtypes | `core/src/accel.rs` | Soft-float or a real tensor ISA |
 | Multiboot mmap | `kernel/src/mm/mod.rs` | Stop assuming 128 MiB @ 16 MiB |
-| Higher-half + KASLR | linker / trampoline | Standard kernel hardening |
+| Higher-half + KASLR / KPTI / PCID / COW | linker / `kernel/src/mm/paging.rs` | Identity 4 GiB remains; per-task USER leaves landed |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU (software SID + IOVA PT) landed; program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Optional; in-kernel MMIO + SoftNPU is the demo |
-| Cap derivation tree | `core/src/caps.rs` | Revoke descendants |
+| Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
 | aarch64 | (none) | Not started; RISC-V was the HAL test |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | Repeat the x86 userspace + virtqueue cut on S-mode |
 | Production Fiedler | `core/src/laplacian.rs` | Power iteration is a prototype; Cut enumerates n≤8 |
@@ -145,10 +182,10 @@ kernel thread queue sleeps.
    table is silicon.
 3. **RISC-V userspace.** Same `aether-core`, `sret` + page-table isolate.
    Only worth it after the x86 ABI stays stable.
-4. **Per-task page tables.** Isolation becomes a hardware fact. Sequence
-   after SMP (this cut) so `arch/x86_64` + `task.rs` are not thrashed
-   twice at once.
-5. **Cap CDT / revoke.** Descendants die with the parent.
+4. **Higher-half + KPTI.** Per-task PML4 + SMEP/SMAP landed; kernel
+   mappings are still the trampoline identity 4 GiB.
+5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
+   Intra-table + named-table `revoke_in` landed; a user syscall did not.
 6. **aarch64.** Same recipe as RISC-V: trampoline, UART, GIC timer, TTBR.
 
 ## Two-year plan
@@ -156,17 +193,19 @@ kernel thread queue sleeps.
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
-  and SMP smoke (this cut) are landed. ABI stays stable. Custom QEMU
-  virtio-accel, per-task PML4, Laplacian expansion, and aarch64 remain
-  deferred.
+  SMP smoke, per-task PML4 + SMEP/SMAP, and a minimal cap CDT / revoke
+  (this cut) are landed. ABI stays stable. Custom QEMU virtio-accel,
+  Laplacian expansion, and aarch64 remain deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
-  cap CDT-as-calendar, and a Y2 bring-up climax are killed as
-  milestones.
+  and a Y2 bring-up climax stay killed as milestones. Cap CDT was
+  killed *as a calendar item*; the small revoke slice is unscheduled
+  Y2H1 security work, not a SpecForge clock.
 
-Soft SMMU (PR #7), SoftCommandProcessor (PR #8), and SMP smoke (this
-cut) are **done** as research-prototype slices. Custom QEMU
-virtio-accel, per-task PML4, and the other stubs above are still open.
+Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
+per-task PML4 / SMEP / SMAP (PR #10), and cap CDT / revoke (this cut)
+are **done** as research-prototype slices. Custom QEMU virtio-accel
+and the other stubs above are still open.
 
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Its HAL-path and roadmap copy should match this active track

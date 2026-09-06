@@ -65,7 +65,8 @@ kernel::_start  (Rust, x86_64-unknown-none)
 init::run_kernel_selfcheck
         │  host-identical fabric + cut + hodge + SoftNPU
         ▼
-elfload::load  (embedded static ELF64 /init @ 0x2000000)
+elfload::load_init / load_probe  (embedded static ELF64s)
+        │  clone per-task PML4; SMEP/SMAP; CR3 switch
         ▼
 iretq → ring-3 /init
         │  syscall: debug_print, recv (block), yield, send, map, accel_*
@@ -85,8 +86,9 @@ Physical sketch (128 MiB guest):
 | `0x8000–0x8FFF` | AP SIPI trampoline + mailbox (`make qemu-smp`) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
 | `0x400000` | Kernel `.text` (after copy) |
-| `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB page) |
-| `0x0100_0000–0x0800_0000` | Frame allocator window (user image reserved) |
+| `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB in `/init` PML4 only) |
+| `0x0240_0000–0x0260_0000` | `/probe` ELF + user stack (USER 2 MiB in `/probe` PML4 only) |
+| `0x0100_0000–0x0800_0000` | Frame allocator window (user images reserved) |
 
 Higher-half, KASLR, and a real multiboot mmap parser are not in v0.1.
 
@@ -101,6 +103,7 @@ aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + Par
      ▲
 aether-kernel   arch, mm, syscall/sysret, ELF loader, tasks
 user/init       static non-PIE ELF64 `/init` (embedded blob)
+user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 ```
 
 `aether-core` is the portable specification. Host tests execute the same
@@ -111,13 +114,14 @@ user/init       static non-PIE ELF64 `/init` (embedded blob)
 | Path | Responsibility |
 | --- | --- |
 | `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
-| `kernel/src/mm` | Frames, bump heap, page walk, USER bits |
+| `kernel/src/mm` | Frames, bump heap, per-task PML4 clone, SMEP/SMAP, USER bits |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
 | `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
 | `kernel/src/elfload.rs` | Static ELF64 loader (embedded `build/init.elf`) |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
 | `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
+| `core/src/aspace.rs` | Host-tested identity-map clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
 | `core/src/sysnr.rs` | Frozen syscall numbers + user C ABI |
 | `core/src/caps.rs` | Cap table |
@@ -209,7 +213,6 @@ What this cut does:
 What it does not do:
 
 - APs never enter ring-3. `/init` and `kthread-B` stay BSP-only.
-- No per-task PML4 / SMEP / SMAP (that is the next cut; same files).
 - No more than one AP (APIC ID 1). RISC-V extra harts stay parked.
 - Not a Linux-style CFS, not a coherence claim, not a benchmark.
 
@@ -220,6 +223,18 @@ What it does not do:
 builds `user/init`, copies the ELF to `build/init.elf`, and the kernel
 `include_bytes!` the blob. The loader copies `PT_LOAD` segments into the
 identity-mapped user window and `iretq`s to `e_entry` with CS=`0x23`.
+
+An optional second static ELF, `/probe`, is linked at `0x0240_0000`
+(`user/probe`, `build/probe.elf`). It yields only and does not
+`SYS_EXIT`.
+
+Each ring-3 task has its **own PML4**: the trampoline identity 4 GiB
+is cloned, USER is set only on that task's 2 MiB window, and the other
+user window is unmapped. The kernel CR3 (boot tables at `0x1000`) stays
+supervisor-only. Context switch writes CR3. CR4.SMEP and CR4.SMAP are
+enabled on the BSP and on AP 1; `SFMASK` clears `RFLAGS.AC` and
+`STAC`/`CLAC` wrap user copies. This is **not** higher-half, KPTI,
+KASLR, or a POSIX MM.
 
 Entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread return
 is `sysretq`; a context switch returns via `iretq`. Well-known CPtrs
@@ -232,5 +247,7 @@ A kernel companion thread (`kthread-B`) shares the PIT quantum with
 empty endpoint and `SYS_ACCEL_WAIT` before the SoftNPU runs actually
 block and reschedule.
 
-PIE / `ET_DYN` is rejected (no relocator). Per-task page tables and
-SMEP/SMAP are still open.
+PIE / `ET_DYN` is rejected (no relocator).
+
+Host proof of the clone/walk contract lives in `core/src/aspace.rs`.
+QEMU prints `[mm] aspace isolate ok` after walking both CR3s.

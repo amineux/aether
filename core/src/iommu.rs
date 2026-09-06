@@ -718,14 +718,7 @@ mod tests {
     use crate::types::TenantId;
 
     fn mem_cap(obj: u32, rights: u16, tenant: TenantId) -> Capability {
-        Capability {
-            kind: CapKind::Memory,
-            rights: CapRights(rights),
-            object: obj,
-            badge: 0,
-            generation: 1,
-            tenant,
-        }
+        Capability::new(CapKind::Memory, CapRights(rights), obj, tenant).with_generation(1)
     }
 
     #[test]
@@ -886,14 +879,8 @@ mod tests {
     #[test]
     fn refuse_without_memory_cap() {
         let mut iommu = IommuMap::new();
-        let ep = Capability {
-            kind: CapKind::Endpoint,
-            rights: CapRights::EP_FULL,
-            object: 1,
-            badge: 0,
-            generation: 1,
-            tenant: TenantId(1),
-        };
+        let ep = Capability::new(CapKind::Endpoint, CapRights::EP_FULL, 1, TenantId(1))
+            .with_generation(1);
         assert_eq!(
             iommu
                 .map(&ep, MapRequest::pin(PhysAddr(0x1000), 0x1000))

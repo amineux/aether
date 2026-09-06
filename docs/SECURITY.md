@@ -17,8 +17,9 @@ Each `Capability` stores:
 - `rights` — subset of READ/WRITE/GRANT/MAP/SUBMIT/WAIT/EXECUTE/BIND/UNIFIED
   (`UNIFIED` is never in `MEM_FULL`)
 - `object` — kernel object id
-- `generation` — bumped at mint; revoke empties the slot
+- `generation` — bumped at mint; with `tenant` this is the derivation node
 - `tenant` — must match the table owner at lookup
+- `parent` — derivation edge (set on derive / GRANT-copy)
 
 ## Invariants (implemented and tested)
 
@@ -40,6 +41,11 @@ Each `Capability` stores:
    radius). Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.
 9. **Typed spaces.** A Memory cap does not imply a unified VAS.
    `CapRights::UNIFIED` must be granted explicitly.
+10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
+    `revoke(parent)` empties that lineage in the same table;
+    `revoke_in(parent, others)` empties grant-children in the named
+    tables too. Unrelated caps stay. This is a small derivation tree,
+    not a seL4 CNode/MDB and not a proof.
 
 This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
@@ -56,8 +62,9 @@ These are marked so a security review does not assume them:
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables — **landed**: `/init` is ring-3; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU tracks chiplet SIDs (STE/CD), aborts until Bound, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU is still open |
-| No revocation broadcast | A derived cap in another table survives revoke of the parent | seL4-style CNode / CDT |
-| Identity map | Kernel and “user” share one address space | Per-task PML4 |
+| Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
+| `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
+| Identity map / no higher-half | Kernel CR3 still names every PA; user isolation is USER-local 2 MiB windows | Higher-half + KPTI |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
 ## Multi-tenant weights / KV
@@ -72,13 +79,15 @@ The intended story:
   complete and software-mechanism present**; a real device can still
   ignore it.
 
-Ring-3 is live; the map API refuses a pin without a Memory cap, allocates
-a non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
-unmap. Treat isolation as “the cap tables + Soft SMMU do the right thing
-and user pages are the only USER-mapped window” — which is the part we
-can unit-test and boot-test today — not “the hardware cannot cheat.”
-The CPU trampoline is still an identity map: a forged kernel pointer is
-a physical address.
+Ring-3 is live; each user task has its own PML4 with USER only on its
+2 MiB ELF window (the other user window is unmapped). CR4.SMEP/SMAP
+are on. The map API refuses a pin without a Memory cap, allocates a
+non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
+unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
+USER leaves do the right thing” — which is the part we can unit-test
+and boot-test today — not “the hardware cannot cheat.” The kernel
+trampoline is still an identity map: a forged kernel pointer is a
+physical address.
 
 ## Covert channels
 

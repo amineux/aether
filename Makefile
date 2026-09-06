@@ -4,15 +4,19 @@
 TARGET      := x86_64-unknown-none
 KERNEL_DIR  := kernel
 USER_DIR    := user/init
+PROBE_DIR   := user/probe
 KERNEL_ELF  := $(KERNEL_DIR)/target/$(TARGET)/release/aether
 INIT_ELF    := $(USER_DIR)/target/$(TARGET)/release/aether-init
+PROBE_ELF   := $(PROBE_DIR)/target/$(TARGET)/release/aether-probe
 BUILD       := build
 KERNEL_BIN  := $(BUILD)/kernel.bin
 LOADER_ELF  := $(BUILD)/aether.elf
 INIT_BLOB   := $(BUILD)/init.elf
+PROBE_BLOB  := $(BUILD)/probe.elf
 QEMU        := qemu-system-x86_64
 QEMU_FLAGS  := -kernel $(LOADER_ELF) -serial stdio -display none \
                -no-reboot -no-shutdown -m 128M \
+               -cpu qemu64,+smep,+smap \
                -device isa-debug-exit,iobase=0xf4,iosize=0x04
 
 RV_TARGET   := riscv64gc-unknown-none-elf
@@ -22,7 +26,7 @@ QEMU_RV     := qemu-system-riscv64
 QEMU_RV_FLAGS := -machine virt -cpu rv64 -m 128M -nographic \
                  -no-reboot -kernel $(RV_ELF)
 
-.PHONY: all kernel kernel-riscv loader user-init qemu qemu-riscv \
+.PHONY: all kernel kernel-riscv loader user-init user-probe qemu qemu-riscv \
         qemu-debug qemu-ci qemu-riscv-ci qemu-smp qemu-smp-ci \
         test test-host target target-riscv clean help
 
@@ -33,7 +37,7 @@ help:
 	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt thin port (kmain + aether_core demo)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (SMEP/SMAP + aspace greps)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps the fabric banner"
@@ -51,6 +55,7 @@ test-host:
 	cargo test --workspace
 
 user-init: target $(INIT_BLOB)
+user-probe: target $(PROBE_BLOB)
 
 $(INIT_BLOB): $(USER_DIR)/src/main.rs $(USER_DIR)/user.ld $(USER_DIR)/Cargo.toml
 	mkdir -p $(BUILD)
@@ -58,7 +63,13 @@ $(INIT_BLOB): $(USER_DIR)/src/main.rs $(USER_DIR)/user.ld $(USER_DIR)/Cargo.toml
 	cp $(INIT_ELF) $(INIT_BLOB)
 	@echo "init.elf $$(wc -c < $(INIT_BLOB)) bytes (static non-PIE ELF64)"
 
-kernel: target $(INIT_BLOB)
+$(PROBE_BLOB): $(PROBE_DIR)/src/main.rs $(PROBE_DIR)/user.ld $(PROBE_DIR)/Cargo.toml
+	mkdir -p $(BUILD)
+	cd $(PROBE_DIR) && cargo build --release --target $(TARGET)
+	cp $(PROBE_ELF) $(PROBE_BLOB)
+	@echo "probe.elf $$(wc -c < $(PROBE_BLOB)) bytes (static non-PIE ELF64)"
+
+kernel: target $(INIT_BLOB) $(PROBE_BLOB)
 	cd $(KERNEL_DIR) && cargo build --release --target $(TARGET)
 	@touch $(KERNEL_ELF)
 
@@ -84,9 +95,25 @@ qemu: $(LOADER_ELF)
 
 # CI: same success semantics, but fail the job if the guest hangs.
 qemu-ci: $(LOADER_ELF)
-	timeout 45s $(QEMU) $(QEMU_FLAGS); \
+	mkdir -p $(BUILD)
+	rm -f $(BUILD)/qemu-serial.log
+	set +e; \
+	timeout --signal=KILL 45s $(QEMU) $(QEMU_FLAGS) \
+		> $(BUILD)/qemu-serial.log 2>&1; \
 	ec=$$?; \
-	if [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; then exit 0; else exit $$ec; fi
+	set -e; \
+	cat $(BUILD)/qemu-serial.log; \
+	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
+	   && grep -q "\\[mm\\] SMEP+SMAP" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
+	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
+		echo "qemu-ci: /init + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		exit 0; \
+	fi; \
+	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
+	exit 1
 
 qemu-debug: $(LOADER_ELF)
 	$(QEMU) $(QEMU_FLAGS) -s -S
@@ -110,6 +137,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	cat $(BUILD)/smp-serial.log; \
 	if grep -q "\\[smp\\] AP 1 online" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[smp\\] SMP smoke ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -140,7 +169,8 @@ qemu-riscv-ci: $(RV_ELF)
 	ec=$$?; \
 	set -e; \
 	cat $(BUILD)/riscv-serial.log; \
-	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log; then \
+	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
@@ -151,4 +181,5 @@ clean:
 	rm -rf $(BUILD)
 	cd $(KERNEL_DIR) && cargo clean
 	cd $(USER_DIR) && cargo clean
+	cd $(PROBE_DIR) && cargo clean
 	cargo clean

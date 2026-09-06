@@ -42,25 +42,16 @@ pub fn init() {
     let mut fabric = Fabric::new();
     let ep = fabric.create_endpoint(tenant).expect("ep");
     let ep_cptr = caps
-        .mint(Capability {
-            kind: CapKind::Endpoint,
-            rights: CapRights::EP_FULL,
-            object: ep.0,
-            badge: 0xA3,
-            generation: 0,
-            tenant,
-        })
+        .mint(Capability::new(CapKind::Endpoint, CapRights::EP_FULL, ep.0, tenant).with_badge(0xA3))
         .expect("ep cap");
     assert_eq!(ep_cptr.0, INIT_EP_CPTR);
     let q = caps
-        .mint(Capability {
-            kind: CapKind::AccelQueue,
-            rights: CapRights::ACCEL_FULL,
-            object: 1,
-            badge: 0,
-            generation: 0,
+        .mint(Capability::new(
+            CapKind::AccelQueue,
+            CapRights::ACCEL_FULL,
+            1,
             tenant,
-        })
+        ))
         .expect("q cap");
     assert_eq!(q.0, INIT_QUEUE_CPTR);
 
@@ -74,14 +65,12 @@ pub fn init() {
     let _ = npu.probe();
     // Soft-SMMU pin the /init image so stack tensors remain legal DMA targets.
     let user_mem = caps
-        .mint(Capability {
-            kind: CapKind::Memory,
-            rights: CapRights::MEM_FULL,
-            object: 0xFFFF,
-            badge: 0,
-            generation: 0,
+        .mint(Capability::new(
+            CapKind::Memory,
+            CapRights::MEM_FULL,
+            0xFFFF,
             tenant,
-        })
+        ))
         .expect("user-image mem cap");
     let user_cap = *caps.lookup(user_mem).expect("user mem");
     let _ = npu.map_with_cap(
@@ -192,17 +181,17 @@ fn copy_ipc_out(dst: u64, badge: u64, flags: u16, payload: &[u8]) -> Result<(), 
     m.badge = badge;
     m.flags = flags;
     let _ = m.set_payload(payload);
-    unsafe {
+    crate::mm::paging::with_user_access(|| unsafe {
         core::ptr::write_volatile(dst as *mut UserIpcMsg, m);
-    }
+    });
     Ok(())
 }
 
 fn write_user_completion(dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
     crate::syscall::copy_to_user(dst, core::mem::size_of::<UserCompletion>() as u64)?;
-    unsafe {
+    crate::mm::paging::with_user_access(|| unsafe {
         core::ptr::write_volatile(dst as *mut UserCompletion, cpl);
-    }
+    });
     Ok(())
 }
 
@@ -318,14 +307,12 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     let cptr = with(|w| {
         w.last_arena = Some(arena);
         w.caps
-            .mint(Capability {
-                kind: CapKind::Memory,
-                rights: CapRights::MEM_FULL,
-                object: arena.id.0,
-                badge: 0,
-                generation: 0,
-                tenant: TenantId(1),
-            })
+            .mint(Capability::new(
+                CapKind::Memory,
+                CapRights::MEM_FULL,
+                arena.id.0,
+                TenantId(1),
+            ))
             .map_err(|_| SysError::Inval)
     })?;
     write_str("[mm] arena_alloc cptr=");
@@ -339,7 +326,7 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
 }
 
 fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
-    aether_core::sysnr::user_range_ok(ptr, len) || w.npu.iommu.covers(PhysAddr(ptr), len)
+    aether_core::sysnr::user_range_known(ptr, len) || w.npu.iommu.covers(PhysAddr(ptr), len)
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {

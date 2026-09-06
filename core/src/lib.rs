@@ -10,6 +10,7 @@ pub mod abi;
 pub mod accel;
 pub mod activity;
 pub mod arena;
+pub mod aspace;
 pub mod caps;
 pub mod color;
 pub mod cut;
@@ -33,7 +34,8 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
-pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
+pub use aspace::{IdentityAs, CR4_SMAP, CR4_SMEP};
+pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
 pub use cut::{AffinityGraph, CutError, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
@@ -55,7 +57,8 @@ pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_RECV, SYS_SEND,
-    SYS_UNMAP, SYS_YIELD, USER_IMAGE_BASE, USER_IMAGE_END, USER_STACK_TOP,
+    SYS_UNMAP, SYS_YIELD, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE, USER_PROBE_END,
+    USER_PROBE_STACK_TOP, USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 

@@ -2,7 +2,7 @@
 resolver = "2"
 members = ["core", "hal", "drivers"]
 default-members = ["core", "hal", "drivers"]
-exclude = ["kernel", "user/init"]
+exclude = ["kernel", "user/init", "user/probe"]
 
 [workspace.package]
 version = "0.1.0"

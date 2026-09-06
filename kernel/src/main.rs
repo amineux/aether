@@ -25,7 +25,9 @@ use aether_core::{NAME, VERSION};
 use crate::console::{nl, write_str, write_u64};
 
 #[cfg(target_arch = "x86_64")]
-const KERNEL_STACK_SIZE: usize = 64 * 1024;
+// Fabric + two CapTables live on this stack in run_boot_demo.
+// parent edges grew Capability; 64 KiB (and 128 KiB on GH rustc) overflowed.
+const KERNEL_STACK_SIZE: usize = 256 * 1024;
 #[cfg(target_arch = "x86_64")]
 #[repr(align(16))]
 struct Stack([u8; KERNEL_STACK_SIZE]);
@@ -87,8 +89,9 @@ pub extern "C" fn kmain() -> ! {
     {
         crate::console::write_str("[boot] PIT 100 Hz; ncpus=");
         crate::console::write_u64(arch::irq::ncpus() as u64);
-        crate::console::write_str(" (APs kernel-only; no per-task PML4)");
+        crate::console::write_str(" (APs kernel-only; per-task PML4 on BSP user tasks)");
         crate::console::nl();
+        crate::mm::paging::enable_smep_smap();
     }
     #[cfg(not(target_arch = "x86_64"))]
     println!("[boot] UP timer armed (100 Hz); RISC-V extra harts stay parked");
@@ -98,10 +101,21 @@ pub extern "C" fn kmain() -> ! {
 
     #[cfg(target_arch = "x86_64")]
     {
-        match elfload::load() {
-            Ok(entry) => {
+        match elfload::load_init() {
+            Ok(init) => {
+                let probe = elfload::load_probe().ok();
+                let probe_cr3 = probe.as_ref().map(|p| p.cr3);
+                crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
                 task::spawn_kthread();
-                task::spawn_user(entry);
+                task::spawn_user(init.entry, init.cr3);
+                if let Some(p) = probe {
+                    task::spawn_user_task(
+                        task::TID_PROBE,
+                        p.entry,
+                        aether_core::USER_PROBE_STACK_TOP,
+                        p.cr3,
+                    );
+                }
                 task::enter_user();
             }
             Err(e) => {
