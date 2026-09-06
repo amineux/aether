@@ -7,7 +7,7 @@ revision 2026-09-06. Filed on main via PR.
 
 - Research prototype. SoftNPU + stock QEMU (in-kernel BAR) is the
   canonical demo (SpecForge path B). A custom QEMU `-device` (path A)
-  stays optional later.
+  is optional (`qemu/`, `make qemu-accel`); stock `make qemu` stays B.
 - No fake NVIDIA partnership, no FLOP benchmarks, no tape-out / readiness
   claims.
 - [`docs/ABI.md`](ABI.md) syscall 0–8 stay frozen; additive only
@@ -25,8 +25,9 @@ the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
 **done** as software models. SMP smoke (INIT-SIPI + per-CPU `gs` +
 two-hart work-steal) is **done** as a QEMU `-smp 2` slice. SpecForge
 virtio path B (in-kernel BAR canonical + golden MMIO trace) is
-**done**; custom QEMU virtio-accel (path A) and the other stubs
-remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
+**done**; path A landed as an optional QEMU device model
+(`qemu/aether_accel.c`; CI runs `make accel-test`, not a QEMU
+rebuild). Other stubs remain open (see [ROADMAP.md](ROADMAP.md)). Per-task PML4 + SMEP/SMAP is **done** as
 an x86 documented subset (CR3 switch, task-local USER 2 MiB windows).
 The higher-half kernel map (`ffffffff80000000+PA`) is **done** as
 a documented subset (identity torn down except SIPI / mailbox /
@@ -67,7 +68,8 @@ path. Neither is product-class. AffinityLaplacian n≤32 placement is
 **done** as a prototype eigensolve (`from_placement` +
 `bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer). SpecForge
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
-trace on SoftNPU submit/complete; BAR frozen). Path A is not. The
+trace on SoftNPU submit/complete; BAR frozen). Path A is **done**
+as optional (`qemu/`; stock QEMU stays B). The
 x86 higher-half kernel map is **done** as a documented subset
 (`ffffffff80000000+PA`; identity torn down except documented islands). The KASLR
 boot-time slide is **done** as a documented subset (16 MiB slots,
@@ -126,11 +128,12 @@ Kernel calendar items:
 
 After AccelDevice bites a real-shaped path — not before:
 
-- Custom QEMU virtio-accel (path A: `-device` / virtio-mmio DMA of the
-  frozen [ACCEL.md](ACCEL.md) BAR). Path B landed: in-kernel BAR is
-  the canonical demo + golden MMIO trace. RISC-V PLIC + software
+- Guest kernel driver for path A (PCI BAR0 / `VirtioAccelMmio`).
+  The QEMU device model landed (`qemu/aether_accel.c`; `make
+  accel-test` / `make qemu-accel`). Path B remains the canonical
+  stock-QEMU demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio
-  BAR behind the PLIC is still open. Path A stays optional later.
+  BAR behind the PLIC is still open.
 - ELF beyond this subset (`fork` / POSIX `mmap`). Growable anonymous
   `SYS_MMAP=11` landed. Boot-time
   slide + dual-map + PIE `.rela.dyn` landed (16 MiB slots; unused
@@ -171,7 +174,8 @@ After AccelDevice bites a real-shaped path — not before:
 15. SpecForge virtio path B (ADR + golden MMIO trace)
 16. RISC-V PLIC + SoftNPU software doorbell (path B BAR)
 17. aarch64 EL0 userspace (documented subset) — **this cut**
-18. Optional virtio-accel QEMU `-device` (path A) / MicroPerceptron later
+18. Optional virtio-accel QEMU `-device` (path A) — **landed** as a
+    host-tested device model; guest PCI bind + MicroPerceptron later
 
 ### Active file touch map
 
@@ -227,7 +231,8 @@ above override what Kernel actually sequences. Criteria below are
    SoftNPU behind it, **or** (B) documented "in-kernel BAR is canonical
    demo" + golden MMIO trace test — pick A if effort fits; B is the
    honest fallback. **Landed as path B** (ADR + frozen BAR + golden
-   trace on SoftNPU submit/complete). Path A stays optional.
+   trace on SoftNPU submit/complete). Path A later landed as
+   optional (`qemu/`; stock QEMU stays B).
 4. Partner sketch enrichment: `PartnerNpuStub` fills opcode/dtype/route
    from real `AccelJobDesc` fields; [ACCEL.md](ACCEL.md) "how to plug CP"
    updated; still labeled sketch, not partnership.

@@ -19,7 +19,8 @@ active track the site must match.
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
 | OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
-| Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
+| Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
+| Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
@@ -46,7 +47,7 @@ gaps:
 | Gap | Honest reading |
 | --- | --- |
 | Hardware SMMU | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate) but is still software only; a real device can still DMA past it. Partner silicon required. |
-| Custom QEMU virtio-accel | Path B landed: in-kernel BAR is canonical + golden MMIO trace. Path A optional later. Stock QEMU demos SoftNPU |
+| Custom QEMU virtio-accel | Path A landed as optional (`qemu/`; `make accel-test`). Path B is still what stock `make qemu` runs. CI does not rebuild QEMU. Guest does not yet bind PCI BAR0 |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |

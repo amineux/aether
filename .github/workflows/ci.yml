@@ -26,6 +26,11 @@ jobs:
       - name: Host tests
         run: cargo test --workspace
 
+      # Path A device model only. Does not rebuild QEMU. Stock make qemu
+      # stays path B (in-kernel BAR). See qemu/README.md / QEMU_ACCEL.
+      - name: Path-A virtio-accel device model
+        run: make accel-test
+
       - name: QEMU demo (isa-debug-exit success)
         run: make qemu-ci
 

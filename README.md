@@ -19,6 +19,8 @@ make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
 make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
+make accel-test   # path-A QEMU device model (host; no QEMU rebuild)
+make qemu-accel   # accel-test; attach -device aether-accel if QEMU_ACCEL is set
 ```
 
 ## Why this exists
@@ -184,6 +186,7 @@ boot/aarch64/    QEMU virt EL1 trampoline + TTBR0 linker script
 core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor
+qemu/            optional path-A `aether-accel` device (host-tested; QEMU patch)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
@@ -201,10 +204,14 @@ The kernel and `/init` are **separate Cargo projects** so
   no verified cap derivation tree, no real silicon driver. Hardware
   SMMU still requires partner silicon. SMP is a QEMU `-smp 2` smoke
   (INIT-SIPI, per-CPU `gs`, two-hart work-steal); APs do not run `/init`.
-- **VirtIO-Accel is an in-kernel MMIO virtqueue**, not a tree in upstream QEMU.
-  `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
-  path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU
-  IOVAs (not identity); QEMU does not emulate a hardware SMMU.
+- **VirtIO-Accel path B is an in-kernel MMIO virtqueue**, not a tree in
+  upstream QEMU. `make qemu` stays on that BAR so the demo does not
+  depend on a custom qemu. DMA uses Soft-SMMU IOVAs (not identity);
+  QEMU does not emulate a hardware SMMU. Path A is an optional
+  in-tree QEMU device (`qemu/aether_accel.c`, same frozen offsets)
+  with a host unit test (`make accel-test`). `make qemu-accel` attaches
+  `-device aether-accel` only when `QEMU_ACCEL` names a patched
+  binary; CI does not rebuild QEMU. See [qemu/README.md](qemu/README.md).
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000`. Boot
   seeds an in-kernel ramfs from **virtio-blk** (`make qemu-blk` /
   `qemu-blk-ci`, AETHFS01 image) or the embedded blob when no drive

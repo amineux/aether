@@ -1,0 +1,15 @@
+# Add to hw/misc/meson.build (QEMU 8.2 / 9.x softmmu):
+#
+#   softmmu_ss.add(when: 'CONFIG_PCI', if_true: files(
+#       'aether_accel.c',
+#       'aether_accel_pci.c',
+#   ))
+#
+# Copy aether_accel.h, aether_accel.c, and aether_accel_pci.c into hw/misc/.
+# No new Kconfig symbol — the device is small and PCI-gated.
+#
+# Then:
+#   ./configure --target-list=x86_64-softmmu
+#   ninja -C build
+#   export QEMU_ACCEL=$PWD/build/qemu-system-x86_64
+#   make -C /path/to/aether qemu-accel

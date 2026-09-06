@@ -4,7 +4,8 @@
 //! in-kernel BAR. The kernel driver talks the MMIO + virtqueue ABI
 //! (`submit` kicks the doorbell; `poll` reads the used ring). SoftNPU
 //! is the device-side executor: [`SoftNpuDevice::service`] drains the
-//! avail ring on poll/IRQ. No custom QEMU device is required.
+//! avail ring on poll/IRQ. Stock `make qemu` does not need a custom
+//! QEMU device. Path A (`qemu/aether_accel.c`) is optional.
 
 use aether_core::accel::{AccelError, AccelJobDesc, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
