@@ -1,5 +1,9 @@
 # Aether
 
+**[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
+visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
+GitHub Actions to Pages (kernel `docs/` are untouched).
+
 **An accelerator-first fabric kernel** — a research prototype for how operating
 systems should look when the package is a mesh of CPU, NPU, GPU, and custom
 ASIC tiles rather than a host CPU with bolt-on devices.
@@ -186,6 +190,17 @@ team could take into bring-up.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — Month 1–6 status, stubs, next cuts
+
+## Website
+
+The public site lives in [`site/`](site/) (HTML/CSS/JS, no build step) and
+deploys from `.github/workflows/pages.yml` on pushes to `main` that touch
+`site/`. After the first successful run, enable **Settings → Pages → Source:
+GitHub Actions** if it is not already on. The live URL is
+[https://amineux.github.io/aether/](https://amineux.github.io/aether/).
+
+Open `site/index.html` locally, or `python3 -m http.server -d site`, to
+review offline.
 
 ## License
 
