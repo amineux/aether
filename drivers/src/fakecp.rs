@@ -47,7 +47,8 @@ fn map_hal_error(e: MapError) -> HalError {
         MapError::NotMapped
         | MapError::CrossTenant
         | MapError::WrongStream
-        | MapError::StreamAbort => HalError::Fault,
+        | MapError::StreamAbort
+        | MapError::Stage2Fault => HalError::Fault,
     }
 }
 
@@ -119,11 +120,7 @@ impl CpCmd {
             return Err(HalError::Fault);
         }
         if job.bias.0 != 0
-            && !iommu.covers_stream(
-                sid.raw(),
-                job.bias,
-                es.saturating_mul(job.n as u64).max(es),
-            )
+            && !iommu.covers_stream(sid.raw(), job.bias, es.saturating_mul(job.n as u64).max(es))
         {
             return Err(HalError::Fault);
         }

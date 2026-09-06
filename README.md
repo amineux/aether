@@ -196,10 +196,11 @@ The kernel and `/init` are **separate Cargo projects** so
 
 ## What v0.1 is honest about
 
-- **Research prototype.** Soft SMMU (software stream-ID IOVA map) is in
-  tree; there is no hardware SMMU, no verified cap derivation tree, no
-  real silicon driver. SMP is a QEMU `-smp 2` smoke (INIT-SIPI, per-CPU
-  `gs`, two-hart work-steal); APs do not run `/init`.
+- **Research prototype.** Soft SMMU (software STE→CD→Stage-1/2 IOVA
+  walk + ATS-shaped invalidate) is in tree; there is no hardware SMMU,
+  no verified cap derivation tree, no real silicon driver. Hardware
+  SMMU still requires partner silicon. SMP is a QEMU `-smp 2` smoke
+  (INIT-SIPI, per-CPU `gs`, two-hart work-steal); APs do not run `/init`.
 - **VirtIO-Accel is an in-kernel MMIO virtqueue**, not a tree in upstream QEMU.
   `submit` kicks a doorbell; SoftNPU services the queue on the used-ring IRQ
   path so the demo does not depend on a custom qemu. DMA uses Soft-SMMU

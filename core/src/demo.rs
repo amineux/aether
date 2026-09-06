@@ -11,7 +11,7 @@ use crate::cut::{bind_place, AffinityGraph, CutError, CutId, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
 use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
-use crate::iommu::{IommuMap, MapError, MapRequest};
+use crate::iommu::{IommuMap, MapError, MapRequest, StreamId, DEFAULT_STREAM};
 use crate::observe::{EventKind, EventRing};
 use crate::opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
 use crate::partition::{
@@ -173,8 +173,12 @@ pub fn run_boot_demo() -> DemoReport {
     .with_generation(1);
     let map_refused = iommu.map(&no_map_cap, MapRequest::pin(PhysAddr(0x2000_0000), 0x1000))
         == Err(MapError::NoMemoryCap);
+    let walked = iommu
+        .walk(StreamId::from_raw(DEFAULT_STREAM), pin.iova)
+        .map(|w| w.pa);
     let map_ok = pin.iova != arena.base
         && iommu.translate(arena.base) == Some(pin.iova)
+        && walked == Ok(arena.base)
         && iommu.covers(arena.base, 64)
         && map_refused
         && IommuMap::check_cap(caps_a.lookup(mem_cap).unwrap()).is_ok();

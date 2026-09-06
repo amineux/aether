@@ -65,8 +65,8 @@ pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlag
 pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
-    IommuMap, MapError, MapRequest, MappedRegion, StreamId, StreamState, DEFAULT_STREAM,
-    SOFT_SMMU_IOVA_BASE,
+    IommuMap, InvCmd, MapError, MapRequest, MappedRegion, SteConfig, StreamId, StreamState,
+    WalkResult, DEFAULT_STREAM, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
 pub use mmap::{
