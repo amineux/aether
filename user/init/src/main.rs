@@ -13,22 +13,6 @@ use aether_core::sysnr::{
     SYS_YIELD,
 };
 
-#[repr(align(64))]
-struct TensorPad([u8; 256]);
-
-static mut TENSORS: TensorPad = TensorPad([0; 256]);
-static mut MSG: UserIpcMsg = UserIpcMsg {
-    badge: 0,
-    flags: 0,
-    len: 0,
-    payload: [0; 64],
-};
-static mut CPL: UserCompletion = UserCompletion {
-    job_seq: 0,
-    status: 0,
-    cycles: 0,
-};
-
 fn sys(nr: u64, a0: u64, a1: u64, a2: u64) -> i64 {
     let ret: i64;
     unsafe {
@@ -71,11 +55,11 @@ pub extern "C" fn _start() -> ! {
 
     // Recv first: empty inbox → block until kthread-B sends ping-fabric.
     debug_print(b"[init] recv inbox (blocks until kthread-B send)\r\n");
-    let msg = core::ptr::addr_of_mut!(MSG);
+    let mut msg = UserIpcMsg::empty();
     let rc = sys(
         SYS_RECV,
         INIT_EP_CPTR as u64,
-        msg as u64,
+        core::ptr::addr_of_mut!(msg) as u64,
         0,
     );
     if rc < 0 {
@@ -83,10 +67,7 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] fabric recv: ");
-    unsafe {
-        let n = (*msg).len.min(64) as usize;
-        debug_print(&(*msg).payload[..n]);
-    }
+    debug_print(msg.payload());
     debug_print(b"\r\n");
 
     for _ in 0..4 {
@@ -95,14 +76,18 @@ pub extern "C" fn _start() -> ! {
     }
     debug_print(b"[init] yield returned\r\n");
 
-    unsafe {
-        (*msg).badge = 0xA3;
-        (*msg).flags = 2; // ASYNC
-        let p = b"init-ack";
-        (*msg).payload[..p.len()].copy_from_slice(p);
-        (*msg).len = p.len() as u16;
+    msg.badge = 0xA3;
+    msg.flags = 2; // ASYNC
+    if !msg.set_payload(b"init-ack") {
+        debug_print(b"[init] send payload FAIL\r\n");
+        exit(1);
     }
-    let rc = sys(SYS_SEND, INIT_EP_CPTR as u64, msg as u64, 0);
+    let rc = sys(
+        SYS_SEND,
+        INIT_EP_CPTR as u64,
+        core::ptr::addr_of!(msg) as u64,
+        0,
+    );
     if rc < 0 {
         debug_print(b"[init] send FAIL\r\n");
         exit(1);
@@ -121,8 +106,7 @@ pub extern "C" fn _start() -> ! {
     }
     debug_print(b"[init] arena_alloc + map ok\r\n");
 
-    let tensors = unsafe { &mut *core::ptr::addr_of_mut!(TENSORS.0) };
-    tensors.fill(0);
+    let mut tensors = [0u8; 256];
     let ident = [
         1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
     ];
@@ -155,15 +139,24 @@ pub extern "C" fn _start() -> ! {
     }
     debug_print(b"[init] accel_submit matmul 4x4 i32\r\n");
 
-    let cpl = core::ptr::addr_of_mut!(CPL);
-    let rc = sys(SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64, cpl as u64, 0);
+    let mut cpl = UserCompletion {
+        job_seq: 0,
+        status: 0,
+        cycles: 0,
+    };
+    let rc = sys(
+        SYS_ACCEL_WAIT,
+        INIT_QUEUE_CPTR as u64,
+        core::ptr::addr_of_mut!(cpl) as u64,
+        0,
+    );
     if rc < 0 {
         debug_print(b"[init] accel_wait FAIL\r\n");
         exit(1);
     }
 
-    let c00 = unsafe { core::ptr::read_volatile((base + 128) as *const i32) };
-    let c11 = unsafe { core::ptr::read_volatile((base + 128 + 20) as *const i32) };
+    let c00 = i32::from_le_bytes(tensors[128..132].try_into().unwrap_or([0; 4]));
+    let c11 = i32::from_le_bytes(tensors[148..152].try_into().unwrap_or([0; 4]));
     if c00 != DEMO_B[0] || c11 != DEMO_B[5] {
         debug_print(b"[init] SoftNPU VERIFY FAIL\r\n");
         exit(1);
