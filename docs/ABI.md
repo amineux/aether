@@ -32,3 +32,26 @@ A runtime (IREE, XLA/PJRT, a vendor compiler) compiles to the tile ISA,
 then submits `AccelJobDesc` records through an `Activity` endpoint.
 `Wave` in v0.1 is a software stand-in for one compiled dispatch, not a
 fusion pass.
+
+## Syscall numbers (frozen 0–8)
+
+Ring-3 uses the System V / Linux register convention: `rax` = number,
+`rdi,rsi,rdx` = args, `rcx`/`r11` clobbered by `syscall`. Negative
+`rax` is `-SysError`.
+
+| nr | Name | Notes |
+| --- | --- | --- |
+| 0 | `debug_print(ptr,len)` | User pointer, max 256 bytes |
+| 1 | `yield()` | Reschedule |
+| 2 | `send(ep_cptr, msg_ptr)` | `require(Endpoint, WRITE)` then fabric.send |
+| 3 | `recv(ep_cptr, msg_out)` | `require(Endpoint, READ)`; blocks if empty |
+| 4 | `map(mem_cptr, vaddr, flags)` | `require(Memory, MAP)`; USER bit on 2 MiB |
+| 5 | `unmap(vaddr, len)` | Accepted; no-op unmap in this cut |
+| 6 | `accel_submit(queue_cptr, job_ptr)` | `require(AccelQueue, SUBMIT)` |
+| 7 | `accel_wait(queue_cptr, cpl_out)` | `require(AccelQueue, WAIT)`; blocks |
+| 8 | `arena_alloc(size, flags, bank)` | Mints a Memory cap |
+| 9 | `exit(status)` | `isa-debug-exit` (additive; 0–8 unchanged) |
+
+User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
+`core/src/sysnr.rs`. `/init` is granted CPtr 0 (endpoint) and CPtr 1
+(accel queue) before the ring-3 drop.

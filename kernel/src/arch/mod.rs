@@ -3,4 +3,4 @@
 pub mod irq;
 pub mod x86_64;
 
-pub use x86_64::{idt, serial, timer};
+pub use x86_64::{gdt, idt, serial, syscall, timer};

@@ -53,8 +53,8 @@ These are marked so a security review does not assume them:
 
 | Gap | Risk | Roadmap |
 | --- | --- | --- |
-| Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables |
-| Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | Wire `syscall::SYS_SEND` as the only send |
+| Init is kernel-mode | A buggy demo can touch any PA | Ring-3 + user page tables — **landed**: `/init` is ring-3; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
+| Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No IOMMU | A real device DMA can ignore caps | `map()` must program SMMU |
 | No revocation broadcast | A derived cap in another table survives revoke of the parent | seL4-style CNode / CDT |
 | Identity map | Kernel and “user” share one address space | Per-task PML4 |
@@ -70,9 +70,11 @@ The intended story:
   address (if it leaked) is not enough once an IOMMU is present; v0.1
   still identity-maps, so this is **policy complete, mechanism incomplete**.
 
-Until IOMMU + ring-3 land, treat isolation as “the cap tables do the right
-thing” — which is the part we can unit-test today — not “the hardware
-cannot cheat.”
+Ring-3 is live; IOMMU is not. Treat isolation as “the cap tables do the
+right thing and user pages are the only USER-mapped window” — which is
+the part we can unit-test and boot-test today — not “the hardware cannot
+cheat.” The identity map still means a forged kernel pointer is a
+physical address.
 
 ## Covert channels
 

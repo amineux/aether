@@ -72,3 +72,24 @@ pub fn free(p: PhysAddr) {
 pub fn used() -> usize {
     ALLOC.lock().used
 }
+
+/// Mark `[start, end)` used so the ELF image is not handed out as frames.
+pub fn reserve_range(phys_start: u64, phys_end: u64) {
+    let mut a = ALLOC.lock();
+    if a.nframes == 0 {
+        return;
+    }
+    let start = phys_start.max(a.base);
+    let end = phys_end;
+    let mut addr = start & !(FRAME - 1);
+    while addr < end {
+        if addr >= a.base {
+            let i = ((addr - a.base) / FRAME) as usize;
+            if i < a.nframes && !test(&a.bits, i) {
+                set(&mut a.bits, i);
+                a.used += 1;
+            }
+        }
+        addr += FRAME;
+    }
+}

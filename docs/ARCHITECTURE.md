@@ -59,12 +59,17 @@ boot/x86_64/trampoline.S
         │  copy payload → 0x400000
         ▼
 kernel::_start  (Rust, x86_64-unknown-none)
-        │  stack in BSS, serial, frames, heap, IDT, PIT
+        │  stack in BSS, serial, frames, heap, IDT, GDT/TSS, SYSCALL, PIT
         ▼
-init::run_demo
-        │  fabric + arena + virtio-accel SoftNPU
+init::run_kernel_selfcheck
+        │  host-identical fabric + cut + hodge + SoftNPU
         ▼
-hlt idle
+elfload::load  (embedded static ELF64 /init @ 0x2000000)
+        ▼
+iretq → ring-3 /init
+        │  syscall: debug_print, recv (block), yield, send, map, accel_*
+        ▼
+SYS_EXIT → isa-debug-exit
 ```
 
 The trampoline is ELF32 so `qemu-system-x86_64 -kernel` (multiboot1) will
@@ -78,7 +83,8 @@ Physical sketch (128 MiB guest):
 | `0x1000–0x7000` | Boot page tables (PML4/PDPT/4×PD) |
 | `0x100000` | Multiboot loader + embedded kernel blob |
 | `0x400000` | Kernel `.text` (after copy) |
-| `0x0100_0000–0x0800_0000` | Frame allocator window |
+| `0x0200_0000–0x0220_0000` | `/init` ELF + user stack (USER 2 MiB page) |
+| `0x0100_0000–0x0800_0000` | Frame allocator window (user image reserved) |
 
 Higher-half, KASLR, and a real multiboot mmap parser are not in v0.1.
 
@@ -91,7 +97,8 @@ aether-hal      AccelDevice / Console / Timer
      ▲
 aether-drivers  VirtioAccelQueue + SoftNpuDevice
      ▲
-aether-kernel   arch, mm, console, syscall ABI, built-in init
+aether-kernel   arch, mm, syscall/sysret, ELF loader, tasks
+user/init       static non-PIE ELF64 `/init` (embedded blob)
 ```
 
 `aether-core` is the portable specification. Host tests execute the same
@@ -101,10 +108,16 @@ aether-kernel   arch, mm, console, syscall ABI, built-in init
 
 | Path | Responsibility |
 | --- | --- |
-| `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, port I/O |
-| `kernel/src/mm` | Frames, bump heap, page walk |
-| `kernel/src/syscall.rs` | Numbered ABI (debug_print, yield, send/recv, map, accel_*) |
-| `kernel/src/init.rs` | Built-in init task / demo |
+| `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs |
+| `kernel/src/mm` | Frames, bump heap, page walk, USER bits |
+| `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |
+| `kernel/src/task.rs` | PIT preemption, yield, blocking recv/accel_wait |
+| `kernel/src/elfload.rs` | Static ELF64 loader (embedded `build/init.elf`) |
+| `kernel/src/world.rs` | Init cap table, fabric, arenas, SoftNPU |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
+| `core/src/elf.rs` | Host-tested ELF64 parser |
+| `core/src/preempt.rs` | Host-tested RR + block/wake queue |
+| `core/src/sysnr.rs` | Frozen syscall numbers + user C ABI |
 | `core/src/caps.rs` | Cap table |
 | `core/src/fabric.rs` | Endpoints and messages |
 | `core/src/arena.rs` | Bank-aware allocator |
@@ -138,6 +151,22 @@ exercised on the host; it is not yet driven by multiple hardware threads.
 
 ## Userspace
 
-v0.1 has no ELF loader and no ring-3. Init is compiled into the kernel and
-calls `syscall::dispatch` as a function. The syscall numbers are stable so a
-later `syscall`/`sysret` gate can land without rewriting the demo.
+`/init` is a **static non-PIE ELF64** (`ET_EXEC`, `EM_X86_64`) linked at
+`0x0200_0000`. There is no ramfs or virtio-blk in this cut: `make qemu`
+builds `user/init`, copies the ELF to `build/init.elf`, and the kernel
+`include_bytes!` the blob. The loader copies `PT_LOAD` segments into the
+identity-mapped user window and `iretq`s to `e_entry` with CS=`0x23`.
+
+Entry is `syscall` (STAR / LSTAR / SFMASK, EFER.SCE). Same-thread return
+is `sysretq`; a context switch returns via `iretq`. Well-known CPtrs
+minted before the drop: `0` = fabric endpoint, `1` = accel queue.
+`SYS_SEND` / `SYS_RECV` / `SYS_MAP` / `SYS_ACCEL_*` `require()` the cap
+before touching the object.
+
+A kernel companion thread (`kthread-B`) shares the PIT quantum with
+`/init` so preemption is visible on the serial log. `SYS_RECV` on an
+empty endpoint and `SYS_ACCEL_WAIT` before the SoftNPU runs actually
+block and reschedule.
+
+PIE / `ET_DYN` is rejected (no relocator). Per-task page tables and
+SMEP/SMAP are still open.
