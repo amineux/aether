@@ -65,8 +65,8 @@ help:
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap + HH + KASLR + KPTI + PCID-or-fallback + SMEP/SMAP + aspace greps)"
-	@echo "  make qemu-pcid-ci - same guest with -cpu qemu64,+pcid,+invpcid (tagged TLB)"
-	@echo "  make qemu-nopcid-ci - same guest with -cpu qemu64,-pcid (full-flush fallback)"
+	@echo "  make qemu-pcid-ci - request -cpu qemu64,+pcid,+invpcid (TCG cannot advertise PCID; KVM may print pcid ok)"
+	@echo "  make qemu-nopcid-ci - force -cpu qemu64,-pcid (full-flush fallback)"
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
@@ -165,7 +165,10 @@ qemu-ci: $(LOADER_ELF)
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \
 	exit 1
 
-# Forced tagged-TLB path. Last `-cpu` wins over QEMU_FLAGS.
+# Request the tagged-TLB path. Last `-cpu` wins over QEMU_FLAGS.
+# TCG (GitHub Actions, stock `make qemu`) cannot advertise PCID/INVPCID
+# and prints a warning; the guest must take `[mm] pcid fallback`.
+# KVM / a future TCG that implements PCID should print `[mm] pcid ok`.
 qemu-pcid-ci: $(LOADER_ELF)
 	mkdir -p $(BUILD)
 	rm -f $(BUILD)/qemu-pcid-serial.log
@@ -177,13 +180,19 @@ qemu-pcid-ci: $(LOADER_ELF)
 	cat $(BUILD)/qemu-pcid-serial.log; \
 	if { [ $$ec -eq 0 ] || [ $$ec -eq 1 ]; } \
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-pcid-serial.log \
-	   && grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
-		echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
-		exit 0; \
+		if grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log; then \
+			echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
+			exit 0; \
+		fi; \
+		if grep -q "TCG doesn't support requested feature: CPUID.01H:ECX.pcid" $(BUILD)/qemu-pcid-serial.log \
+		   && grep -q "\\[mm\\] pcid fallback" $(BUILD)/qemu-pcid-serial.log; then \
+			echo "qemu-pcid-ci: TCG cannot advertise PCID; CPUID gate + fallback ok (qemu exit $$ec)"; \
+			exit 0; \
+		fi; \
 	fi; \
-	echo "qemu-pcid-ci: pcid ok banner missing or bad exit (qemu exit $$ec)"; \
+	echo "qemu-pcid-ci: pcid ok/fallback banner missing or bad exit (qemu exit $$ec)"; \
 	exit 1
 
 # Forced full-flush fallback (stock qemu64 may already lack PCID).

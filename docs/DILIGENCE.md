@@ -130,7 +130,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, mmap, opkernel, sparsify |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` |
-| x86_64 PCID on | `make qemu-pcid-ci` | `-cpu qemu64,+pcid,+invpcid`; greps `[mm] pcid ok` |
+| x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
 | x86_64 PCID off | `make qemu-nopcid-ci` | `-cpu qemu64,-pcid`; greps `[mm] pcid fallback` |
 | x86_64 SMP smoke | `make qemu-smp-ci` | `-smp 2`; greps AP online + work-steal + SoftNPU banner |
 | RISC-V boot | `make qemu-riscv-ci` | U-mode `/init` + `ecall` + PLIC SoftNPU used-ring + aspace isolate + fabric banner |

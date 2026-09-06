@@ -111,9 +111,11 @@ boot-time KASLR slide (0 / 16 / 32 MiB dual-map; CI forces
 `kaslr=1`) is landed. The unused HH alias stays (not PIE / reloc).
 KPTI user CR3 (no HH, no identity DMA, 4 KiB trampoline) is landed
 as a documented subset — not Meltdown-complete. PCID tags those
-CR3 switches when CPUID.1:ECX[17] is set (`make qemu-pcid-ci`);
-stock `qemu64` often full-flushes (`make qemu-nopcid-ci`). The
-identity 4 GiB stays on the **kernel** CR3 for DMA / SIPI.
+CR3 switches when CPUID.1:ECX[17] is set. TCG QEMU cannot
+advertise `+pcid` (`make qemu-pcid-ci` requests it and accepts
+the TCG warning + fallback; KVM may print `[mm] pcid ok`).
+`make qemu-nopcid-ci` forces `-pcid`. The identity 4 GiB stays
+on the **kernel** CR3 for DMA / SIPI.
 
 ## Crate graph
 

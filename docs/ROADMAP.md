@@ -447,11 +447,14 @@ Linux-style PCID allocator, not a speculation barrier:
   INVPCID type 1 (CPUID.7:EBX[10]) flushes one PCID on remap
   (`allow_user_2m`) / aspace teardown. No INVPCID → `mov cr3` with
   bit 63 clear for that PCID, then restore.
-- **Fallback:** stock `qemu64` often has no PCID. `mov cr3` stays a
-  full flush; serial prints `[mm] pcid fallback`. CI covers both:
-  `make qemu-nopcid-ci` (`-cpu qemu64,+smep,+smap,-pcid`) and
-  `make qemu-pcid-ci` (`-cpu qemu64,+smep,+smap,+pcid,+invpcid`).
+- **Fallback:** stock `qemu64` has no PCID. TCG QEMU (GitHub Actions
+  and `make qemu`) **cannot advertise** `+pcid,+invpcid` — it warns
+  `TCG doesn't support requested feature` and the guest full-flushes.
+  `make qemu-pcid-ci` requests the flags and accepts either
+  `[mm] pcid ok` (KVM / a TCG that implements PCID) or that warning
+  plus `[mm] pcid fallback`. `make qemu-nopcid-ci` forces `-pcid`.
   `make qemu-ci` greps `[mm] pcid` on whatever `qemu64` advertises.
+  Host tests lock the CR3 bit packing independently of QEMU.
 - Host tests: `core/src/aspace.rs` (`cr3_tagged`, `PcidAlloc` kernel
   vs user vs clone-share). QEMU: `[mm] pcid ok` or
   `[mm] pcid fallback`. SoftNPU kthread-B stays on kernel CR3
