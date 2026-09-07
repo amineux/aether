@@ -5,8 +5,9 @@ revision 2026-09-06. Filed on main via PR.
 
 **Status (2026-09-07):** the Falsifier ACTIVE track through PR #37 is
 **complete as research slices.** `IreeShapedCp` (PR #38) landed the
-six-month M1 opcode device. The **next calendar** is
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M2 PJRT/IREE host shim). Do
+six-month M1 opcode device. `host/aether-pjrt` (PR #41) landed M2.
+The **next calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
+(M1–M2 and M4 done, PR #47; M3 SID-at-submit cooking). Do
 not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 from the KEEP list below. SpecForge appendix remains aspirational
 only.
@@ -323,7 +324,9 @@ above override what Kernel actually sequences. Criteria below are
 
 1. Bring-up playbook: `docs/BRINGUP.md` — QEMU/SoftNPU path, how a
    partner maps CP registers into AccelDevice, failure modes, STUB
-   list.
+   list. **Not** the Soft SMMU software-table kit
+   ([bringup/BRINGUP.md](bringup/BRINGUP.md)), which is an optional M2
+   leave-behind and is not this Y2H2 climax.
 2. Open AccelDevice ecosystem docs: [ACCEL.md](ACCEL.md) +
    [DILIGENCE.md](DILIGENCE.md) refreshed; sample third-party sketch
    crate or `drivers/` template; `site/` roadmap section matches this

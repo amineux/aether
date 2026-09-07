@@ -807,18 +807,36 @@ device (PR #38):
 - **M2 landed (PR #41):** PJRT/IREE-shaped host shim (`host/aether-pjrt`)
   packs frozen `IreeHalCmd` and submits through `IreeShapedCp`.
   SoftNPU stays the `make qemu` path-B demo.
+- **M4 landed (PR #47):** Soft-CP XQueue (two software queues;
+  queue-boundary suspend/resume; SID sticks to the queue). Not a
+  silicon queueing unit. Not an XSched LD_PRELOAD shim.
+- **Optional M2 leave-behind (this cut):** Soft SMMU bring-up kit
+  (`docs/bringup/`, `scripts/smmu_{dump,replay}.py`) — software-table
+  dump/replay of STE→CD→S1/S2 + ATS, tied to `AccelDevice::map` /
+  Soft-CP SID bind. Not a Soft-SMMU redo. Keep it thin.
 - Soft SMMU / Soft-CP / SMP / PML4 are **not** re-scheduled.
+- **M3 (cooking):** Soft-CP SID-at-submit (Host1x-shaped). Not a
+  Host1x driver. `stamp_queue_sid` is the M4 hook.
+- **Next bite:** SoftChipletSync scoped timelines. Not UCIe sync.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
-  opcodes) is **not** the schedule. There is no M3–M4 clock.
+  opcodes) is **not** the schedule. PR #46 was a site progress refresh,
+  not a milestone. There is no OS-completeness M3–M4 clock.
 
 ## Suggested next cuts (technical, not calendar)
 
 The Kernel **calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1 `IreeShapedCp` landed; M2 `host/aether-pjrt` landed). The list below
-is leftover engineering, not M3–M4.
+(M1 `IreeShapedCp` landed; M2 `host/aether-pjrt` landed; M4 XQueue
+landed PR #47; M3 SID-at-submit cooking). The list below is leftover
+engineering except M3.
 
-1. **Guest driver for path A.** The QEMU `aether-accel` device and
+1. **M3 Soft-CP SID-at-submit (cooking).** Program / validate
+   `StreamId` at the doorbell, not only at map. Host1x-shaped; not a
+   Host1x driver. `stamp_queue_sid` already sticks a SID on the M4
+   queue. Calendar item, not a leftover.
+2. **SoftChipletSync scoped timelines.** Next bite after M3.
+   Chiplet-local fence domains. Not UCIe sync.
+3. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
    (GPA in the job wire; Soft SMMU stays the cap table) is still
@@ -826,29 +844,29 @@ is leftover engineering, not M3–M4.
    already cover extra AccelDevice paths on the host.
    SIX_MONTH_PLAN pulls this **only if** path-A DMA must prove Soft-SMMU
    IOVA.
-2. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
-   ATS-shaped invalidate in software. Program a real SMMU context / PT
-   walk. Do not claim the software table is silicon. Partner silicon
-   is still required.
-3. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
+4. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
+   ATS-shaped invalidate in software. The bring-up kit dumps those
+   tables. Program a real SMMU context / PT walk. Do not claim the
+   software table is silicon. Partner silicon is still required.
+5. **RISC-V virtio-mmio.** PLIC + SoftNPU software doorbell landed
    (path B BAR; UART THRE → source 10). A real virtio-mmio BAR
    behind the PLIC is still open.
-4. **`fork` / POSIX `mmap`.** Growable anonymous `SYS_MMAP=11` landed
+6. **`fork` / POSIX `mmap`.** Growable anonymous `SYS_MMAP=11` landed
    (64 KiB window; first-fit; not file-backed). PIE-reloc KASLR +
    one-page COW + KPTI + PCID landed. Do not claim Meltdown-complete,
    a secret slide, or POSIX `mmap` / `fork`.
-5. **Per-task cap tables.** Kernel World still shares one `CapTable`.
+7. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
-6. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
+8. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
    landed; a real virtio-mmio BAR behind GICv3 is still open.
-7. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
+9. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
    with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
    that does not kill the guest are still open.
-8. **Modern virtio-blk / virtio-mmio.** Legacy PCI I/O + AETHFS01
+10. **Modern virtio-blk / virtio-mmio.** Legacy PCI I/O + AETHFS01
    seed landed on x86 (`make qemu-blk-ci`). A virtio 1.0 MMIO BAR,
    RISC-V / aarch64 virtio-mmio, and a user block device are still
    open. SoftNPU path B stays the in-kernel BAR.
-9. **A real PJRT plugin / IREE HAL driver.** `host/aether-pjrt` is
+11. **A real PJRT plugin / IREE HAL driver.** `host/aether-pjrt` is
    the host contract (Device / MemorySpace / Buffer / Executable /
    Event → frozen `IreeHalCmd` on IreeShapedCp). `GetPjRtApi` and
    `iree_hal_driver_t` are still out of tree. Not a vendor integration.
@@ -858,7 +876,8 @@ is leftover engineering, not M3–M4.
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06). The
 Falsifier ACTIVE track through PR #37 is **complete as research
 slices**; do not sequence new work against it. Next calendar:
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md).
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M2 and M4 done, PR #47;
+M3 SID-at-submit cooking; SoftChipletSync next bite).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),

@@ -5,7 +5,8 @@ time on Aether. It is **not** a partnership announcement, a tape-out
 checklist, or a benchmark brief. The public site (`site/`) is the same
 leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The **next calendar** is
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md).
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M2 and M4 done, PR #47;
+M3 SID-at-submit cooking). Site-as-milestone stays killed.
 
 ## What ships in this tree
 
@@ -15,7 +16,7 @@ active track the site must match. The **next calendar** is
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | TypedWindow (honest pin stub) | Host-tested; CXL.mem window **not** a milestone | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
-| `IommuMap` Soft SMMU (STE→CD→S1/S2 walk, ATS invalidate) | Implemented, host-tested | `core/src/iommu.rs` |
+| `IommuMap` Soft SMMU (STE→CD→S1/S2 walk, ATS invalidate) | Implemented, host-tested; dump/replay kit in [bringup/BRINGUP.md](bringup/BRINGUP.md) | `core/src/{iommu,smmu_bringup}.rs`, `scripts/smmu_*.py` |
 | Tile scheduler + SpectralCut refuse | Implemented (n≤32 Fiedler placement; enum n≤8) | `core/src/{sched,cut}.rs` |
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype, n≤32 host-tested) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
@@ -23,7 +24,7 @@ active track the site must match. The **next calendar** is
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + two software XQueues (queue-boundary; M4 PR #47) + IRQ/fence | `drivers/src/fakecp.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |

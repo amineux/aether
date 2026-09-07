@@ -1,11 +1,15 @@
 # Six-month plan (Falsifier revision)
 
 Leave-behind for Kernel tracking. Falsifier revision 2026-09-07, after
-PR #37 (site) and PRs #38–#40 (`IreeShapedCp`, CDT props, chiplet
-affinity stub) landed on main. Filed on main via PR.
+PR #37 (site) and PRs #38–#41 (`IreeShapedCp`, CDT props, chiplet
+affinity stub, PJRT/IREE shim) landed on main. Soft-CP XQueue landed
+as **M4 (PR #47)**. Soft SMMU bring-up kit + M3 SID-at-submit calendar
+on this cut.
 
 **This is the next calendar.** SpecForge OS-completeness theater is not
-the schedule. There is no M3–M4 clock.
+the schedule. M1–M2 and **M4 are done**. **M3 SID-at-submit is still
+cooking.** SpectraScout Soft-CP items are software models, not fork /
+POSIX / CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -52,8 +56,10 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 
 ## Execution spine (this is the calendar)
 
-Only M1 and M2 are the spine. M1 is **landed**. Optional / conditional
-work is leave-behind, not a half-year pillar.
+M1, M2, and **M4 are done**. **M3 SID-at-submit is still cooking.**
+Optional / conditional work is leave-behind, not a half-year pillar.
+Site-as-milestone stays killed (PR #46 was a progress refresh, not a
+marketing climax).
 
 ### M1 — partner-shaped opcode table (**landed, PR #38**)
 
@@ -98,7 +104,7 @@ This is the **primary partner story**. Exploration A merged here.
 Not `GetPjRtApi`. Not `iree_hal_driver_t`. Not in-kernel graph IR. Not
 a vendor compiler integration.
 
-**Done when (met on this branch):**
+**Done when (met on main):**
 
 1. A host crate or module exposes those five nouns and lowers a submit
    onto `AccelJobDesc` → `IreeShapedCp` (`backend = 4`). SoftNPU
@@ -113,16 +119,69 @@ a vendor compiler integration.
    non-claims. Kernel syscalls and `UserAccelJob` are unchanged.
    `make qemu` still retires path-B SoftNPU.
 
-### Optional M2 leave-behind — Soft SMMU bring-up kit
+### Optional M2 leave-behind — Soft SMMU bring-up kit (**landed, this cut**)
 
-Docs plus dump/replay scripts tied to `AccelDevice::map`, so a silicon
-team can watch STE→CD→S1/S2 on the same pins M1 uses.
+Docs plus dump/replay scripts tied to `AccelDevice::map` / Soft-CP SID
+bind, so a silicon team can watch STE→CD→S1/S2 + ATS invalidate on the
+same pins M1 uses (`ssid = 1` Soft-CP, `ssid = 2` IreeShapedCp).
 
-**Not** a Soft-SMMU redo. **Not** a half-year pillar. Skip if M1–M2
-already make the walk visible in host tests.
+**Not** a Soft-SMMU redo. **Not** a half-year pillar. Software tables
+only.
 
-**Done when (if taken):** a short how-to + a replay of one map/translate
-/ abort-until-bound / wrong-stream sequence. Software table only.
+**Done when (met on this branch):** a short how-to
+([bringup/BRINGUP.md](bringup/BRINGUP.md)) + a replay of one
+map / translate / abort-until-bound / wrong-stream / ATS sequence.
+`scripts/smmu_{dump,replay}.py` + host test `smmu_bringup::replay_jsonl`.
+
+### M3 — Soft-CP SID-at-submit (Host1x-shaped) (**cooking**)
+
+Program / validate `StreamId` at the Soft-CP doorbell, not only at
+`map` / `bind_stream`. Host1x-shaped: the submit path names a stream
+the way a channel CD / SID would, and a mismatch with the pinned CD
+is a software fault.
+
+M4 XQueue already sticks a SID on the queue (`stamp_queue_sid` /
+first-submit inherit). This item is the **explicit doorbell stamp**,
+not a second queue object.
+
+**Not** a Host1x driver. **Not** a NVIDIA channel. **Not** hardware
+SMMU SID programming. SoftNPU path B and `IreeShapedCp` stay.
+
+**Done when:**
+
+1. `SoftCommandProcessor::submit` (or `CpCmd::pack` / queue doorbell)
+   takes / checks a SID at doorbell time against the bound STE+CD.
+   Map-only bind is no longer the only stream gate.
+2. Host tests: SID-at-submit hit; unbound / wrong-SSID / wrong-STE
+   refuse; existing map/cap refuse unchanged. No new syscall.
+3. [ACCEL.md](ACCEL.md) names the Host1x shape and the non-claim.
+
+### M4 — Soft-CP XQueue (XSched-shaped) (**landed, PR #47**)
+
+Two software execution queues on Soft-CP (`create_xqueue` /
+`submit_xqueue` / `suspend_xqueue` / `resume_xqueue`). Preemption is
+**queue-boundary** only: `suspend` refuses the next packed `CpCmd`; a
+command already inside `service()` runs to completion. SID sticks to
+the queue (`stamp_queue_sid` / first-submit inherit) as the M3 hook.
+
+XSched (OSDI’25) is **inspiration** for an open queue object — not an
+LD_PRELOAD CUDA/HIP shim, not a silicon queueing unit. Path B SoftNPU
+/ `make qemu` unchanged. `IreeShapedCp` stays a single mailbox.
+`CpCmd` layout unchanged.
+
+**Done when (met on main):**
+
+1. Soft-CP exposes more than one software queue without a second IR.
+2. Host tests: two queues submit/poll; suspend A while B progresses
+   (blast-radius); wrong-SID still Fault; stamp-hook inherit then
+   refuse override. Existing single-queue tests still pass.
+3. Docs: XSched-shaped software queues, not a product scheduler.
+
+### Next bite — SoftChipletSync scoped timelines
+
+After **M3** (M4 already landed): chiplet-local fence domains on the
+existing seq / wait / complete model. Not UCIe sync. Not a new
+M-number until M3 lands. See the leftover SpectraScout list below.
 
 ### Conditional only — guest PCI path-A bind
 
@@ -130,7 +189,7 @@ A kernel `VirtioAccelMmio` that talks PCI BAR0 **only if** it is needed
 to prove Soft-SMMU IOVA on **path-A** DMA. Path B remains canonical.
 The QEMU device model already landed (`qemu/aether_accel.c`).
 
-Do not schedule this as M2. Do not rebuild QEMU in CI.
+Do not schedule this as M3. Do not rebuild QEMU in CI.
 
 ## Kill / hard defer
 
@@ -143,16 +202,16 @@ none get an M-number.
 | --- | --- |
 | Fork-shaped clone | `SYS_CLONE` shares aspace; a new PML4/`fork` is POSIX theater |
 | User `open`/`read` POSIX surface | Ramfs is kernel-internal; no `SYS_OPEN` / `SYS_READ` |
-| Soft-SMMU redo | STE→CD→S1/S2 already landed; deepen only as the optional kit |
+| Soft-SMMU redo | STE→CD→S1/S2 already landed; the optional kit dumps those tables |
 | CXL productization / typed-window as milestone | `MemorySpace::CxlRegion` stays a typed place; no CXL.mem claim |
 | ChipletFleet as milestone | n≤32 Fiedler placement already landed; not Fleet marketing |
 | Formal seL4-style caps as milestone | Small CDT landed; proofs are a non-claim |
-| Site-as-milestone | PR #37 is the leave-behind; no marketing climax |
+| Site-as-milestone | PR #37 is the leave-behind; no marketing climax. A later progress refresh is OK; it is not a calendar item |
 | `PartnerNpuStub` theater without opcodes | No-op sketch; M1 is a real packet or it does not ship |
 
 ### HARD DEFER until they serve the partner spine
 
-Parked. Pull only when M1–M2 need them.
+Parked. Pull only when M3 (or the host shim) needs them.
 
 | Item | Gate |
 | --- | --- |
@@ -179,30 +238,20 @@ If A had landed as a shim over SoftNPU / Soft-CP (`backend` 1 / 3)
 only, M2 would still be open. PR #41 packs `IreeHalCmd` and submits
 through `IreeShapedCp`; SoftNPU stays the qemu demo.
 
-## Post–M2 backlog (SpectraScout order)
+## SpectraScout leftovers (after M3)
 
-**Park. Do not schedule as M3–M4 theater.** After opcodes + PJRT, this
-is the preferred bite order — still software models, still no vendor
-claim:
+M4 XQueue **landed (PR #47)**. M3 SID-at-submit is the remaining
+calendar bite. Still software models, still no vendor claim. After M3:
 
-1. **Soft-CP SID-at-submit (Host1x-shaped).** Program / validate
-   `StreamId` at doorbell, not only at map. Not a Host1x driver.
-   Soft-CP XQueue already sticks a SID on the queue
-   (`stamp_queue_sid` / first-submit inherit). This item is the
-   explicit doorbell stamp.
-2. **Soft-CP XQueue (landed).** Two software execution queues on
-   Soft-CP with create / submit / suspend / resume. Preemption is
-   **queue-boundary** only. XSched (OSDI’25) is inspiration — not an
-   LD_PRELOAD CUDA shim, not a silicon queueing unit. Path B SoftNPU
-   / `make qemu` unchanged. `IreeShapedCp` stays a single mailbox.
-3. **SoftChipletSync scoped timelines.** Chiplet-local fence domains
-   on the existing seq/wait/complete model. Not UCIe sync.
-4. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host
+1. **SoftChipletSync scoped timelines** (**next bite**). Chiplet-local
+   fence domains on the existing seq/wait/complete model. Not UCIe sync.
+2. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host
    shim needs per-client VAS. Software only.
-5. **FlowHodgeQuota.** Already landed as admit/refuse. Further quota
+3. **FlowHodgeQuota.** Already landed as admit/refuse. Further quota
    theater stays killed; only pull if the shim injects fabric headers.
-6. **OperatorInject.** `OperatorKernelHandle` inject exists. Touch it
-   only after Soft-CP (M1 path) is the stable submit surface.
+4. **OperatorInject.** `OperatorKernelHandle` inject exists. Touch it
+   only after Soft-CP (M3 doorbell + M4 queues) is the stable submit
+   surface.
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
 silicon; UCIe stays transport.
@@ -219,24 +268,27 @@ aspirational — including bank QoS EventRing theater, CXL objects, and
 a Y2 bring-up climax.
 
 [ROADMAP.md](ROADMAP.md) points here for what to sequence next.
-Suggested next cuts in ROADMAP remain **technical leftovers**, not
-M3–M4.
+Suggested next cuts in ROADMAP remain **technical leftovers** except
+M3 (cooking) and M4 (done), which are calendar.
 
 ## Kernel PR order (this calendar)
 
-1. `docs/SIX_MONTH_PLAN.md` + ROADMAP / YEAR2_PLAN pointers (**this
-   cut**)
+1. `docs/SIX_MONTH_PLAN.md` + ROADMAP / YEAR2_PLAN pointers — **landed**
 2. M1 partner-shaped opcode `AccelDevice` — **landed** as `IreeShapedCp`
    (PR #38)
 3. M2 PJRT/IREE host shim submitting through `IreeShapedCp` (merge
    exploration A) — **landed** as `host/aether-pjrt` (PR #41)
-4. Optional Soft-SMMU bring-up kit (docs + dump/replay)
-5. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
+4. M4 Soft-CP XQueue (XSched-shaped) — **landed** (PR #47; ahead of M3)
+5. Optional Soft-SMMU bring-up kit (docs + dump/replay) — **this cut**
+6. M3 Soft-CP SID-at-submit (Host1x-shaped) — **cooking**
+7. Next bite: SoftChipletSync scoped timelines
+8. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
    be shown on path-A DMA
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
-productization, ChipletFleet, formal caps, site refresh, or
-PartnerNpuStub paint.
+productization, ChipletFleet, formal caps, site-as-milestone, or
+PartnerNpuStub paint. A later site progress refresh is not a
+milestone.
 
 ### File touch map
 
@@ -244,7 +296,10 @@ PartnerNpuStub paint.
 | --- | --- |
 | M1 opcode device | `hal/`, `drivers/` (new backend or Soft-CP packet), `docs/ACCEL.md`, host tests |
 | M2 host shim | host crate or `core/src/abi.rs` expansion, `docs/ABI.md`, host tests; submit via M1 `AccelDevice` |
-| Optional SMMU kit | `docs/` + scripts; dump/replay against `core/src/iommu.rs` |
+| Optional SMMU kit | `docs/bringup/`, `scripts/smmu_*.py`, `core/src/{iommu,smmu_bringup}.rs`; dump/replay against `IommuMap` |
+| M3 SID-at-submit | `drivers/src/fakecp.rs`, `docs/ACCEL.md`, host tests |
+| M4 XQueue | `drivers/src/fakecp.rs`, `hal/` (`n_queues`) — **landed PR #47** |
+| SoftChipletSync | `core/src/fence.rs`, Soft-CP retire, host tests |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 
 Cross-cutting: this file, ROADMAP status pointer, YEAR2_PLAN status
@@ -255,8 +310,11 @@ line. CI only if a new host-test target appears. No new syscall.
 - That M1 is a signed vendor ISA or that a public header citation is a
   partnership
 - That the M2 shim is a PJRT plugin, an IREE driver, or XLA integration
+- That M3 is a Host1x driver or that M4 (PR #47) is a silicon XQueue
+  or an XSched LD_PRELOAD shim
 - Benchmarks, FLOPs, tape-out, or seL4 proofs
 - That Soft SMMU / Soft-CP / path A became hardware
 - That RISC-V or aarch64 is a product-class second kernel
-- An M3–M4 OS-completeness clock (fork, POSIX, CXL.mem, ChipletFleet,
-  SMMUv3 emulator, UCIe PHY)
+- An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
+  SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 is the
+  calendar; that theater is not.

@@ -187,6 +187,11 @@ Rules:
    STE→CD→S1→S2 to resolve IOVA → guest PA. This is still a software
    table. A hardware SMMU requires partner silicon.
 
+The optional bring-up kit dumps these software tables and replays one
+map / translate / abort-until-bound / wrong-stream / ATS sequence:
+[bringup/BRINGUP.md](bringup/BRINGUP.md). `make smmu-bringup`. Not a
+Soft-SMMU redo.
+
 Bank QoS / bandwidth coloring is not part of Soft SMMU.
 
 `SYS_MAP` walks the Memory cap, pins the arena through Soft SMMU
@@ -329,7 +334,9 @@ separate optional BAR device; stock `make qemu` does not attach it.
 
 ## Soft-CP XQueue (software; XSched-shaped)
 
-**Status:** Landed as a post–M2 host slice. Not an M3–M4 calendar pillar.
+**Status:** **M4 done (PR #47).** Two software queues; queue-boundary
+suspend/resume. Not a silicon queuing unit. Not an XSched LD_PRELOAD
+shim. SID-at-submit (M3) is still cooking.
 
 **Inspiration.** [XSched](https://github.com/XpuOS/xsched) (OSDI’25)
 exposes an **XQueue** as the schedulable object on an open, multi-level

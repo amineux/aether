@@ -1,0 +1,49 @@
+{
+  "kind": "aether-soft-smmu-dump",
+  "version": 1,
+  "software_tables_only": true,
+  "not_hardware_smmu": true,
+  "not_smmuv3_emulator": true,
+  "stes": [
+    {
+      "slot": 0,
+      "key": "0x200",
+      "state": "Bound",
+      "tenant": 1,
+      "config": "Nested",
+      "s1cdmax": 7,
+      "distinct_ipa": true,
+      "s2_vmid": 2,
+      "cds": [
+        {
+          "cd_slot": 0,
+          "ssid": 1,
+          "valid": true,
+          "asid": 1,
+          "s1": [
+            {"va": "0x100000000", "out": "0x200000000", "len": "0x1000", "writable": true}
+          ]
+        },
+        {
+          "cd_slot": 1,
+          "ssid": 2,
+          "valid": true,
+          "asid": 2,
+          "s1": [
+          ]
+        }
+      ],
+      "s2": [
+        {"va": "0x200000000", "out": "0x1000", "len": "0x1000", "writable": true}
+      ]
+    }
+  ],
+  "regions": [
+    {"guest_pa": "0x1000", "iova": "0x100000000", "len": "0x1000", "tenant": 1, "object": 1, "stream_id": "0x201", "writable": true}
+  ],
+  "atc": [
+    {"sid": "0x201", "iova": "0x100000000", "pa": "0x1000", "len": "0x1000"}
+  ],
+  "atc_hits": 0,
+  "atc_misses": 2
+}

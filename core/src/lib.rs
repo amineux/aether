@@ -32,6 +32,7 @@ pub mod preempt;
 pub mod ramfs;
 pub mod reloc;
 pub mod sched;
+pub mod smmu_bringup;
 pub mod softfloat;
 pub mod space;
 pub mod sparsify;
@@ -68,8 +69,9 @@ pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlag
 pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
-    InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SteConfig, StreamId, StreamState,
-    WalkResult, DEFAULT_STREAM, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
+    AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SoftPte,
+    SoftSmmuDump, SteConfig, SteTableDump, StreamId, StreamState, WalkResult, DEFAULT_STREAM,
+    SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
 pub use mmap::{
@@ -87,6 +89,10 @@ pub use reloc::{
     RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
 };
 pub use sched::{ChipletLocalPolicy, ChipletTaskScope, Job, JobKind, TileKind, TileScheduler};
+pub use smmu_bringup::{
+    kit_cp_sid, kit_iree_sid, replay_jsonl, write_dump_json, BringupError, KIT_CP_SSID,
+    KIT_IREE_SSID,
+};
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
