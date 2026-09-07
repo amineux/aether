@@ -32,7 +32,7 @@ re-schedule any of the following as new milestones:
 | Landed | Honest reading |
 | --- | --- |
 | Soft SMMU | STE→CD→S1/S2 + ATS invalidate; not hardware |
-| Soft-CP | `backend = 3`, packed `CpCmd` + Soft SMMU SID + IRQ/fence |
+| Soft-CP | `backend = 3`, packed `CpCmd` + Soft SMMU SID + two software XQueues (queue-boundary) + IRQ/fence |
 | **IreeShapedCp (PR #38)** | `backend = 4`, frozen `IreeHalCmd` from public IREE HAL nouns; **this is M1**; not a signed vendor |
 | Path A | optional QEMU `aether-accel`; stock QEMU stays B |
 | Cap CDT / revoke | small parent/child + `revoke_in`; no `SYS_REVOKE` |
@@ -187,8 +187,14 @@ claim:
 
 1. **Soft-CP SID-at-submit (Host1x-shaped).** Program / validate
    `StreamId` at doorbell, not only at map. Not a Host1x driver.
-2. **Soft-CP XQueue.** Extra software execution queues on the CP
-   mailbox. Not a silicon queueing unit.
+   Soft-CP XQueue already sticks a SID on the queue
+   (`stamp_queue_sid` / first-submit inherit). This item is the
+   explicit doorbell stamp.
+2. **Soft-CP XQueue (landed).** Two software execution queues on
+   Soft-CP with create / submit / suspend / resume. Preemption is
+   **queue-boundary** only. XSched (OSDI’25) is inspiration — not an
+   LD_PRELOAD CUDA shim, not a silicon queueing unit. Path B SoftNPU
+   / `make qemu` unchanged. `IreeShapedCp` stays a single mailbox.
 3. **SoftChipletSync scoped timelines.** Chiplet-local fence domains
    on the existing seq/wait/complete model. Not UCIe sync.
 4. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host

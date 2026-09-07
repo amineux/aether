@@ -253,8 +253,10 @@ The kernel and `/init` are **separate Cargo projects** so
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) and
 [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status.
-The Month 1–2 spine (opcodes → PJRT shim) is done; optional Soft SMMU
-kit / path-A guest bind stay gated.
+The Month 1–2 spine (opcodes → PJRT shim) is done. Soft-CP now has two
+software XQueues (queue-boundary suspend/resume; not a silicon queuing
+unit). Optional Soft SMMU kit / path-A guest bind stay gated. SID-at-submit
+can stamp the queue SID already hooked on Soft-CP.
 
 ## Docs
 

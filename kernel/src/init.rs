@@ -83,7 +83,9 @@ pub fn run_kernel_selfcheck() {
                 write_u64(info.backend as u64);
                 write_str(" ");
                 write_str(cp.name());
-                write_str(" (host CP path; QEMU demo stays SoftNPU)");
+                write_str(" n_queues=");
+                write_u64(info.n_queues as u64);
+                write_str(" (XQueue; queue-boundary; QEMU demo stays SoftNPU)");
                 console::nl();
             }
             Err(_) => {

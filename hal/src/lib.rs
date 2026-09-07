@@ -48,12 +48,53 @@ pub enum HalError {
     NoMemoryCap,
 }
 
+/// Honest preemption grain for software XQueues.
+///
+/// Soft-CP implements [`PreemptionLevel::QueueBoundary`] only: `suspend`
+/// refuses to start the next packed command on that queue. A command
+/// already inside `service()` / the integer engine runs to completion.
+/// [`PreemptionLevel::MidOp`] is named so callers do not overclaim; no
+/// in-tree backend returns it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PreemptionLevel {
+    QueueBoundary = 0,
+    MidOp = 1,
+}
+
 /// Accelerator doorbell / IRQ contract.
 pub trait AccelDevice {
     fn probe(&mut self) -> Result<AccelInfo, HalError>;
     /// Write a job into the avail ring and kick the doorbell. Does not
     /// execute the job; completions arrive on the used ring / IRQ.
+    ///
+    /// Device-shaped default: queue 0. Soft-CP XQueue submit is
+    /// [`Self::submit_queue`].
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError>;
+    /// Create / stamp a software XQueue (id, sticky Soft-SMMU SID, priority).
+    ///
+    /// Default: unsupported. Soft-CP implements two queues. Not a silicon
+    /// queuing unit; not an XSched LD_PRELOAD shim.
+    fn create_queue(&mut self, queue: u16, stream_id: u32, priority: u8) -> Result<(), HalError> {
+        let _ = (queue, stream_id, priority);
+        Err(HalError::Unsupported)
+    }
+    /// Submit onto a software XQueue. Default: queue 0 == [`submit`].
+    fn submit_queue(&mut self, queue: u16, job: &AccelJobDesc) -> Result<u32, HalError> {
+        if queue != 0 {
+            return Err(HalError::Unsupported);
+        }
+        self.submit(job)
+    }
+    /// Park a queue at the next command boundary. Default: unsupported.
+    fn suspend_queue(&mut self, queue: u16) -> Result<PreemptionLevel, HalError> {
+        let _ = queue;
+        Err(HalError::Unsupported)
+    }
+    /// Unpark a suspended XQueue. Default: unsupported.
+    fn resume_queue(&mut self, queue: u16) -> Result<(), HalError> {
+        let _ = queue;
+        Err(HalError::Unsupported)
+    }
     /// Driver-side used-ring read. Does not service the device.
     fn poll(&mut self) -> Option<Completion>;
     /// Pin a guest PA range the device may DMA. Returns the Soft-SMMU IOVA.

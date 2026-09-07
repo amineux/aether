@@ -312,6 +312,8 @@ image.
    this as a silicon fence unit.
 6. Never accept a PA that did not come from a cap walk + IommuMap pin.
 7. Honor BankColor at the scheduler / SYS_ACCEL_SUBMIT layer (unchanged).
+8. Two software XQueues (`n_queues = 2`): create / submit / suspend /
+   resume. `AccelDevice::submit` is queue 0. See the XQueue section.
 ```
 
 Swap `SoftCommandProcessor` for a real BAR + MSI-X by keeping this
@@ -324,6 +326,57 @@ the avail ring). Soft-CP is host-contract tested; the kernel self-check
 only probes it so the backend id is visible on the serial log. Soft-CP
 does not add a QEMU device. Path A (`qemu/aether_accel.c`) is a
 separate optional BAR device; stock `make qemu` does not attach it.
+
+## Soft-CP XQueue (software; XSched-shaped)
+
+**Status:** Landed as a post–M2 host slice. Not an M3–M4 calendar pillar.
+
+**Inspiration.** [XSched](https://github.com/XpuOS/xsched) (OSDI’25)
+exposes an **XQueue** as the schedulable object on an open, multi-level
+hardware execution model (device / context / queue), with suspend and
+resume as first-class controls. Soft-CP borrows that *shape*: the
+queue, not the device mailbox, is what the scheduler parks.
+
+**This is not:**
+
+- An XSched port, and not XSched’s **LD_PRELOAD** CUDA / HIP / OpenCL
+  interceptor shims.
+- A silicon queuing unit, hardware doorbell fabric, or GPU preemption
+  engine.
+- Mid-command / mid-op stop. Soft-CP can refuse the **next** packed
+  `CpCmd` on a queue (`PreemptionLevel::QueueBoundary`). A command
+  already inside `service()` / `SoftNpu::execute` runs to completion.
+  `PreemptionLevel::MidOp` is named so callers do not overclaim; no
+  in-tree backend returns it.
+- A change to path-B SoftNPU, the virtqueue BAR, or `make qemu`.
+  `IreeShapedCp` stays a single device-shaped mailbox this cut.
+
+**Contract** (`aether_hal::AccelDevice` defaults + Soft-CP override):
+
+```text
+create_queue(id, stream_id, priority)  // stamp sticky SID; Running
+submit_queue(id, job)                  // pack CpCmd on the queue SID
+suspend_queue(id) → QueueBoundary      // park; pending stays
+resume_queue(id)                       // unpark
+service()                              // highest-priority Running queue
+AccelDevice::submit                    // queue 0 (device-shaped compat)
+```
+
+Soft-SMMU SID **sticks to the queue**. `create_queue` / Soft-CP
+`stamp_queue_sid` program it. If the queue has no SID yet, first
+submit inherits today’s `stream_for_job` pack stamp and sticks it —
+that is the hook for SID-at-submit (Host1x-shaped doorbell write;
+not landed). A job whose place-derived SID does not match the
+sticky SID is `Fault`. Pins on another SID are still `Fault`.
+`CpCmd` layout is unchanged (`stream_id` at 0x10).
+
+Two queues (`SOFT_CP_XQUEUES = 2`, depth 4). Freeze A and B keeps
+DMA under B’s SID (blast-radius). Priority picks among Running
+queues; suspend is how A loses the engine at the next boundary.
+
+Host tests: `xqueue_suspend_a_b_progresses_blast_radius`,
+`xqueue_wrong_sid_still_aborts`, plus the existing wrong-stream
+pack tests.
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
