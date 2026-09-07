@@ -5,11 +5,14 @@ landed on main (PRs #38, #41, #47, #49, #51) plus the Soft SMMU
 bring-up kit (#48) and site progress through #52.
 
 **This is the next calendar.** [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-closed M1–M4. SpecForge OS-completeness theater is still not the
-schedule. Month 5 is **four SpectraScout exploration digests** — not
-one pillar, not a half-year of OS-completeness. PASID/SVA and
-OperatorInject stay **parked leftovers**. SoftNoI-IS stays parked.
-The exploration menu below is a direction list for later cuts.
+closed M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
+OS-completeness theater is still not the schedule. Month 5 is
+**four SpectraScout exploration digests** — not one pillar, not a
+half-year of OS-completeness. SoftGreenCtx and SoftCmdFirewall are
+**landed**. Remaining: SoftCCT → SoftSFI. PASID/SVA and
+OperatorInject stay **parked leftovers**.
+SoftNoI-IS stays parked. The exploration menu below is a direction
+list for later cuts.
 
 ## Reality (what already landed)
 
@@ -22,6 +25,8 @@ Do **not** re-schedule any of the following as new milestones.
 | **M3 SID-at-submit (PR #49)** | Host1x-shaped SET_SID; SID sticks on the XQueue. Not a Tegra driver |
 | **M4 XQueue (PR #47)** | Two software queues; queue-boundary suspend/resume. Not silicon, not XSched LD_PRELOAD |
 | **SoftChipletSync (PR #51)** | Scoped `{wave, CU, chiplet, package}` + optional CCT. Fence **counts** only |
+| **SoftGreenCtx (this cut)** | Fake 70/30 SM/WQ partitions; XQueue bind; memcpy BW vs unpartitioned; migrate-to-yield without SID change. Not MIG |
+| **SoftCmdFirewall (PR #55)** | Copy-then-validate Soft-CP submit. Host1x lesson. Not confidential GPU |
 | Soft SMMU bring-up kit (PR #48) | Dump/replay of STE→CD→S1/S2 + ATS. Not a Soft-SMMU redo |
 | Explorations A–E | A merged into M2; B blast-radius clip; C `ChipletTaskScope` stub; D CDT props; E `TypedWindow` stub |
 | Site through PR #52 | Research leave-behind / progress refresh. **Not** a calendar item |
@@ -61,12 +66,12 @@ numbers. Skip a digest only if its honest slice is already met on
 main (SoftCCT: see below).
 
 ```text
-SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI
+SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT  →  SoftSFI
 SoftNoI-IS parked
 PASID / SVA  and  OperatorInject deepen  parked leftovers
 ```
 
-### 1. SoftGreenCtx
+### 1. SoftGreenCtx (**landed**)
 
 SM / work-queue **partitions** on Soft-CP. Inspiration: CUDA Green
 Contexts / DetShare — not a CUDA driver, not MIG-class isolation.
@@ -78,7 +83,7 @@ unpartitioned case. `migrate-to-yield` is queue-boundary (same
 honesty as M4): a command already inside `service()` runs to
 completion.
 
-**Done when:**
+**Done when (met):**
 
 1. Soft-CP exposes a software `SoftGreenCtx` (partition of a fake SM
    / WQ pool). An XQueue binds one; SID sticks / inherits as today.
@@ -89,7 +94,7 @@ completion.
    **Not** hardware SM partitioning. No new syscall. `CpCmd` layout
    unchanged.
 
-### 2. SoftCmdFirewall (**landed, this PR**)
+### 2. SoftCmdFirewall (**landed**)
 
 Copy-then-validate submit. Inspiration: Host1x “don’t execute the
 caller’s live buffer” — not a Tegra driver, not a confidential GPU.
@@ -228,7 +233,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 
 | Bet | Status | Slice | Honest bound |
 | --- | --- | --- | --- |
-| **SoftGreenCtx** | Month 5 digest 1 | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
+| **SoftGreenCtx** | **Landed** | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
 | **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
 | **SoftCCT** | Month 5 digest 3 (deepen #51) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails | CPElide last-writer table. **Not UCIe.** Skip if #51 already meets the slice |
 | **SoftSFI** | Month 5 digest 4 | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
@@ -254,11 +259,11 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 - Per-task CapTable + additive `SYS_REVOKE` **only if**
   revoke → `unbind_stream` / FLR is the demo. Internal `revoke` /
   `revoke_in` already exist.
-- SoftSFI (Month 5 digest 4). SoftCmdFirewall (digest 2).
+- SoftSFI (Month 5 digest 4). SoftCmdFirewall (**landed**).
 
 ### Soft-CP / sched
 
-- SoftGreenCtx (Month 5 digest 1).
+- SoftGreenCtx (**landed**).
 - OperatorInject mega-kernel lite (parked leftover).
 - XQueue mid-op pretends — honest levels only (queue-boundary is
   what landed; do not claim intra-`service()` preempt).
@@ -305,8 +310,8 @@ fake NVIDIA / FLOPs / tape-out.
 
 1. This file + pointers from [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
    and [ROADMAP.md](ROADMAP.md) — **this cut**
-2. SoftGreenCtx
-3. SoftCmdFirewall — **landed** (this PR)
+2. SoftGreenCtx — **landed**
+3. SoftCmdFirewall — **landed**
 4. SoftCCT (skip / ADR if #51 already meets the slice)
 5. SoftSFI
 
@@ -318,7 +323,7 @@ redirects. A later site progress refresh is not a milestone.
 
 | Step | Primary touches |
 | --- | --- |
-| SoftGreenCtx | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
+| SoftGreenCtx (**landed**) | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
 | SoftCmdFirewall | `drivers/src/firewall.rs` + Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs`, Soft-CP / IreeShapedCp `submit_scoped`, host tests — deepen #51 |
 | SoftSFI | `drivers/src/fakecp.rs` (toy ISA verifier + SID window), host tests |

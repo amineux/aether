@@ -21,6 +21,7 @@ pub mod demo;
 pub mod elf;
 pub mod fabric;
 pub mod fence;
+pub mod greenctx;
 pub mod hodge;
 pub mod iommu;
 pub mod laplacian;
@@ -74,6 +75,11 @@ pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
 pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
+pub use greenctx::{
+    run_greenctx_demo, GreenCtxError, GreenCtxId, GreenCtxReport, MemcpyReport, SmWqBudget,
+    SoftGreenCtx, SoftGreenPool, DEMO_MEMCPY_BYTES, MAX_GREEN_CTX, SHARED_BW_TAX_MILLI,
+    SOFT_SM_POOL, SOFT_WQ_POOL, SPLIT_30, SPLIT_70,
+};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
     AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SoftPte,

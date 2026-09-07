@@ -121,6 +121,8 @@ impl<M: DmaView> SoftNpuDevice<M> {
                 n_queues: 1,
                 max_wave: 64,
                 backend: ACCEL_BACKEND_VIRTIO_SOFTNPU,
+                sm_count: 0,
+                wq_count: 0,
             },
             mmio: AccelMmio::new(),
             npu: SoftNpu::new(),

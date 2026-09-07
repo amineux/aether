@@ -320,6 +320,8 @@ impl Client {
                 n_queues: 0,
                 max_wave: 0,
                 backend: 0,
+                sm_count: 0,
+                wq_count: 0,
             },
             activity: Activity::new(
                 ActivityId(1),

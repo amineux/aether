@@ -6,13 +6,14 @@ affinity stub, PJRT/IREE shim) landed on main. Soft-CP XQueue landed
 as **M4 (PR #47)**. Soft SMMU bring-up kit landed (PR #48). **M3
 SID-at-submit is landed** (Host1x-shaped SET_SID; SID sticks on the
 XQueue). SoftChipletSync scoped timelines **landed** after M3+M4
-(PR #51). Site progress through PR #52. Month 5 digest 2
-(SoftCmdFirewall) is **landed** — see [MONTH5_PLAN.md](MONTH5_PLAN.md).
+(PR #51). SoftGreenCtx SM/WQ partitions **landed** (Month 5 digest 1).
+Site progress through PR #52. Month 5 digest 2 (SoftCmdFirewall)
+is **landed** — see [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **This calendar is closed (M1–M4 + SoftChipletSync).** The **next
-calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration
-digests: SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI;
-PASID/SVA and OperatorInject parked). SpecForge OS-completeness
+calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx landed;
+SoftCmdFirewall landed; SoftCCT → SoftSFI remain; PASID/SVA and
+OperatorInject parked). SpecForge OS-completeness
 theater is not the schedule. SpectraScout Soft-CP items are
 software models, not fork / POSIX / CXL.mem / ChipletFleet.
 
@@ -41,7 +42,7 @@ re-schedule any of the following as new milestones:
 | Landed | Honest reading |
 | --- | --- |
 | Soft SMMU | STE→CD→S1/S2 + ATS invalidate; not hardware |
-| Soft-CP | `backend = 3`, packed `CpCmd` + SET_SID-at-submit + two software XQueues (queue-boundary) + SoftCmdFirewall copy-then-validate + IRQ/fence |
+| Soft-CP | `backend = 3`, packed `CpCmd` + SET_SID-at-submit + two software XQueues (queue-boundary) + SoftGreenCtx SM/WQ + SoftCmdFirewall copy-then-validate + IRQ/fence |
 | **IreeShapedCp (PR #38)** | `backend = 4`, frozen `IreeHalCmd` from public IREE HAL nouns; **this is M1**; not a signed vendor |
 | Path A | optional QEMU `aether-accel`; stock QEMU stays B |
 | Cap CDT / revoke | small parent/child + `revoke_in`; no `SYS_REVOKE` |
@@ -62,8 +63,10 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 ## Execution spine (this is the calendar)
 
 **M1–M4 are done.** SoftChipletSync scoped timelines are **landed**.
-Month 5 is **not** a second half-year of this file — see
-[MONTH5_PLAN.md](MONTH5_PLAN.md) (four digests, not one spine).
+SoftGreenCtx (Month 5 digest 1) is **landed**. SoftCmdFirewall
+(digest 2) is **landed**. Month 5 is **not** a
+second half-year of this file — see [MONTH5_PLAN.md](MONTH5_PLAN.md)
+(remaining: SoftCCT → SoftSFI).
 Optional / conditional work in *this* file is leave-behind, not a
 pillar. Site-as-milestone stays killed (PR #46 / #50 / #52 were
 progress refreshes, not a marketing climax).
@@ -211,6 +214,32 @@ SID-at-submit + XQueue stay. Path B SoftNPU / `make qemu` unchanged.
    CCT elision when last-writer chiplet matches consumer.
 3. Docs name Fleet / CPElide as inspiration only; non-claims above.
 
+### SoftGreenCtx SM/WQ partitions (**landed**)
+
+Soft-CP partitions a fake SM / work-queue pool (canonical 70/30).
+XQueues bind to a `SoftGreenCtx`. CUDA Green Contexts and DetShare
+(arXiv:2603.15042; no public repo) are **inspiration** — not a CUDA
+driver, not a DetShare port, not HW MIG, not a BAR firewall.
+
+Host tests co-run memcpy-like kernels and report BW interference vs
+an unpartitioned baseline (normalized integer units, **not** FLOPs).
+One migrate-to-yield moves queue A onto the larger slice at a queue
+boundary; Soft-SMMU SID is unchanged. Residual shared-HBM tax stays
+on so the 70% slice is still below solo.
+
+SID-at-submit + XQueue + SoftChipletSync stay. Path B SoftNPU /
+`make qemu` unchanged. `CpCmd` layout unchanged. `IreeShapedCp` stays
+a single mailbox. No new syscall.
+
+**Done when (met):**
+
+1. Soft-CP `AccelInfo` advertises SM/WQ budget; two XQueues bind to
+   70/30 SoftGreenCtx partitions.
+2. Host tests: partitioned memcpy BW vs unpartitioned; migrate-to-yield
+   without SID change; residual tax (not MIG).
+3. Docs name Green Contexts / DetShare as inspiration only; non-claims
+   above. Kernel serial `[greenctx]`.
+
 ### Conditional only — guest PCI path-A bind
 
 A kernel `VirtioAccelMmio` that talks PCI BAR0 **only if** it is needed
@@ -266,27 +295,30 @@ If A had landed as a shim over SoftNPU / Soft-CP (`backend` 1 / 3)
 only, M2 would still be open. PR #41 packs `IreeHalCmd` and submits
 through `IreeShapedCp`; SoftNPU stays the qemu demo.
 
-## SpectraScout leftovers (after SoftChipletSync)
+## SpectraScout leftovers (after SoftChipletSync + SoftGreenCtx)
 
-M3 SID-at-submit, M4 XQueue, and SoftChipletSync are **landed**. Still
-software models, still no vendor claim. Sequencing moved to
-[MONTH5_PLAN.md](MONTH5_PLAN.md):
+M3 SID-at-submit, M4 XQueue, SoftChipletSync, and SoftGreenCtx are
+**landed**. Still software models, still no vendor claim. Sequencing
+moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 
 1. **SoftChipletSync scoped timelines** (**landed**). Chiplet-local
    fence domains; Fleet / CPElide inspiration only. Not UCIe sync.
    Month 5 SoftCCT is a deepen, not a re-landing.
-2. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
+2. **SoftGreenCtx SM/WQ partitions** (**landed**, Month 5 digest 1).
+   Fake 70/30 SM/WQ pool; XQueue bind; memcpy interference vs
+   unpartitioned; migrate-to-yield without SID change. Not HW MIG.
+3. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
    bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
    Software only. Not zero-copy SVA without the invalidate path.
-3. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
+4. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
    only if the shim injects fabric class headers; else theater.
-4. **OperatorInject deepen** — **parked leftover** (Soft-CP
+5. **OperatorInject deepen** — **parked leftover** (Soft-CP
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
 
-Month 5 clock (not leftovers): SoftGreenCtx → SoftCmdFirewall
-(**landed**, copy-then-validate) → SoftCCT → SoftSFI. SoftNoI-IS
-parked. See [MONTH5_PLAN.md](MONTH5_PLAN.md).
+Month 5 remaining (not leftovers): SoftCCT → SoftSFI.
+SoftGreenCtx and SoftCmdFirewall are **landed**. SoftNoI-IS parked.
+See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
 silicon; UCIe stays transport. Full kill / exploration menu lives in
@@ -305,8 +337,9 @@ a Y2 bring-up climax.
 
 [ROADMAP.md](ROADMAP.md) points at [MONTH5_PLAN.md](MONTH5_PLAN.md)
 for what to sequence next. This file remains the closed M1–M4
-record. Suggested next cuts in ROADMAP that are not the Month 5
-spine remain **technical leftovers**.
+record. SoftGreenCtx (digest 1) and SoftCmdFirewall (digest 2)
+are landed. Suggested next cuts in ROADMAP that are not the
+remaining Month 5 digests remain **technical leftovers**.
 
 ## Kernel PR order (this calendar)
 
@@ -319,12 +352,12 @@ spine remain **technical leftovers**.
 5. Optional Soft-SMMU bring-up kit (docs + dump/replay) — **landed** (PR #48)
 6. M3 Soft-CP SID-at-submit (Host1x-shaped) — **landed**
 7. SoftChipletSync scoped timelines — **landed**
-8. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
-   be shown on path-A DMA (Month 5 digest; see
+8. SoftGreenCtx (Month 5 digest 1) — **landed** (this cut)
+9. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
+   be shown on path-A DMA (gated digest; see
    [MONTH5_PLAN.md](MONTH5_PLAN.md))
-9. Month 5 four digests — **next**, [MONTH5_PLAN.md](MONTH5_PLAN.md)
-   (SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI;
-   PASID/SVA and OperatorInject parked)
+10. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
+    (SoftCCT → SoftSFI; PASID/SVA and OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -341,6 +374,7 @@ milestone.
 | M3 SID-at-submit | `drivers/src/fakecp.rs`, `docs/ACCEL.md`, host tests |
 | M4 XQueue | `drivers/src/fakecp.rs`, `hal/` (`n_queues`) — **landed PR #47** |
 | SoftChipletSync | `core/src/{fence,chipsync}.rs`, Soft-CP / IreeShapedCp retire, host tests — **landed** |
+| SoftGreenCtx | `core/src/greenctx.rs`, Soft-CP / HAL `sm_wq_budget`, host tests — **landed** |
 | SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
@@ -362,8 +396,11 @@ target appears. No new syscall.
 - That SoftChipletSync is a Vulkan timeline product, UCIe sync, a
   coherence protocol, ChipletFleet placement, or a multi-chiplet
   latency result from single-die host tests
+- That SoftGreenCtx is HW MIG, a BAR firewall, a CUDA Green Context
+  driver, a DetShare port, silicon SM isolation, or a FLOP / partner
+  bandwidth result
 - That SoftCmdFirewall is a Tegra Host1x driver, confidential GPU,
   HBM encryption, GPU-CC HMAC, or NVIDIA SEC2
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
-  is the software-model track; that theater is not.
+  + SoftGreenCtx is the software-model track; that theater is not.

@@ -177,7 +177,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd`); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd` + SoftGreenCtx SM/WQ); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit. `TypedWindow` is a CXL.mem-inspired pin stub (not silicon) |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
@@ -262,6 +262,10 @@ not a silicon queuing unit). **M3 SID-at-submit is landed** (Host1x-shaped
 SET_SID; StreamId inherits / sticks on the XQueue; not a Tegra driver).
 **SoftChipletSync is landed** (scoped timelines + optional CCT; Fleet /
 CPElide inspiration; not Vulkan, not UCIe, not ChipletFleet placement).
+**SoftGreenCtx is landed** (fake SM/WQ 70/30 partitions on Soft-CP;
+XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield
+without SID change; Green Contexts / DetShare inspiration; not HW MIG,
+not a BAR firewall, not FLOPs).
 Optional Soft SMMU kit is PR #48 (software tables). Path-A guest bind
 stays gated.
 
@@ -278,7 +282,7 @@ stays gated.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M4 done; SoftChipletSync landed)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M4 done; SoftChipletSync + SoftGreenCtx landed)
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 

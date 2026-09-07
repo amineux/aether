@@ -39,11 +39,21 @@
 //! hierarchical counters, optional CPElide CCT) is a **software** fence
 //! domain on this CP. Distinct from ChipletFleet placement. Not UCIe,
 //! not a Vulkan timeline product. Latency wins need a multi-chiplet sim.
+//!
+//! SoftGreenCtx partitions a fake SM / WQ pool (canonical 70/30). XQueues
+//! bind to a context. CUDA Green Contexts / DetShare are **inspiration**
+//! only (DetShare has no public repo). Soft partition — **not** HW MIG,
+//! **not** a BAR firewall. Memcpy-like host tests measure BW interference
+//! vs an unpartitioned baseline; no FLOP partner claims. Migrate-to-yield
+//! rebinds a yielded queue to a larger partition; Soft-SMMU SID stays.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
 use aether_core::chipsync::{BufferLabel, ScopedFence, ScopedWork, SoftChipletSync, SyncScope};
 use aether_core::fence::{Fence, FenceId, Timeline};
+use aether_core::greenctx::{
+    GreenCtxError, GreenCtxId, MemcpyReport, SmWqBudget, SoftGreenPool, SOFT_SM_POOL, SOFT_WQ_POOL,
+};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
 use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::types::{ChipletId, PhysAddr, TileId};
@@ -89,6 +99,8 @@ struct XQueueSlot {
     cmd: CpCmd,
     job: AccelJobDesc,
     scoped: Option<ScopedWork>,
+    /// Non-zero: memcpy-like kernel (bytes). Not a SoftNPU FLOP.
+    memcpy_bytes: u32,
 }
 
 /// Software execution queue on Soft-CP. The schedulable object.
@@ -103,6 +115,7 @@ pub struct XQueue {
     pub sid: Option<StreamId>,
     pub state: XQueueState,
     pub priority: u8,
+    pub green_ctx: Option<GreenCtxId>,
     slots: [Option<XQueueSlot>; XQUEUE_DEPTH],
     head: u8,
     len: u8,
@@ -115,6 +128,7 @@ impl XQueue {
             sid: None,
             state: XQueueState::Running,
             priority: 0,
+            green_ctx: None,
             slots: [None; XQUEUE_DEPTH],
             head: 0,
             len: 0,
@@ -131,6 +145,20 @@ impl XQueue {
 
     pub const fn is_full(&self) -> bool {
         self.len as usize >= XQUEUE_DEPTH
+    }
+
+    fn has_memcpy(&self) -> bool {
+        let mut i = 0u8;
+        while i < self.len {
+            let slot = (self.head as usize + i as usize) % XQUEUE_DEPTH;
+            if let Some(s) = self.slots[slot] {
+                if s.memcpy_bytes > 0 {
+                    return true;
+                }
+            }
+            i += 1;
+        }
+        false
     }
 
     fn push(&mut self, slot: XQueueSlot) -> Result<(), HalError> {
@@ -151,6 +179,16 @@ impl XQueue {
         self.head = (self.head + 1) % XQUEUE_DEPTH as u8;
         self.len -= 1;
         Some(slot)
+    }
+}
+
+fn map_green_error(e: GreenCtxError) -> HalError {
+    match e {
+        GreenCtxError::BadArg => HalError::BadArg,
+        GreenCtxError::Busy | GreenCtxError::Overcommit | GreenCtxError::Exhausted => {
+            HalError::Busy
+        }
+        GreenCtxError::Unbound => HalError::Fault,
     }
 }
 
@@ -286,7 +324,7 @@ impl CpCmd {
         })
     }
 
-    fn empty_from(job: &AccelJobDesc, sid: StreamId) -> Self {
+    pub fn empty_from(job: &AccelJobDesc, sid: StreamId) -> Self {
         Self {
             magic: CP_PKT_MAGIC,
             opcode: AccelOp::Nop as u32 as u8,
@@ -377,6 +415,9 @@ pub struct SoftCommandProcessor<M: DmaView> {
     last_scoped: Option<ScopedFence>,
     /// Copy-then-validate arena (Host1x-shaped). Not GPU-CC.
     pub firewall: SoftCmdFirewall,
+    /// Fake SM/WQ Green Contexts. Soft partition, not MIG.
+    pub green: SoftGreenPool,
+    last_memcpy: Option<MemcpyReport>,
 }
 
 impl<M: DmaView> SoftCommandProcessor<M> {
@@ -388,6 +429,8 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 n_queues: SOFT_CP_XQUEUES as u16,
                 max_wave: 64,
                 backend: ACCEL_BACKEND_SOFT_CP,
+                sm_count: SOFT_SM_POOL,
+                wq_count: SOFT_WQ_POOL,
             },
             iommu: IommuMap::new(),
             mem,
@@ -403,6 +446,8 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             chipsync: SoftChipletSync::new(PartitionId(1)),
             last_scoped: None,
             firewall: SoftCmdFirewall::new(),
+            green: SoftGreenPool::new(),
+            last_memcpy: None,
         }
     }
 
@@ -553,6 +598,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 cmd,
                 job: *job,
                 scoped: None,
+                memcpy_bytes: 0,
             })
             .err()
         };
@@ -629,6 +675,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 cmd,
                 job,
                 scoped: None,
+                memcpy_bytes: 0,
             })
             .err()
         };
@@ -683,6 +730,86 @@ impl<M: DmaView> SoftCommandProcessor<M> {
 
     pub fn last_scoped(&self) -> Option<ScopedFence> {
         self.last_scoped
+    }
+
+    pub fn last_memcpy(&self) -> Option<MemcpyReport> {
+        self.last_memcpy
+    }
+
+    /// Canonical 70/30 SoftGreenCtx split. Exclusive SM/WQ slices.
+    pub fn split_green_70_30(&mut self) -> Result<(GreenCtxId, GreenCtxId), HalError> {
+        self.green.split_70_30().map_err(map_green_error)
+    }
+
+    /// Unpartitioned share-the-pool contexts (interference baseline).
+    pub fn share_green_unpartitioned(&mut self) -> Result<(GreenCtxId, GreenCtxId), HalError> {
+        self.green.share_unpartitioned().map_err(map_green_error)
+    }
+
+    /// Bind an XQueue to a SoftGreenCtx. SID is unchanged.
+    pub fn bind_green_ctx(&mut self, queue: u16, ctx: GreenCtxId) -> Result<(), HalError> {
+        self.green.bind(ctx, queue).map_err(map_green_error)?;
+        let q = self.queue_mut(queue)?;
+        q.green_ctx = Some(ctx);
+        Ok(())
+    }
+
+    /// Drop a queue's Green Context binding. SID is unchanged.
+    pub fn unbind_green_ctx(&mut self, queue: u16) -> Result<GreenCtxId, HalError> {
+        let q = self.queue_mut(queue)?;
+        let ctx = q.green_ctx.take().ok_or(HalError::Fault)?;
+        let _ = self.green.unbind(ctx).map_err(map_green_error)?;
+        Ok(ctx)
+    }
+
+    /// Queue-boundary yield, then rebind to `dest`. Soft-SMMU SID sticks.
+    pub fn migrate_to_yield(&mut self, queue: u16, dest: GreenCtxId) -> Result<StreamId, HalError> {
+        let q = self.queue_mut(queue)?;
+        if q.state != XQueueState::Suspended && !q.is_empty() {
+            return Err(HalError::Busy);
+        }
+        let sid = q.sid.ok_or(HalError::Fault)?;
+        let out = self
+            .green
+            .migrate_to_yield(queue, dest, sid)
+            .map_err(map_green_error)?;
+        if out != sid {
+            return Err(HalError::Fault);
+        }
+        let q = self.queue_mut(queue)?;
+        q.green_ctx = Some(dest);
+        q.sid = Some(sid);
+        Ok(sid)
+    }
+
+    /// Enqueue a memcpy-like kernel (bytes). Not SoftNPU, not FLOPs.
+    ///
+    /// `Nop` + `m = bytes` on the queue's sticky SID. Service accounts
+    /// cycles from the SoftGreenCtx SM share.
+    pub fn submit_memcpy(&mut self, queue: u16, bytes: u32) -> Result<u32, HalError> {
+        if bytes == 0 {
+            return Err(HalError::BadArg);
+        }
+        let sid = self.xqueue(queue).and_then(|q| q.sid).ok_or(HalError::Fault)?;
+        let mut job = AccelJobDesc::matmul_i32(bytes, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+        job.op = AccelOp::Nop;
+        job.m = bytes;
+        let cmd = CpCmd::empty_from(&job, sid);
+        let q = self.queue_mut(queue)?;
+        q.push(XQueueSlot {
+            cmd,
+            job,
+            scoped: None,
+            memcpy_bytes: bytes,
+        })?;
+        self.green.note_memcpy_submit();
+        self.last_cmd = Some(cmd);
+        self.irq = false;
+        self.last_cpl = None;
+        self.fence_done = false;
+        self.last_fence = None;
+        self.submit_seq = self.submit_seq.wrapping_add(1);
+        Ok(self.submit_seq)
     }
 
     pub fn suspend_xqueue(&mut self, queue: u16) -> Result<PreemptionLevel, HalError> {
@@ -769,10 +896,39 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     /// Suspended queues are skipped (queue-boundary preemption).
     pub fn service(&mut self) -> Option<Completion> {
         let qi = self.pick_running()?;
+        let n_co = self
+            .queues
+            .iter()
+            .filter(|q| q.state == XQueueState::Running && q.has_memcpy())
+            .count() as u16;
+        let wave_n = self.green.wave_n().max(n_co).max(1);
         let slot = self.queues[qi].pop()?;
         let cmd = slot.cmd;
         let job = slot.job;
         self.last_queue = Some(qi as u8);
+        if slot.memcpy_bytes > 0 {
+            let ctx = self.queues[qi].green_ctx;
+            return match self.green.memcpy(ctx, slot.memcpy_bytes, wave_n) {
+                Ok(rep) => {
+                    self.last_memcpy = Some(rep);
+                    let cpl = Completion {
+                        job_seq: self.npu.seq,
+                        status: 0,
+                        cycles: rep.cycles,
+                    };
+                    self.npu.seq = self.npu.seq.wrapping_add(1);
+                    Some(self.complete(cmd.fence_id, cpl))
+                }
+                Err(_) => {
+                    let cpl = Completion {
+                        job_seq: self.npu.seq,
+                        status: -1,
+                        cycles: 0,
+                    };
+                    Some(self.complete(cmd.fence_id, cpl))
+                }
+            };
+        }
         if job.op != AccelOp::Nop {
             let sid = StreamId::from_raw(cmd.stream_id);
             let stamped = cmd.flags & CP_FLAG_SET_SID != 0;
@@ -912,6 +1068,25 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
         self.resume_xqueue(queue)
     }
 
+    fn sm_wq_budget(&self) -> Option<SmWqBudget> {
+        Some(self.green.total())
+    }
+
+    fn create_green_ctx(&mut self, sm: u16, wq: u16) -> Result<u16, HalError> {
+        self.green
+            .create(SmWqBudget { sm, wq })
+            .map(|id| id.0)
+            .map_err(map_green_error)
+    }
+
+    fn bind_queue_ctx(&mut self, queue: u16, ctx: u16) -> Result<(), HalError> {
+        self.bind_green_ctx(queue, GreenCtxId(ctx))
+    }
+
+    fn migrate_queue_ctx(&mut self, queue: u16, dest_ctx: u16) -> Result<(), HalError> {
+        self.migrate_to_yield(queue, GreenCtxId(dest_ctx)).map(|_| ())
+    }
+
     fn poll(&mut self) -> Option<Completion> {
         if !self.irq {
             return None;
@@ -998,6 +1173,9 @@ mod tests {
         assert_ne!(info.backend, ACCEL_BACKEND_PARTNER_STUB);
         assert_eq!(info.device, 0x0003);
         assert_eq!(info.n_queues, SOFT_CP_XQUEUES as u16);
+        assert_eq!(info.sm_count, SOFT_SM_POOL);
+        assert_eq!(info.wq_count, SOFT_WQ_POOL);
+        assert_eq!(d.sm_wq_budget(), Some(SmWqBudget::full()));
         assert_eq!(d.name(), "soft-cp");
         assert_eq!(d.xqueue(0).unwrap().state, XQueueState::Running);
         assert_eq!(d.xqueue(1).unwrap().state, XQueueState::Running);
@@ -1594,6 +1772,12 @@ mod tests {
             AccelDevice::suspend_queue(&mut d, 0).unwrap_err(),
             HalError::Unsupported
         );
+        assert_eq!(d.probe().unwrap().sm_count, 0);
+        assert_eq!(d.sm_wq_budget(), None);
+        assert_eq!(
+            AccelDevice::create_green_ctx(&mut d, 7, 7).unwrap_err(),
+            HalError::Unsupported
+        );
     }
 
     /// AccelDevice::map / Soft-CP SID bind twin of `docs/bringup/smmu_replay.jsonl`.
@@ -1830,5 +2014,115 @@ mod tests {
         // Soft SMMU will not resolve a guest PA that skipped the IOVA window.
         let cpl = d.service().unwrap();
         assert_ne!(cpl.status, 0);
+    }
+
+    fn green_two_queues(
+        d: &mut SoftCommandProcessor<SliceMem<'_>>,
+        sid_a: StreamId,
+        sid_b: StreamId,
+    ) {
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 0).unwrap();
+    }
+
+    #[test]
+    fn greenctx_two_queue_70_30_memcpy_beats_unpartitioned() {
+        use aether_core::greenctx::DEMO_MEMCPY_BYTES;
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        let sid_a = StreamId::accel(ChipletId(0), TileId(2), CP_SSID);
+        let sid_b = StreamId::accel(ChipletId(1), TileId(3), CP_SSID);
+        green_two_queues(&mut d, sid_a, sid_b);
+
+        let (ua, ub) = d.share_green_unpartitioned().unwrap();
+        d.bind_green_ctx(0, ua).unwrap();
+        d.bind_green_ctx(1, ub).unwrap();
+        d.submit_memcpy(0, DEMO_MEMCPY_BYTES).unwrap();
+        d.submit_memcpy(1, DEMO_MEMCPY_BYTES).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        let un_a = d.last_memcpy().unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        let un_b = d.last_memcpy().unwrap();
+        assert_eq!(un_a.bw_milli, un_b.bw_milli);
+        assert_eq!(un_a.n_co, 2);
+
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut p = SoftCommandProcessor::new(mem);
+        green_two_queues(&mut p, sid_a, sid_b);
+        let (hi, lo) = p.split_green_70_30().unwrap();
+        p.bind_green_ctx(0, hi).unwrap();
+        p.bind_green_ctx(1, lo).unwrap();
+        assert_eq!(p.xqueue(0).unwrap().green_ctx, Some(hi));
+        assert_eq!(p.xqueue(1).unwrap().green_ctx, Some(lo));
+        p.submit_memcpy(0, DEMO_MEMCPY_BYTES).unwrap();
+        p.submit_memcpy(1, DEMO_MEMCPY_BYTES).unwrap();
+        assert_eq!(p.service().unwrap().status, 0);
+        let p70 = p.last_memcpy().unwrap();
+        assert_eq!(p.service().unwrap().status, 0);
+        let p30 = p.last_memcpy().unwrap();
+        assert_eq!(p70.sm, 7);
+        assert_eq!(p30.sm, 3);
+        assert!(p70.bw_milli > un_a.bw_milli, "70% less SM interference");
+        assert!(un_a.bw_milli > p30.bw_milli);
+        assert!(p70.bw_milli < 1000, "residual HBM tax: not MIG");
+        assert_eq!(p.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(p.xqueue(1).unwrap().sid, Some(sid_b));
+    }
+
+    #[test]
+    fn greenctx_migrate_to_yield_sid_unchanged() {
+        use aether_core::greenctx::DEMO_MEMCPY_BYTES;
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        let sid_a = StreamId::accel(ChipletId(0), TileId(2), CP_SSID);
+        let sid_b = StreamId::accel(ChipletId(1), TileId(3), CP_SSID);
+        green_two_queues(&mut d, sid_a, sid_b);
+        let (hi, lo) = d.split_green_70_30().unwrap();
+        d.bind_green_ctx(0, lo).unwrap();
+        d.bind_green_ctx(1, hi).unwrap();
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(d.xqueue(0).unwrap().green_ctx, Some(lo));
+
+        d.submit_memcpy(0, DEMO_MEMCPY_BYTES).unwrap();
+        let level = d.suspend_xqueue(0).unwrap();
+        assert_eq!(level, PreemptionLevel::QueueBoundary);
+        // Pending work: migrate refused until yield drains or queue is empty.
+        assert_eq!(d.migrate_to_yield(0, hi).unwrap_err(), HalError::Busy);
+        d.resume_xqueue(0).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+        assert!(d.xqueue(0).unwrap().is_empty());
+
+        let level = d.suspend_xqueue(0).unwrap();
+        assert_eq!(level, PreemptionLevel::QueueBoundary);
+        // Dest hi still holds queue 1.
+        assert_eq!(d.migrate_to_yield(0, hi).unwrap_err(), HalError::Busy);
+        d.unbind_green_ctx(1).unwrap();
+        let out = d.migrate_to_yield(0, hi).unwrap();
+        assert_eq!(out, sid_a);
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(d.xqueue(0).unwrap().green_ctx, Some(hi));
+        assert_eq!(
+            AccelDevice::migrate_queue_ctx(&mut d, 0, hi.0).unwrap(),
+            ()
+        );
+        d.resume_xqueue(0).unwrap();
+        d.submit_memcpy(0, DEMO_MEMCPY_BYTES).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        let after = d.last_memcpy().unwrap();
+        assert_eq!(after.sm, 7);
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
     }
 }

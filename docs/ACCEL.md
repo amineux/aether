@@ -278,7 +278,7 @@ opcode/packet ADR below.
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftCmdFirewall + Soft SMMU + IRQ/fence |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftGreenCtx SM/WQ + SoftCmdFirewall + Soft SMMU + IRQ/fence |
 | 4 | `IreeShapedCp` | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
@@ -338,6 +338,9 @@ image.
 7. Honor BankColor at the scheduler / SYS_ACCEL_SUBMIT layer (unchanged).
 8. Two software XQueues (`n_queues = 2`): create / submit / suspend /
    resume. `AccelDevice::submit` is queue 0. See the XQueue section.
+9. SoftGreenCtx (`sm_count` / `wq_count` on `AccelInfo`): fake SM/WQ
+   pool, 70/30 split, bind XQueue, migrate-to-yield. SID unchanged.
+   See the SoftGreenCtx section.
 ```
 
 Swap `SoftCommandProcessor` for a real BAR + MSI-X by keeping this
@@ -447,6 +450,59 @@ Host tests: `package_scope_fence_count_much_less_than_naive`,
 `cct_elides_when_last_writer_matches_consumer`, Soft-CP two-fake-chiplet
 producer/consumer, IreeShapedCp sequential producer/consumer. Kernel
 serial `[chipsync]`.
+
+## SoftGreenCtx (software; Green Contexts / DetShare-shaped)
+
+**Status:** **Landed** (SpectraScout M5 digest #1, after M3+M4+SoftChipletSync).
+Soft-CP partitions a **fake** SM / work-queue pool. XQueues bind to a
+`SoftGreenCtx`. Soft-SMMU SID is unchanged across migrate-to-yield.
+Not HW MIG. Not a BAR firewall.
+
+**Inspiration.**
+
+- [CUDA Green Contexts](https://docs.nvidia.com/cuda/cuda-driver-api/group__CUDA__GREEN__CONTEXTS.html):
+  a lightweight context that owns a subset of SMs and work queues.
+  Streams bind to that context. Soft partition — even disjoint SMs do
+  **not** isolate L2 / HBM.
+- DetShare (arXiv:2603.15042): virtual contexts bound to physical Green
+  Contexts with SM quotas; **migrate-to-yield** rebinds a queue to a
+  larger partition at a queue boundary. DetShare has **no** public repo.
+  GC is a real HW API; this crate is a software model.
+
+**This is not:**
+
+- Hardware MIG, a BAR firewall, or silicon SM isolation.
+- A CUDA driver, an NVIDIA partnership, or a DetShare port.
+- A FLOP / partner-bandwidth claim. Host tests measure memcpy-like
+  **normalized integer BW** (bytes / SM-scaled cycles) vs an
+  unpartitioned baseline. Residual shared-HBM tax stays on so a
+  partitioned 70% slice is still below solo.
+- A change to path-B SoftNPU, the virtqueue BAR, or `make qemu`.
+  `IreeShapedCp` stays a single mailbox (no SoftGreenCtx).
+- A `CpCmd` layout change. Memcpy-like jobs are Soft-CP `Nop` + byte
+  count, retired through the existing IRQ/poll path.
+
+**Contract** (`aether_core::greenctx::SoftGreenPool` + Soft-CP /
+`aether_hal::AccelDevice`):
+
+```text
+AccelInfo { sm_count: 10, wq_count: 10 }   // Soft-CP only; others 0
+sm_wq_budget()                             // AccelDevice capability
+split_green_70_30() / share_unpartitioned()
+bind_green_ctx(queue, ctx)
+submit_memcpy(queue, bytes)                // memcpy-like; not SoftNPU
+service()                                  // SM-share cycles + residual tax
+migrate_to_yield(queue, dest)              // queue-boundary; SID sticks
+```
+
+Canonical clip: fake pool **10 SM / 10 WQ**, exclusive **70/30** (7+3).
+Two XQueues bind to those partitions, co-run memcpy-like kernels, and
+report BW vs the unpartitioned 50/50 share. Queue A may yield and
+migrate onto the larger slice; `StreamId` does not change.
+
+Host tests: `memcpy_interference_partitioned_beats_unpartitioned`,
+`greenctx_two_queue_70_30_memcpy_beats_unpartitioned`,
+`greenctx_migrate_to_yield_sid_unchanged`. Kernel serial `[greenctx]`.
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
