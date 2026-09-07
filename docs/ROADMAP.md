@@ -35,15 +35,17 @@ product kernel.
 | PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 | SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package + optional CCT; Fleet / CPElide inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
+| SoftGreenCtx SM/WQ partitions | **done** (fake 70/30 SM/WQ pool; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change; Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) |
 | SoftCmdFirewall (copy-then-validate) | **done** (kernel-owned arena; opcode / reloc / SID / addr-cap walk on the copy; race/mutation host tests). Host1x inspiration. Command-stream integrity only — not confidential GPU. |
 
 ## Month 5–6 (this cut): Portability & partners
 
 The **next Kernel calendar** after M1–M4 + SoftChipletSync is
-[MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration digests:
-SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI; PASID/SVA and
-OperatorInject parked). The portability / partner slices below
-already landed; they are not Month 5.
+[MONTH5_PLAN.md](MONTH5_PLAN.md). SoftGreenCtx (**landed**).
+SoftCmdFirewall (**landed**). Two exploration digests remain:
+SoftCCT → SoftSFI; PASID/SVA and OperatorInject parked. The
+portability / partner slices below already landed; they are not
+Month 5.
 
 Landed:
 
@@ -800,6 +802,7 @@ Search for `// STUB:` / `STUB` :
 | Compiler ISA blob | `abi::Executable` + `host/aether-pjrt` | Kernel stores a handle; host shim packs `IreeHalCmd` / submits `AccelOp`; IREE/PJRT would own the bytes. Not a plugin. |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | SoftChipletSync | `core/src/chipsync.rs` | **done** as software scoped timelines + hierarchical counters + optional CCT. Not Vulkan, not UCIe, not ChipletFleet placement. Fence counts only |
+| SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -835,6 +838,13 @@ opcode device (PR #38). **What to sequence next:**
   package}` + optional CCT elision. Fleet / CPElide inspiration only.
   Not UCIe, not Vulkan, not ChipletFleet placement. Fence-count host
   tests; single-die numbers are not partner proof.
+- **SoftGreenCtx landed:** Soft-CP fake SM/WQ 70/30 partitions; XQueue
+  bind; memcpy interference vs unpartitioned; migrate-to-yield without
+  SID change. CUDA Green Contexts / DetShare inspiration only. Not HW
+  MIG, not a BAR firewall, not FLOPs.
+- **SoftCmdFirewall landed:** copy-then-validate on Soft-CP submit
+  (kernel-owned arena; Host1x lesson). Command-stream integrity only
+  — not confidential GPU.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
@@ -844,17 +854,16 @@ opcode device (PR #38). **What to sequence next:**
 ## Suggested next cuts (technical, not calendar)
 
 The Kernel **calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(M1–M4 + SoftChipletSync closed in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)).
-Four exploration digests, not one spine: SoftGreenCtx →
-SoftCmdFirewall → SoftCCT → SoftSFI. PASID/SVA and OperatorInject
-are parked leftovers. The list below is leftover engineering, not
-a fifth digest.
+(M1–M4 + SoftChipletSync closed in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md);
+SoftGreenCtx and SoftCmdFirewall landed). Remaining: SoftCCT →
+SoftSFI. PASID/SVA and OperatorInject are parked leftovers.
+The list below is leftover engineering, not a fifth digest.
 
-1. **Month 5 digests** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
-   SoftGreenCtx (fake SM/WQ partitions; not MIG) → SoftCmdFirewall
-   (copy-then-validate; not confidential GPU) → SoftCCT (deepen
-   landed CCT; incorrect elision fails) → SoftSFI (toy ISA bounds
-   + SID; not a safe multi-tenant kernel). SoftNoI-IS parked.
+1. **Month 5 remaining** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
+   SoftCCT (deepen landed CCT; incorrect elision fails) → SoftSFI
+   (toy ISA bounds + SID; not a safe multi-tenant kernel).
+   SoftGreenCtx is **landed** (not MIG). SoftCmdFirewall is
+   **landed** (not confidential GPU). SoftNoI-IS parked.
    **PASID / SVA** stays a parked leftover (per-`AccelDevice`
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
@@ -900,7 +909,8 @@ a fifth digest.
 Falsifier ACTIVE track through PR #37 is **complete as research
 slices**; do not sequence new work against it. Closed M1–M4 calendar:
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md). **Next calendar:**
-[MONTH5_PLAN.md](MONTH5_PLAN.md).
+[MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx landed; SoftCmdFirewall
+landed; SoftCCT → SoftSFI remain).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),

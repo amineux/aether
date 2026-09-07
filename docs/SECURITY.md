@@ -80,6 +80,11 @@ SoftChipletSync (`core/src/chipsync.rs`) is a software fence-domain
 model (scoped timelines + optional CCT). It is **not** a coherence
 protocol, not UCIe, and not hardware-grade isolation across chiplets.
 
+SoftGreenCtx (`core/src/greenctx.rs`) is a software SM/WQ partition
+on Soft-CP. CUDA Green Contexts / DetShare are inspiration only. It
+is **not** HW MIG, not a BAR firewall, and not silicon SM isolation.
+Host tests measure memcpy-like interference; they are not FLOPs.
+
 ## CDT properties (host tests, not a proof)
 
 Aether stores a parent pointer (`CdtNode` = table owner + mint

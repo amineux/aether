@@ -7,8 +7,9 @@ revision 2026-09-06. Filed on main via PR.
 **complete as research slices.** `IreeShapedCp` (PR #38) landed the
 six-month M1 opcode device. `host/aether-pjrt` (PR #41) landed M2.
 The closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1–M4 done; SoftChipletSync landed). The **next calendar** is
-[MONTH5_PLAN.md](MONTH5_PLAN.md). Do
+(M1–M4 done; SoftChipletSync landed; SoftGreenCtx landed;
+SoftCmdFirewall landed). The **next
+calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md). Do
 not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 from the KEEP list below. SpecForge appendix remains aspirational
 only.

@@ -453,6 +453,8 @@ impl<M: DmaView> IreeShapedCp<M> {
                 n_queues: 1,
                 max_wave: 64,
                 backend: ACCEL_BACKEND_IREE_SHAPED,
+                sm_count: 0,
+                wq_count: 0,
             },
             iommu: IommuMap::new(),
             mem,

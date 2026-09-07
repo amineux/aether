@@ -4,6 +4,7 @@
 
 use aether_core::blast::run_blast_demo;
 use aether_core::chipsync::run_chipsync_demo;
+use aether_core::greenctx::run_greenctx_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
@@ -87,7 +88,11 @@ pub fn run_kernel_selfcheck() {
                 write_str(cp.name());
                 write_str(" n_queues=");
                 write_u64(info.n_queues as u64);
-                write_str(" (XQueue; queue-boundary; QEMU demo stays SoftNPU)");
+                write_str(" sm=");
+                write_u64(info.sm_count as u64);
+                write_str(" wq=");
+                write_u64(info.wq_count as u64);
+                write_str(" (XQueue + SoftGreenCtx; not MIG; QEMU demo stays SoftNPU)");
                 console::nl();
             }
             Err(_) => {
@@ -210,21 +215,44 @@ pub fn run_kernel_selfcheck() {
         println!("[chipsync] FAIL -- SoftChipletSync");
     }
 
-    // Sequential: IommuMap in the firewall clip must not share the stack
-    // with chipsync / sid.
-    let firewall = run_firewall_demo();
-    write_str("[firewall] copy-then-validate Host1x race  sneak=");
-    write_str(flag(firewall.sneak_without));
-    write_str(" hold=");
-    write_str(flag(firewall.hold_with));
-    write_str(" (cmd-stream integrity; not confidential GPU)  ");
-    write_str(flag(firewall.all_ok()));
-    console::nl();
-    if firewall.all_ok() {
-        println!("[firewall] copy-then-validate race sealed");
-    } else {
-        println!("[firewall] FAIL -- SoftCmdFirewall");
-    }
+    // Sequential blocks: IommuMap in the firewall clip must not share
+    // the stack with chipsync / sid / SoftGreenCtx.
+    let firewall_ok = {
+        let firewall = run_firewall_demo();
+        write_str("[firewall] copy-then-validate Host1x race  sneak=");
+        write_str(flag(firewall.sneak_without));
+        write_str(" hold=");
+        write_str(flag(firewall.hold_with));
+        write_str(" (cmd-stream integrity; not confidential GPU)  ");
+        write_str(flag(firewall.all_ok()));
+        console::nl();
+        if firewall.all_ok() {
+            println!("[firewall] copy-then-validate race sealed");
+        } else {
+            println!("[firewall] FAIL -- SoftCmdFirewall");
+        }
+        firewall.all_ok()
+    };
+
+    let green_ok = {
+        let green = run_greenctx_demo();
+        write_str("[greenctx] SM/WQ pool split 70/30  part70_bw=");
+        write_u64(green.part70_bw as u64);
+        write_str(" unpart=");
+        write_u64(green.unpart_bw as u64);
+        write_str(" (Green Contexts / DetShare; not MIG)  ");
+        write_str(flag(green.split_ok && green.interference_ok));
+        console::nl();
+        write_str("[greenctx] migrate-to-yield A 30->70 SID unchanged  ");
+        write_str(flag(green.migrate_ok && green.not_mig));
+        console::nl();
+        if green.all_ok() {
+            println!("[greenctx] two-queue SoftGreenCtx sealed");
+        } else {
+            println!("[greenctx] FAIL -- SoftGreenCtx");
+        }
+        green.all_ok()
+    };
 
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
@@ -242,7 +270,8 @@ pub fn run_kernel_selfcheck() {
         || !blast.all_ok()
         || !sid.all_ok()
         || !chipsync.all_ok()
-        || !firewall.all_ok()
+        || !firewall_ok
+        || !green_ok
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);

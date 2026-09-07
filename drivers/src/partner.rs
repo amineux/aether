@@ -67,6 +67,8 @@ impl PartnerNpuStub {
                 n_queues: 1,
                 max_wave: 0, // TODO: read from PCI/MMIO cfg
                 backend: 2,
+                sm_count: 0,
+                wq_count: 0,
             },
             iommu: IommuMap::new(),
             last_cmd: None,

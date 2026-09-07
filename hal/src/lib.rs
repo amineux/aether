@@ -10,6 +10,7 @@
 #![cfg_attr(not(test), no_std)]
 
 use aether_core::accel::{AccelJobDesc, Completion};
+use aether_core::greenctx::SmWqBudget;
 use aether_core::iommu::MapRequest;
 use aether_core::space::{map_place, FabricAddr, Place, SpaceError};
 use aether_core::types::PhysAddr;
@@ -23,6 +24,10 @@ pub struct AccelInfo {
     pub max_wave: u16,
     /// Backend discriminator. See [`ACCEL_BACKEND_SOFTNPU`] and siblings.
     pub backend: u8,
+    /// Fake SM pool advertised by Soft-CP. Zero = no SoftGreenCtx.
+    pub sm_count: u16,
+    /// Fake work-queue pool advertised by Soft-CP. Zero = no SoftGreenCtx.
+    pub wq_count: u16,
 }
 
 /// In-process SoftNPU software model (Dummy / reference execute).
@@ -95,6 +100,31 @@ pub trait AccelDevice {
         let _ = queue;
         Err(HalError::Unsupported)
     }
+    /// Soft-CP SM/WQ budget. Default: none (no SoftGreenCtx).
+    ///
+    /// Soft partition, not MIG / BAR firewall. CUDA Green Contexts /
+    /// DetShare are inspiration only.
+    fn sm_wq_budget(&self) -> Option<SmWqBudget> {
+        None
+    }
+    /// Create a SoftGreenCtx with an exclusive SM/WQ slice.
+    ///
+    /// Default: unsupported. Soft-CP implements a fake 10-SM / 10-WQ pool.
+    fn create_green_ctx(&mut self, sm: u16, wq: u16) -> Result<u16, HalError> {
+        let _ = (sm, wq);
+        Err(HalError::Unsupported)
+    }
+    /// Bind an XQueue to a SoftGreenCtx. Default: unsupported.
+    fn bind_queue_ctx(&mut self, queue: u16, ctx: u16) -> Result<(), HalError> {
+        let _ = (queue, ctx);
+        Err(HalError::Unsupported)
+    }
+    /// Migrate-to-yield: rebind a yielded XQueue to another SoftGreenCtx.
+    /// Soft-SMMU SID must stay put. Default: unsupported.
+    fn migrate_queue_ctx(&mut self, queue: u16, dest_ctx: u16) -> Result<(), HalError> {
+        let _ = (queue, dest_ctx);
+        Err(HalError::Unsupported)
+    }
     /// Driver-side used-ring read. Does not service the device.
     fn poll(&mut self) -> Option<Completion>;
     /// Pin a guest PA range the device may DMA. Returns the Soft-SMMU IOVA.
@@ -161,6 +191,8 @@ mod tests {
                 n_queues: 1,
                 max_wave: 8,
                 backend: ACCEL_BACKEND_SOFTNPU,
+                sm_count: 0,
+                wq_count: 0,
             })
         }
         fn submit(&mut self, _job: &AccelJobDesc) -> Result<u32, HalError> {
@@ -184,6 +216,13 @@ mod tests {
     fn probe_dummy() {
         let mut d = Dummy;
         assert_eq!(d.probe().unwrap().vendor, 0xAE7E);
+        assert_eq!(d.probe().unwrap().sm_count, 0);
+        assert_eq!(d.probe().unwrap().wq_count, 0);
+        assert_eq!(d.sm_wq_budget(), None);
+        assert_eq!(
+            d.create_green_ctx(7, 7).unwrap_err(),
+            HalError::Unsupported
+        );
         assert_eq!(d.name(), "dummy");
         let iova = d
             .map(MapRequest::pin(
