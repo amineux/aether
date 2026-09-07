@@ -4,9 +4,10 @@ This is what a silicon OS team would receive before spending bring-up
 time on Aether. It is **not** a partnership announcement, a tape-out
 checklist, or a benchmark brief. The public site (`site/`) is the same
 leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
-active track the site must match. The **next calendar** is
+active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
-landed; SoftChipletSync landed). Site-as-milestone stays killed.
+landed; SoftChipletSync landed). The **next calendar** is
+[MONTH5_PLAN.md](MONTH5_PLAN.md). Site-as-milestone stays killed.
 
 ## What ships in this tree
 

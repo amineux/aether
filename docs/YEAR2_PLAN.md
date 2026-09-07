@@ -6,8 +6,9 @@ revision 2026-09-06. Filed on main via PR.
 **Status (2026-09-07):** the Falsifier ACTIVE track through PR #37 is
 **complete as research slices.** `IreeShapedCp` (PR #38) landed the
 six-month M1 opcode device. `host/aether-pjrt` (PR #41) landed M2.
-The **next calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1–M4 done; SoftChipletSync landed). Do
+The closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
+(M1–M4 done; SoftChipletSync landed). The **next calendar** is
+[MONTH5_PLAN.md](MONTH5_PLAN.md). Do
 not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 from the KEEP list below. SpecForge appendix remains aspirational
 only.
@@ -30,8 +31,9 @@ only.
 
 **This was the ACTIVE track through PR #37.** SpecForge's half-year calendar
 ([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
-only — do not schedule Kernel work against it. New sequencing lives in
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md). Soft SMMU (PR #7;
+only — do not schedule Kernel work against it. Closed M1–M4 sequencing lives in
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); Month 5 lives in
+[MONTH5_PLAN.md](MONTH5_PLAN.md). Soft SMMU (PR #7;
 deepened as STE→CD→S1/S2 + ATS invalidate, still not hardware) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
 **done** as software models. `IreeShapedCp` (`backend = 4`) is **done**
