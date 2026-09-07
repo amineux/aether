@@ -9,10 +9,11 @@ XQueue). SoftChipletSync scoped timelines **landed** after M3+M4
 (PR #51). Site progress through PR #52.
 
 **This calendar is closed (M1–M4 + SoftChipletSync).** The **next
-calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (pick-one primary:
-PASID/SVA recommended, or OperatorInject deepen). SpecForge
-OS-completeness theater is not the schedule. SpectraScout Soft-CP
-items are software models, not fork / POSIX / CXL.mem / ChipletFleet.
+calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration
+digests: SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI;
+PASID/SVA and OperatorInject parked). SpecForge OS-completeness
+theater is not the schedule. SpectraScout Soft-CP items are
+software models, not fork / POSIX / CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -61,10 +62,10 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 
 **M1–M4 are done.** SoftChipletSync scoped timelines are **landed**.
 Month 5 is **not** a second half-year of this file — see
-[MONTH5_PLAN.md](MONTH5_PLAN.md). Optional / conditional work in
-*this* file is leave-behind, not a pillar. Site-as-milestone stays
-killed (PR #46 / #50 / #52 were progress refreshes, not a marketing
-climax).
+[MONTH5_PLAN.md](MONTH5_PLAN.md) (four digests, not one spine).
+Optional / conditional work in *this* file is leave-behind, not a
+pillar. Site-as-milestone stays killed (PR #46 / #50 / #52 were
+progress refreshes, not a marketing climax).
 
 ### M1 — partner-shaped opcode table (**landed, PR #38**)
 
@@ -272,14 +273,18 @@ software models, still no vendor claim. Sequencing moved to
 
 1. **SoftChipletSync scoped timelines** (**landed**). Chiplet-local
    fence domains; Fleet / CPElide inspiration only. Not UCIe sync.
-2. **PASID / SVA** — recommended Month 5 spine (per-AccelDevice PASID;
+   Month 5 SoftCCT is a deepen, not a re-landing.
+2. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
    bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
    Software only. Not zero-copy SVA without the invalidate path.
-3. **FlowHodgeQuota.** Already landed as admit/refuse. Month 5 digest
+3. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
    only if the shim injects fabric class headers; else theater.
-4. **OperatorInject deepen** — alternate Month 5 spine (Soft-CP
+4. **OperatorInject deepen** — **parked leftover** (Soft-CP
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
+
+Month 5 clock (not leftovers): SoftGreenCtx → SoftCmdFirewall →
+SoftCCT → SoftSFI. SoftNoI-IS parked. See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
 silicon; UCIe stays transport. Full kill / exploration menu lives in
@@ -315,8 +320,9 @@ spine remain **technical leftovers**.
 8. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
    be shown on path-A DMA (Month 5 digest; see
    [MONTH5_PLAN.md](MONTH5_PLAN.md))
-9. Month 5 pick-one primary — **next**, [MONTH5_PLAN.md](MONTH5_PLAN.md)
-   (PASID/SVA recommended; OperatorInject deepen alternate)
+9. Month 5 four digests — **next**, [MONTH5_PLAN.md](MONTH5_PLAN.md)
+   (SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI;
+   PASID/SVA and OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -334,7 +340,7 @@ milestone.
 | M4 XQueue | `drivers/src/fakecp.rs`, `hal/` (`n_queues`) — **landed PR #47** |
 | SoftChipletSync | `core/src/{fence,chipsync}.rs`, Soft-CP / IreeShapedCp retire, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
-| Month 5 spine | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (PASID/SVA or OperatorInject) |
+| Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
 Cross-cutting: this file, ROADMAP status pointer, YEAR2_PLAN status
 line, [MONTH5_PLAN.md](MONTH5_PLAN.md). CI only if a new host-test

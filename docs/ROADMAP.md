@@ -39,9 +39,10 @@ product kernel.
 ## Month 5–6 (this cut): Portability & partners
 
 The **next Kernel calendar** after M1–M4 + SoftChipletSync is
-[MONTH5_PLAN.md](MONTH5_PLAN.md) (pick-one primary: PASID/SVA
-recommended, or OperatorInject deepen). The portability / partner
-slices below already landed; they are not Month 5.
+[MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration digests:
+SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI; PASID/SVA and
+OperatorInject parked). The portability / partner slices below
+already landed; they are not Month 5.
 
 Landed:
 
@@ -843,14 +844,20 @@ opcode device (PR #38). **What to sequence next:**
 
 The Kernel **calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md)
 (M1–M4 + SoftChipletSync closed in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)).
-Pick **one** primary: PASID/SVA (recommended) or OperatorInject
-deepen. The list below is leftover engineering, not a second spine.
+Four exploration digests, not one spine: SoftGreenCtx →
+SoftCmdFirewall → SoftCCT → SoftSFI. PASID/SVA and OperatorInject
+are parked leftovers. The list below is leftover engineering, not
+a fifth digest.
 
-1. **PASID / SVA (Month 5 spine).** Per-`AccelDevice` PASID; bind
-   process VA ↔ Soft-SMMU SSID; Soft-CP DMA via VA; host unmap →
-   SSID TLB invalidate; stale translate faults. Software only. Not
-   zero-copy SVA without the invalidate path. See
-   [MONTH5_PLAN.md](MONTH5_PLAN.md).
+1. **Month 5 digests** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
+   SoftGreenCtx (fake SM/WQ partitions; not MIG) → SoftCmdFirewall
+   (copy-then-validate; not confidential GPU) → SoftCCT (deepen
+   landed CCT; incorrect elision fails) → SoftSFI (toy ISA bounds
+   + SID; not a safe multi-tenant kernel). SoftNoI-IS parked.
+   **PASID / SVA** stays a parked leftover (per-`AccelDevice`
+   PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
+   invalidate). Software only. Not zero-copy SVA without the
+   invalidate path.
 2. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0

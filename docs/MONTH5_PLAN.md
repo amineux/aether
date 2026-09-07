@@ -6,9 +6,10 @@ bring-up kit (#48) and site progress through #52.
 
 **This is the next calendar.** [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 closed M1–M4. SpecForge OS-completeness theater is still not the
-schedule. Pick **one** primary spine. Optional digests are not
-pillars. The exploration menu below is a direction list, not a
-half-year clock.
+schedule. Month 5 is **four SpectraScout exploration digests** — not
+one pillar, not a half-year of OS-completeness. PASID/SVA and
+OperatorInject stay **parked leftovers**. SoftNoI-IS stays parked.
+The exploration menu below is a direction list for later cuts.
 
 ## Reality (what already landed)
 
@@ -49,85 +50,156 @@ Falsifier constraints do not relax for Month 5.
 - **No OS-completeness theater as M5.** Fork, POSIX `open`/`read`,
   CXL.mem productization, ChipletFleet, formal seL4 caps, and
   site-as-milestone are not this month.
+- The four digests are **not one spine**. Do not market them as a
+  product isolation story or a CUDA/Host1x/MIG port.
 
-## Pick-one primary (the calendar)
+## Month 5 calendar — four exploration digests
 
-Month 5 is **one spine**. Do not run both as pillars. Digests below
-may land beside the chosen spine if their gates fire; they do not
-replace it.
-
-### 1. PASID / SVA — recommended M5
-
-Per-`AccelDevice` PASID space. Bind a process VA range to a Soft-SMMU
-SSID (software CD). Soft-CP DMA names **VA**, not a host-pinned IOVA
-the caller already resolved. Host unmap of that VA **must** invalidate
-the SSID TLB (software ATC / `InvCmd::{Ats,Tlbi,CfgCd}`). A stale
-translate after unmap is a **fault**, not a silent hit.
-
-This is the leftover SpectraScout isolation item. Soft SMMU already
-walks STE→CD→S1/S2 and ATS-invalidates a software ATC. SID-at-submit
-already arms a stream at the doorbell. PASID/SVA adds the
-**process-ASID** noun: one AccelDevice, many client address spaces,
-each bound to its own SSID.
-
-**Software only.** Not ARM SVA, not PCIe PASID/PRI, not ATS hardware,
-not a CUDA unified VAS, not zero-copy without an invalidation path.
+Ship in this order. Each is a thin PR with host tests and docs
+non-claims. They are **not** a single pillar and **not** M5–M8
+numbers. Skip a digest only if its honest slice is already met on
+main (SoftCCT: see below).
 
 ```text
-AccelDevice  →  PASID space (software; per-device, not global)
-process VA   ↔  Soft-SMMU SSID (CD)
-Soft-CP DMA  →  translate(VA, pasid/ssid) via STE→CD→S1→S2
-host unmap   →  InvCmd on that SSID (ATC + S1 drop)
-stale VA     →  NotMapped / StreamAbort  (never a cached PA)
+SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI
+SoftNoI-IS parked
+PASID / SVA  and  OperatorInject deepen  parked leftovers
 ```
 
-**Overclaim watch.** Do not write “zero-copy SVA” or “unified VA”
-unless the unmap → SSID TLB invalidate path is in the same PR and
-host-tested. A bind without invalidate is IOVA-with-extra-nouns.
+### 1. SoftGreenCtx
+
+SM / work-queue **partitions** on Soft-CP. Inspiration: CUDA Green
+Contexts / DetShare — not a CUDA driver, not MIG-class isolation.
+
+An XQueue binds a `SoftGreenCtx` (software partition of a fake SM
+pool). SID-at-submit is unchanged on migrate. A 70/30 split of the
+fake pool, two XQueues, shows bandwidth interference versus the
+unpartitioned case. `migrate-to-yield` is queue-boundary (same
+honesty as M4): a command already inside `service()` runs to
+completion.
 
 **Done when:**
 
-1. Host tests bind a process mm (guest VA range + Memory+MAP) to a
-   Soft-SMMU SSID / PASID on one `AccelDevice`.
-2. Soft-CP DMA issues through **VA** on that binding (resolve walks
-   STE→CD→S1→S2; IOVA is not identity; SID-at-submit still required).
-3. Host unmap of the VA range issues an SSID-scoped invalidate
-   (`InvCmd` ATS/TLBI/CfgCd). A subsequent translate of the stale VA
-   is `NotMapped` / `StreamAbort` — not a cached ATC hit.
-4. Docs ([ACCEL.md](ACCEL.md), this file) name the non-claims: software
-   PASID, not hardware SVA, not zero-copy without invalidate, not a
-   CUDA UVA. No new syscall. Path B SoftNPU / `make qemu` unchanged.
-   `IreeHalCmd` / `CpCmd` layouts unchanged unless ACCEL.md + both
-   packers update together.
+1. Soft-CP exposes a software `SoftGreenCtx` (partition of a fake SM
+   / WQ pool). An XQueue binds one; SID sticks / inherits as today.
+2. Host tests: 70/30 split; two XQueues; partitioned BW interference
+   versus unpartitioned; migrate-to-yield at a queue boundary. SID
+   unchanged across migrate.
+3. Docs: Green Context / DetShare inspiration only. **Not** MIG.
+   **Not** hardware SM partitioning. No new syscall. `CpCmd` layout
+   unchanged.
 
-### 2. Alternate — OperatorInject deepen
+### 2. SoftCmdFirewall
 
-Pick this **only if** PASID/SVA is explicitly not wanted this month.
+Copy-then-validate submit. Inspiration: Host1x “don’t execute the
+caller’s live buffer” — not a Tegra driver, not a confidential GPU.
 
-Soft-CP already has a packed `CpCmd` surface, SET_SID-at-submit, and
-two XQueues. OperatorInject deepen is a **resident worker** on that
-CP: versioned injectable ops (`memcpy`, `saxpy`, plus a third op
-hot-added) that land **without restarting Soft-CP**. SID still stamps
-at submit. Own bytecode / IR only.
-
-**Not** `OperatorKernelHandle` Hodge inject (that already landed).
-**Not** an NVRTC / CUDA demo. **Not** a vendor compiler. **Not** a
-second packet format unless [ACCEL.md](ACCEL.md) versions it.
+Submit copies the command buffer, validates opcodes / relocs / SID /
+caps on the **copy**, then enqueues. A mutation-during-validate race
+fails without the firewall and passes with it.
 
 **Done when:**
 
-1. Soft-CP keeps a resident worker; `memcpy` and `saxpy` are
-   injectable versioned ops on the existing `CpCmd` / XQueue path.
-2. A third op hot-adds while the CP stays up (no device recreate).
-   SID-at-submit still refuses unbound / wrong-SSID.
-3. Host tests: inject → submit → poll; hot-add third; restart is
-   **not** required; wrong-SID still Fault. Docs: own IR, not NVRTC.
-   No new syscall.
+1. Soft-CP (and IreeShapedCp mailbox if it shares the path) copies
+   the cmdbuf before validate + enqueue. Validation covers opcodes,
+   relocs, SID, and the Memory+MAP / submit cap walk.
+2. Host tests: mutation-during-validate is Fault without the
+   firewall and ok with it; existing wrong-SID / unbound refuse
+   unchanged.
+3. Docs: Host1x lesson, software only. **Not** confidential compute.
+   **Not** a silicon command parser. No new syscall.
 
-## Optional Month 5 digests (not pillars)
+### 3. SoftCCT (deepen landed SoftChipletSync)
 
-Thin PRs. They may land beside the primary. They do **not** get an
-M-number. If the gate is closed, leave them killed.
+Chiplet Coherence Table on the **already-landed** SoftChipletSync
+(CPElide inspiration). Last-writer chiplet per buffer label elides
+the package fence when the consumer is on that chiplet.
+
+PR #51 already ships scoped timelines + optional CCT and fence-count
+host tests. This digest is a **deepen**, not a re-landing:
+
+- chiplet0 → chiplet1 **labeled** buffer producer/consumer
+- package-fence count ≪ naive broadcast
+- **incorrect** elision (last-writer ≠ consumer, or label mismatch)
+  **fails** — that refuse must be host-tested if it is not already
+  the `cct_cannot_elide_cross_chiplet_consumer` case
+
+Do not claim a latency win from single-die QEMU / host numbers.
+Multi-chiplet **sim** metrics stay in the exploration menu.
+
+**Done when:**
+
+1. Labeled-buffer chiplet0→1 path is explicit (not only an anonymous
+   fence-count smoke).
+2. Host tests: package-fence ≪ broadcast; incorrect elision is
+   Fault / no-elide (not a silent skip). Existing CCT tests still
+   pass.
+3. Docs still name Fleet / CPElide as inspiration only. **Not** a
+   coherence directory, **Not** UCIe, **Not** ChipletFleet
+   placement. Fence **counts** only.
+
+If the incorrect-elision refuse and labeled chiplet0→1 slice are
+already met on main, close this digest as “landed in #51” with a
+one-line ADR — do not invent a second CCT.
+
+### 4. SoftSFI
+
+Soft-CP bytecode **memory sandbox**. Inspiration: GPU-AToLL-shaped
+verifier — not a full safe multi-tenant kernel claim.
+
+A toy ISA verifier accepts load/store whose bounds stay inside the
+SID-mapped range and rejects OOB. Two tenants: SFI + SID together
+(wrong-SID still Fault; in-range SID-A must not touch SID-B pins).
+
+**Done when:**
+
+1. Soft-CP (own bytecode only) runs a bounds verifier on load/store
+   against the submit SID’s Soft-SMMU window.
+2. Host tests: in-bounds accept; OOB reject; two tenants SFI+SID
+   (A cannot store into B’s pin). Existing SET_SID refuse unchanged.
+3. Docs: GPU-AToLL pattern, software sandbox. **Not** a verified
+   multi-tenant GPU, **Not** NVRTC, **Not** confidential GPU. No
+   new syscall. Own IR only.
+
+## Parked leftovers (not this month)
+
+These stay documented so they are not lost. They are **not** the
+Month 5 clock.
+
+### PASID / SVA
+
+Per-`AccelDevice` PASID space. Bind process VA ↔ Soft-SMMU SSID;
+Soft-CP DMA uses VA; host unmap → SSID TLB invalidate; stale
+translate faults. Software only.
+
+**Overclaim watch** if pulled later: no “zero-copy SVA” / “unified
+VA” without the unmap → invalidate path in the same PR.
+
+**Done when (if pulled):** bind mm↔ssid; Soft-CP DMA via VA;
+unmap→SSID TLB invalidate; stale translate faults; docs non-claims
+(not ARM SVA, not PCIe PASID/PRI, not CUDA UVA). No new syscall.
+
+### OperatorInject deepen
+
+Soft-CP resident worker + versioned injectable ops (`memcpy` /
+`saxpy` + hot-add third) without Soft-CP restart. SID still at
+submit. Own bytecode / IR only — not NVRTC / CUDA.
+
+Distinct from landed `OperatorKernelHandle` Hodge inject.
+
+### SoftNoI-IS
+
+Interference Score admit policy (PARL / NoI inspiration).
+SoftChipletSync fabric IS estimate; refuse when `IS > budget`.
+Slice if pulled: solo vs concurrent → IS; refuse `IS > 1.5`.
+**Admit control, not topology synthesis.** Parked behind the four
+digests above.
+
+## Optional gated digests (still not pillars)
+
+Thin PRs. They may land beside the four if their gate fires. They
+do **not** get an M-number. If the gate is closed, leave them
+killed.
 
 | Digest | Gate | Honest bound |
 | --- | --- | --- |
@@ -135,12 +207,25 @@ M-number. If the gate is closed, leave them killed.
 | **MicroPerceptron interop** | Secondary to PJRT; consume frozen `IreeHalCmd` and/or path-A BAR | Not a second compiler story. Not a plugin |
 | **Guest PCI path A bind** | Soft-SMMU IOVA demo **needs** BAR DMA | Kernel `VirtioAccelMmio` talks PCI BAR0. Path B stays canonical. Do not rebuild QEMU in CI |
 | **Per-task CapTable** | Two shim tenants **alias slots** on the shared World table | Isolate those tenants. Additive `SYS_REVOKE` only if the same PR demos revoke → `unbind_stream` / FLR |
-| **Blast-radius deepen** | XQueue freeze + SID-at-submit already cover the clip | One more two-tenant refuse (wrong PASID / stale VA) if PASID is the spine. Not a second ring-3 World |
+| **Blast-radius deepen** | XQueue freeze + SID-at-submit already cover the clip | One more two-tenant refuse (wrong SoftSFI / SoftGreenCtx) if it earns a new line. Not a second ring-3 World |
 
 ## Exploration menu (directions, not calendar)
 
-Kernel / user may pull these later. **None of these is Month 5
-unless it is the chosen primary or a gated digest above.**
+Kernel / user may pull these later. **Month 5 is only the four
+digests above.** Everything else here is a direction.
+
+### SpectraScout M5–6 bets
+
+| Bet | Status | Honest bound |
+| --- | --- | --- |
+| **SoftGreenCtx** | Month 5 digest 1 | Fake SM/WQ partitions; not MIG |
+| **SoftCmdFirewall** | Month 5 digest 2 | Copy-then-validate; not confidential GPU |
+| **SoftCCT** | Month 5 digest 3 (deepen #51) | Labeled elision + incorrect-elision fail; not UCIe |
+| **SoftSFI** | Month 5 digest 4 | Toy ISA bounds + SID; not safe multi-tenant kernels |
+| **SoftNoI-IS** | **Parked** | Admit when `IS > budget`; not topology synth |
+| PASID / SVA | **Parked leftover** | Software PASID; no zero-copy without invalidate |
+| OperatorInject | **Parked leftover** | Resident worker + versioned ops; not NVRTC |
+| FlowHodgeQuota | Gated digest | Class headers required or stay killed |
 
 ### Partner / HAL
 
@@ -154,27 +239,31 @@ unless it is the chosen primary or a gated digest above.**
 
 ### Isolation / Soft SMMU
 
-- PASID / SVA (recommended M5 spine; see above).
-- Guest PCI path-A IOVA proof (digest; BAR DMA only).
+- PASID / SVA (parked leftover; see above).
+- Guest PCI path-A IOVA proof (gated digest; BAR DMA only).
 - Per-task CapTable + additive `SYS_REVOKE` **only if**
   revoke → `unbind_stream` / FLR is the demo. Internal `revoke` /
   `revoke_in` already exist.
+- SoftSFI (Month 5 digest 4). SoftCmdFirewall (digest 2).
 
 ### Soft-CP / sched
 
-- OperatorInject mega-kernel lite (alternate M5 spine).
+- SoftGreenCtx (Month 5 digest 1).
+- OperatorInject mega-kernel lite (parked leftover).
 - XQueue mid-op pretends — honest levels only (queue-boundary is
   what landed; do not claim intra-`service()` preempt).
-- SoftChipletSync CCT deepen / multi-chiplet **sim** metrics.
-  Single-die QEMU / host numbers are still not partner proof.
+- SoftCCT deepen / multi-chiplet **sim** metrics (digest 3 is the
+  labeled-buffer slice; sim metrics stay later). Single-die QEMU /
+  host numbers are still not partner proof.
 
 ### Fabric / spectral
 
-- FlowHodgeQuota class tags on Soft-CP DMA (digest; headers required).
+- FlowHodgeQuota class tags on Soft-CP DMA (gated; headers required).
+- SoftNoI-IS (parked).
 - AffinityLaplacian / SpectralCut diligence clips. Not GiFt-Placer.
   ChipletFleet stays killed as calendar.
 
-### Ports (hard defer unless the spine needs them)
+### Ports (hard defer unless a digest needs them)
 
 - RISC-V virtio-mmio SoftNPU (PLIC software doorbell is enough).
 - aarch64 GIC SoftNPU IRQ (EL0 `/init` drains on timer/kthread).
@@ -206,20 +295,27 @@ fake NVIDIA / FLOPs / tape-out.
 
 1. This file + pointers from [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
    and [ROADMAP.md](ROADMAP.md) — **this cut**
-2. **One** of: PASID/SVA (recommended) **or** OperatorInject deepen
-3. Gated digests only if their gate is open (same PR or a thin
-   follow-up; not a second spine)
+2. SoftGreenCtx
+3. SoftCmdFirewall
+4. SoftCCT (skip / ADR if #51 already meets the slice)
+5. SoftSFI
 
-Do not open calendar PRs for the killed list. A later site progress
-refresh is not a milestone.
+Do not open calendar PRs for the killed list or the parked
+leftovers (PASID/SVA, OperatorInject, SoftNoI-IS) unless the user
+redirects. A later site progress refresh is not a milestone.
 
 ### File touch map
 
 | Step | Primary touches |
 | --- | --- |
-| PASID / SVA | `core/src/iommu.rs` (PASID↔SSID bind, unmap→invalidate), `drivers/src/fakecp.rs` (DMA via VA), host tests, [ACCEL.md](ACCEL.md) |
-| OperatorInject (alt) | `drivers/src/fakecp.rs` (resident worker + versioned ops), [ACCEL.md](ACCEL.md) if the packet versions, host tests |
-| FlowHodgeQuota digest | `core/src/hodge.rs`, Soft-CP DMA header inject, counters; only with class headers |
+| SoftGreenCtx | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
+| SoftCmdFirewall | `drivers/src/fakecp.rs` (copy-then-validate), maybe `ireecp.rs`, host tests |
+| SoftCCT | `core/src/chipsync.rs`, Soft-CP / IreeShapedCp `submit_scoped`, host tests — deepen #51 |
+| SoftSFI | `drivers/src/fakecp.rs` (toy ISA verifier + SID window), host tests |
+| SoftNoI-IS (parked) | `core/src/chipsync.rs` / fabric admit — not this month |
+| PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
+| OperatorInject (parked) | `drivers/src/fakecp.rs` resident worker — not this month |
+| FlowHodgeQuota digest | `core/src/hodge.rs`, Soft-CP DMA header inject; only with class headers |
 | MicroPerceptron digest | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
@@ -240,17 +336,26 @@ ACTIVE track (done through PR #37) and the SpecForge appendix
 (aspirational). Do not sequence Month 5 against either.
 
 [ROADMAP.md](ROADMAP.md) points here for what to sequence next.
-Suggested next cuts in ROADMAP that are not this spine remain
-**technical leftovers**.
+Suggested next cuts in ROADMAP that are not these four digests
+remain **technical leftovers**.
 
 ## What we will not claim
 
+- That SoftGreenCtx is MIG, CUDA Green Contexts, or hardware SM
+  isolation
+- That SoftCmdFirewall is a confidential GPU or a Host1x driver
+- That SoftCCT is CPElide silicon, a coherence protocol, UCIe, or
+  a multi-chiplet latency result from single-die host tests
+- That SoftSFI is a verified multi-tenant GPU or a safe-kernel
+  product
+- That SoftNoI-IS (if pulled later) synthesizes topology
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or a
   CUDA unified virtual address space
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate path
 - That OperatorInject is NVRTC, CUDA, or a vendor compiler
 - That M1–M4, SoftChipletSync, or the Soft SMMU kit became hardware
-- That a digest is a pillar, or that the exploration menu is a calendar
+- That four digests are one spine, or that the exploration menu is
+  a calendar
 - Benchmarks, FLOPs, tape-out, seL4 proofs, or a signed vendor ISA
 - An OS-completeness Month 5 (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY, site-as-milestone)
