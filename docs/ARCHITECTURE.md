@@ -162,7 +162,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
 | `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
-| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius diligence clip |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit clips |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
@@ -171,10 +171,11 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/fabric.rs` | Endpoints and messages |
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
-| `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate (not hardware) |
+| `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate + SET_SID latch (not hardware) |
+| `core/src/sid.rs` | Host1x-shaped SID-at-submit clip (two tenants / two SIDs; not a Tegra driver) |
 | `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
-| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
-| `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` IREE HAL nouns + SID + IRQ/`retire_into`; `backend = 4`) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + IRQ/`retire_into`) |
+| `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
 | `core/src/accel.rs` | Job desc + reference matmul |

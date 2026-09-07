@@ -6,6 +6,7 @@ use aether_core::blast::run_blast_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
+use aether_core::sid::run_sid_submit_demo;
 use aether_drivers::softnpu::KernelDma;
 use aether_drivers::{IreeShapedCp, SoftCommandProcessor};
 use aether_hal::AccelDevice;
@@ -177,6 +178,20 @@ pub fn run_kernel_selfcheck() {
         println!("[blast] FAIL -- two-tenant refuse");
     }
 
+    // Sequential: IommuMap is large; do not share the stack with blast.
+    let sid = run_sid_submit_demo();
+    write_str("[sid] SET_SID-at-submit two tenants  ");
+    write_str(flag(sid.two_sids && sid.cross_tenant));
+    console::nl();
+    write_str("[sid] Soft SMMU refuse until submit SID  ");
+    write_str(flag(sid.abort_until_set && sid.wrong_sid && sid.budget_ok));
+    console::nl();
+    if sid.all_ok() {
+        println!("[sid] two-SID Host1x-shaped submit sealed");
+    } else {
+        println!("[sid] FAIL -- SET_SID-at-submit");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -189,7 +204,7 @@ pub fn run_kernel_selfcheck() {
         }
     }
 
-    if !report.all_ok() || !blast.all_ok() {
+    if !report.all_ok() || !blast.all_ok() || !sid.all_ok() {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);
         crate::arch::idle();

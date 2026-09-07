@@ -300,7 +300,9 @@ fn map_hal_error(e: MapError) -> HalError {
         | MapError::CrossTenant
         | MapError::WrongStream
         | MapError::StreamAbort
-        | MapError::Stage2Fault => HalError::Fault,
+        | MapError::Stage2Fault
+        | MapError::SubmitSid => HalError::Fault,
+        MapError::SidBudget => HalError::Busy,
     }
 }
 

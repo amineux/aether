@@ -32,6 +32,7 @@ pub mod preempt;
 pub mod ramfs;
 pub mod reloc;
 pub mod sched;
+pub mod sid;
 pub mod smmu_bringup;
 pub mod softfloat;
 pub mod space;
@@ -71,7 +72,7 @@ pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
     AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SoftPte,
     SoftSmmuDump, SteConfig, SteTableDump, StreamId, StreamState, WalkResult, DEFAULT_STREAM,
-    SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
+    SET_SID, SID_BUDGET_PER_TENANT, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
 pub use mmap::{
@@ -89,6 +90,7 @@ pub use reloc::{
     RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
 };
 pub use sched::{ChipletLocalPolicy, ChipletTaskScope, Job, JobKind, TileKind, TileScheduler};
+pub use sid::{run_sid_submit_demo, SidSubmitReport, SID_SUBMIT_A, SID_SUBMIT_B};
 pub use smmu_bringup::{
     kit_cp_sid, kit_iree_sid, replay_jsonl, write_dump_json, BringupError, KIT_CP_SSID,
     KIT_IREE_SSID,

@@ -128,7 +128,9 @@ fn map_hal_error(e: MapError) -> HalError {
         | MapError::CrossTenant
         | MapError::WrongStream
         | MapError::StreamAbort
-        | MapError::Stage2Fault => HalError::Fault,
+        | MapError::Stage2Fault
+        | MapError::SubmitSid => HalError::Fault,
+        MapError::SidBudget => HalError::Busy,
     }
 }
 
@@ -259,10 +261,23 @@ impl IreeHalCmd {
         if nouns.executable.isa_blob_id != IREE_REF_EXECUTABLE {
             return Err(HalError::Unsupported);
         }
-        if job.op == AccelOp::Nop {
-            return Ok(Self::empty_from(job, &nouns));
+        let sid = iommu.submit_sid().unwrap_or_else(|| stream_for_job(job));
+        Self::pack_on(job, iommu, nouns, sid)
+    }
+
+    /// Pack on an explicit SET_SID (job-head StreamID).
+    pub fn pack_on(
+        job: &AccelJobDesc,
+        iommu: &IommuMap,
+        nouns: &IreeHalNouns,
+        sid: StreamId,
+    ) -> Result<Self, HalError> {
+        if nouns.executable.isa_blob_id != IREE_REF_EXECUTABLE {
+            return Err(HalError::Unsupported);
         }
-        let sid = stream_for_job(job);
+        if job.op == AccelOp::Nop {
+            return Ok(Self::empty_from(job, nouns));
+        }
         let a = iommu
             .translate_result(sid.raw(), job.a, None)
             .map_err(map_hal_error)?;
@@ -428,6 +443,34 @@ impl<M: DmaView> IreeShapedCp<M> {
         self.iommu.bind_stream(cap, sid).map_err(map_hal_error)
     }
 
+    /// Privileged Host1x-shaped SET_SID (Memory+MAP). Programs Soft SMMU
+    /// StreamID at the job head. Not a Tegra class opcode.
+    pub fn set_sid(&mut self, cap: &Capability, sid: StreamId) -> Result<StreamId, HalError> {
+        self.iommu.set_sid(cap, sid).map_err(map_hal_error)
+    }
+
+    /// Fault injection: overwrite mailbox StreamID after SET_SID.
+    pub fn inject_wrong_sid(&mut self, sid: StreamId) {
+        if let Some(cmd) = self.mailbox.as_mut() {
+            cmd.stream_id = sid.raw();
+        }
+    }
+
+    fn arm_set_sid(&mut self, job: &AccelJobDesc) -> Result<StreamId, HalError> {
+        if job.op == AccelOp::Nop {
+            return Ok(self
+                .iommu
+                .submit_sid()
+                .unwrap_or_else(|| stream_for_job(job)));
+        }
+        if let Some(sid) = self.iommu.submit_sid() {
+            return Ok(sid);
+        }
+        let sid = stream_for_job(job);
+        self.iommu.set_sid_bound(sid).map_err(map_hal_error)?;
+        Ok(sid)
+    }
+
     pub fn map_with_cap(
         &mut self,
         cap: &Capability,
@@ -444,7 +487,16 @@ impl<M: DmaView> IreeShapedCp<M> {
         if self.doorbell || self.mailbox.is_some() {
             return Err(HalError::Busy);
         }
-        cmd.decode_op()?;
+        let op = cmd.decode_op()?;
+        if op != AccelOp::Nop {
+            if let Err(e) = self
+                .iommu
+                .set_sid_bound(StreamId::from_raw(cmd.stream_id))
+                .map_err(map_hal_error)
+            {
+                return Err(e);
+            }
+        }
         self.last_cmd = Some(cmd);
         self.mailbox = Some(cmd);
         self.pending_job = Some(*job);
@@ -506,6 +558,7 @@ impl<M: DmaView> IreeShapedCp<M> {
             }
         };
         if op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
+            self.iommu.clear_submit_sid();
             let cpl = Completion {
                 job_seq: self.npu.seq,
                 status: -2,
@@ -514,6 +567,7 @@ impl<M: DmaView> IreeShapedCp<M> {
             return Some(self.complete(cmd.signal_payload, cpl));
         }
         let Some(job) = self.job_from_cmd(&cmd, job) else {
+            self.iommu.clear_submit_sid();
             let cpl = Completion {
                 job_seq: self.npu.seq,
                 status: -2,
@@ -521,7 +575,7 @@ impl<M: DmaView> IreeShapedCp<M> {
             };
             return Some(self.complete(cmd.signal_payload, cpl));
         };
-        match self.npu.execute(&job, &mut self.mem) {
+        let result = match self.npu.execute(&job, &mut self.mem) {
             Ok(cpl) => Some(self.complete(cmd.signal_payload, cpl)),
             Err(_) => {
                 let cpl = Completion {
@@ -531,7 +585,9 @@ impl<M: DmaView> IreeShapedCp<M> {
                 };
                 Some(self.complete(cmd.signal_payload, cpl))
             }
-        }
+        };
+        self.iommu.clear_submit_sid();
+        result
     }
 
     /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
@@ -564,20 +620,20 @@ impl<M: DmaView> IreeShapedCp<M> {
     fn smmu_walk(&self, cmd: &IreeHalCmd) -> Result<(), HalError> {
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.binding0_offset), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.binding0_offset), None)
             .map_err(map_hal_error)?;
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.binding1_offset), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.binding1_offset), None)
             .map_err(map_hal_error)?;
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.binding2_offset), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.binding2_offset), None)
             .map_err(map_hal_error)?;
         if cmd.binding_count >= 4 && cmd.binding3_offset != 0 {
             let _ = self
                 .iommu
-                .resolve_result(cmd.stream_id, PhysAddr(cmd.binding3_offset), None)
+                .resolve_submit(cmd.stream_id, PhysAddr(cmd.binding3_offset), None)
                 .map_err(map_hal_error)?;
         }
         Ok(())
@@ -600,7 +656,15 @@ impl<M: DmaView> AccelDevice for IreeShapedCp<M> {
     }
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
-        let cmd = IreeHalCmd::pack(job, &self.iommu)?;
+        let sid = self.arm_set_sid(job)?;
+        let nouns = IreeHalNouns::from_job(job);
+        let cmd = match IreeHalCmd::pack_on(job, &self.iommu, &nouns, sid) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                self.iommu.clear_submit_sid();
+                return Err(e);
+            }
+        };
         self.submit_hal(cmd, job)
     }
 
@@ -1084,5 +1148,101 @@ mod tests {
         assert_eq!(cmd.binding2_length, 8);
         assert_eq!(cmd.element_type, IREE_HAL_ELEMENT_TYPE_FLOAT_16);
         assert_ne!(cmd.binding0_length, 4);
+    }
+
+    #[test]
+    fn submit_arms_set_sid_before_dma() {
+        let (mut backing, job) = matmul_backing();
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.stream_id, stream_for_job(&job).raw());
+        assert_eq!(d.iommu.submit_sid(), Some(stream_for_job(&job)));
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.iommu.submit_sid(), None);
+    }
+
+    #[test]
+    fn two_tenants_two_sids_iree_set_sid() {
+        use aether_core::space::{MemorySpace, Place};
+
+        let mut backing = [0u8; 512];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [1i32, 0, 0, 1].iter().enumerate() {
+            backing[256 + i * 4..256 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [9i32, 10, 11, 12].iter().enumerate() {
+            backing[272 + i * 4..272 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+
+        let mut job_a =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job_a.place = job_a.place.with_tile(2);
+        let mut job_b =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(256), PhysAddr(272), PhysAddr(288), 2);
+        job_b.place = Place::new(ChipletId(1), MemorySpace::Host).with_tile(3);
+        let sid_a = stream_for_job(&job_a);
+        let sid_b = stream_for_job(&job_b);
+        let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 21, TenantId(1))
+            .with_generation(1);
+        let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 22, TenantId(2))
+            .with_generation(1);
+
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        d.map_with_cap(&cap_a, MapRequest::pin_accel(PhysAddr(0), 256, sid_a))
+            .unwrap();
+        d.map_with_cap(&cap_b, MapRequest::pin_accel(PhysAddr(256), 256, sid_b))
+            .unwrap();
+
+        assert_eq!(d.set_sid(&cap_a, sid_b).unwrap_err(), HalError::Fault);
+        d.set_sid(&cap_a, sid_a).unwrap();
+        d.submit(&job_a).unwrap();
+        assert_eq!(d.last_cmd().unwrap().stream_id, sid_a.raw());
+        assert_eq!(
+            StreamId::from_raw(d.last_cmd().unwrap().stream_id).ssid(),
+            IREE_SSID
+        );
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+
+        d.set_sid(&cap_b, sid_b).unwrap();
+        d.submit(&job_b).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+
+        d.set_sid(&cap_b, sid_b).unwrap();
+        assert_eq!(d.submit(&job_a).unwrap_err(), HalError::Fault);
+        drop(d);
+        assert_eq!(i32::from_le_bytes(backing[32..36].try_into().unwrap()), 19);
+        assert_eq!(i32::from_le_bytes(backing[288..292].try_into().unwrap()), 9);
+    }
+
+    #[test]
+    fn inject_wrong_sid_aborts_iree_dma() {
+        let (mut backing, job) = matmul_backing();
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        d.inject_wrong_sid(StreamId::accel(ChipletId(0), TileId(0), 7));
+        assert_eq!(d.service().unwrap().status, -2);
+        assert_eq!(d.iommu.submit_sid(), None);
     }
 }

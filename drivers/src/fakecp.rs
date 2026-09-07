@@ -13,19 +13,23 @@
 //! shim and **not** a silicon queuing unit. Preemption is
 //! **queue-boundary** only: `suspend` refuses the next packed command
 //! on that queue; a command already inside `service()` runs to
-//! completion. Soft-SMMU SID sticks to the queue (or inherits the
-//! submit pack stamp — hook for SID-at-submit).
+//! completion. Soft-SMMU SID sticks to the queue (or inherits at
+//! submit). Host1x-shaped SET_SID arms the Soft SMMU latch from that
+//! queue SID at the job head. Not a Tegra driver.
 //!
 //! Uses the post-#7 Soft SMMU APIs:
 //! ```text
 //! StreamId::accel(chiplet, tile, CP_SSID)
 //! bind_stream / map (Memory+MAP)     // DMA aborts until Bound
 //! create_xqueue / stamp_queue_sid    // SID sticks to the queue
+//! SET_SID (job head)                 // inherit or privileged latch → queue
 //! submit_xqueue → pack CpCmd on the queue SID, enqueue (does not execute)
 //! suspend / resume                   // queue-boundary only
-//! service (IRQ / kthread poll) → pick a Running queue, resolve + SoftNPU
+//! service → pick Running queue, resolve_submit + SoftNPU
 //! poll → completion; caller retires the fence
 //! ```
+//!
+//! SET_SID is **not** a Tegra Host1x class opcode and not a second IR.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
@@ -40,6 +44,8 @@ use aether_hal::{AccelDevice, AccelInfo, HalError, PreemptionLevel, ACCEL_BACKEN
 pub const CP_PKT_MAGIC: u32 = 0xAE7E_0C01;
 pub const CP_CMD_SIZE: usize = 64;
 pub const CP_FLAG_HAS_BIAS: u16 = 1 << 0;
+/// Job-head SET_SID was programmed for this submit (Host1x-shaped).
+pub const CP_FLAG_SET_SID: u16 = 1 << 1;
 /// Soft-CP substream. Distinct from SoftNPU's `DEFAULT_STREAM` (ssid 0).
 pub const CP_SSID: u8 = 1;
 /// Two software XQueues. Not a silicon queueing-unit count.
@@ -73,9 +79,9 @@ struct XQueueSlot {
 /// Software execution queue on Soft-CP. The schedulable object.
 ///
 /// SID is sticky once stamped (`create_xqueue` / `stamp_queue_sid`) or
-/// inherited from the first submit's [`stream_for_job`] pack stamp.
-/// Month 3 SID-at-submit can replace that inherit with an explicit
-/// doorbell write via [`SoftCommandProcessor::stamp_queue_sid`].
+/// inherited at submit ([`stream_for_job`] or a privileged SET_SID).
+/// Host1x-shaped doorbell: [`SoftCommandProcessor::set_sid`] /
+/// [`SoftCommandProcessor::stamp_queue_sid`].
 #[derive(Clone, Copy, Debug)]
 pub struct XQueue {
     pub id: u8,
@@ -142,7 +148,9 @@ fn map_hal_error(e: MapError) -> HalError {
         | MapError::CrossTenant
         | MapError::WrongStream
         | MapError::StreamAbort
-        | MapError::Stage2Fault => HalError::Fault,
+        | MapError::Stage2Fault
+        | MapError::SubmitSid => HalError::Fault,
+        MapError::SidBudget => HalError::Busy,
     }
 }
 
@@ -176,10 +184,16 @@ const _: [(); CP_CMD_SIZE] = [(); core::mem::size_of::<CpCmd>()];
 impl CpCmd {
     /// Translate an Aether job through Soft SMMU into a CP packet.
     ///
-    /// Uses [`stream_for_job`]. Queue submit uses [`Self::pack_on_stream`]
-    /// with the queue's sticky SID.
+    /// Uses the programmed submit SID when armed, else [`stream_for_job`].
+    /// Queue submit uses [`Self::pack_on_stream`] with the queue's sticky SID.
     pub fn pack(job: &AccelJobDesc, iommu: &IommuMap) -> Result<Self, HalError> {
-        Self::pack_on_stream(job, iommu, stream_for_job(job))
+        let sid = iommu.submit_sid().unwrap_or_else(|| stream_for_job(job));
+        Self::pack_on_stream(job, iommu, sid)
+    }
+
+    /// Pack on an explicit SET_SID / queue-sticky StreamID.
+    pub fn pack_on(job: &AccelJobDesc, iommu: &IommuMap, sid: StreamId) -> Result<Self, HalError> {
+        Self::pack_on_stream(job, iommu, sid)
     }
 
     /// Pack on an explicit Soft-SMMU SID (the queue's sticky stream).
@@ -232,6 +246,9 @@ impl CpCmd {
         let mut flags = 0u16;
         if job.bias.0 != 0 {
             flags |= CP_FLAG_HAS_BIAS;
+        }
+        if iommu.submit_sid() == Some(sid) {
+            flags |= CP_FLAG_SET_SID;
         }
         Ok(Self {
             magic: CP_PKT_MAGIC,
@@ -351,6 +368,30 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         self.iommu.bind_stream(cap, sid).map_err(map_hal_error)
     }
 
+    /// Privileged Host1x-shaped SET_SID (Memory+MAP). Programs Soft SMMU
+    /// StreamID at the job head. Not a Tegra class opcode.
+    pub fn set_sid(&mut self, cap: &Capability, sid: StreamId) -> Result<StreamId, HalError> {
+        self.iommu.set_sid(cap, sid).map_err(map_hal_error)
+    }
+
+    /// Fault injection: overwrite the last queued packet StreamID after
+    /// SET_SID. Soft SMMU must abort DMA. Not a public submit path.
+    pub fn inject_wrong_sid(&mut self, sid: StreamId) {
+        let Some(prev) = self.last_cmd else {
+            return;
+        };
+        if let Some(cmd) = self.last_cmd.as_mut() {
+            cmd.stream_id = sid.raw();
+        }
+        for q in &mut self.queues {
+            for slot in q.slots.iter_mut().flatten() {
+                if slot.cmd == prev {
+                    slot.cmd.stream_id = sid.raw();
+                }
+            }
+        }
+    }
+
     pub fn map_with_cap(
         &mut self,
         cap: &Capability,
@@ -392,8 +433,9 @@ impl<M: DmaView> SoftCommandProcessor<M> {
 
     /// Create / restamp a software XQueue. SID sticks here.
     ///
-    /// Month 3 SID-at-submit can call [`Self::stamp_queue_sid`] at the
-    /// doorbell instead of inheriting [`stream_for_job`] on first submit.
+    /// SET_SID at submit also inherits or restamps an empty queue via
+    /// [`Self::sid_for_submit`]. [`Self::stamp_queue_sid`] is the
+    /// doorbell write without a job.
     pub fn create_xqueue(
         &mut self,
         queue: u16,
@@ -414,7 +456,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         Ok(())
     }
 
-    /// Hook for SID-at-submit: program the queue SID without a submit.
+    /// Host1x-shaped doorbell: program the queue SID without a submit.
     pub fn stamp_queue_sid(&mut self, queue: u16, sid: StreamId) -> Result<(), HalError> {
         let q = self.queue_mut(queue)?;
         if !q.is_empty() {
@@ -429,10 +471,38 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     }
 
     pub fn submit_xqueue(&mut self, queue: u16, job: &AccelJobDesc) -> Result<u32, HalError> {
+        let prev_sid = self.xqueue(queue).and_then(|q| q.sid);
         let sid = self.sid_for_submit(queue, job)?;
-        let cmd = CpCmd::pack_on_stream(job, &self.iommu, sid)?;
-        let q = self.queue_mut(queue)?;
-        q.push(XQueueSlot { cmd, job: *job })?;
+        let restore_sid = |this: &mut Self| {
+            this.iommu.clear_submit_sid();
+            if let Ok(q) = this.queue_mut(queue) {
+                q.sid = prev_sid;
+            }
+        };
+        if job.op != AccelOp::Nop {
+            if let Err(e) = self.iommu.set_sid_bound(sid) {
+                restore_sid(self);
+                return Err(map_hal_error(e));
+            }
+        }
+        let cmd = match CpCmd::pack_on_stream(job, &self.iommu, sid) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                restore_sid(self);
+                return Err(e);
+            }
+        };
+        let push_err = {
+            let q = self.queue_mut(queue)?;
+            q.push(XQueueSlot { cmd, job: *job }).err()
+        };
+        if let Some(e) = push_err {
+            restore_sid(self);
+            return Err(e);
+        }
+        // Latch travels with the packet (`CP_FLAG_SET_SID` + stream_id).
+        // Clear so a later submit on another queue cannot inherit it.
+        self.iommu.clear_submit_sid();
         self.last_cmd = Some(cmd);
         self.irq = false;
         self.last_cpl = None;
@@ -463,14 +533,29 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         self.queues.get_mut(queue as usize).ok_or(HalError::BadArg)
     }
 
-    /// Sticky SID, or inherit today's pack stamp and stick it.
+    /// Sticky queue SID, privileged SET_SID latch, or inherit
+    /// [`stream_for_job`] and stick it. An empty queue may restamp from
+    /// an armed SET_SID (Host1x-shaped doorbell between jobs).
     fn sid_for_submit(&mut self, queue: u16, job: &AccelJobDesc) -> Result<StreamId, HalError> {
         let job_sid = stream_for_job(job);
+        let armed = self.iommu.submit_sid();
         let q = self.queue_mut(queue)?;
-        match q.sid {
-            Some(sid) if sid != job_sid => Err(HalError::Fault),
-            Some(sid) => Ok(sid),
-            None => {
+        match (q.sid, armed) {
+            (Some(stuck), Some(armed)) if stuck != armed => {
+                if !q.is_empty() {
+                    return Err(HalError::Fault);
+                }
+                q.sid = Some(armed);
+                Ok(armed)
+            }
+            (Some(stuck), Some(_)) => Ok(stuck),
+            (Some(stuck), None) if stuck != job_sid => Err(HalError::Fault),
+            (Some(stuck), None) => Ok(stuck),
+            (None, Some(armed)) => {
+                q.sid = Some(armed);
+                Ok(armed)
+            }
+            (None, None) => {
                 q.sid = Some(job_sid);
                 Ok(job_sid)
             }
@@ -519,15 +604,21 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         let cmd = slot.cmd;
         let job = slot.job;
         self.last_queue = Some(qi as u8);
-        if job.op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
-            let cpl = Completion {
-                job_seq: self.npu.seq,
-                status: -2,
-                cycles: 0,
-            };
-            return Some(self.complete(cmd.fence_id, cpl));
+        if job.op != AccelOp::Nop {
+            let sid = StreamId::from_raw(cmd.stream_id);
+            let stamped = cmd.flags & CP_FLAG_SET_SID != 0;
+            if !stamped || self.iommu.set_sid_bound(sid).is_err() || self.smmu_walk(&cmd).is_err() {
+                self.iommu.clear_submit_sid();
+                let cpl = Completion {
+                    job_seq: self.npu.seq,
+                    status: -2,
+                    cycles: 0,
+                };
+                return Some(self.complete(cmd.fence_id, cpl));
+            }
         }
         let Some(job) = self.job_from_cmd(&cmd, job) else {
+            self.iommu.clear_submit_sid();
             let cpl = Completion {
                 job_seq: self.npu.seq,
                 status: -2,
@@ -535,7 +626,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             };
             return Some(self.complete(cmd.fence_id, cpl));
         };
-        match self.npu.execute(&job, &mut self.mem) {
+        let result = match self.npu.execute(&job, &mut self.mem) {
             Ok(cpl) => Some(self.complete(cmd.fence_id, cpl)),
             Err(_) => {
                 let cpl = Completion {
@@ -545,7 +636,9 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 };
                 Some(self.complete(cmd.fence_id, cpl))
             }
-        }
+        };
+        self.iommu.clear_submit_sid();
+        result
     }
 
     /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
@@ -574,20 +667,20 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     fn smmu_walk(&self, cmd: &CpCmd) -> Result<(), HalError> {
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.iova_a), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_a), None)
             .map_err(map_hal_error)?;
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.iova_b), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_b), None)
             .map_err(map_hal_error)?;
         let _ = self
             .iommu
-            .resolve_result(cmd.stream_id, PhysAddr(cmd.iova_c), None)
+            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_c), None)
             .map_err(map_hal_error)?;
         if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
             let _ = self
                 .iommu
-                .resolve_result(cmd.stream_id, PhysAddr(cmd.iova_bias), None)
+                .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_bias), None)
                 .map_err(map_hal_error)?;
         }
         Ok(())
@@ -1015,6 +1108,111 @@ mod tests {
         assert_eq!(timeline.retired(), fence.id.0);
     }
 
+    #[test]
+    fn submit_stamps_set_sid_flag() {
+        let (mut backing, job) = matmul_backing();
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.flags & CP_FLAG_SET_SID, CP_FLAG_SET_SID);
+        assert_eq!(cmd.stream_id, stream_for_job(&job).raw());
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(stream_for_job(&job)));
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.iommu.submit_sid(), None);
+    }
+
+    #[test]
+    fn two_tenants_two_sids_set_sid_at_submit() {
+        use aether_core::space::{MemorySpace, Place};
+
+        let mut backing = [0u8; 512];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [1i32, 0, 0, 1].iter().enumerate() {
+            backing[256 + i * 4..256 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [9i32, 10, 11, 12].iter().enumerate() {
+            backing[272 + i * 4..272 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+
+        let mut job_a =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job_a.place = job_a.place.with_tile(2);
+        let mut job_b =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(256), PhysAddr(272), PhysAddr(288), 2);
+        job_b.place = Place::new(ChipletId(1), MemorySpace::Host).with_tile(3);
+        let sid_a = stream_for_job(&job_a);
+        let sid_b = stream_for_job(&job_b);
+        let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 11, TenantId(1))
+            .with_generation(1);
+        let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 12, TenantId(2))
+            .with_generation(1);
+
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.map_with_cap(&cap_a, MapRequest::pin_accel(PhysAddr(0), 256, sid_a))
+            .unwrap();
+        d.map_with_cap(&cap_b, MapRequest::pin_accel(PhysAddr(256), 256, sid_b))
+            .unwrap();
+
+        assert_eq!(d.set_sid(&cap_a, sid_b).unwrap_err(), HalError::Fault);
+        assert_eq!(d.set_sid(&cap_a, sid_a).unwrap(), sid_a);
+        d.submit(&job_a).unwrap();
+        assert_eq!(d.last_cmd().unwrap().stream_id, sid_a.raw());
+        assert_eq!(
+            d.last_cmd().unwrap().flags & CP_FLAG_SET_SID,
+            CP_FLAG_SET_SID
+        );
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+
+        d.set_sid(&cap_b, sid_b).unwrap();
+        d.submit(&job_b).unwrap();
+        assert_eq!(d.last_cmd().unwrap().stream_id, sid_b.raw());
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_b));
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+
+        // Channel SID B cannot DMA tenant A's pins.
+        d.set_sid(&cap_b, sid_b).unwrap();
+        assert_eq!(d.submit(&job_a).unwrap_err(), HalError::Fault);
+        assert_eq!(d.iommu.submit_sid(), None);
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_b));
+        drop(d);
+        let out_a = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        let out_b = i32::from_le_bytes(backing[288..292].try_into().unwrap());
+        assert_eq!(out_a, 19);
+        assert_eq!(out_b, 9);
+    }
+
+    #[test]
+    fn inject_wrong_sid_aborts_dma() {
+        let (mut backing, job) = matmul_backing();
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        d.inject_wrong_sid(StreamId::accel(ChipletId(0), TileId(0), 7));
+        assert_eq!(d.service().unwrap().status, -2);
+        assert_eq!(d.iommu.submit_sid(), None);
+    }
+
     fn place_sid(chiplet: u8, tile: u16) -> (Place, StreamId) {
         let place =
             Place::new(ChipletId(chiplet), aether_core::space::MemorySpace::Host).with_tile(tile);
@@ -1160,9 +1358,25 @@ mod tests {
         pin_job(&mut d, &job);
         d.submit(&job).unwrap();
         assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
+        assert_eq!(
+            d.last_cmd().unwrap().flags & CP_FLAG_SET_SID,
+            CP_FLAG_SET_SID
+        );
         d.stamp_queue_sid(0, sid).unwrap();
         let other = StreamId::accel(ChipletId(0), TileId(2), 7);
         assert_eq!(d.stamp_queue_sid(0, other).unwrap_err(), HalError::Busy);
+        // Pending work keeps the inherited SID; a foreign place cannot override.
+        let mut foreign = job;
+        foreign.place =
+            Place::new(ChipletId(1), aether_core::space::MemorySpace::Host).with_tile(3);
+        assert_eq!(d.submit(&foreign).unwrap_err(), HalError::Fault);
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+        // After drain, a second submit on queue 0 reuses the sticky SID.
+        d.submit(&job).unwrap();
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
+        assert_eq!(d.last_cmd().unwrap().stream_id, sid.raw());
         assert_eq!(
             AccelDevice::create_queue(&mut d, 2, sid.raw(), 0).unwrap_err(),
             HalError::BadArg

@@ -110,8 +110,8 @@ submit / CpCmd::pack               → translate on that SID; unbound = Fault
 ```
 
 That is SID-at-**map**, not SID-at-submit. Programming / validating
-`StreamId` at the doorbell is **M3** (Host1x-shaped). This kit does not
-do that.
+`StreamId` at the doorbell is **M3** (Host1x-shaped SET_SID; landed on
+Soft-CP / IreeShapedCp). This kit does not redo that.
 
 IreeShapedCp (`ssid = 2`) is the M1 packet path. It is bound in the
 replay so a wrong-stream translate is visible on the M1 CD. It is not a

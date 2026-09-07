@@ -59,7 +59,13 @@ seL4-level proofs. Formal caps are not a calendar item.
 Host tests in `core/src/caps.rs`, `core/src/caps_props.rs`,
 `core/src/demo.rs`, and `core/src/blast.rs` lock the statements below.
 The blast-radius diligence clip serial-prints `[blast]` after CrossCut
-and wrong-SID refuse.
+and wrong-SID refuse. The SID-at-submit clip serial-prints `[sid]` after
+two-tenant SET_SID, refuse-until-armed, and per-tenant SID budget
+(`core/src/sid.rs`). Host1x is inspiration only — not a Tegra driver
+and not hardware-grade isolation. The software SID budget (4 Bound CDs
+per tenant) plus the `inject_wrong_sid` / `SubmitSid` host tests are
+the isolation we can unit-test today; they are not a silicon SID
+allocator or a Host1x fault-injection campaign.
 
 ## CDT properties (host tests, not a proof)
 
@@ -88,7 +94,7 @@ These are marked so a security review does not assume them:
 | --- | --- | --- |
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode / EL0 + user page tables — **landed** on x86, RISC-V, and aarch64: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
-| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
+| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, refuses maps/binds without Memory+MAP, and (Soft-CP / IreeShapedCp) refuses DMA until SET_SID is armed for that submit; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
