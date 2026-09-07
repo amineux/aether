@@ -32,7 +32,7 @@ Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
 refuses a silent coherent load across places. `UNIFIED_MEMORY` is a
 capability bit (`CapRights::UNIFIED`), never implied by `MEM_FULL`.
 
-v0.1 opcodes:
+SoftNPU `AccelOp` (path B):
 
 | Op | Meaning |
 | --- | --- |
@@ -347,15 +347,30 @@ does **not** parse IREE VM bytecode):
 
 | AccelJobDesc | HAL packet |
 | --- | --- |
-| `op = Nop` | `command_categories = 0` (doorbell; no pins) |
+| `op = Nop` | `command_categories = 0`, `function = 0` (doorbell; no pins) |
 | `op = MatMul` | `DISPATCH`, `function = 0` (first export) |
 | `op = Wave` | `DISPATCH`, `function = 1` (fused export) |
 | `dtype` I32 / F16 / F32 | `IREE_HAL_ELEMENT_TYPE_{INT_32,FLOAT_16,FLOAT_32}` = `0x10000020` / `0x21000010` / `0x21000020` |
-| `m,n,k` | `workgroup_count_x/y/z` (shape stand-in; not compiler tiling) |
-| `a,b,c,bias` after Soft SMMU | `binding[0..3].offset` = IOVA; `.length` = byte span |
+| `m,n,k` | `workgroup_count_x/y/z` (shape stand-in) |
+| `a,b,c,bias` after Soft SMMU | `binding[0..3].offset` = IOVA; `.length` = `job.bytes_*()` byte spans (dtype-aware), not element counts |
 | `place` | `queue_affinity` = `chiplet<<16 \| tile` |
 | `fence_id` | `signal_payload` (`abi::Event.fence`) |
-| — | `executable = 0x0001EE00` frozen `isa_blob_id` |
+| — | `executable = 0x0001EE00` frozen `isa_blob_id` (`IREE_REF_EXECUTABLE`) |
+
+Nop → `categories = 0`, `function = 0` (`function` is ignored on decode;
+decode keys off categories bit `DISPATCH`). Prevents a shim that branches
+on `function` first from mis-labeling Nop as MatMul.
+
+v1 `pack` emits `command_categories = 0` or `DISPATCH` only; `TRANSFER`
+(`1<<0`) alone is Fault / not defined for this software CP.
+
+`workgroup_count ← m,n,k` is a shape stand-in. PJRT/IREE host must not
+treat these as compiler tile sizes or launch geometry; they are
+`AccelJobDesc` shape fields copied for the research CP only.
+
+The PJRT shim must pack `executable == 0x0001EE00` (`IREE_REF_EXECUTABLE`);
+other `isa_blob_id` values must be refused (the kernel does not parse IREE VM
+bytecode).
 
 `command_categories` and `function` are **not** `AccelOp` (`MatMul = 1`,
 `Wave = 2`). Soft-CP's `CpCmd.opcode` still is. That is the point of
@@ -366,6 +381,10 @@ not a signed IREE or silicon partnership, not FLOPs, not a vendor
 opcode ROM.
 
 ### `IreeHalCmd` packet (96 bytes, little-endian)
+
+`IreeHalCmd` offsets + field widths are **frozen**. Changing an
+offset/width is a dual `ireecp.rs` + this ADR + host pack/unpack test
+update. PJRT shim (#41) consumes this image only.
 
 ```text
 offset  type   field                 IREE HAL noun
@@ -384,7 +403,7 @@ offset  type   field                 IREE HAL noun
 0x30    u64    binding1_offset       IOVA B
 0x38    u64    binding2_offset       IOVA C
 0x40    u64    binding3_offset       IOVA bias (0 if unused)
-0x48    u32    binding0_length       iree_hal_buffer_ref_t.length
+0x48    u32    binding0_length       iree_hal_buffer_ref_t.length (job.bytes_*; dtype-aware bytes, not elems)
 0x4C    u32    binding1_length
 0x50    u32    binding2_length
 0x54    u32    binding3_length
