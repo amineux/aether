@@ -253,8 +253,23 @@ impl AffinityGraph {
     }
 
     pub fn first_tile_on(&self, chiplet: u8) -> Option<TileId> {
+        self.nth_tile_on(chiplet, 0)
+    }
+
+    /// `which`-th tile on `chiplet` in vertex order (0-based).
+    pub fn nth_tile_on(&self, chiplet: u8, which: usize) -> Option<TileId> {
+        self.verts[..self.n]
+            .iter()
+            .filter_map(|v| match v.kind {
+                VertKind::Tile(t) if v.chiplet == chiplet => Some(t),
+                _ => None,
+            })
+            .nth(which)
+    }
+
+    pub fn chiplet_of_tile(&self, t: TileId) -> Option<u8> {
         self.verts[..self.n].iter().find_map(|v| match v.kind {
-            VertKind::Tile(t) if v.chiplet == chiplet => Some(t),
+            VertKind::Tile(id) if id == t => Some(v.chiplet),
             _ => None,
         })
     }
@@ -605,5 +620,20 @@ mod tests {
             ))
             .unwrap();
         assert!(bind_place(&tab, q, &cut, &g, TileId(2), Some(BankId(0))).is_ok());
+    }
+
+    #[test]
+    fn mesh_nth_tile_and_chiplet_lookup() {
+        let g = AffinityGraph::two_chiplet_mesh(16);
+        assert_eq!(g.first_tile_on(0), Some(TileId(0)));
+        assert_eq!(g.nth_tile_on(0, 1), Some(TileId(1)));
+        assert_eq!(g.nth_tile_on(1, 0), Some(TileId(8)));
+        assert_eq!(g.nth_tile_on(1, 1), Some(TileId(9)));
+        assert_eq!(g.chiplet_of_tile(TileId(0)), Some(0));
+        assert_eq!(g.chiplet_of_tile(TileId(8)), Some(1));
+        assert_eq!(g.chiplet_of_tile(TileId(99)), None);
+        let g32 = AffinityGraph::two_chiplet_mesh(32);
+        assert_eq!(g32.nth_tile_on(1, 0), Some(TileId(16)));
+        assert_eq!(g32.chiplet_of_tile(TileId(16)), Some(1));
     }
 }

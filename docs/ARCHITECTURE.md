@@ -169,7 +169,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate (not hardware) |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
-| `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
+| `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind + ChipletTaskScope |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph (n≤32 Fiedler; enum n≤8) |

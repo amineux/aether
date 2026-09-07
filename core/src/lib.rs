@@ -83,7 +83,7 @@ pub use reloc::{
     apply_pie_image, apply_rela_bytes, apply_rela_dyn, parse_pie_trailer, parse_rela64, Rela64,
     RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
 };
-pub use sched::{Job, JobKind, TileKind, TileScheduler};
+pub use sched::{ChipletLocalPolicy, ChipletTaskScope, Job, JobKind, TileKind, TileScheduler};
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};

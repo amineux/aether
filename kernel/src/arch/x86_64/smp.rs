@@ -117,6 +117,7 @@ fn smoke_job(id: u32, hint: Option<TileId>) -> Job {
         partition_id: None,
         fence_id: None,
         arena_color: None,
+        chiplet_scope: None,
     }
 }
 
