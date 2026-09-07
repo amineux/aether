@@ -273,7 +273,8 @@ above override what Kernel actually sequences. Criteria below are
 3. Cap CDT/revoke: revoke parent empties descendants across tables;
    host tests lock it; [SECURITY.md](SECURITY.md) gap table updated.
    **Landed** as a small derivation tree (`parent` + `(tenant, generation)`, `revoke_in`
-   of named tables). Not a seL4 CNode/MDB. No `SYS_REVOKE`. Kernel
+   of named tables). Property tests lock mint → derive → `revoke_in`;
+   formal caps stay killed as a calendar item. No `SYS_REVOKE`. Kernel
    World is still one shared `CapTable`. The Laplacian item above is
    **landed** as a prototype; CXL is **not** done.
 

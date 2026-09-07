@@ -48,14 +48,33 @@ Each `Capability` stores:
 10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
     `revoke(parent)` empties that lineage in the same table;
     `revoke_in(parent, others)` empties grant-children in the named
-    tables too. Unrelated caps stay. This is a small derivation tree,
-    not a seL4 CNode/MDB and not a proof.
+    tables too. Unrelated caps stay.
 
 This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
-seL4-level proofs.
+seL4-level proofs. Formal caps are not a calendar item.
 
-Host tests in `core/src/caps.rs` and `core/src/demo.rs` lock these down.
+Host tests in `core/src/caps.rs`, `core/src/caps_props.rs`, and
+`core/src/demo.rs` lock the statements below.
+
+## CDT properties (host tests, not a proof)
+
+Aether stores a parent pointer (`CdtNode` = table owner + mint
+generation). The tests in `core/src/caps_props.rs` are property /
+exhaustive cases on that pointer. They are **not** a proof, **not** a
+syscall, and **not** a reason to schedule a formal cap kernel.
+
+| Id | Statement |
+| --- | --- |
+| **P-Revoke** | mint → derive (optional GRANT-copy) → `revoke_in(root, named tables)` empties descendants in those tables |
+| **P-Unrelated** | a cap outside that lineage stays live |
+| **P-Named** | GRANT-copy across tables is collected only if the dest table is passed to `revoke_in`; `revoke` alone leaves the foreign child live |
+| **P-Unforge** | `mint` rejects a foreign tenant; a `CPtr` is a slot in *one* table |
+| **P-Monotone** | derive / GRANT may only shrink rights; GRANT is required |
+
+`revoke_in` walks tables the caller names. A GRANT-child in a table
+that was not passed survives — that is `P-Named`, not a missing global
+walk. No `SYS_REVOKE`. Syscall numbers 0–8 stay frozen.
 
 ## What we do *not* yet enforce
 
