@@ -34,6 +34,7 @@ product kernel.
 | Soft-CP SID-at-submit (Host1x-shaped) | **done** (job-head SET_SID; Soft SMMU submit latch + SID budget; two-SID host tests + `[sid]` serial). Not a Tegra driver. |
 | PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
+| SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package + optional CCT; Fleet / CPElide inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
 
 ## Month 5–6 (this cut): Portability & partners
 
@@ -269,7 +270,10 @@ silicon fence unit, **not** CUDA streams:
   unchanged.
 
 This is still not a hardware fence. QEMU does not write a silicon
-timeline register.
+timeline register. SoftChipletSync (`core/src/chipsync.rs`) layers
+scoped (wave / CU / chiplet / package) timelines and optional CCT
+elision on this model — still software, still not a Vulkan timeline
+product, still not UCIe.
 
 ## F16/F32 dtypes (this cut)
 
@@ -788,6 +792,7 @@ Search for `// STUB:` / `STUB` :
 | Real CXL.mem window | `MemorySpace::CxlRegion`, `core/src/window.rs` | **killed as a milestone.** `TypedWindow` is an honest pin stub (SID refuse, host tests), not this item. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Compiler ISA blob | `abi::Executable` + `host/aether-pjrt` | Kernel stores a handle; host shim packs `IreeHalCmd` / submits `AccelOp`; IREE/PJRT would own the bytes. Not a plugin. |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
+| SoftChipletSync | `core/src/chipsync.rs` | **done** as software scoped timelines + hierarchical counters + optional CCT. Not Vulkan, not UCIe, not ChipletFleet placement. Fence counts only |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -818,7 +823,10 @@ device (PR #38):
 - Soft SMMU / Soft-CP / SMP / PML4 are **not** re-scheduled.
 - **M3 landed:** Soft-CP SID-at-submit (Host1x-shaped SET_SID; SID
   inherits / sticks on the XQueue). Not a Host1x driver.
-- **Next bite:** SoftChipletSync scoped timelines. Not UCIe sync.
+- **SoftChipletSync landed:** scoped timelines `{wave, CU, chiplet,
+  package}` + optional CCT elision. Fleet / CPElide inspiration only.
+  Not UCIe, not Vulkan, not ChipletFleet placement. Fence-count host
+  tests; single-die numbers are not partner proof.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 was a site progress refresh,
@@ -827,11 +835,12 @@ device (PR #38):
 ## Suggested next cuts (technical, not calendar)
 
 The Kernel **calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1–M4 done; SoftChipletSync next bite). The list below is leftover
+(M1–M4 done; SoftChipletSync landed). The list below is leftover
 engineering.
 
-1. **SoftChipletSync scoped timelines.** Next bite after M3+M4.
-   Chiplet-local fence domains. Not UCIe sync.
+1. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host
+   shim needs per-client VAS. Software only. SoftChipletSync scoped
+   timelines landed (chiplet-local fence domains; not UCIe).
 2. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
@@ -873,7 +882,7 @@ engineering.
 Falsifier ACTIVE track through PR #37 is **complete as research
 slices**; do not sequence new work against it. Next calendar:
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; SoftChipletSync
-next bite).
+landed).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),

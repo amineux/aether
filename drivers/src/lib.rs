@@ -1,9 +1,10 @@
 //! In-tree drivers. SoftNPU services the virtqueue MMIO window.
 //! [`SoftCommandProcessor`] is the host-tested Aether-native CP path
-//! (packed `CpCmd` + SET_SID-at-submit + two software XQueues + IRQ/fence).
+//! (packed `CpCmd` + SET_SID-at-submit + two software XQueues +
+//! SoftChipletSync scoped timelines + IRQ/fence).
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
-//! packet, not Soft-CP 2.0 (still a single mailbox). [`PartnerNpuStub`]
-//! remains a documented no-op sketch.
+//! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped
+//! timelines). [`PartnerNpuStub`] remains a documented no-op sketch.
 
 #![cfg_attr(not(test), no_std)]
 

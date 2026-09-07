@@ -5,11 +5,13 @@ PR #37 (site) and PRs #38–#41 (`IreeShapedCp`, CDT props, chiplet
 affinity stub, PJRT/IREE shim) landed on main. Soft-CP XQueue landed
 as **M4 (PR #47)**. Soft SMMU bring-up kit landed (PR #48). **M3
 SID-at-submit is landed** (Host1x-shaped SET_SID; SID sticks on the
-XQueue). SoftChipletSync is the next bite.
+XQueue). SoftChipletSync scoped timelines **landed** after M3+M4.
+Optional PASID / SVA is the leftover SpectraScout item.
 
 **This is the next calendar.** SpecForge OS-completeness theater is not
-the schedule. **M1–M4 are done.** SpectraScout Soft-CP items are
-software models, not fork / POSIX / CXL.mem / ChipletFleet.
+the schedule. **M1–M4 are done.** SoftChipletSync is landed.
+SpectraScout Soft-CP items are software models, not fork / POSIX /
+CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -56,7 +58,7 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 
 ## Execution spine (this is the calendar)
 
-**M1–M4 are done.** SoftChipletSync is the next bite.
+**M1–M4 are done.** SoftChipletSync scoped timelines are **landed**.
 Optional / conditional work is leave-behind, not a half-year pillar.
 Site-as-milestone stays killed (PR #46 was a progress refresh, not a
 marketing climax).
@@ -179,11 +181,30 @@ LD_PRELOAD CUDA/HIP shim, not a silicon queueing unit. Path B SoftNPU
    refuse override. Existing single-queue tests still pass.
 3. Docs: XSched-shaped software queues, not a product scheduler.
 
-### Next bite — SoftChipletSync scoped timelines
+### SoftChipletSync scoped timelines (**landed**)
 
-After M3+M4: chiplet-local fence domains on the existing seq / wait /
-complete model. Not UCIe sync. See the leftover SpectraScout list
-below.
+Chiplet-local fence domains on the existing seq / wait / complete model.
+Scopes `{wave, CU, chiplet, package}`. Chiplet-local signal is free;
+package-scope costs a hierarchical fence (last worker per participating
+chiplet). Optional CCT (last-writer chiplet per buffer label) elides
+that fence when the consumer is on the same chiplet.
+
+Fleet hierarchical counters and CPElide CCT are **inspiration** — not a
+port, not a Vulkan timeline product, not UCIe. Distinct from ChipletFleet
+**placement** (`ChipletTaskScope`, still KILL-as-calendar). Host tests
+measure fence **counts**. Latency wins need a multi-chiplet sim —
+single-die QEMU / host numbers are not partner proof.
+
+SID-at-submit + XQueue stay. Path B SoftNPU / `make qemu` unchanged.
+`CpCmd` / `IreeHalCmd` layouts unchanged. No new syscall.
+
+**Done when (met):**
+
+1. Soft-CP (and IreeShapedCp mailbox) scoped timelines + one
+   producer/consumer across two fake chiplets.
+2. Host tests: package-scope fence count ≪ naive global fence;
+   CCT elision when last-writer chiplet matches consumer.
+3. Docs name Fleet / CPElide as inspiration only; non-claims above.
 
 ### Conditional only — guest PCI path-A bind
 
@@ -240,13 +261,13 @@ If A had landed as a shim over SoftNPU / Soft-CP (`backend` 1 / 3)
 only, M2 would still be open. PR #41 packs `IreeHalCmd` and submits
 through `IreeShapedCp`; SoftNPU stays the qemu demo.
 
-## SpectraScout leftovers (after M3)
+## SpectraScout leftovers (after SoftChipletSync)
 
-M3 SID-at-submit and M4 XQueue are **landed**. Still software models,
-still no vendor claim. Next leftovers:
+M3 SID-at-submit, M4 XQueue, and SoftChipletSync are **landed**. Still
+software models, still no vendor claim. Next leftovers:
 
-1. **SoftChipletSync scoped timelines** (**next bite**). Chiplet-local
-   fence domains on the existing seq/wait/complete model. Not UCIe sync.
+1. **SoftChipletSync scoped timelines** (**landed**). Chiplet-local
+   fence domains; Fleet / CPElide inspiration only. Not UCIe sync.
 2. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host
    shim needs per-client VAS. Software only.
 3. **FlowHodgeQuota.** Already landed as admit/refuse. Further quota
@@ -271,7 +292,7 @@ a Y2 bring-up climax.
 
 [ROADMAP.md](ROADMAP.md) points here for what to sequence next.
 Suggested next cuts in ROADMAP remain **technical leftovers** except
-M3–M4 (done), which are calendar. SoftChipletSync is leftover.
+M3–M4 (done). SoftChipletSync is landed. PASID / SVA is leftover.
 
 ## Kernel PR order (this calendar)
 
@@ -283,7 +304,7 @@ M3–M4 (done), which are calendar. SoftChipletSync is leftover.
 4. M4 Soft-CP XQueue (XSched-shaped) — **landed** (PR #47; ahead of M3)
 5. Optional Soft-SMMU bring-up kit (docs + dump/replay) — **landed** (PR #48)
 6. M3 Soft-CP SID-at-submit (Host1x-shaped) — **landed**
-7. Next bite: SoftChipletSync scoped timelines
+7. SoftChipletSync scoped timelines — **landed**
 8. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
    be shown on path-A DMA
 
@@ -301,7 +322,7 @@ milestone.
 | Optional SMMU kit | `docs/bringup/`, `scripts/smmu_*.py`, `core/src/{iommu,smmu_bringup}.rs`; dump/replay against `IommuMap` |
 | M3 SID-at-submit | `drivers/src/fakecp.rs`, `docs/ACCEL.md`, host tests |
 | M4 XQueue | `drivers/src/fakecp.rs`, `hal/` (`n_queues`) — **landed PR #47** |
-| SoftChipletSync | `core/src/fence.rs`, Soft-CP retire, host tests |
+| SoftChipletSync | `core/src/{fence,chipsync}.rs`, Soft-CP / IreeShapedCp retire, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 
 Cross-cutting: this file, ROADMAP status pointer, YEAR2_PLAN status
@@ -317,6 +338,9 @@ line. CI only if a new host-test target appears. No new syscall.
 - Benchmarks, FLOPs, tape-out, or seL4 proofs
 - That Soft SMMU / Soft-CP / path A became hardware
 - That RISC-V or aarch64 is a product-class second kernel
+- That SoftChipletSync is a Vulkan timeline product, UCIe sync, a
+  coherence protocol, ChipletFleet placement, or a multi-chiplet
+  latency result from single-die host tests
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
-  SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 is the
-  calendar; that theater is not.
+  SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
+  is the software-model track; that theater is not.

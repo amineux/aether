@@ -14,6 +14,7 @@ pub mod aspace;
 pub mod blast;
 pub mod bootfs;
 pub mod caps;
+pub mod chipsync;
 pub mod color;
 pub mod cut;
 pub mod demo;
@@ -62,6 +63,11 @@ pub use bootfs::{
     BOOTFS_MAGIC, BOOTFS_MAX_FILES, BOOTFS_NAME, BOOTFS_SECTOR,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
+pub use chipsync::{
+    run_chipsync_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport, ScopedFence,
+    ScopedWork, SignalKind, SoftChipletSync, SyncScope, DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES,
+    MAX_SYNC_CHIPLETS,
+};
 pub use color::{admit_wave, BankColor, ColorError};
 pub use cut::{AffinityGraph, CutError, CutId, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};

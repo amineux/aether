@@ -18,16 +18,19 @@
 //!
 //! Completions arrive on IRQ/poll. DMA uses Soft-SMMU IOVAs only
 //! (`ssid = IREE_SSID`, distinct from SoftNPU 0 and Soft-CP 1).
+//! SoftChipletSync is optional on this mailbox (same software fence
+//! domains as Soft-CP). Not a Vulkan timeline; still a single mailbox.
 
 use aether_core::abi::{Buffer, Device, Event, Executable};
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType, DmaView, SoftNpu};
 use aether_core::activity::ActivityId;
 use aether_core::caps::Capability;
+use aether_core::chipsync::{BufferLabel, ScopedFence, ScopedWork, SoftChipletSync, SyncScope};
 use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
-use aether_core::partition::PartitionError;
+use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::space::{FabricAddr, Place};
-use aether_core::types::{PhysAddr, TileId};
+use aether_core::types::{ChipletId, PhysAddr, TileId};
 use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_IREE_SHAPED};
 
 /// Packet magic (`AE7E` + IREE-shaped `1EE1`). Distinct from `CpCmd` `0xAE7E0C01`.
@@ -409,6 +412,9 @@ pub struct IreeShapedCp<M: DmaView> {
     last_cpl: Option<Completion>,
     last_fence: Option<u64>,
     fence_done: bool,
+    pub chipsync: SoftChipletSync,
+    pending_scoped: Option<ScopedWork>,
+    last_scoped: Option<ScopedFence>,
 }
 
 impl<M: DmaView> IreeShapedCp<M> {
@@ -432,6 +438,9 @@ impl<M: DmaView> IreeShapedCp<M> {
             last_cpl: None,
             last_fence: None,
             fence_done: false,
+            chipsync: SoftChipletSync::new(PartitionId(1)),
+            pending_scoped: None,
+            last_scoped: None,
         }
     }
 
@@ -509,6 +518,7 @@ impl<M: DmaView> IreeShapedCp<M> {
         } else {
             None
         };
+        self.pending_scoped = None;
         Ok(self.npu.seq)
     }
 
@@ -541,10 +551,30 @@ impl<M: DmaView> IreeShapedCp<M> {
         }
     }
 
+    /// Mailbox submit tagged with SoftChipletSync. Not a second IR.
+    /// IreeShapedCp stays a single mailbox; two fake chiplets are sequential.
+    pub fn submit_scoped(
+        &mut self,
+        job: &AccelJobDesc,
+        scope: SyncScope,
+        write: Option<BufferLabel>,
+        read: Option<BufferLabel>,
+    ) -> Result<u32, HalError> {
+        let seq = AccelDevice::submit(self, job)?;
+        self.chipsync.set_scope(scope);
+        self.pending_scoped = Some(ScopedWork { scope, write, read });
+        Ok(seq)
+    }
+
+    pub fn last_scoped(&self) -> Option<ScopedFence> {
+        self.last_scoped
+    }
+
     /// Device-side: consume the mailbox, resolve Soft-SMMU IOVAs, execute, raise IRQ.
     pub fn service(&mut self) -> Option<Completion> {
         let cmd = self.mailbox.take()?;
         let job = self.pending_job.take()?;
+        let scoped = self.pending_scoped.take();
         self.doorbell = false;
         let op = match cmd.decode_op() {
             Ok(op) => op,
@@ -576,7 +606,10 @@ impl<M: DmaView> IreeShapedCp<M> {
             return Some(self.complete(cmd.signal_payload, cpl));
         };
         let result = match self.npu.execute(&job, &mut self.mem) {
-            Ok(cpl) => Some(self.complete(cmd.signal_payload, cpl)),
+            Ok(cpl) => {
+                self.note_scoped(job.place.chiplet, scoped);
+                Some(self.complete(cmd.signal_payload, cpl))
+            }
             Err(_) => {
                 let cpl = Completion {
                     job_seq: self.npu.seq,
@@ -647,6 +680,24 @@ impl<M: DmaView> IreeShapedCp<M> {
             self.fence_done = true;
         }
         cpl
+    }
+
+    fn note_scoped(&mut self, chiplet: ChipletId, scoped: Option<ScopedWork>) {
+        let Some(s) = scoped else {
+            return;
+        };
+        if let Ok(kind) = self.chipsync.note(chiplet, s) {
+            self.last_scoped = Some(ScopedFence {
+                fence: Fence::new(
+                    FenceId(self.chipsync.timeline(s.scope).retired()),
+                    aether_core::fence::TimelineId(s.scope as u32),
+                    PartitionId(1),
+                ),
+                scope: s.scope,
+                chiplet,
+                kind,
+            });
+        }
     }
 }
 
@@ -1244,5 +1295,80 @@ mod tests {
         d.inject_wrong_sid(StreamId::accel(ChipletId(0), TileId(0), 7));
         assert_eq!(d.service().unwrap().status, -2);
         assert_eq!(d.iommu.submit_sid(), None);
+    }
+
+    #[test]
+    fn chipsync_two_chiplet_iree_mailbox_producer_consumer() {
+        use aether_core::chipsync::{BufferLabel, SignalKind, SyncScope};
+        use aether_core::space::{MemorySpace, Place};
+
+        let mut backing = [0u8; 512];
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            backing[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [1i32, 0, 0, 1].iter().enumerate() {
+            backing[256 + i * 4..256 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [9i32, 10, 11, 12].iter().enumerate() {
+            backing[272 + i * 4..272 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+
+        let mut job_a =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job_a.place = job_a.place.with_tile(2);
+        let mut job_b =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(256), PhysAddr(272), PhysAddr(288), 2);
+        job_b.place = Place::new(ChipletId(1), MemorySpace::Host).with_tile(3);
+        let sid_a = stream_for_job(&job_a);
+        let sid_b = stream_for_job(&job_b);
+        let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 31, TenantId(1))
+            .with_generation(1);
+        let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 32, TenantId(2))
+            .with_generation(1);
+
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        d.map_with_cap(&cap_a, MapRequest::pin_accel(PhysAddr(0), 256, sid_a))
+            .unwrap();
+        d.map_with_cap(&cap_b, MapRequest::pin_accel(PhysAddr(256), 256, sid_b))
+            .unwrap();
+
+        let buf = BufferLabel(2);
+        d.chipsync.enable_cct(true);
+        d.chipsync.open(SyncScope::Package);
+        d.chipsync.expect(ChipletId(0), 8).unwrap();
+        for _ in 0..7 {
+            assert_eq!(
+                d.chipsync.arrive(ChipletId(0), Some(buf)).unwrap().kind,
+                SignalKind::ChipletLocal
+            );
+        }
+
+        d.submit_scoped(&job_a, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PendingPackage);
+        d.poll();
+
+        d.submit_scoped(&job_b, SyncScope::Package, None, Some(buf))
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PackageFence);
+        d.poll();
+
+        assert_eq!(d.chipsync.package_fences(), 1);
+        assert_eq!(d.chipsync.naive_package_fences(), 8);
+        assert!(d.chipsync.package_lt_naive());
+        assert_eq!(d.chipsync.elided(), 0);
+        assert_eq!(d.last_cmd().unwrap().stream_id, sid_b.raw());
+        drop(d);
+        assert_eq!(i32::from_le_bytes(backing[32..36].try_into().unwrap()), 19);
+        assert_eq!(i32::from_le_bytes(backing[288..292].try_into().unwrap()), 9);
     }
 }

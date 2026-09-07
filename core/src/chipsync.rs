@@ -1,0 +1,686 @@
+//! SoftChipletSync: scoped timelines + hierarchical counters + optional CCT.
+//!
+//! SpectraScout post-M2 leftover (after M3 SID-at-submit and M4 XQueue).
+//! Chiplet-local fence domains on the existing seq / wait / complete model.
+//!
+//! **Inspiration (not a port, not a product):**
+//! - Fleet hierarchical event counters (wave / CU / chiplet / package):
+//!   workers increment a chiplet-local counter with **no** package fence;
+//!   only the last worker on a participating chiplet issues a package-scope
+//!   fence. Chiplet-local signal is free; package-scope costs more.
+//! - CPElide Chiplet Coherence Table (CCT): last-writer chiplet per buffer
+//!   label. A consumer on that same chiplet **elides** the package fence.
+//!
+//! **Not claimed.** This is not a Vulkan timeline product, not UCIe sync,
+//! not a coherence protocol, and not ChipletFleet **placement** (that stub
+//! lives in [`crate::sched::ChipletTaskScope`] and stays KILL-as-calendar).
+//! Host tests measure fence **counts**. Latency wins need a multi-chiplet
+//! sim — single-die QEMU / host numbers are not partner proof.
+
+use crate::fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
+use crate::partition::{
+    BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
+};
+use crate::types::ChipletId;
+
+/// Fake-package width. Software cap, not a silicon XCD count.
+pub const MAX_SYNC_CHIPLETS: usize = 8;
+
+/// CCT rows. Software table in the CP, not a directory cache.
+pub const MAX_CCT_ENTRIES: usize = 16;
+
+/// Canonical hierarchical clip: two fake chiplets × this many workers.
+/// Naive global fence = 16; hierarchical package fences = 2.
+pub const DEMO_WORKERS_PER_CHIPLET: u32 = 8;
+
+/// Visibility scope. Narrowest first (Fleet-shaped).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[repr(u8)]
+pub enum SyncScope {
+    /// Wavefront-local. Chiplet-local signal; no package fence.
+    Wave = 0,
+    /// Compute-unit local. Chiplet-local signal; no package fence.
+    Cu = 1,
+    /// Chiplet / L2-local. Free in this model (no package fence).
+    Chiplet = 2,
+    /// Package / GPU-scope. Last worker per participating chiplet pays.
+    Package = 3,
+}
+
+impl SyncScope {
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::Wave => "wave",
+            Self::Cu => "cu",
+            Self::Chiplet => "chiplet",
+            Self::Package => "package",
+        }
+    }
+
+    /// Package fence cost of one signal at this scope (before hierarchy / CCT).
+    pub const fn naive_package_cost(self) -> u32 {
+        match self {
+            Self::Package => 1,
+            _ => 0,
+        }
+    }
+
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Wave),
+            1 => Some(Self::Cu),
+            2 => Some(Self::Chiplet),
+            3 => Some(Self::Package),
+            _ => None,
+        }
+    }
+}
+
+/// Named data structure the CCT tracks. Not an IOVA and not a Vulkan handle.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BufferLabel(pub u32);
+
+/// What a scoped arrive / wait did. PackageFence is the expensive one.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SignalKind {
+    /// Wave / CU / chiplet, or a non-last worker on a chiplet.
+    ChipletLocal,
+    /// Last worker; CCT on — package fence deferred until [`SoftChipletSync::wait`].
+    PendingPackage,
+    /// A package-scope fence was issued (or a cross-chiplet wait observed one).
+    PackageFence,
+    /// CCT: last-writer chiplet matches the consumer. No package fence.
+    Elided,
+}
+
+/// Producer / consumer annotation a Soft-CP or IreeShapedCp job may carry.
+/// Default submit leaves this unset (SID / XQueue / mailbox path unchanged).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopedWork {
+    pub scope: SyncScope,
+    pub write: Option<BufferLabel>,
+    pub read: Option<BufferLabel>,
+}
+
+/// A completed pulse on a scoped timeline.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ScopedFence {
+    pub fence: Fence,
+    pub scope: SyncScope,
+    pub chiplet: ChipletId,
+    pub kind: SignalKind,
+}
+
+/// Chiplet Coherence Table: last-writer chiplet per [`BufferLabel`].
+///
+/// CPElide-shaped software table housed in the command processor.
+/// Not a cache-coherence directory and not silicon.
+#[derive(Clone, Copy, Debug)]
+pub struct ChipletCoherenceTable {
+    labels: [u32; MAX_CCT_ENTRIES],
+    writers: [u8; MAX_CCT_ENTRIES],
+    used: [bool; MAX_CCT_ENTRIES],
+}
+
+impl ChipletCoherenceTable {
+    pub const fn new() -> Self {
+        Self {
+            labels: [0; MAX_CCT_ENTRIES],
+            writers: [0; MAX_CCT_ENTRIES],
+            used: [false; MAX_CCT_ENTRIES],
+        }
+    }
+
+    pub fn record(&mut self, label: BufferLabel, writer: ChipletId) -> Result<(), PartitionError> {
+        for i in 0..MAX_CCT_ENTRIES {
+            if self.used[i] && self.labels[i] == label.0 {
+                self.writers[i] = writer.0;
+                return Ok(());
+            }
+        }
+        for i in 0..MAX_CCT_ENTRIES {
+            if !self.used[i] {
+                self.used[i] = true;
+                self.labels[i] = label.0;
+                self.writers[i] = writer.0;
+                return Ok(());
+            }
+        }
+        Err(PartitionError::CreditExhausted)
+    }
+
+    pub fn last_writer(&self, label: BufferLabel) -> Option<ChipletId> {
+        for i in 0..MAX_CCT_ENTRIES {
+            if self.used[i] && self.labels[i] == label.0 {
+                return Some(ChipletId(self.writers[i]));
+            }
+        }
+        None
+    }
+
+    /// Elide a package fence when the consumer already holds the last write.
+    pub fn elide_package_fence(&self, label: BufferLabel, consumer: ChipletId) -> bool {
+        self.last_writer(label) == Some(consumer)
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+}
+
+impl Default for ChipletCoherenceTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Scoped SoftChipletSync object.
+///
+/// Four CP-shaped [`Timeline`]s (wave / CU / chiplet / package) plus
+/// Fleet-shaped two-level counters and an optional CCT. Distinct from
+/// [`crate::sched::ChipletTaskScope`] (placement / steal affinity).
+pub struct SoftChipletSync {
+    partition: PartitionId,
+    profile: PartitionProfile,
+    timelines: [Timeline; 4],
+    cct: ChipletCoherenceTable,
+    cct_on: bool,
+    scope: SyncScope,
+    expected: [u32; MAX_SYNC_CHIPLETS],
+    arrived: [u32; MAX_SYNC_CHIPLETS],
+    pending: [bool; MAX_SYNC_CHIPLETS],
+    naive_package: u32,
+    package_fences: u32,
+    elided: u32,
+}
+
+impl SoftChipletSync {
+    pub const fn new(partition: PartitionId) -> Self {
+        Self {
+            partition,
+            profile: PartitionProfile::new(
+                partition,
+                SpatialSlice {
+                    chiplet_lo: ChipletId(0),
+                    chiplet_hi: ChipletId((MAX_SYNC_CHIPLETS - 1) as u8),
+                    tile_mask: u32::MAX,
+                    bank_mask: 0b1,
+                },
+                QosBudget {
+                    bw_mbps: 0,
+                    credits: MAX_IN_FLIGHT,
+                },
+                BlastRadius {
+                    max_nodes: MAX_SYNC_CHIPLETS as u16,
+                    max_hops: 2,
+                },
+            ),
+            timelines: [
+                Timeline::named(TimelineId(0), partition),
+                Timeline::named(TimelineId(1), partition),
+                Timeline::named(TimelineId(2), partition),
+                Timeline::named(TimelineId(3), partition),
+            ],
+            cct: ChipletCoherenceTable::new(),
+            cct_on: false,
+            scope: SyncScope::Chiplet,
+            expected: [0; MAX_SYNC_CHIPLETS],
+            arrived: [0; MAX_SYNC_CHIPLETS],
+            pending: [false; MAX_SYNC_CHIPLETS],
+            naive_package: 0,
+            package_fences: 0,
+            elided: 0,
+        }
+    }
+
+    pub const fn partition(&self) -> PartitionId {
+        self.partition
+    }
+
+    pub const fn scope(&self) -> SyncScope {
+        self.scope
+    }
+
+    pub const fn cct_enabled(&self) -> bool {
+        self.cct_on
+    }
+
+    /// Package-scope fences **issued** this event (after hierarchy + CCT).
+    pub const fn package_fences(&self) -> u32 {
+        self.package_fences
+    }
+
+    /// Naive global fence: one package fence per worker arrive.
+    pub const fn naive_package_fences(&self) -> u32 {
+        self.naive_package
+    }
+
+    pub const fn elided(&self) -> u32 {
+        self.elided
+    }
+
+    pub fn cct(&self) -> &ChipletCoherenceTable {
+        &self.cct
+    }
+
+    pub fn timeline(&self, scope: SyncScope) -> &Timeline {
+        &self.timelines[scope as usize]
+    }
+
+    /// Enable CPElide-shaped CCT elision. Off by default (Fleet counters only).
+    pub fn enable_cct(&mut self, on: bool) {
+        self.cct_on = on;
+    }
+
+    /// Set the open event's scope without resetting counters.
+    pub fn set_scope(&mut self, scope: SyncScope) {
+        self.scope = scope;
+    }
+
+    /// Apply a CP job's scoped annotation (arrive and/or wait).
+    pub fn note(
+        &mut self,
+        chiplet: ChipletId,
+        work: ScopedWork,
+    ) -> Result<SignalKind, PartitionError> {
+        self.set_scope(work.scope);
+        let mut kind = SignalKind::ChipletLocal;
+        if work.write.is_some() || work.read.is_none() {
+            kind = self.arrive(chiplet, work.write)?.kind;
+        }
+        if work.read.is_some() {
+            kind = self.wait(chiplet, work.read)?;
+        }
+        Ok(kind)
+    }
+
+    /// Open a new event. CCT rows persist (the table lives in the CP).
+    pub fn open(&mut self, scope: SyncScope) {
+        self.scope = scope;
+        self.expected = [0; MAX_SYNC_CHIPLETS];
+        self.arrived = [0; MAX_SYNC_CHIPLETS];
+        self.pending = [false; MAX_SYNC_CHIPLETS];
+        self.naive_package = 0;
+        self.package_fences = 0;
+        self.elided = 0;
+    }
+
+    /// How many workers on `chiplet` participate in the open event.
+    /// `0` means "first arrive implies 1" (single-job default).
+    pub fn expect(&mut self, chiplet: ChipletId, n_workers: u32) -> Result<(), PartitionError> {
+        let i = idx(chiplet)?;
+        self.expected[i] = n_workers;
+        Ok(())
+    }
+
+    /// Worker completion. Chiplet-local counter is free. Last worker on a
+    /// package-scope chiplet issues (or defers) one package fence.
+    pub fn arrive(
+        &mut self,
+        chiplet: ChipletId,
+        write: Option<BufferLabel>,
+    ) -> Result<ScopedFence, PartitionError> {
+        let i = idx(chiplet)?;
+        if self.expected[i] == 0 {
+            self.expected[i] = 1;
+        }
+        if self.arrived[i] >= self.expected[i] {
+            return Err(PartitionError::Unbound);
+        }
+        self.arrived[i] += 1;
+        self.naive_package = self.naive_package.saturating_add(1);
+
+        if let Some(label) = write {
+            self.cct.record(label, chiplet)?;
+        }
+
+        let local = if self.scope < SyncScope::Chiplet {
+            self.scope
+        } else {
+            SyncScope::Chiplet
+        };
+        let pulse = self.pulse(local, chiplet)?;
+        let last = self.arrived[i] == self.expected[i];
+
+        if self.scope != SyncScope::Package {
+            return Ok(ScopedFence {
+                fence: pulse,
+                scope: local,
+                chiplet,
+                kind: SignalKind::ChipletLocal,
+            });
+        }
+        if !last {
+            return Ok(ScopedFence {
+                fence: pulse,
+                scope: local,
+                chiplet,
+                kind: SignalKind::ChipletLocal,
+            });
+        }
+
+        if self.cct_on {
+            self.pending[i] = true;
+            return Ok(ScopedFence {
+                fence: pulse,
+                scope: SyncScope::Package,
+                chiplet,
+                kind: SignalKind::PendingPackage,
+            });
+        }
+
+        self.package_fences = self.package_fences.saturating_add(1);
+        let pkg = self.pulse(SyncScope::Package, chiplet)?;
+        Ok(ScopedFence {
+            fence: pkg,
+            scope: SyncScope::Package,
+            chiplet,
+            kind: SignalKind::PackageFence,
+        })
+    }
+
+    /// Consumer wait. CCT elides when last-writer chiplet == consumer.
+    pub fn wait(
+        &mut self,
+        consumer: ChipletId,
+        read: Option<BufferLabel>,
+    ) -> Result<SignalKind, PartitionError> {
+        let _ = idx(consumer)?;
+        if self.cct_on {
+            if let Some(label) = read {
+                if self.cct.elide_package_fence(label, consumer) {
+                    if let Ok(i) = idx(consumer) {
+                        self.pending[i] = false;
+                    }
+                    self.elided = self.elided.saturating_add(1);
+                    let _ = self.pulse(SyncScope::Chiplet, consumer)?;
+                    return Ok(SignalKind::Elided);
+                }
+            }
+        }
+
+        let mut issued_now = 0u32;
+        for i in 0..MAX_SYNC_CHIPLETS {
+            if self.pending[i] {
+                self.pending[i] = false;
+                self.package_fences = self.package_fences.saturating_add(1);
+                issued_now += 1;
+                let _ = self.pulse(SyncScope::Package, ChipletId(i as u8))?;
+            }
+        }
+
+        let cross = match read.and_then(|l| self.cct.last_writer(l)) {
+            Some(w) => w != consumer,
+            None => false,
+        };
+        if issued_now > 0 || (cross && self.package_fences > 0) {
+            if issued_now == 0 {
+                let _ = self.pulse(SyncScope::Package, consumer)?;
+            }
+            Ok(SignalKind::PackageFence)
+        } else {
+            let _ = self.pulse(SyncScope::Chiplet, consumer)?;
+            Ok(SignalKind::ChipletLocal)
+        }
+    }
+
+    /// True when issued package fences are a strict fraction of naive global.
+    ///
+    /// Host-test measurable. **Not** a latency claim and not partner proof
+    /// on a single die.
+    pub const fn package_lt_naive(&self) -> bool {
+        let issued = self.package_fences;
+        let naive = self.naive_package;
+        naive > 0 && issued < naive && (issued == 0 || issued.saturating_mul(4) < naive)
+    }
+
+    /// Poll a scoped timeline watermark (the seq a CP would retire).
+    pub fn wait_seq(&self, scope: SyncScope, id: FenceId) -> Result<Fence, PartitionError> {
+        self.timelines[scope as usize].wait(id)
+    }
+
+    fn pulse(&mut self, scope: SyncScope, chiplet: ChipletId) -> Result<Fence, PartitionError> {
+        let _ = chiplet;
+        let t = &mut self.timelines[scope as usize];
+        if t.partition() != self.partition {
+            return Err(PartitionError::Unbound);
+        }
+        let profile = self.profile;
+        let f = t.submit(&profile, None)?;
+        t.complete(f.id)
+    }
+}
+
+fn idx(c: ChipletId) -> Result<usize, PartitionError> {
+    let i = c.0 as usize;
+    if i >= MAX_SYNC_CHIPLETS {
+        Err(PartitionError::OutsideSlice)
+    } else {
+        Ok(i)
+    }
+}
+
+/// Host-identical clip. Kernel prints `[chipsync] …`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChipletSyncReport {
+    pub package_lt_naive: bool,
+    pub hierarchical_fences: u32,
+    pub naive_fences: u32,
+    pub cct_elide: bool,
+    pub two_chiplet: bool,
+}
+
+impl ChipletSyncReport {
+    pub fn all_ok(&self) -> bool {
+        self.package_lt_naive && self.cct_elide && self.two_chiplet
+    }
+}
+
+/// Two fake chiplets, hierarchical package fences ≪ naive, CCT elision
+/// on same-chiplet consume, cross-chiplet producer/consumer cannot elide.
+pub fn run_chipsync_demo() -> ChipletSyncReport {
+    let buf = BufferLabel(1);
+    let a = ChipletId(0);
+    let b = ChipletId(1);
+
+    let mut sync = SoftChipletSync::new(PartitionId(1));
+
+    // Fleet hierarchical counters, CCT off: 2 chiplets × 8 workers.
+    sync.open(SyncScope::Package);
+    let _ = sync.expect(a, DEMO_WORKERS_PER_CHIPLET);
+    let _ = sync.expect(b, DEMO_WORKERS_PER_CHIPLET);
+    for _ in 0..DEMO_WORKERS_PER_CHIPLET {
+        let _ = sync.arrive(a, Some(buf));
+        let _ = sync.arrive(b, Some(buf));
+    }
+    let hierarchical_fences = sync.package_fences();
+    let naive_fences = sync.naive_package_fences();
+    let package_lt_naive = sync.package_lt_naive()
+        && hierarchical_fences == 2
+        && naive_fences == DEMO_WORKERS_PER_CHIPLET * 2;
+
+    // CCT elision: last-writer chiplet matches consumer.
+    sync.enable_cct(true);
+    sync.open(SyncScope::Package);
+    let _ = sync.expect(a, DEMO_WORKERS_PER_CHIPLET);
+    for _ in 0..DEMO_WORKERS_PER_CHIPLET {
+        let _ = sync.arrive(a, Some(buf));
+    }
+    let elide = sync.wait(a, Some(buf));
+    let cct_elide = elide == Ok(SignalKind::Elided)
+        && sync.package_fences() == 0
+        && sync.elided() == 1
+        && sync.cct().last_writer(buf) == Some(a);
+
+    // Producer on chiplet 0, consumer on chiplet 1: cannot elide.
+    sync.open(SyncScope::Package);
+    let _ = sync.expect(a, DEMO_WORKERS_PER_CHIPLET);
+    for _ in 0..DEMO_WORKERS_PER_CHIPLET {
+        let _ = sync.arrive(a, Some(buf));
+    }
+    let cross = sync.wait(b, Some(buf));
+    let two_chiplet = cross == Ok(SignalKind::PackageFence)
+        && sync.package_fences() == 1
+        && sync.elided() == 0
+        && sync.cct().last_writer(buf) == Some(a)
+        && !sync.cct().elide_package_fence(buf, b)
+        && sync.package_lt_naive();
+
+    ChipletSyncReport {
+        package_lt_naive,
+        hierarchical_fences,
+        naive_fences,
+        cct_elide,
+        two_chiplet,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn chiplet_local_signal_is_free() {
+        for scope in [SyncScope::Wave, SyncScope::Cu, SyncScope::Chiplet] {
+            let mut s = SoftChipletSync::new(PartitionId(1));
+            s.open(scope);
+            let _ = s.expect(ChipletId(0), 8);
+            for _ in 0..8 {
+                let f = s.arrive(ChipletId(0), None).unwrap();
+                assert_eq!(f.kind, SignalKind::ChipletLocal);
+                assert_eq!(scope.naive_package_cost(), 0);
+            }
+            assert_eq!(s.package_fences(), 0);
+            assert_eq!(s.naive_package_fences(), 8);
+            assert!(s.package_lt_naive());
+            let local = if scope < SyncScope::Chiplet {
+                scope
+            } else {
+                SyncScope::Chiplet
+            };
+            let id = FenceId(s.timeline(local).retired());
+            assert!(s.wait_seq(local, id).unwrap().completed);
+        }
+    }
+
+    #[test]
+    fn package_scope_fence_count_much_less_than_naive() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.open(SyncScope::Package);
+        s.expect(ChipletId(0), 8).unwrap();
+        s.expect(ChipletId(1), 8).unwrap();
+        let mut last_kind = SignalKind::ChipletLocal;
+        for w in 0..8 {
+            let a = s.arrive(ChipletId(0), Some(BufferLabel(7))).unwrap();
+            let b = s.arrive(ChipletId(1), Some(BufferLabel(7))).unwrap();
+            if w < 7 {
+                assert_eq!(a.kind, SignalKind::ChipletLocal);
+                assert_eq!(b.kind, SignalKind::ChipletLocal);
+            } else {
+                assert_eq!(a.kind, SignalKind::PackageFence);
+                assert_eq!(b.kind, SignalKind::PackageFence);
+                last_kind = b.kind;
+            }
+        }
+        assert_eq!(last_kind, SignalKind::PackageFence);
+        assert_eq!(s.package_fences(), 2);
+        assert_eq!(s.naive_package_fences(), 16);
+        assert!(s.package_lt_naive());
+        assert_eq!(s.timeline(SyncScope::Package).retired(), 2);
+        assert!(
+            s.wait_seq(
+                SyncScope::Package,
+                FenceId(s.timeline(SyncScope::Package).retired())
+            )
+            .unwrap()
+            .completed
+        );
+    }
+
+    #[test]
+    fn cct_elides_when_last_writer_matches_consumer() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.enable_cct(true);
+        s.open(SyncScope::Package);
+        s.expect(ChipletId(0), 4).unwrap();
+        for _ in 0..3 {
+            assert_eq!(
+                s.arrive(ChipletId(0), Some(BufferLabel(3))).unwrap().kind,
+                SignalKind::ChipletLocal
+            );
+        }
+        assert_eq!(
+            s.arrive(ChipletId(0), Some(BufferLabel(3))).unwrap().kind,
+            SignalKind::PendingPackage
+        );
+        assert_eq!(s.package_fences(), 0);
+        assert_eq!(s.cct().last_writer(BufferLabel(3)), Some(ChipletId(0)));
+        assert!(s.cct().elide_package_fence(BufferLabel(3), ChipletId(0)));
+        assert_eq!(
+            s.wait(ChipletId(0), Some(BufferLabel(3))).unwrap(),
+            SignalKind::Elided
+        );
+        assert_eq!(s.package_fences(), 0);
+        assert_eq!(s.elided(), 1);
+        assert_eq!(s.naive_package_fences(), 4);
+        assert!(s.package_lt_naive());
+    }
+
+    #[test]
+    fn cct_cannot_elide_cross_chiplet_consumer() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.enable_cct(true);
+        s.open(SyncScope::Package);
+        s.expect(ChipletId(0), 8).unwrap();
+        for _ in 0..8 {
+            let _ = s.arrive(ChipletId(0), Some(BufferLabel(9)));
+        }
+        assert!(!s.cct().elide_package_fence(BufferLabel(9), ChipletId(1)));
+        assert_eq!(
+            s.wait(ChipletId(1), Some(BufferLabel(9))).unwrap(),
+            SignalKind::PackageFence
+        );
+        assert_eq!(s.package_fences(), 1);
+        assert_eq!(s.elided(), 0);
+        assert_eq!(s.naive_package_fences(), 8);
+        assert!(s.package_lt_naive());
+    }
+
+    #[test]
+    fn extra_arrive_refused() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.open(SyncScope::Chiplet);
+        s.expect(ChipletId(0), 1).unwrap();
+        s.arrive(ChipletId(0), None).unwrap();
+        assert_eq!(
+            s.arrive(ChipletId(0), None).unwrap_err(),
+            PartitionError::Unbound
+        );
+        assert_eq!(
+            s.expect(ChipletId(9), 1).unwrap_err(),
+            PartitionError::OutsideSlice
+        );
+    }
+
+    #[test]
+    fn chipsync_demo_two_chiplet_producer_consumer() {
+        let r = run_chipsync_demo();
+        assert!(r.package_lt_naive, "hierarchical ≪ naive");
+        assert_eq!(r.hierarchical_fences, 2);
+        assert_eq!(r.naive_fences, 16);
+        assert!(r.cct_elide, "CCT same-chiplet elide");
+        assert!(r.two_chiplet, "cross-chiplet cannot elide");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn not_chiplet_fleet_placement() {
+        // SoftChipletSync is fence domains. ChipletTaskScope (sched) is
+        // placement / steal affinity and stays a killed calendar stub.
+        let s = SoftChipletSync::new(PartitionId(7));
+        assert_eq!(s.partition(), PartitionId(7));
+        assert_eq!(s.timeline(SyncScope::Wave).id(), TimelineId(0));
+        assert_eq!(s.timeline(SyncScope::Package).id(), TimelineId(3));
+        assert!(!s.cct_enabled());
+    }
+}

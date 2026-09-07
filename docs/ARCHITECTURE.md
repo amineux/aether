@@ -36,6 +36,8 @@ Supporting rules (implemented in types, not just prose):
 5. **Fence-ordered jobs.** submit → wait → complete (or timeout),
    credit-limited per partition — a CP-shaped seq/timeline, not a
    CUDA stream and not a silicon fence unit. Timeout is software.
+   SoftChipletSync may further tag that seq with a visibility scope
+   `{wave, CU, chiplet, package}`; that is still software, not UCIe.
 6. **Named phases.** `Compute | Exchange | Barrier` tags on jobs and
    messages. The kernel does not fuse them.
 7. **Kernel = submission shim + resource solver.** No ML graph IR or
@@ -51,7 +53,8 @@ Supporting rules (implemented in types, not just prose):
 
 What this document will not claim: a CUDA-style unified virtual address
 space; seL4-level formal proofs; wafer-scale marketing that hides SRAM-first
-placement; cache coherence across chiplets; or that `TypedWindow` is
+placement; cache coherence across chiplets; that SoftChipletSync is a
+Vulkan timeline or UCIe product; or that `TypedWindow` is
 CXL.mem silicon.
 
 ## Boot (x86_64 / QEMU)
@@ -174,7 +177,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate + SET_SID latch (not hardware) |
 | `core/src/sid.rs` | Host1x-shaped SID-at-submit clip (two tenants / two SIDs; not a Tegra driver) |
 | `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
-| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + IRQ/`retire_into`) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftChipletSync + IRQ/`retire_into`) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
@@ -191,6 +194,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
 | `core/src/partition.rs` | Spatial slice + QoS + blast radius |
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
+| `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + optional CCT |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |

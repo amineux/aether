@@ -30,13 +30,19 @@
 //! ```
 //!
 //! SET_SID is **not** a Tegra Host1x class opcode and not a second IR.
+//!
+//! SoftChipletSync (wave / CU / chiplet / package timelines, Fleet-shaped
+//! hierarchical counters, optional CPElide CCT) is a **software** fence
+//! domain on this CP. Distinct from ChipletFleet placement. Not UCIe,
+//! not a Vulkan timeline product. Latency wins need a multi-chiplet sim.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
+use aether_core::chipsync::{BufferLabel, ScopedFence, ScopedWork, SoftChipletSync, SyncScope};
 use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
-use aether_core::partition::PartitionError;
-use aether_core::types::{PhysAddr, TileId};
+use aether_core::partition::{PartitionError, PartitionId};
+use aether_core::types::{ChipletId, PhysAddr, TileId};
 use aether_core::window::{MappedWindow, TypedWindow};
 use aether_hal::{AccelDevice, AccelInfo, HalError, PreemptionLevel, ACCEL_BACKEND_SOFT_CP};
 
@@ -70,10 +76,13 @@ pub enum XQueueState {
     Suspended,
 }
 
+/// Optional SoftChipletSync annotation on a queued command. Default
+/// submit leaves this `None` (SID / XQueue path unchanged).
 #[derive(Clone, Copy, Debug)]
 struct XQueueSlot {
     cmd: CpCmd,
     job: AccelJobDesc,
+    scoped: Option<ScopedWork>,
 }
 
 /// Software execution queue on Soft-CP. The schedulable object.
@@ -334,6 +343,9 @@ pub struct SoftCommandProcessor<M: DmaView> {
     last_fence: Option<u64>,
     last_queue: Option<u8>,
     fence_done: bool,
+    /// Scoped timelines + hierarchical counters + optional CCT.
+    pub chipsync: SoftChipletSync,
+    last_scoped: Option<ScopedFence>,
 }
 
 impl<M: DmaView> SoftCommandProcessor<M> {
@@ -357,6 +369,8 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             last_fence: None,
             last_queue: None,
             fence_done: false,
+            chipsync: SoftChipletSync::new(PartitionId(1)),
+            last_scoped: None,
         }
     }
 
@@ -494,7 +508,12 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         };
         let push_err = {
             let q = self.queue_mut(queue)?;
-            q.push(XQueueSlot { cmd, job: *job }).err()
+            q.push(XQueueSlot {
+                cmd,
+                job: *job,
+                scoped: None,
+            })
+            .err()
         };
         if let Some(e) = push_err {
             restore_sid(self);
@@ -514,6 +533,36 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         };
         self.submit_seq = self.submit_seq.wrapping_add(1);
         Ok(self.submit_seq)
+    }
+
+    /// Submit onto an XQueue and tag SoftChipletSync (scope + CCT labels).
+    ///
+    /// [`Self::submit_xqueue`] is unchanged (no scoped annotation). Not a
+    /// second IR. `write` records last-writer chiplet; `read` is the
+    /// consumer wait.
+    pub fn submit_scoped(
+        &mut self,
+        queue: u16,
+        job: &AccelJobDesc,
+        scope: SyncScope,
+        write: Option<BufferLabel>,
+        read: Option<BufferLabel>,
+    ) -> Result<u32, HalError> {
+        let seq = self.submit_xqueue(queue, job)?;
+        self.chipsync.set_scope(scope);
+        let q = self.queue_mut(queue)?;
+        if q.len == 0 {
+            return Ok(seq);
+        }
+        let tail = (q.head as usize + q.len as usize - 1) % XQUEUE_DEPTH;
+        if let Some(slot) = q.slots[tail].as_mut() {
+            slot.scoped = Some(ScopedWork { scope, write, read });
+        }
+        Ok(seq)
+    }
+
+    pub fn last_scoped(&self) -> Option<ScopedFence> {
+        self.last_scoped
     }
 
     pub fn suspend_xqueue(&mut self, queue: u16) -> Result<PreemptionLevel, HalError> {
@@ -627,7 +676,10 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             return Some(self.complete(cmd.fence_id, cpl));
         };
         let result = match self.npu.execute(&job, &mut self.mem) {
-            Ok(cpl) => Some(self.complete(cmd.fence_id, cpl)),
+            Ok(cpl) => {
+                self.note_scoped(ChipletId(cmd.chiplet as u8), slot.scoped);
+                Some(self.complete(cmd.fence_id, cpl))
+            }
             Err(_) => {
                 let cpl = Completion {
                     job_seq: self.npu.seq,
@@ -639,6 +691,24 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         };
         self.iommu.clear_submit_sid();
         result
+    }
+
+    fn note_scoped(&mut self, chiplet: ChipletId, scoped: Option<ScopedWork>) {
+        let Some(s) = scoped else {
+            return;
+        };
+        if let Ok(kind) = self.chipsync.note(chiplet, s) {
+            self.last_scoped = Some(ScopedFence {
+                fence: Fence::new(
+                    FenceId(self.chipsync.timeline(s.scope).retired()),
+                    aether_core::fence::TimelineId(s.scope as u32),
+                    PartitionId(1),
+                ),
+                scope: s.scope,
+                chiplet,
+                kind,
+            });
+        }
     }
 
     /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
@@ -757,13 +827,14 @@ mod tests {
     use super::*;
     use aether_core::accel::{DType, SliceMem};
     use aether_core::caps::{CapKind, CapRights, Capability};
+    use aether_core::chipsync::{BufferLabel, SignalKind, SyncScope};
     use aether_core::fence::{FenceId, Timeline};
     use aether_core::iommu::{InvCmd, MapError, SteConfig, StreamState, SOFT_SMMU_IOVA_BASE};
     use aether_core::partition::{
         BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
     };
-    use aether_core::space::Place;
     use aether_core::smmu_bringup::{kit_cp_sid, kit_iree_sid, kit_wrong_sid};
+    use aether_core::space::Place;
     use aether_core::types::{ChipletId, TenantId};
     use aether_hal::{
         AccelDevice, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
@@ -1417,10 +1488,7 @@ mod tests {
         let mut d = SoftCommandProcessor::new(mem);
         let sid = kit_cp_sid();
         assert_eq!(
-            AccelDevice::map(
-                &mut d,
-                MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid)
-            ),
+            AccelDevice::map(&mut d, MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid)),
             Err(HalError::NoMemoryCap)
         );
         assert_eq!(d.iommu.capture(sid).unwrap(), StreamState::Captured);
@@ -1469,5 +1537,108 @@ mod tests {
         assert_eq!(d.iommu.walk(sid, iova).unwrap().pa.0, 0x1000);
         let dump = d.iommu.dump();
         assert_eq!(dump.stes[0].as_ref().unwrap().state, StreamState::Bound);
+    }
+
+    #[test]
+    fn chipsync_two_chiplet_producer_consumer_package_lt_naive() {
+        let mut backing = [0u8; 256];
+        let (job_a, job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 0).unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_a))
+            .unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_b))
+            .unwrap();
+
+        let buf = BufferLabel(1);
+        d.chipsync.enable_cct(true);
+        d.chipsync.open(SyncScope::Package);
+        d.chipsync
+            .expect(
+                ChipletId(0),
+                aether_core::chipsync::DEMO_WORKERS_PER_CHIPLET,
+            )
+            .unwrap();
+        for _ in 0..(aether_core::chipsync::DEMO_WORKERS_PER_CHIPLET - 1) {
+            let f = d.chipsync.arrive(ChipletId(0), Some(buf)).unwrap();
+            assert_eq!(f.kind, SignalKind::ChipletLocal);
+        }
+
+        d.submit_scoped(0, &job_a, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_queue(), Some(0));
+        assert_eq!(
+            d.last_scoped().unwrap().kind,
+            SignalKind::PendingPackage,
+            "last worker defers package fence for CCT"
+        );
+        d.poll();
+
+        d.submit_scoped(1, &job_b, SyncScope::Package, None, Some(buf))
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_queue(), Some(1));
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PackageFence);
+        d.poll();
+
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a), "SID still sticky");
+        assert_eq!(d.xqueue(1).unwrap().sid, Some(sid_b));
+        assert_eq!(d.chipsync.package_fences(), 1);
+        assert_eq!(
+            d.chipsync.naive_package_fences(),
+            aether_core::chipsync::DEMO_WORKERS_PER_CHIPLET
+        );
+        assert!(d.chipsync.package_lt_naive());
+        assert_eq!(d.chipsync.elided(), 0);
+        assert_eq!(d.chipsync.cct().last_writer(buf), Some(ChipletId(0)));
+        let out_a = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        let out_b = i32::from_le_bytes(backing[96..100].try_into().unwrap());
+        assert_eq!(out_a, 19);
+        assert_eq!(out_b, 19);
+    }
+
+    #[test]
+    fn chipsync_cct_elides_same_chiplet_consumer() {
+        let (mut backing, mut job) = matmul_backing();
+        job.place = job.place.with_tile(2);
+        let sid = stream_for_job(&job);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        let buf = BufferLabel(4);
+        d.chipsync.enable_cct(true);
+        d.chipsync.open(SyncScope::Package);
+        d.chipsync.expect(ChipletId(0), 2).unwrap();
+
+        d.submit_scoped(0, &job, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+        d.submit_scoped(0, &job, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PendingPackage);
+        d.poll();
+
+        assert_eq!(
+            d.chipsync.wait(ChipletId(0), Some(buf)).unwrap(),
+            SignalKind::Elided
+        );
+        assert_eq!(d.chipsync.package_fences(), 0);
+        assert_eq!(d.chipsync.elided(), 1);
+        assert!(d.chipsync.package_lt_naive());
+        // XQueue SID-at-submit still sticky after scoped submits.
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.flags & CP_FLAG_SET_SID, CP_FLAG_SET_SID);
     }
 }

@@ -3,6 +3,7 @@
 //! (x86 ring-3 / RISC-V U-mode / aarch64 EL0).
 
 use aether_core::blast::run_blast_demo;
+use aether_core::chipsync::run_chipsync_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
@@ -192,6 +193,23 @@ pub fn run_kernel_selfcheck() {
         println!("[sid] FAIL -- SET_SID-at-submit");
     }
 
+    let chipsync = run_chipsync_demo();
+    write_str("[chipsync] package fences=");
+    write_u64(chipsync.hierarchical_fences as u64);
+    write_str(" naive=");
+    write_u64(chipsync.naive_fences as u64);
+    write_str(" (Fleet hierarchical; not UCIe)  ");
+    write_str(flag(chipsync.package_lt_naive));
+    console::nl();
+    write_str("[chipsync] CCT elide last-writer=consumer  ");
+    write_str(flag(chipsync.cct_elide));
+    console::nl();
+    if chipsync.all_ok() {
+        println!("[chipsync] two-chiplet producer/consumer scoped timelines sealed");
+    } else {
+        println!("[chipsync] FAIL -- SoftChipletSync");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -204,7 +222,7 @@ pub fn run_kernel_selfcheck() {
         }
     }
 
-    if !report.all_ok() || !blast.all_ok() || !sid.all_ok() {
+    if !report.all_ok() || !blast.all_ok() || !sid.all_ok() || !chipsync.all_ok() {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);
         crate::arch::idle();
