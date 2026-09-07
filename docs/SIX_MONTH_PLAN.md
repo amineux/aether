@@ -47,7 +47,8 @@ re-schedule any of the following as new milestones:
 
 SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 `PartnerNpuStub` (`backend = 2`) is a leftover no-op. Host ABI nouns in
-`core/src/abi.rs` are types only — **not** the M2 PJRT/IREE shim.
+`core/src/abi.rs` are types only. The M2 PJRT/IREE shim is
+`host/aether-pjrt` (frozen `IreeHalCmd` → `IreeShapedCp`).
 
 ## Execution spine (this is the calendar)
 
@@ -80,21 +81,24 @@ through this device.
 4. `PartnerNpuStub` stays a labeled no-op. No FLOP numbers. No new
    syscall.
 
-### NOW–M2 — PJRT/IREE-shaped host shim
+### NOW–M2 — PJRT/IREE-shaped host shim (**landed, PR #41**)
 
 A host-side shim that speaks **Device / MemorySpace / Buffer /
-Executable / Event** and **submits through `IreeShapedCp`** (the
-landed M1 AccelDevice). SoftNPU / Soft-CP may also be wired; they
-do not replace the partner-shaped packet.
+Executable / Event**, packs the frozen `IreeHalCmd` image (magic
+`0xAE7E1EE1`, 96-byte LE, `backend = 4`, `ssid = 2`), and submits
+through `IreeShapedCp`. Decode keys off the DISPATCH bit; Nop is
+`categories = 0` (function ignored); v1 pack emits 0 or DISPATCH only
+(`TRANSFER` alone is Fault). `workgroup_count` is AccelJobDesc `m,n,k`
+(shape stand-in, not compiler tiles). Binding lengths are dtype-aware
+byte spans. Executable is `0x0001EE00` only. SoftNPU remains the
+`make qemu` path-B demo.
 
-This is the **primary partner story**. **TAKE, not defer.** Exploration
-A (below) overlaps this spine — merge it here instead of parking a
-second calendar.
+This is the **primary partner story**. Exploration A merged here.
 
 Not `GetPjRtApi`. Not `iree_hal_driver_t`. Not in-kernel graph IR. Not
 a vendor compiler integration.
 
-**Done when:**
+**Done when (met on this branch):**
 
 1. A host crate or module exposes those five nouns and lowers a submit
    onto `AccelJobDesc` → `IreeShapedCp` (`backend = 4`). SoftNPU
@@ -165,14 +169,15 @@ becoming calendar. Prefer merging A into M1–M2.
 
 | | Slice | Honest bound |
 | --- | --- | --- |
-| **A** | PJRT/IREE host shim | Overlaps the spine. Prefer merging into **M2** (submit through `IreeShapedCp`) rather than a parallel track. |
+| **A** | PJRT/IREE host shim | **Merged into M2 (PR #41).** Frozen `IreeHalCmd` → `IreeShapedCp`. Not a plugin. |
 | **B** | Multi-tenant blast-radius demo | One-week diligence clip: two tenants, CrossCut + wrong-SID refuse. Not a second ring-3 World. |
 | **C** | Chiplet affinity placement | **Landed as stub (PR #40).** `ChipletTaskScope`. Not ChipletFleet marketing. |
 | **D** | Mint/derive/revoke property tests | **Landed as stub (PR #39).** `caps_props.rs`. Not proofs, not a seL4 CNode. |
 | **E** | CXL.mem typed-window stub | Inspiration only. Typed place / window sketch. Not productization, not Y2H1 CXL objects. |
 
-If A lands as a shim over SoftNPU / Soft-CP (`backend` 1 / 3) only, M2
-is still open until it submits through `IreeShapedCp`.
+If A had landed as a shim over SoftNPU / Soft-CP (`backend` 1 / 3)
+only, M2 would still be open. PR #41 packs `IreeHalCmd` and submits
+through `IreeShapedCp`; SoftNPU stays the qemu demo.
 
 ## Post–M2 backlog (SpectraScout order)
 
@@ -218,7 +223,7 @@ M3–M4.
 2. M1 partner-shaped opcode `AccelDevice` — **landed** as `IreeShapedCp`
    (PR #38)
 3. M2 PJRT/IREE host shim submitting through `IreeShapedCp` (merge
-   exploration A) — **remaining clock**
+   exploration A) — **landed** as `host/aether-pjrt` (PR #41)
 4. Optional Soft-SMMU bring-up kit (docs + dump/replay)
 5. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
    be shown on path-A DMA

@@ -87,6 +87,8 @@ pub fn element_type_from_dtype(dtype: DType) -> u32 {
     }
 }
 
+/// v1 pack emits **0** (Nop doorbell) or **DISPATCH** only.
+/// `TRANSFER` alone is not a defined v1 packet.
 pub fn categories_from_op(op: AccelOp) -> u16 {
     match op {
         AccelOp::Nop => 0,
@@ -101,13 +103,19 @@ pub fn function_from_op(op: AccelOp) -> u32 {
     }
 }
 
-fn op_from_hal(categories: u16, function: u32) -> AccelOp {
-    if categories & IREE_HAL_COMMAND_CATEGORY_DISPATCH == 0 {
-        AccelOp::Nop
-    } else if function == HAL_FN_FUSED {
-        AccelOp::Wave
-    } else {
-        AccelOp::MatMul
+/// Decode keys off `command_categories` first. Do **not** branch on
+/// `function` until DISPATCH is set. Nop is `categories = 0`; `function`
+/// is ignored (pack writes 0). TRANSFER alone / any other v1 category
+/// bit pattern is [`HalError::Fault`].
+pub fn op_from_hal(categories: u16, function: u32) -> Result<AccelOp, HalError> {
+    match categories {
+        0 => Ok(AccelOp::Nop),
+        IREE_HAL_COMMAND_CATEGORY_DISPATCH => Ok(if function == HAL_FN_FUSED {
+            AccelOp::Wave
+        } else {
+            AccelOp::MatMul
+        }),
+        _ => Err(HalError::Fault),
     }
 }
 
@@ -182,7 +190,8 @@ pub struct IreeHalCmd {
     pub executable: u32,
     /// `iree_hal_executable_function_t` export ordinal. Not `AccelOp`.
     pub function: u32,
-    /// `iree_hal_dispatch_config_t.workgroup_count[0..3]` ← job M, N, K.
+    /// AccelJobDesc `m,n,k` shape stand-ins — **not** compiler tile
+    /// sizes or IREE launch geometry.
     pub workgroup_count_x: u32,
     pub workgroup_count_y: u32,
     pub workgroup_count_z: u32,
@@ -197,7 +206,8 @@ pub struct IreeHalCmd {
     pub binding1_offset: u64,
     pub binding2_offset: u64,
     pub binding3_offset: u64,
-    /// `iree_hal_buffer_ref_t.length` for bindings 0–3.
+    /// `iree_hal_buffer_ref_t.length` for bindings 0–3. Byte spans
+    /// (`dtype` × elements), not element counts.
     pub binding0_length: u32,
     pub binding1_length: u32,
     pub binding2_length: u32,
@@ -209,6 +219,26 @@ pub struct IreeHalCmd {
 const _: [(); IREE_HAL_CMD_SIZE] = [(); core::mem::size_of::<IreeHalCmd>()];
 
 impl IreeHalCmd {
+    /// Frozen v1 image: magic, `executable = IREE_REF_EXECUTABLE`,
+    /// categories ∈ {0, DISPATCH}.
+    pub fn check_v1(&self) -> Result<(), HalError> {
+        if self.magic != IREE_HAL_PKT_MAGIC {
+            return Err(HalError::BadArg);
+        }
+        if self.executable != IREE_REF_EXECUTABLE {
+            return Err(HalError::Unsupported);
+        }
+        match self.command_categories {
+            0 | IREE_HAL_COMMAND_CATEGORY_DISPATCH => Ok(()),
+            _ => Err(HalError::Fault),
+        }
+    }
+
+    pub fn decode_op(&self) -> Result<AccelOp, HalError> {
+        self.check_v1()?;
+        op_from_hal(self.command_categories, self.function)
+    }
+
     /// Translate an Aether job through Soft SMMU into an IREE HAL packet.
     ///
     /// `Nop` is a doorbell / latency probe (`command_categories = 0`) and
@@ -216,6 +246,19 @@ impl IreeHalCmd {
     /// packed SID is Bound and A/B/C (and bias, if set) translate on that SID.
     pub fn pack(job: &AccelJobDesc, iommu: &IommuMap) -> Result<Self, HalError> {
         let nouns = IreeHalNouns::from_job(job);
+        Self::pack_with_nouns(job, iommu, &nouns)
+    }
+
+    /// PJRT path: `abi::{Device,Buffer,Executable,Event}` → frozen image.
+    /// Refuses any `isa_blob_id` other than [`IREE_REF_EXECUTABLE`].
+    pub fn pack_with_nouns(
+        job: &AccelJobDesc,
+        iommu: &IommuMap,
+        nouns: &IreeHalNouns,
+    ) -> Result<Self, HalError> {
+        if nouns.executable.isa_blob_id != IREE_REF_EXECUTABLE {
+            return Err(HalError::Unsupported);
+        }
         if job.op == AccelOp::Nop {
             return Ok(Self::empty_from(job, &nouns));
         }
@@ -290,7 +333,7 @@ impl IreeHalCmd {
             command_categories: 0,
             binding_count: 0,
             executable: nouns.executable.isa_blob_id,
-            function: HAL_FN_MATMUL,
+            function: HAL_FN_MATMUL, // 0; ignored when categories = 0
             workgroup_count_x: 0,
             workgroup_count_y: 0,
             workgroup_count_z: 0,
@@ -394,6 +437,29 @@ impl<M: DmaView> IreeShapedCp<M> {
         Ok(region.iova)
     }
 
+    /// Consume a frozen `IreeHalCmd` image (PJRT / IREE HAL path).
+    /// `AccelDevice::submit` packs then calls this; the job record is
+    /// kept for guest-PA DMA after IOVA resolve.
+    pub fn submit_hal(&mut self, cmd: IreeHalCmd, job: &AccelJobDesc) -> Result<u32, HalError> {
+        if self.doorbell || self.mailbox.is_some() {
+            return Err(HalError::Busy);
+        }
+        cmd.decode_op()?;
+        self.last_cmd = Some(cmd);
+        self.mailbox = Some(cmd);
+        self.pending_job = Some(*job);
+        self.doorbell = true;
+        self.irq = false;
+        self.last_cpl = None;
+        self.fence_done = false;
+        self.last_fence = if job.fence_id != 0 {
+            Some(job.fence_id)
+        } else {
+            None
+        };
+        Ok(self.npu.seq)
+    }
+
     pub fn last_cmd(&self) -> Option<IreeHalCmd> {
         self.last_cmd
     }
@@ -428,7 +494,18 @@ impl<M: DmaView> IreeShapedCp<M> {
         let cmd = self.mailbox.take()?;
         let job = self.pending_job.take()?;
         self.doorbell = false;
-        if job.op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
+        let op = match cmd.decode_op() {
+            Ok(op) => op,
+            Err(_) => {
+                let cpl = Completion {
+                    job_seq: self.npu.seq,
+                    status: -2,
+                    cycles: 0,
+                };
+                return Some(self.complete(cmd.signal_payload, cpl));
+            }
+        };
+        if op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
             let cpl = Completion {
                 job_seq: self.npu.seq,
                 status: -2,
@@ -459,11 +536,14 @@ impl<M: DmaView> IreeShapedCp<M> {
 
     /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
     fn job_from_cmd(&self, cmd: &IreeHalCmd, job: AccelJobDesc) -> Option<AccelJobDesc> {
-        if self.iommu.is_empty() || job.op == AccelOp::Nop {
-            return Some(job);
+        let op = cmd.decode_op().ok()?;
+        if self.iommu.is_empty() || op == AccelOp::Nop {
+            let mut pa = job;
+            pa.op = op;
+            return Some(pa);
         }
         let mut pa = job;
-        pa.op = op_from_hal(cmd.command_categories, cmd.function);
+        pa.op = op;
         pa.a = self
             .iommu
             .resolve_stream(cmd.stream_id, PhysAddr(cmd.binding0_offset))?;
@@ -520,23 +600,8 @@ impl<M: DmaView> AccelDevice for IreeShapedCp<M> {
     }
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
-        if self.doorbell || self.mailbox.is_some() {
-            return Err(HalError::Busy);
-        }
         let cmd = IreeHalCmd::pack(job, &self.iommu)?;
-        self.last_cmd = Some(cmd);
-        self.mailbox = Some(cmd);
-        self.pending_job = Some(*job);
-        self.doorbell = true;
-        self.irq = false;
-        self.last_cpl = None;
-        self.fence_done = false;
-        self.last_fence = if job.fence_id != 0 {
-            Some(job.fence_id)
-        } else {
-            None
-        };
-        Ok(self.npu.seq)
+        self.submit_hal(cmd, job)
     }
 
     fn poll(&mut self) -> Option<Completion> {
@@ -879,7 +944,9 @@ mod tests {
         d.submit(&job).unwrap();
         let cmd = d.last_cmd().unwrap();
         assert_eq!(cmd.command_categories, 0);
+        assert_eq!(cmd.function, 0, "Nop function is 0 and ignored");
         assert_eq!(cmd.binding_count, 0);
+        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Nop);
         let cpl = d.service().unwrap();
         assert_eq!(cpl.status, 0);
         assert_eq!(d.poll().unwrap().status, 0);
@@ -924,5 +991,98 @@ mod tests {
         assert!(timeline.wait(done.id).unwrap().completed);
         assert_eq!(timeline.in_flight(), 0);
         assert_eq!(timeline.retired(), fence.id.0);
+    }
+
+    #[test]
+    fn decode_keys_off_dispatch_bit_not_function() {
+        assert_eq!(op_from_hal(0, HAL_FN_FUSED).unwrap(), AccelOp::Nop);
+        assert_eq!(op_from_hal(0, 99).unwrap(), AccelOp::Nop);
+        assert_eq!(
+            op_from_hal(IREE_HAL_COMMAND_CATEGORY_DISPATCH, HAL_FN_MATMUL).unwrap(),
+            AccelOp::MatMul
+        );
+        assert_eq!(
+            op_from_hal(IREE_HAL_COMMAND_CATEGORY_DISPATCH, HAL_FN_FUSED).unwrap(),
+            AccelOp::Wave
+        );
+        assert_eq!(
+            op_from_hal(IREE_HAL_COMMAND_CATEGORY_TRANSFER, HAL_FN_MATMUL).unwrap_err(),
+            HalError::Fault
+        );
+        assert_eq!(
+            op_from_hal(
+                IREE_HAL_COMMAND_CATEGORY_TRANSFER | IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+                HAL_FN_MATMUL
+            )
+            .unwrap_err(),
+            HalError::Fault
+        );
+        assert_eq!(categories_from_op(AccelOp::Nop), 0);
+        assert_eq!(
+            categories_from_op(AccelOp::MatMul),
+            IREE_HAL_COMMAND_CATEGORY_DISPATCH
+        );
+        assert_eq!(
+            categories_from_op(AccelOp::Wave),
+            IREE_HAL_COMMAND_CATEGORY_DISPATCH
+        );
+    }
+
+    #[test]
+    fn submit_hal_transfer_alone_and_foreign_executable_fault() {
+        let (mut backing, job) = matmul_backing();
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        pin_job(&mut d, &job);
+        let packed = IreeHalCmd::pack(&job, &d.iommu).unwrap();
+        assert_eq!(packed.magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(packed.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+        assert_eq!(StreamId::from_raw(packed.stream_id).ssid(), IREE_SSID);
+        assert_eq!(packed.workgroup_count_x, job.m);
+        assert_eq!(packed.workgroup_count_y, job.n);
+        assert_eq!(packed.workgroup_count_z, job.k);
+        assert_eq!(packed.binding0_length, job.bytes_a() as u32);
+        assert_ne!(packed.binding0_length, job.m * job.k, "bytes, not elements");
+
+        let mut transfer = packed;
+        transfer.command_categories = IREE_HAL_COMMAND_CATEGORY_TRANSFER;
+        assert_eq!(d.submit_hal(transfer, &job).unwrap_err(), HalError::Fault);
+
+        let mut foreign = packed;
+        foreign.executable = 1;
+        assert_eq!(
+            d.submit_hal(foreign, &job).unwrap_err(),
+            HalError::Unsupported
+        );
+
+        let mut nouns = IreeHalNouns::from_job(&job);
+        nouns.executable.isa_blob_id = 0xDEAD;
+        assert_eq!(
+            IreeHalCmd::pack_with_nouns(&job, &d.iommu, &nouns).unwrap_err(),
+            HalError::Unsupported
+        );
+    }
+
+    #[test]
+    fn binding_lengths_are_dtype_aware_byte_spans() {
+        let mut backing = [0u8; 256];
+        let mut job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job.dtype = DType::F16;
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        pin_job(&mut d, &job);
+        let cmd = IreeHalCmd::pack(&job, &d.iommu).unwrap();
+        // 2×2 F16 = 8 bytes, not 4 elements.
+        assert_eq!(cmd.binding0_length, 8);
+        assert_eq!(cmd.binding1_length, 8);
+        assert_eq!(cmd.binding2_length, 8);
+        assert_eq!(cmd.element_type, IREE_HAL_ELEMENT_TYPE_FLOAT_16);
+        assert_ne!(cmd.binding0_length, 4);
     }
 }

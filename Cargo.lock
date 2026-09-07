@@ -20,3 +20,12 @@ version = "0.1.0"
 dependencies = [
  "aether-core",
 ]
+
+[[package]]
+name = "aether-pjrt"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "aether-drivers",
+ "aether-hal",
+]

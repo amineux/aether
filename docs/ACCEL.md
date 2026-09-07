@@ -393,6 +393,14 @@ bytecode).
 `Wave = 2`). Soft-CP's `CpCmd.opcode` still is. That is the point of
 this backend.
 
+v1 decode keys off the **DISPATCH** bit first. `categories = 0` is Nop
+and **ignores** `function` (pack writes 0). v1 pack emits **0 or
+DISPATCH only**; `TRANSFER` alone is `HalError::Fault` / not defined.
+`workgroup_count_*` are AccelJobDesc `m,n,k` shape stand-ins — not
+compiler tile sizes or IREE launch geometry. Binding `.length` fields
+are dtype-aware **byte spans**, not element counts. The only accepted
+`isa_blob_id` is `IREE_REF_EXECUTABLE` (`0x0001EE00`).
+
 **Not claimed.** Not an IREE runtime in the kernel, not a PJRT plugin,
 not a signed IREE or silicon partnership, not FLOPs, not a vendor
 opcode ROM.
@@ -441,7 +449,9 @@ is additive).
    first authorized map captures+binds. map() without a cap walk
    returns NoMemoryCap. SoftNPU ssid 0 and Soft-CP ssid 1 are WrongStream.
 3. submit(): IreeHalCmd::pack(job, &iommu) → mailbox, doorbell=1.
+   PJRT host path: abi nouns → pack IreeHalCmd → submit_hal.
    Unbound / captured / missing / partial / wrong-stream → Fault.
+   TRANSFER-only image → Fault. Other isa_blob_id → Unsupported.
    Does not execute. poll() is empty until service().
 4. service() (IRQ / kthread poll): resolve_stream each binding IOVA,
    run the integer engine, write a Completion, raise IRQ.
@@ -454,6 +464,12 @@ The kernel self-check only probes `IreeShapedCp` so backend 4 is
 visible on the serial log (`[accel] IreeShapedCp probe backend=4
 iree-shaped-cp (IREE HAL packet; not a vendor)`). QEMU still demos
 SoftNPU. This backend does not add a QEMU device.
+
+The compiler-facing nouns on this path live in `host/aether-pjrt`
+([HOST.md](HOST.md)): Device, MemorySpace, Buffer, Executable, Event
+lower onto `AccelJobDesc` + Soft SMMU. The host session submits through
+SoftNPU and `IreeShapedCp` (`backend = 4`), not Soft-CP. That crate is
+not a PJRT plugin, not an IREE HAL driver, and not a vendor runtime.
 
 ## Co-scheduling
 

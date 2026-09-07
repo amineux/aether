@@ -27,7 +27,7 @@ active track the site must match. The **next calendar** is
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
-| PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
+| PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
@@ -100,9 +100,13 @@ The compiler / runtime (IREE, XLA/PJRT, a vendor stack) owns the ISA
 blob (`abi::Executable`). Aether admits the job against a partition,
 a SpectralCut, a bank color, and a fence. It does not fuse a graph.
 
-Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md). Start from
-`SoftCommandProcessor` or `IreeShapedCp`. `PartnerNpuStub` is a leftover
-no-op sketch, not a partnership and not this path.
+Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md), [HOST.md](HOST.md).
+Start from `IreeShapedCp` (partner-shaped HAL packet) or
+`SoftCommandProcessor` (Aether-native `CpCmd`). The host crate
+`aether-pjrt` is the compiler-facing nouns; it packs frozen `IreeHalCmd`
+and submits through `IreeShapedCp`. SoftNPU is the path-B qemu demo.
+`PartnerNpuStub` is a leftover no-op sketch, not a partnership and not
+this path.
 
 ## Security invariants (what we will defend)
 

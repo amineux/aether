@@ -62,7 +62,7 @@ all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs, bootfs)"
+	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs, bootfs, aether-pjrt)"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"

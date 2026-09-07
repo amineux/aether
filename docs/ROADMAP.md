@@ -31,6 +31,7 @@ product kernel.
 | Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership; not a CP path) |
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + Soft SMMU SID + IRQ/fence; host tests) |
 | Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2`; not a signed vendor) |
+| PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
 
 ## Month 5–6 (this cut): Portability & partners
 
@@ -783,7 +784,7 @@ Search for `// STUB:` / `STUB` :
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
 | Real CXL.mem window | `MemorySpace::CxlRegion`, `core/src/window.rs` | **killed as a milestone.** `TypedWindow` is an honest pin stub (SID refuse, host tests), not this item. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
-| Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
+| Compiler ISA blob | `abi::Executable` + `host/aether-pjrt` | Kernel stores a handle; host shim packs `IreeHalCmd` / submits `AccelOp`; IREE/PJRT would own the bytes. Not a plugin. |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
@@ -802,9 +803,9 @@ device (PR #38):
 
 - **M1 landed (PR #38):** `IreeShapedCp` (`backend = 4`) — frozen IREE
   HAL packet; research opcodes, not a vendor-as-partner claim.
-- **NOW–M2:** PJRT/IREE-shaped host shim (Device / MemorySpace /
-  Buffer / Executable / Event) that submits through that device.
-  Primary partner story — take, do not defer.
+- **M2 landed (PR #41):** PJRT/IREE-shaped host shim (`host/aether-pjrt`)
+  packs frozen `IreeHalCmd` and submits through `IreeShapedCp`.
+  SoftNPU stays the `make qemu` path-B demo.
 - Soft SMMU / Soft-CP / SMP / PML4 are **not** re-scheduled.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
@@ -813,8 +814,7 @@ device (PR #38):
 ## Suggested next cuts (technical, not calendar)
 
 The Kernel **calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1 `IreeShapedCp` landed; M2 PJRT/IREE host shim is the remaining
-clock). The list below
+(M1 `IreeShapedCp` landed; M2 `host/aether-pjrt` landed). The list below
 is leftover engineering, not M3–M4.
 
 1. **Guest driver for path A.** The QEMU `aether-accel` device and
@@ -847,6 +847,10 @@ is leftover engineering, not M3–M4.
    seed landed on x86 (`make qemu-blk-ci`). A virtio 1.0 MMIO BAR,
    RISC-V / aarch64 virtio-mmio, and a user block device are still
    open. SoftNPU path B stays the in-kernel BAR.
+9. **A real PJRT plugin / IREE HAL driver.** `host/aether-pjrt` is
+   the host contract (Device / MemorySpace / Buffer / Executable /
+   Event → frozen `IreeHalCmd` on IreeShapedCp). `GetPjRtApi` and
+   `iree_hal_driver_t` are still out of tree. Not a vendor integration.
 
 ## Two-year plan
 

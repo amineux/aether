@@ -5,6 +5,10 @@
 //! presents to the fabric — it does not parse or rewrite ML graphs.
 //!
 //! Host-facing nouns: Device, MemorySpace, Buffer, Executable, Event.
+//! The working host session is `aether-pjrt` (`host/aether-pjrt`): it
+//! maps these nouns onto a frozen `IreeHalCmd` and submits into
+//! IreeShapedCp. SoftNPU remains the path-B qemu demo. That crate is
+//! not a PJRT plugin and not an IREE HAL driver.
 
 use crate::activity::ActivityId;
 use crate::fence::FenceId;

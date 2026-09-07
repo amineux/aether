@@ -41,7 +41,7 @@ Supporting rules (implemented in types, not just prose):
 7. **Kernel = submission shim + resource solver.** No ML graph IR or
    fusion in-kernel. Compilers own the ISA. The host ABI is shaped like
    PJRT/IREE HAL (Device, MemorySpace, Buffer, Executable, Event). See
-   [ABI.md](ABI.md).
+   [ABI.md](ABI.md) and the working host session in [HOST.md](HOST.md).
 8. **Cuts and Hodge classes remain capabilities.** A `SpectralCut` is a
    bound partition of the package graph; a `FlowClass` on every message
    selects gradient / curl / harmonic policy. An `OperatorKernelHandle`
@@ -138,13 +138,15 @@ aether-hal      AccelDevice / Console / Timer
      ▲
 aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + IreeShapedCp + PartnerNpuStub
      ▲
-aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
+     ├── aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
+     └── aether-pjrt     std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
 user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
 user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 ```
 
 `aether-core` is the portable specification. Host tests execute the same
-`run_boot_demo()` the kernel prints.
+`run_boot_demo()` the kernel prints. `aether-pjrt` is host-only (not
+linked into the kernel); see [HOST.md](HOST.md).
 
 ## Module map (kernel)
 
@@ -190,6 +192,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
+| `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
 
 ## Boot (RISC-V / QEMU virt)
 
