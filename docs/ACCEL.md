@@ -278,7 +278,7 @@ opcode/packet ADR below.
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftGreenCtx SM/WQ + SoftCmdFirewall + Soft SMMU + IRQ/fence |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftGreenCtx SM/WQ + SoftChipletSync/SoftCCT + SoftCmdFirewall + Soft SMMU + IRQ/fence |
 | 4 | `IreeShapedCp` | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
@@ -408,28 +408,22 @@ Host tests: `xqueue_suspend_a_b_progresses_blast_radius`,
 `xqueue_wrong_sid_still_aborts`, plus the existing wrong-stream
 pack tests.
 
-## SoftChipletSync (software; Fleet / CPElide-shaped)
+## SoftChipletSync (software; Fleet-shaped)
 
-**Status:** **Landed** (SpectraScout post-M2 leftover after M3+M4).
+**Status:** **Landed** (PR #51; SpectraScout post-M2 leftover after M3+M4).
 Scoped timelines `{wave, CU, chiplet, package}` on the existing seq /
 wait / complete model. Not a Vulkan timeline product. Not UCIe.
 Not ChipletFleet placement (`ChipletTaskScope` stays a killed calendar
-stub).
+stub). SoftCCT (below) is the elision layer on this object.
 
-**Inspiration.**
+**Inspiration.** [Fleet](https://arxiv.org/abs/2604.15379) hierarchical
+event counters: workers increment a chiplet-local counter with **no**
+package fence; only the last worker on a participating chiplet issues a
+package-scope fence. Chiplet-local signal is free; package-scope costs
+more.
 
-- [Fleet](https://arxiv.org/abs/2604.15379) hierarchical event counters:
-  workers increment a chiplet-local counter with **no** package fence;
-  only the last worker on a participating chiplet issues a package-scope
-  fence. Chiplet-local signal is free; package-scope costs more.
-- [CPElide](https://doi.org/10.1109/MICRO61859.2024.00058) Chiplet
-  Coherence Table (CCT): last-writer chiplet per buffer label. A consumer
-  on that same chiplet **elides** the package fence.
-
-This is **not** a Fleet port, not CPElide silicon, not a cache-coherence
-directory, and not a multi-chiplet latency result. Host tests measure
-fence **counts** (package ≪ naive global). Latency wins need a
-multi-chiplet sim — single-die QEMU / host numbers are not partner proof.
+This is **not** a Fleet port and not a multi-chiplet latency result.
+Host tests measure fence **counts** (package ≪ naive global).
 
 **Contract** (`aether_core::chipsync::SoftChipletSync` + Soft-CP /
 IreeShapedCp `submit_scoped`):
@@ -437,7 +431,7 @@ IreeShapedCp `submit_scoped`):
 ```text
 open(scope) / expect(chiplet, n_workers)
 arrive(chiplet, write_label)   // chiplet-local free; last worker may fence
-wait(consumer, read_label)     // CCT elides if last-writer == consumer
+wait(consumer, read_label)     // SoftCCT elides if last-writer == consumer
 Soft-CP submit_scoped(queue, job, scope, write, read)
 IreeShapedCp submit_scoped     // still a single mailbox
 ```
@@ -446,10 +440,34 @@ IreeShapedCp submit_scoped     // still a single mailbox
 intact). `CpCmd` / `IreeHalCmd` layouts unchanged. Path B SoftNPU /
 `make qemu` unchanged.
 
-Host tests: `package_scope_fence_count_much_less_than_naive`,
-`cct_elides_when_last_writer_matches_consumer`, Soft-CP two-fake-chiplet
-producer/consumer, IreeShapedCp sequential producer/consumer. Kernel
-serial `[chipsync]`.
+Host tests: `package_scope_fence_count_much_less_than_naive`, Soft-CP
+two-fake-chiplet producer/consumer, IreeShapedCp sequential
+producer/consumer. Kernel serial `[chipsync]`.
+
+## SoftCCT (software; CPElide-shaped elision)
+
+**Status:** **Landed** (SpectraScout leftover on SoftChipletSync).
+Soft-CP / IreeShapedCp jobs carry buffer labels. SoftCCT
+(`aether_core::chipsync::SoftCct`) tracks the last-writer chiplet per
+label and tells SoftChipletSync to issue a package-scope fence **only**
+when that table says a cross-chiplet hazard. Same-chiplet consume on a
+≥2-chiplet package **elides**. Single-chiplet CCT is a **no-op**.
+
+**Inspiration.** [CPElide](https://doi.org/10.1109/MICRO61859.2024.00058)
+(MICRO’24): the command processor tracks last-writer chiplet per buffer;
+targeted acquire/release vs all-chiplet (broadcast) fences.
+
+This is **not** CPElide silicon, **not** a full coherence protocol,
+**not** a cache-coherence directory, and **not** a Vulkan / ROCm
+product. Host tests measure fence **counts** (CCT package ≪ broadcast
+baseline). Latency wins need a multi-chiplet sim — single-die QEMU /
+host numbers are not partner proof. An incorrect-elision test (elide
+whenever a label is known, ignoring writer chiplet) must fail on
+chiplet0 → chiplet1.
+
+Host tests: `softcct_package_fence_lt_broadcast_two_chiplet`,
+`softcct_incorrect_elision_fails`, `softcct_single_chiplet_is_noop`,
+plus Soft-CP twins. Kernel serial `[softcct]`.
 
 ## SoftGreenCtx (software; Green Contexts / DetShare-shaped)
 
@@ -751,8 +769,9 @@ is no implicit catch-up, and a partition that is out of credits
 refuses submit. `timeout` is a software overlay — it does not
 claim a device IRQ. SoftCommandProcessor, IreeShapedCp, and SoftNPU
 all retire through this API. SoftChipletSync adds scoped (wave / CU /
-chiplet / package) timelines on the same seq model — Fleet / CPElide
-inspiration, not Vulkan, not UCIe. QEMU's used-ring IRQ is still software on x86
+chiplet / package) timelines on the same seq model; SoftCCT is the
+CPElide-shaped elision layer (not a coherence protocol, not Vulkan /
+ROCm). QEMU's used-ring IRQ is still software on x86
 (kthread poll after the PIC timer). On RISC-V the same AccelMmio
 BAR is serviced from a **PLIC claim** (UART THRE software doorbell,
 source 10) — a real interrupt path, still path B, still not a

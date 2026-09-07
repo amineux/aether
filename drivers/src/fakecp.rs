@@ -36,9 +36,12 @@
 //! the command stream only — not confidential GPU.
 //!
 //! SoftChipletSync (wave / CU / chiplet / package timelines, Fleet-shaped
-//! hierarchical counters, optional CPElide CCT) is a **software** fence
-//! domain on this CP. Distinct from ChipletFleet placement. Not UCIe,
-//! not a Vulkan timeline product. Latency wins need a multi-chiplet sim.
+//! hierarchical counters) plus SoftCCT (buffer labels + last-writer
+//! chiplet; package fence only on a cross-chiplet hazard) is a
+//! **software** fence domain on this CP. Single-chiplet CCT is a no-op.
+//! Distinct from ChipletFleet placement. Not UCIe, not a coherence
+//! protocol, not a Vulkan / ROCm product. Latency wins need a
+//! multi-chiplet sim.
 //!
 //! SoftGreenCtx partitions a fake SM / WQ pool (canonical 70/30). XQueues
 //! bind to a context. CUDA Green Contexts / DetShare are **inspiration**
@@ -1922,6 +1925,7 @@ mod tests {
         d.chipsync.enable_cct(true);
         d.chipsync.open(SyncScope::Package);
         d.chipsync.expect(ChipletId(0), 2).unwrap();
+        d.chipsync.expect(ChipletId(1), 1).unwrap();
 
         d.submit_scoped(0, &job, SyncScope::Package, Some(buf), None)
             .unwrap();
@@ -2124,5 +2128,100 @@ mod tests {
         let after = d.last_memcpy().unwrap();
         assert_eq!(after.sm, 7);
         assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+    }
+
+    #[test]
+    fn softcct_package_fence_lt_broadcast_two_chiplet() {
+        let mut backing = [0u8; 256];
+        let (job_a, job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 0).unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_a))
+            .unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_b))
+            .unwrap();
+
+        let buf = BufferLabel(11);
+        d.chipsync.enable_cct(true);
+        d.chipsync.open(SyncScope::Package);
+        d.chipsync.expect(ChipletId(0), 8).unwrap();
+        d.chipsync.expect(ChipletId(1), 1).unwrap();
+        for _ in 0..7 {
+            assert_eq!(
+                d.chipsync.arrive(ChipletId(0), Some(buf)).unwrap().kind,
+                SignalKind::ChipletLocal
+            );
+        }
+        d.submit_scoped(0, &job_a, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PendingPackage);
+        d.poll();
+
+        for _ in 0..6 {
+            assert_eq!(
+                d.chipsync.wait(ChipletId(0), Some(buf)).unwrap(),
+                SignalKind::Elided
+            );
+        }
+        d.submit_scoped(1, &job_b, SyncScope::Package, None, Some(buf))
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PackageFence);
+        d.poll();
+
+        assert_eq!(d.chipsync.package_fences(), 1);
+        assert_eq!(d.chipsync.broadcast_package_fences(), 7);
+        assert_eq!(d.chipsync.elided(), 6);
+        assert!(d.chipsync.cct_lt_broadcast());
+        assert!(d.chipsync.package_lt_naive());
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(d.xqueue(1).unwrap().sid, Some(sid_b));
+    }
+
+    #[test]
+    fn softcct_incorrect_elision_fails() {
+        let mut backing = [0u8; 256];
+        let (job_a, job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 0).unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_a))
+            .unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_b))
+            .unwrap();
+
+        let buf = BufferLabel(12);
+        d.chipsync.enable_cct(true);
+        d.chipsync.open(SyncScope::Package);
+        d.chipsync.expect(ChipletId(0), 1).unwrap();
+        d.chipsync.expect(ChipletId(1), 1).unwrap();
+
+        d.submit_scoped(0, &job_a, SyncScope::Package, Some(buf), None)
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+        assert!(
+            d.chipsync.cct().incorrect_elide(buf),
+            "buggy policy elides any known label"
+        );
+        assert!(!d.chipsync.softcct().should_elide(buf, ChipletId(1)));
+
+        d.submit_scoped(1, &job_b, SyncScope::Package, None, Some(buf))
+            .unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_scoped().unwrap().kind, SignalKind::PackageFence);
+        d.poll();
+        assert_eq!(d.chipsync.elided(), 0);
+        assert_eq!(d.chipsync.package_fences(), 1);
     }
 }

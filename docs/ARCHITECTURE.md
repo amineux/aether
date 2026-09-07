@@ -177,7 +177,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate + SET_SID latch (not hardware) |
 | `core/src/sid.rs` | Host1x-shaped SID-at-submit clip (two tenants / two SIDs; not a Tegra driver) |
 | `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
-| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftGreenCtx + SoftChipletSync + SoftCmdFirewall + IRQ/`retire_into`) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftGreenCtx + SoftChipletSync + SoftCCT + SoftCmdFirewall + IRQ/`retire_into`) |
 | `drivers/src/firewall.rs` | SoftCmdFirewall copy-then-validate (Host1x lesson; cmd-stream integrity, not confidential GPU) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
@@ -195,7 +195,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
 | `core/src/partition.rs` | Spatial slice + QoS + blast radius |
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
-| `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + optional CCT |
+| `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + SoftCCT elision |
 | `core/src/greenctx.rs` | SoftGreenCtx fake SM/WQ partitions (70/30) + memcpy interference + migrate-to-yield (not MIG) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |

@@ -452,10 +452,10 @@
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
-            <h2>Year-1, hardening, Month 1–2, Month 3–4, SoftChipletSync, and SoftGreenCtx landed. Path A stays gated.</h2>
-            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; next calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 opcodes, M2 PJRT, M4 XQueue, M3 SID-at-submit, the Soft SMMU kit, SoftChipletSync, and SoftGreenCtx are done. Path-A guest bind stays gated. We do not tape out chips. Manufacturing support is not a milestone.</p>
+            <h2>Year-1, hardening, Month 1–2, Month 3–4, SoftChipletSync, SoftCCT, and SoftGreenCtx landed. Path A stays gated.</h2>
+            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; next calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 opcodes, M2 PJRT, M4 XQueue, M3 SID-at-submit, the Soft SMMU kit, SoftChipletSync, SoftCCT, and SoftGreenCtx are done. Path-A guest bind stays gated. We do not tape out chips. Manufacturing support is not a milestone.</p>
           </div>
-          <div class="honest-pill" data-reveal>M1–M4 + SoftChipletSync + SoftGreenCtx · not a foundry calendar</div>
+          <div class="honest-pill" data-reveal>M1–M4 + SoftChipletSync + SoftCCT + SoftGreenCtx · not a foundry calendar</div>
         </div>
         <div class="timeline">
           <article class="tl now" data-reveal>
@@ -532,6 +532,7 @@
                 <span class="chip on">Soft SMMU kit</span>
                 <span class="chip on">SoftChipletSync</span>
                 <span class="chip on">SoftGreenCtx</span>
+                <span class="chip on">SoftCCT</span>
               </div>
               <ul>
                 <li>Soft-CP XQueue (PR #47) — two software queues; queue-boundary suspend/resume; SID sticks on the queue. XSched-shaped open queue object; not a silicon queuing unit; not an XSched LD_PRELOAD shim. <code>IreeShapedCp</code> stays a single mailbox. Path B SoftNPU / <code>make qemu</code> unchanged</li>
@@ -544,15 +545,17 @@
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
               <div class="tl-when">Done · after M3–M4</div>
-              <h3>SoftChipletSync scoped timelines</h3>
+              <h3>SoftChipletSync + SoftCCT</h3>
               <div class="chip-row" style="margin:0 0 12px">
                 <span class="chip on">SoftChipletSync</span>
+                <span class="chip on">SoftCCT</span>
                 <span class="chip on">M4 XQueue</span>
                 <span class="chip on">M3 SID-at-submit</span>
                 <span class="chip wait">path A gated</span>
               </div>
               <ul>
-                <li>SoftChipletSync (PR #51) — chiplet-local fence domains on the existing seq / wait / complete model; scopes {wave, CU, chiplet, package}. Fleet-shaped hierarchical counters: chiplet-local signal is free; package-scope is one fence per participating chiplet. Optional CCT elides that fence when the last-writer chiplet matches the consumer. Soft-CP and IreeShapedCp <code>submit_scoped</code> run a producer/consumer across two fake chiplets. Host tests measure fence counts. Not a Vulkan timeline, not UCIe, not ChipletFleet placement, not a multi-chiplet latency claim. SID-at-submit, XQueue, and path-B SoftNPU stay</li>
+                <li>SoftChipletSync (PR #51) — chiplet-local fence domains on the existing seq / wait / complete model; scopes {wave, CU, chiplet, package}. Fleet-shaped hierarchical counters: chiplet-local signal is free; package-scope is one fence per participating chiplet. Soft-CP and IreeShapedCp <code>submit_scoped</code> run a producer/consumer across two fake chiplets. Host tests measure fence counts. Not a Vulkan timeline, not UCIe, not ChipletFleet placement, not a multi-chiplet latency claim. SID-at-submit, XQueue, and path-B SoftNPU stay</li>
+                <li>SoftCCT — elision layer on SoftChipletSync. Soft-CP buffer labels + last-writer chiplet (CPElide MICRO’24 inspiration). Package-scope fence only when CCT says a cross-chiplet hazard. Same-chiplet consume on ≥2 fake chiplets elides; single-chiplet CCT is a no-op. Host tests: CCT fence count ≪ broadcast baseline; incorrect elision (ignore writer chiplet) fails. Not a full coherence protocol, not a Vulkan / ROCm product, not a latency claim from single-die numbers</li>
               </ul>
             </div>
           </article>
@@ -646,7 +649,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
           <h2>What you can boot. What is still open.</h2>
-          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, and SoftGreenCtx SM/WQ partitions have landed. Path-A guest bind stays gated. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, SoftCCT elision, and SoftGreenCtx SM/WQ partitions have landed. Path-A guest bind stays gated. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -667,7 +670,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (scoped wave / CU / chiplet / package timelines + optional CCT elision; not UCIe), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (scoped wave / CU / chiplet / package timelines; not UCIe), SoftCCT (last-writer chiplet elision; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
               </div>
             </div>
             <div class="proof">
@@ -681,14 +684,14 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is a deepened software STE→CD→S1/S2 walk + ATS invalidate + dump/replay kit, not silicon; partner silicon still required). Soft-CP is a software model, not a silicon driver: XQueue is two software queues with queue-boundary suspend/resume, not a silicon queuing unit and not an XSched LD_PRELOAD shim; SET_SID-at-submit is Host1x-shaped, not a Tegra driver; SoftGreenCtx is a fake SM/WQ partition, not HW MIG, not a BAR firewall, not a CUDA driver, and not a DetShare port. IreeShapedCp is an IREE HAL-shaped software packet, not an IREE runtime and not a signed vendor. <code>aether-pjrt</code> is a host contract that packs frozen <code>IreeHalCmd</code> onto IreeShapedCp, not a PJRT plugin / IREE HAL driver / vendor runtime. SoftChipletSync is chiplet-local fence domains + optional CCT elision on the existing seq / wait / complete model, not UCIe sync, not a Vulkan timeline, not ChipletFleet, and not a multi-chiplet latency claim. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree; the guest does not yet bind PCI BAR0. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is a deepened software STE→CD→S1/S2 walk + ATS invalidate + dump/replay kit, not silicon; partner silicon still required). Soft-CP is a software model, not a silicon driver: XQueue is two software queues with queue-boundary suspend/resume, not a silicon queuing unit and not an XSched LD_PRELOAD shim; SET_SID-at-submit is Host1x-shaped, not a Tegra driver; SoftGreenCtx is a fake SM/WQ partition, not HW MIG, not a BAR firewall, not a CUDA driver, and not a DetShare port. IreeShapedCp is an IREE HAL-shaped software packet, not an IREE runtime and not a signed vendor. <code>aether-pjrt</code> is a host contract that packs frozen <code>IreeHalCmd</code> onto IreeShapedCp, not a PJRT plugin / IREE HAL driver / vendor runtime. SoftChipletSync is chiplet-local fence domains on the existing seq / wait / complete model, not UCIe sync, not a Vulkan timeline, not ChipletFleet, and not a multi-chiplet latency claim. SoftCCT is last-writer-chiplet elision on that object (CPElide inspiration), not a full coherence protocol and not a Vulkan / ROCm product. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree; the guest does not yet bind PCI BAR0. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
                 <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · SIX_MONTH_PLAN · YEAR2_PLAN · ROADMAP</a>
-                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit), SoftChipletSync, and SoftGreenCtx are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>; path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit), SoftChipletSync, SoftCCT, and SoftGreenCtx are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>; path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
           </div>

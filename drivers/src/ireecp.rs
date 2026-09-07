@@ -18,8 +18,9 @@
 //!
 //! Completions arrive on IRQ/poll. DMA uses Soft-SMMU IOVAs only
 //! (`ssid = IREE_SSID`, distinct from SoftNPU 0 and Soft-CP 1).
-//! SoftChipletSync is optional on this mailbox (same software fence
-//! domains as Soft-CP). Not a Vulkan timeline; still a single mailbox.
+//! SoftChipletSync + SoftCCT are optional on this mailbox (same software
+//! fence domains as Soft-CP). Not a Vulkan / ROCm product; still a
+//! single mailbox.
 
 use aether_core::abi::{Buffer, Device, Event, Executable};
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType, DmaView, SoftNpu};
@@ -1397,6 +1398,8 @@ mod tests {
         assert_eq!(d.chipsync.naive_package_fences(), 8);
         assert!(d.chipsync.package_lt_naive());
         assert_eq!(d.chipsync.elided(), 0);
+        assert!(d.chipsync.cct().incorrect_elide(buf));
+        assert!(!d.chipsync.softcct().should_elide(buf, ChipletId(1)));
         assert_eq!(d.last_cmd().unwrap().stream_id, sid_b.raw());
         drop(d);
         assert_eq!(i32::from_le_bytes(backing[32..36].try_into().unwrap()), 19);

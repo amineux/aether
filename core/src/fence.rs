@@ -7,9 +7,10 @@
 //! a hardware fence unit.
 //!
 //! Scoped (wave / CU / chiplet / package) timelines, Fleet-shaped
-//! hierarchical counters, and optional CPElide CCT elision live in
-//! [`crate::chipsync::SoftChipletSync`]. That is **not** UCIe sync and
-//! not ChipletFleet placement.
+//! hierarchical counters, and SoftCCT (CPElide-shaped last-writer
+//! elision) live in [`crate::chipsync::SoftChipletSync`]. That is
+//! **not** UCIe sync, not a coherence protocol, not a Vulkan / ROCm
+//! product, and not ChipletFleet placement.
 //!
 //! Hardware-shaped (what a CP mailbox / IRQ would name):
 //! - [`Timeline::submit`] allocates the next seq and takes a credit.

@@ -3,7 +3,7 @@
 //! (x86 ring-3 / RISC-V U-mode / aarch64 EL0).
 
 use aether_core::blast::run_blast_demo;
-use aether_core::chipsync::run_chipsync_demo;
+use aether_core::chipsync::{run_chipsync_demo, run_softcct_demo};
 use aether_core::greenctx::run_greenctx_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
@@ -215,8 +215,28 @@ pub fn run_kernel_selfcheck() {
         println!("[chipsync] FAIL -- SoftChipletSync");
     }
 
+    let softcct = run_softcct_demo();
+    write_str("[softcct] package fences=");
+    write_u64(softcct.cct_fences as u64);
+    write_str(" broadcast=");
+    write_u64(softcct.broadcast_fences as u64);
+    write_str(" (CPElide CCT; not a coherence protocol)  ");
+    write_str(flag(softcct.cct_lt_broadcast));
+    console::nl();
+    write_str("[softcct] incorrect elision refused  ");
+    write_str(flag(softcct.incorrect_elision_refused));
+    console::nl();
+    write_str("[softcct] single-chiplet no-op  ");
+    write_str(flag(softcct.single_chiplet_noop));
+    console::nl();
+    if softcct.all_ok() {
+        println!("[softcct] two-chiplet producer/consumer elision sealed");
+    } else {
+        println!("[softcct] FAIL -- SoftCCT");
+    }
+
     // Sequential blocks: IommuMap in the firewall clip must not share
-    // the stack with chipsync / sid / SoftGreenCtx.
+    // the stack with chipsync / sid / softcct / SoftGreenCtx.
     let firewall_ok = {
         let firewall = run_firewall_demo();
         write_str("[firewall] copy-then-validate Host1x race  sneak=");
@@ -270,6 +290,7 @@ pub fn run_kernel_selfcheck() {
         || !blast.all_ok()
         || !sid.all_ok()
         || !chipsync.all_ok()
+        || !softcct.all_ok()
         || !firewall_ok
         || !green_ok
     {

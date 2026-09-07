@@ -1,21 +1,29 @@
-//! SoftChipletSync: scoped timelines + hierarchical counters + optional CCT.
+//! SoftChipletSync: scoped timelines + hierarchical counters + SoftCCT.
 //!
 //! SpectraScout post-M2 leftover (after M3 SID-at-submit and M4 XQueue).
-//! Chiplet-local fence domains on the existing seq / wait / complete model.
+//! SoftChipletSync (PR #51) is the scoped-timeline layer. **SoftCCT** is
+//! the elision layer on top: Soft-CP buffer labels + last-writer chiplet.
 //!
 //! **Inspiration (not a port, not a product):**
 //! - Fleet hierarchical event counters (wave / CU / chiplet / package):
 //!   workers increment a chiplet-local counter with **no** package fence;
 //!   only the last worker on a participating chiplet issues a package-scope
 //!   fence. Chiplet-local signal is free; package-scope costs more.
-//! - CPElide Chiplet Coherence Table (CCT): last-writer chiplet per buffer
-//!   label. A consumer on that same chiplet **elides** the package fence.
+//! - CPElide (MICRO’24) Chiplet Coherence Table: last-writer chiplet per
+//!   buffer label. Targeted acquire/release vs all-chiplet (broadcast)
+//!   fences. A consumer on that same chiplet **elides** the package fence.
 //!
-//! **Not claimed.** This is not a Vulkan timeline product, not UCIe sync,
-//! not a coherence protocol, and not ChipletFleet **placement** (that stub
-//! lives in [`crate::sched::ChipletTaskScope`] and stays KILL-as-calendar).
-//! Host tests measure fence **counts**. Latency wins need a multi-chiplet
-//! sim — single-die QEMU / host numbers are not partner proof.
+//! SoftCCT issues a SoftChipletSync package-scope fence **only** when the
+//! table says a cross-chiplet hazard. Single-chiplet CCT is a **no-op**
+//! (no inter-chiplet hazard to elide; host tests that claim a CCT win
+//! use ≥2 fake chiplets).
+//!
+//! **Not claimed.** This is not a Vulkan / ROCm product, not UCIe sync,
+//! not a full coherence protocol, and not ChipletFleet **placement** (that
+//! stub lives in [`crate::sched::ChipletTaskScope`] and stays
+//! KILL-as-calendar). Host tests measure fence **counts**. Latency wins
+//! need a multi-chiplet sim — single-die QEMU / host numbers are not
+//! partner proof.
 
 use crate::fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
 use crate::partition::{
@@ -158,13 +166,93 @@ impl ChipletCoherenceTable {
         None
     }
 
-    /// Elide a package fence when the consumer already holds the last write.
+    /// Table-level match: last-writer chiplet == consumer.
+    ///
+    /// SoftCCT policy ([`SoftCct::should_elide`]) also requires ≥2
+    /// participating chiplets. A single-chiplet match is a no-op.
     pub fn elide_package_fence(&self, label: BufferLabel, consumer: ChipletId) -> bool {
         self.last_writer(label) == Some(consumer)
     }
 
+    /// Buggy policy: elide whenever the label is known, ignoring writer chiplet.
+    /// The incorrect-elision host test must fail this on a cross-chiplet consume.
+    pub fn incorrect_elide(&self, label: BufferLabel) -> bool {
+        self.last_writer(label).is_some()
+    }
+
     pub fn clear(&mut self) {
         *self = Self::new();
+    }
+}
+
+/// SoftCCT: elision policy on [`ChipletCoherenceTable`].
+///
+/// Soft-CP / IreeShapedCp jobs carry [`BufferLabel`]s. SoftCCT records the
+/// last-writer chiplet and tells SoftChipletSync to issue a package fence
+/// only on a cross-chiplet hazard. Not a directory cache, not a coherence
+/// protocol, not a Vulkan / ROCm product.
+#[derive(Clone, Copy, Debug)]
+pub struct SoftCct {
+    table: ChipletCoherenceTable,
+    /// Bit i set if chiplet i has been expected, arrived, or waited.
+    seen: u8,
+}
+
+impl SoftCct {
+    pub const fn new() -> Self {
+        Self {
+            table: ChipletCoherenceTable::new(),
+            seen: 0,
+        }
+    }
+
+    pub const fn table(&self) -> &ChipletCoherenceTable {
+        &self.table
+    }
+
+    /// Distinct chiplets named on this open event.
+    pub const fn package_width(&self) -> u32 {
+        self.seen.count_ones()
+    }
+
+    /// Single-chiplet CCT has nothing to elide.
+    pub const fn is_noop(&self) -> bool {
+        self.package_width() < 2
+    }
+
+    pub fn note_chiplet(&mut self, chiplet: ChipletId) -> Result<(), PartitionError> {
+        let i = idx(chiplet)?;
+        self.seen |= 1u8 << i;
+        Ok(())
+    }
+
+    pub fn record(&mut self, label: BufferLabel, writer: ChipletId) -> Result<(), PartitionError> {
+        self.note_chiplet(writer)?;
+        self.table.record(label, writer)
+    }
+
+    pub fn last_writer(&self, label: BufferLabel) -> Option<ChipletId> {
+        self.table.last_writer(label)
+    }
+
+    /// Elide only on a multi-chiplet package when last-writer == consumer.
+    pub fn should_elide(&self, label: BufferLabel, consumer: ChipletId) -> bool {
+        !self.is_noop() && self.table.elide_package_fence(label, consumer)
+    }
+
+    /// Reset participating chiplets for a new event. Table rows persist (CP).
+    pub fn clear_event(&mut self) {
+        self.seen = 0;
+    }
+
+    pub fn clear(&mut self) {
+        *self = Self::new();
+    }
+}
+
+impl Default for SoftCct {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -177,13 +265,13 @@ impl Default for ChipletCoherenceTable {
 /// Scoped SoftChipletSync object.
 ///
 /// Four CP-shaped [`Timeline`]s (wave / CU / chiplet / package) plus
-/// Fleet-shaped two-level counters and an optional CCT. Distinct from
+/// Fleet-shaped two-level counters and SoftCCT elision. Distinct from
 /// [`crate::sched::ChipletTaskScope`] (placement / steal affinity).
 pub struct SoftChipletSync {
     partition: PartitionId,
     profile: PartitionProfile,
     timelines: [Timeline; 4],
-    cct: ChipletCoherenceTable,
+    cct: SoftCct,
     cct_on: bool,
     scope: SyncScope,
     expected: [u32; MAX_SYNC_CHIPLETS],
@@ -192,6 +280,8 @@ pub struct SoftChipletSync {
     naive_package: u32,
     package_fences: u32,
     elided: u32,
+    /// All-chiplet fence baseline: one package fence per labeled wait.
+    broadcast_package: u32,
 }
 
 impl SoftChipletSync {
@@ -221,7 +311,7 @@ impl SoftChipletSync {
                 Timeline::named(TimelineId(2), partition),
                 Timeline::named(TimelineId(3), partition),
             ],
-            cct: ChipletCoherenceTable::new(),
+            cct: SoftCct::new(),
             cct_on: false,
             scope: SyncScope::Chiplet,
             expected: [0; MAX_SYNC_CHIPLETS],
@@ -230,6 +320,7 @@ impl SoftChipletSync {
             naive_package: 0,
             package_fences: 0,
             elided: 0,
+            broadcast_package: 0,
         }
     }
 
@@ -259,7 +350,16 @@ impl SoftChipletSync {
         self.elided
     }
 
+    /// Broadcast / all-chiplet fence baseline (one per labeled consumer wait).
+    pub const fn broadcast_package_fences(&self) -> u32 {
+        self.broadcast_package
+    }
+
     pub fn cct(&self) -> &ChipletCoherenceTable {
+        self.cct.table()
+    }
+
+    pub fn softcct(&self) -> &SoftCct {
         &self.cct
     }
 
@@ -267,7 +367,8 @@ impl SoftChipletSync {
         &self.timelines[scope as usize]
     }
 
-    /// Enable CPElide-shaped CCT elision. Off by default (Fleet counters only).
+    /// Enable SoftCCT elision. Off by default (Fleet counters only).
+    /// Single-chiplet packages stay a no-op even when this is on.
     pub fn enable_cct(&mut self, on: bool) {
         self.cct_on = on;
     }
@@ -303,6 +404,8 @@ impl SoftChipletSync {
         self.naive_package = 0;
         self.package_fences = 0;
         self.elided = 0;
+        self.broadcast_package = 0;
+        self.cct.clear_event();
     }
 
     /// How many workers on `chiplet` participate in the open event.
@@ -310,6 +413,9 @@ impl SoftChipletSync {
     pub fn expect(&mut self, chiplet: ChipletId, n_workers: u32) -> Result<(), PartitionError> {
         let i = idx(chiplet)?;
         self.expected[i] = n_workers;
+        if n_workers > 0 {
+            self.cct.note_chiplet(chiplet)?;
+        }
         Ok(())
     }
 
@@ -330,6 +436,7 @@ impl SoftChipletSync {
         self.arrived[i] += 1;
         self.naive_package = self.naive_package.saturating_add(1);
 
+        self.cct.note_chiplet(chiplet)?;
         if let Some(label) = write {
             self.cct.record(label, chiplet)?;
         }
@@ -379,19 +486,23 @@ impl SoftChipletSync {
         })
     }
 
-    /// Consumer wait. CCT elides when last-writer chiplet == consumer.
+    /// Consumer wait. SoftCCT elides when last-writer chiplet == consumer
+    /// on a ≥2-chiplet package. Cross-chiplet hazard still package-fences.
     pub fn wait(
         &mut self,
         consumer: ChipletId,
         read: Option<BufferLabel>,
     ) -> Result<SignalKind, PartitionError> {
         let _ = idx(consumer)?;
+        self.cct.note_chiplet(consumer)?;
         if self.cct_on {
+            if read.is_some() {
+                self.broadcast_package = self.broadcast_package.saturating_add(1);
+            }
             if let Some(label) = read {
-                if self.cct.elide_package_fence(label, consumer) {
-                    if let Ok(i) = idx(consumer) {
-                        self.pending[i] = false;
-                    }
+                if self.cct.should_elide(label, consumer) {
+                    // Keep pending[writer]: a later cross-chiplet wait still
+                    // needs the deferred package fence.
                     self.elided = self.elided.saturating_add(1);
                     let _ = self.pulse(SyncScope::Chiplet, consumer)?;
                     return Ok(SignalKind::Elided);
@@ -432,6 +543,19 @@ impl SoftChipletSync {
         let issued = self.package_fences;
         let naive = self.naive_package;
         naive > 0 && issued < naive && (issued == 0 || issued.saturating_mul(4) < naive)
+    }
+
+    /// SoftCCT issued package fences ≪ all-chiplet broadcast baseline.
+    ///
+    /// Requires CCT on and at least one labeled wait. Single-chiplet is
+    /// a no-op (issued == broadcast), so this is false there on purpose.
+    pub const fn cct_lt_broadcast(&self) -> bool {
+        let issued = self.package_fences;
+        let bcast = self.broadcast_package;
+        self.cct_on
+            && bcast > 0
+            && issued < bcast
+            && (issued == 0 || issued.saturating_mul(4) < bcast)
     }
 
     /// Poll a scoped timeline watermark (the seq a CP would retire).
@@ -476,6 +600,28 @@ impl ChipletSyncReport {
     }
 }
 
+/// SoftCCT clip. Kernel prints `[softcct] …`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftCctReport {
+    pub cct_lt_broadcast: bool,
+    pub cct_fences: u32,
+    pub broadcast_fences: u32,
+    pub same_chiplet_elide: bool,
+    pub cross_chiplet_fence: bool,
+    pub single_chiplet_noop: bool,
+    pub incorrect_elision_refused: bool,
+}
+
+impl SoftCctReport {
+    pub fn all_ok(&self) -> bool {
+        self.cct_lt_broadcast
+            && self.same_chiplet_elide
+            && self.cross_chiplet_fence
+            && self.single_chiplet_noop
+            && self.incorrect_elision_refused
+    }
+}
+
 /// Two fake chiplets, hierarchical package fences ≪ naive, CCT elision
 /// on same-chiplet consume, cross-chiplet producer/consumer cannot elide.
 pub fn run_chipsync_demo() -> ChipletSyncReport {
@@ -499,10 +645,11 @@ pub fn run_chipsync_demo() -> ChipletSyncReport {
         && hierarchical_fences == 2
         && naive_fences == DEMO_WORKERS_PER_CHIPLET * 2;
 
-    // CCT elision: last-writer chiplet matches consumer.
+    // SoftCCT elision: ≥2 fake chiplets, last-writer matches consumer.
     sync.enable_cct(true);
     sync.open(SyncScope::Package);
     let _ = sync.expect(a, DEMO_WORKERS_PER_CHIPLET);
+    let _ = sync.expect(b, DEMO_WORKERS_PER_CHIPLET);
     for _ in 0..DEMO_WORKERS_PER_CHIPLET {
         let _ = sync.arrive(a, Some(buf));
     }
@@ -510,7 +657,9 @@ pub fn run_chipsync_demo() -> ChipletSyncReport {
     let cct_elide = elide == Ok(SignalKind::Elided)
         && sync.package_fences() == 0
         && sync.elided() == 1
-        && sync.cct().last_writer(buf) == Some(a);
+        && sync.cct().last_writer(buf) == Some(a)
+        && sync.softcct().should_elide(buf, a)
+        && !sync.softcct().is_noop();
 
     // Producer on chiplet 0, consumer on chiplet 1: cannot elide.
     sync.open(SyncScope::Package);
@@ -524,6 +673,7 @@ pub fn run_chipsync_demo() -> ChipletSyncReport {
         && sync.elided() == 0
         && sync.cct().last_writer(buf) == Some(a)
         && !sync.cct().elide_package_fence(buf, b)
+        && !sync.softcct().should_elide(buf, b)
         && sync.package_lt_naive();
 
     ChipletSyncReport {
@@ -532,6 +682,67 @@ pub fn run_chipsync_demo() -> ChipletSyncReport {
         naive_fences,
         cct_elide,
         two_chiplet,
+    }
+}
+
+/// SoftCCT vs broadcast, incorrect elision refused, single-chiplet no-op.
+pub fn run_softcct_demo() -> SoftCctReport {
+    let buf = BufferLabel(2);
+    let a = ChipletId(0);
+    let b = ChipletId(1);
+
+    // 10 arrives, then 8 same-chiplet waits + 2 cross waits.
+    let mut sync = SoftChipletSync::new(PartitionId(1));
+    sync.enable_cct(true);
+    sync.open(SyncScope::Package);
+    let _ = sync.expect(a, 10);
+    let _ = sync.expect(b, 1);
+    for _ in 0..10 {
+        let _ = sync.arrive(a, Some(buf));
+    }
+    for _ in 0..8 {
+        let _ = sync.wait(a, Some(buf));
+    }
+    for _ in 0..2 {
+        let _ = sync.wait(b, Some(buf));
+    }
+    let cct_fences = sync.package_fences();
+    let broadcast_fences = sync.broadcast_package_fences();
+    let cct_lt_broadcast =
+        sync.cct_lt_broadcast() && cct_fences == 1 && broadcast_fences == 10 && sync.elided() == 8;
+    let same_chiplet_elide = sync.elided() == 8 && sync.softcct().should_elide(buf, a);
+    let cross_chiplet_fence = !sync.softcct().should_elide(buf, b) && cct_fences == 1;
+
+    // Incorrect policy would elide the cross-chiplet consume.
+    let incorrect_elision_refused = sync.cct().incorrect_elide(buf)
+        && !sync.softcct().should_elide(buf, b)
+        && !sync.cct().elide_package_fence(buf, b);
+
+    // Single-chiplet CCT is a no-op: same fence count as CCT-off.
+    let mut one = SoftChipletSync::new(PartitionId(1));
+    one.enable_cct(true);
+    one.open(SyncScope::Package);
+    let _ = one.expect(a, DEMO_WORKERS_PER_CHIPLET);
+    for _ in 0..DEMO_WORKERS_PER_CHIPLET {
+        let _ = one.arrive(a, Some(buf));
+    }
+    let one_wait = one.wait(a, Some(buf));
+    let single_chiplet_noop = one.softcct().is_noop()
+        && one_wait == Ok(SignalKind::PackageFence)
+        && one.package_fences() == 1
+        && one.elided() == 0
+        && one.broadcast_package_fences() == 1
+        && !one.cct_lt_broadcast()
+        && !one.softcct().should_elide(buf, a);
+
+    SoftCctReport {
+        cct_lt_broadcast,
+        cct_fences,
+        broadcast_fences,
+        same_chiplet_elide,
+        cross_chiplet_fence,
+        single_chiplet_noop,
+        incorrect_elision_refused,
     }
 }
 
@@ -603,6 +814,7 @@ mod tests {
         s.enable_cct(true);
         s.open(SyncScope::Package);
         s.expect(ChipletId(0), 4).unwrap();
+        s.expect(ChipletId(1), 1).unwrap();
         for _ in 0..3 {
             assert_eq!(
                 s.arrive(ChipletId(0), Some(BufferLabel(3))).unwrap().kind,
@@ -616,6 +828,8 @@ mod tests {
         assert_eq!(s.package_fences(), 0);
         assert_eq!(s.cct().last_writer(BufferLabel(3)), Some(ChipletId(0)));
         assert!(s.cct().elide_package_fence(BufferLabel(3), ChipletId(0)));
+        assert!(s.softcct().should_elide(BufferLabel(3), ChipletId(0)));
+        assert!(!s.softcct().is_noop());
         assert_eq!(
             s.wait(ChipletId(0), Some(BufferLabel(3))).unwrap(),
             SignalKind::Elided
@@ -674,6 +888,78 @@ mod tests {
     }
 
     #[test]
+    fn softcct_package_fence_lt_broadcast_two_chiplet() {
+        let r = run_softcct_demo();
+        assert!(r.cct_lt_broadcast, "CCT ≪ broadcast");
+        assert_eq!(r.cct_fences, 1);
+        assert_eq!(r.broadcast_fences, 10);
+        assert!(r.same_chiplet_elide);
+        assert!(r.cross_chiplet_fence);
+        assert!(r.single_chiplet_noop);
+        assert!(r.incorrect_elision_refused);
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn softcct_incorrect_elision_fails() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.enable_cct(true);
+        s.open(SyncScope::Package);
+        s.expect(ChipletId(0), 4).unwrap();
+        s.expect(ChipletId(1), 1).unwrap();
+        for _ in 0..4 {
+            let _ = s.arrive(ChipletId(0), Some(BufferLabel(5)));
+        }
+        // Buggy policy: "label is known" would elide chiplet0 → chiplet1.
+        assert!(
+            s.cct().incorrect_elide(BufferLabel(5)),
+            "incorrect policy elides any known label"
+        );
+        assert!(
+            !s.softcct().should_elide(BufferLabel(5), ChipletId(1)),
+            "SoftCCT must not elide a cross-chiplet hazard"
+        );
+        assert_eq!(
+            s.wait(ChipletId(1), Some(BufferLabel(5))).unwrap(),
+            SignalKind::PackageFence
+        );
+        assert_eq!(s.elided(), 0);
+        assert_eq!(s.package_fences(), 1);
+        assert_eq!(s.broadcast_package_fences(), 1);
+    }
+
+    #[test]
+    fn softcct_single_chiplet_is_noop() {
+        let buf = BufferLabel(6);
+        let mut off = SoftChipletSync::new(PartitionId(1));
+        off.open(SyncScope::Package);
+        off.expect(ChipletId(0), 8).unwrap();
+        for _ in 0..8 {
+            let _ = off.arrive(ChipletId(0), Some(buf));
+        }
+        assert_eq!(off.package_fences(), 1);
+
+        let mut on = SoftChipletSync::new(PartitionId(1));
+        on.enable_cct(true);
+        on.open(SyncScope::Package);
+        on.expect(ChipletId(0), 8).unwrap();
+        for _ in 0..8 {
+            let _ = on.arrive(ChipletId(0), Some(buf));
+        }
+        assert!(on.softcct().is_noop());
+        assert!(!on.softcct().should_elide(buf, ChipletId(0)));
+        assert_eq!(
+            on.wait(ChipletId(0), Some(buf)).unwrap(),
+            SignalKind::PackageFence
+        );
+        assert_eq!(on.package_fences(), 1);
+        assert_eq!(on.elided(), 0);
+        assert_eq!(on.broadcast_package_fences(), 1);
+        assert!(!on.cct_lt_broadcast());
+        assert_eq!(on.package_fences(), off.package_fences());
+    }
+
+    #[test]
     fn not_chiplet_fleet_placement() {
         // SoftChipletSync is fence domains. ChipletTaskScope (sched) is
         // placement / steal affinity and stays a killed calendar stub.
@@ -682,5 +968,6 @@ mod tests {
         assert_eq!(s.timeline(SyncScope::Wave).id(), TimelineId(0));
         assert_eq!(s.timeline(SyncScope::Package).id(), TimelineId(3));
         assert!(!s.cct_enabled());
+        assert!(s.softcct().is_noop());
     }
 }
