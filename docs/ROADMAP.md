@@ -32,6 +32,7 @@ product kernel.
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + Soft SMMU SID + IRQ/fence; host tests) |
 | Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2`; not a signed vendor) |
 | PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
+| Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SID sticks to the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 
 ## Month 5–6 (this cut): Portability & partners
 

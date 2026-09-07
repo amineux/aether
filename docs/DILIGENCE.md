@@ -86,9 +86,11 @@ doorbell). aarch64 now has the same syscall numbers over
    ATS invalidate is a software ATC). A hardware SMMU is still required
    on silicon; do not treat this as one.
 4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
-   uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId.
-   IreeShapedCp uses the 96-byte IreeHalCmd (IREE HAL nouns; not AccelOp).
-   Doorbell. Do not execute in the syscall.
+   uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId
+   on a software XQueue (two queues; queue-boundary suspend/resume; SID
+   sticks to the queue). IreeShapedCp uses the 96-byte IreeHalCmd (IREE
+   HAL nouns; not AccelOp) on a single mailbox. Doorbell. Do not
+   execute in the syscall. Not a silicon queuing unit.
 5. IRQ: AccelDevice::poll, retire the job's fence seq through
    `Timeline::complete` / `retire_into`, fabric REPLY to
    job.completion_ep. The timeline is a software model.

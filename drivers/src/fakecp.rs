@@ -6,12 +6,24 @@
 //! [`crate::PartnerNpuStub`]'s no-op complete-on-submit, and not a
 //! vendor partnership.
 //!
+//! The schedulable object is a software **XQueue** (two of them), not
+//! the device mailbox. Inspiration: XSched XQueue
+//! (https://github.com/XpuOS/xsched, OSDI'25) — an open, multi-level
+//! hardware execution-queue model. This is **not** an LD_PRELOAD CUDA
+//! shim and **not** a silicon queuing unit. Preemption is
+//! **queue-boundary** only: `suspend` refuses the next packed command
+//! on that queue; a command already inside `service()` runs to
+//! completion. Soft-SMMU SID sticks to the queue (or inherits the
+//! submit pack stamp — hook for SID-at-submit).
+//!
 //! Uses the post-#7 Soft SMMU APIs:
 //! ```text
 //! StreamId::accel(chiplet, tile, CP_SSID)
 //! bind_stream / map (Memory+MAP)     // DMA aborts until Bound
-//! submit → pack CpCmd with per-SID IOVAs, doorbell (does not execute)
-//! service (IRQ / kthread poll) → resolve_stream + SoftNPU math
+//! create_xqueue / stamp_queue_sid    // SID sticks to the queue
+//! submit_xqueue → pack CpCmd on the queue SID, enqueue (does not execute)
+//! suspend / resume                   // queue-boundary only
+//! service (IRQ / kthread poll) → pick a Running queue, resolve + SoftNPU
 //! poll → completion; caller retires the fence
 //! ```
 
@@ -22,7 +34,7 @@ use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
 use aether_core::partition::PartitionError;
 use aether_core::types::{PhysAddr, TileId};
 use aether_core::window::{MappedWindow, TypedWindow};
-use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_SOFT_CP};
+use aether_hal::{AccelDevice, AccelInfo, HalError, PreemptionLevel, ACCEL_BACKEND_SOFT_CP};
 
 /// Packet magic a CP mailbox would DMA (`AE7E` + command-processor `0C01`).
 pub const CP_PKT_MAGIC: u32 = 0xAE7E_0C01;
@@ -30,6 +42,10 @@ pub const CP_CMD_SIZE: usize = 64;
 pub const CP_FLAG_HAS_BIAS: u16 = 1 << 0;
 /// Soft-CP substream. Distinct from SoftNPU's `DEFAULT_STREAM` (ssid 0).
 pub const CP_SSID: u8 = 1;
+/// Two software XQueues. Not a silicon queueing-unit count.
+pub const SOFT_CP_XQUEUES: usize = 2;
+/// Pending `CpCmd`s per XQueue. Depth is software; not a HW ring size.
+pub const XQUEUE_DEPTH: usize = 4;
 
 /// Pack the CP stream from a job's fabric place.
 pub fn stream_for_job(job: &AccelJobDesc) -> StreamId {
@@ -38,6 +54,83 @@ pub fn stream_for_job(job: &AccelJobDesc) -> StreamId {
         TileId(job.place.tile.unwrap_or(0)),
         CP_SSID,
     )
+}
+
+/// Software XQueue state. `Suspended` parks the queue; in-flight
+/// `service()` of a command already dequeued still completes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum XQueueState {
+    Running,
+    Suspended,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct XQueueSlot {
+    cmd: CpCmd,
+    job: AccelJobDesc,
+}
+
+/// Software execution queue on Soft-CP. The schedulable object.
+///
+/// SID is sticky once stamped (`create_xqueue` / `stamp_queue_sid`) or
+/// inherited from the first submit's [`stream_for_job`] pack stamp.
+/// Month 3 SID-at-submit can replace that inherit with an explicit
+/// doorbell write via [`SoftCommandProcessor::stamp_queue_sid`].
+#[derive(Clone, Copy, Debug)]
+pub struct XQueue {
+    pub id: u8,
+    pub sid: Option<StreamId>,
+    pub state: XQueueState,
+    pub priority: u8,
+    slots: [Option<XQueueSlot>; XQUEUE_DEPTH],
+    head: u8,
+    len: u8,
+}
+
+impl XQueue {
+    const fn empty(id: u8) -> Self {
+        Self {
+            id,
+            sid: None,
+            state: XQueueState::Running,
+            priority: 0,
+            slots: [None; XQUEUE_DEPTH],
+            head: 0,
+            len: 0,
+        }
+    }
+
+    pub const fn pending(&self) -> u8 {
+        self.len
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
+    pub const fn is_full(&self) -> bool {
+        self.len as usize >= XQUEUE_DEPTH
+    }
+
+    fn push(&mut self, slot: XQueueSlot) -> Result<(), HalError> {
+        if self.is_full() {
+            return Err(HalError::Busy);
+        }
+        let i = (self.head as usize + self.len as usize) % XQUEUE_DEPTH;
+        self.slots[i] = Some(slot);
+        self.len += 1;
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Option<XQueueSlot> {
+        if self.is_empty() {
+            return None;
+        }
+        let slot = self.slots[self.head as usize].take()?;
+        self.head = (self.head + 1) % XQUEUE_DEPTH as u8;
+        self.len -= 1;
+        Some(slot)
+    }
 }
 
 fn map_hal_error(e: MapError) -> HalError {
@@ -83,17 +176,28 @@ const _: [(); CP_CMD_SIZE] = [(); core::mem::size_of::<CpCmd>()];
 impl CpCmd {
     /// Translate an Aether job through Soft SMMU into a CP packet.
     ///
-    /// `Nop` is a doorbell / latency probe and does not require pins.
-    /// Every other op refuses unless the job's packed SID is Bound and
-    /// A/B/C (and bias, if set) translate on that SID.
+    /// Uses [`stream_for_job`]. Queue submit uses [`Self::pack_on_stream`]
+    /// with the queue's sticky SID.
     pub fn pack(job: &AccelJobDesc, iommu: &IommuMap) -> Result<Self, HalError> {
+        Self::pack_on_stream(job, iommu, stream_for_job(job))
+    }
+
+    /// Pack on an explicit Soft-SMMU SID (the queue's sticky stream).
+    ///
+    /// `Nop` is a doorbell / latency probe and does not require pins.
+    /// Every other op refuses unless `sid` is Bound and A/B/C (and bias,
+    /// if set) translate on that SID.
+    pub fn pack_on_stream(
+        job: &AccelJobDesc,
+        iommu: &IommuMap,
+        sid: StreamId,
+    ) -> Result<Self, HalError> {
         if job.m > u16::MAX as u32 || job.n > u16::MAX as u32 || job.k > u16::MAX as u32 {
             return Err(HalError::BadArg);
         }
         if job.op == AccelOp::Nop {
-            return Ok(Self::empty_from(job));
+            return Ok(Self::empty_from(job, sid));
         }
-        let sid = stream_for_job(job);
         let a = iommu
             .translate_result(sid.raw(), job.a, None)
             .map_err(map_hal_error)?;
@@ -150,8 +254,7 @@ impl CpCmd {
         })
     }
 
-    fn empty_from(job: &AccelJobDesc) -> Self {
-        let sid = stream_for_job(job);
+    fn empty_from(job: &AccelJobDesc, sid: StreamId) -> Self {
         Self {
             magic: CP_PKT_MAGIC,
             opcode: AccelOp::Nop as u32 as u8,
@@ -198,19 +301,21 @@ impl CpCmd {
 }
 
 /// Software command processor. Completions arrive on the IRQ/poll path,
-/// never inside [`AccelDevice::submit`].
+/// never inside [`AccelDevice::submit`]. Two software XQueues are the
+/// schedulable objects; the integer engine still runs one command at a
+/// time (queue-boundary preemption).
 pub struct SoftCommandProcessor<M: DmaView> {
     pub info: AccelInfo,
     pub iommu: IommuMap,
     pub mem: M,
     npu: SoftNpu,
-    mailbox: Option<CpCmd>,
-    pending_job: Option<AccelJobDesc>,
-    doorbell: bool,
+    queues: [XQueue; SOFT_CP_XQUEUES],
+    submit_seq: u32,
     irq: bool,
     last_cmd: Option<CpCmd>,
     last_cpl: Option<Completion>,
     last_fence: Option<u64>,
+    last_queue: Option<u8>,
     fence_done: bool,
 }
 
@@ -220,20 +325,20 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             info: AccelInfo {
                 vendor: 0xAE7E,
                 device: 0x0003,
-                n_queues: 1,
+                n_queues: SOFT_CP_XQUEUES as u16,
                 max_wave: 64,
                 backend: ACCEL_BACKEND_SOFT_CP,
             },
             iommu: IommuMap::new(),
             mem,
             npu: SoftNpu::new(),
-            mailbox: None,
-            pending_job: None,
-            doorbell: false,
+            queues: [XQueue::empty(0), XQueue::empty(1)],
+            submit_seq: 0,
             irq: false,
             last_cmd: None,
             last_cpl: None,
             last_fence: None,
+            last_queue: None,
             fence_done: false,
         }
     }
@@ -268,8 +373,117 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         self.last_cmd
     }
 
+    /// Queue that last completed inside [`Self::service`].
+    pub fn last_queue(&self) -> Option<u8> {
+        self.last_queue
+    }
+
+    pub fn xqueue(&self, queue: u16) -> Option<&XQueue> {
+        self.queues.get(queue as usize)
+    }
+
+    /// A Running XQueue has a packed command ready. Suspended work does
+    /// not ring the doorbell.
     pub fn doorbell_pending(&self) -> bool {
-        self.doorbell
+        self.queues
+            .iter()
+            .any(|q| q.state == XQueueState::Running && !q.is_empty())
+    }
+
+    /// Create / restamp a software XQueue. SID sticks here.
+    ///
+    /// Month 3 SID-at-submit can call [`Self::stamp_queue_sid`] at the
+    /// doorbell instead of inheriting [`stream_for_job`] on first submit.
+    pub fn create_xqueue(
+        &mut self,
+        queue: u16,
+        sid: StreamId,
+        priority: u8,
+    ) -> Result<(), HalError> {
+        let q = self.queue_mut(queue)?;
+        if !q.is_empty() {
+            if let Some(stuck) = q.sid {
+                if stuck != sid {
+                    return Err(HalError::Busy);
+                }
+            }
+        }
+        q.sid = Some(sid);
+        q.priority = priority;
+        q.state = XQueueState::Running;
+        Ok(())
+    }
+
+    /// Hook for SID-at-submit: program the queue SID without a submit.
+    pub fn stamp_queue_sid(&mut self, queue: u16, sid: StreamId) -> Result<(), HalError> {
+        let q = self.queue_mut(queue)?;
+        if !q.is_empty() {
+            if let Some(stuck) = q.sid {
+                if stuck != sid {
+                    return Err(HalError::Busy);
+                }
+            }
+        }
+        q.sid = Some(sid);
+        Ok(())
+    }
+
+    pub fn submit_xqueue(&mut self, queue: u16, job: &AccelJobDesc) -> Result<u32, HalError> {
+        let sid = self.sid_for_submit(queue, job)?;
+        let cmd = CpCmd::pack_on_stream(job, &self.iommu, sid)?;
+        let q = self.queue_mut(queue)?;
+        q.push(XQueueSlot { cmd, job: *job })?;
+        self.last_cmd = Some(cmd);
+        self.irq = false;
+        self.last_cpl = None;
+        self.fence_done = false;
+        self.last_fence = if job.fence_id != 0 {
+            Some(job.fence_id)
+        } else {
+            None
+        };
+        self.submit_seq = self.submit_seq.wrapping_add(1);
+        Ok(self.submit_seq)
+    }
+
+    pub fn suspend_xqueue(&mut self, queue: u16) -> Result<PreemptionLevel, HalError> {
+        let q = self.queue_mut(queue)?;
+        q.state = XQueueState::Suspended;
+        // Honest grain: we do not stop SoftNpu::execute mid-op.
+        Ok(PreemptionLevel::QueueBoundary)
+    }
+
+    pub fn resume_xqueue(&mut self, queue: u16) -> Result<(), HalError> {
+        let q = self.queue_mut(queue)?;
+        q.state = XQueueState::Running;
+        Ok(())
+    }
+
+    fn queue_mut(&mut self, queue: u16) -> Result<&mut XQueue, HalError> {
+        self.queues.get_mut(queue as usize).ok_or(HalError::BadArg)
+    }
+
+    /// Sticky SID, or inherit today's pack stamp and stick it.
+    fn sid_for_submit(&mut self, queue: u16, job: &AccelJobDesc) -> Result<StreamId, HalError> {
+        let job_sid = stream_for_job(job);
+        let q = self.queue_mut(queue)?;
+        match q.sid {
+            Some(sid) if sid != job_sid => Err(HalError::Fault),
+            Some(sid) => Ok(sid),
+            None => {
+                q.sid = Some(job_sid);
+                Ok(job_sid)
+            }
+        }
+    }
+
+    fn pick_running(&self) -> Option<usize> {
+        self.queues
+            .iter()
+            .enumerate()
+            .filter(|(_, q)| q.state == XQueueState::Running && !q.is_empty())
+            .max_by(|a, b| a.1.priority.cmp(&b.1.priority).then(b.0.cmp(&a.0)))
+            .map(|(i, _)| i)
     }
 
     pub fn irq_pending(&self) -> bool {
@@ -296,11 +510,15 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         }
     }
 
-    /// Device-side: consume the mailbox, resolve Soft-SMMU IOVAs, execute, raise IRQ.
+    /// Device-side: dequeue one command from the highest-priority
+    /// Running XQueue, resolve Soft-SMMU IOVAs, execute, raise IRQ.
+    /// Suspended queues are skipped (queue-boundary preemption).
     pub fn service(&mut self) -> Option<Completion> {
-        let cmd = self.mailbox.take()?;
-        let job = self.pending_job.take()?;
-        self.doorbell = false;
+        let qi = self.pick_running()?;
+        let slot = self.queues[qi].pop()?;
+        let cmd = slot.cmd;
+        let job = slot.job;
+        self.last_queue = Some(qi as u8);
         if job.op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
             let cpl = Completion {
                 job_seq: self.npu.seq,
@@ -392,23 +610,23 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     }
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
-        if self.doorbell || self.mailbox.is_some() {
-            return Err(HalError::Busy);
-        }
-        let cmd = CpCmd::pack(job, &self.iommu)?;
-        self.last_cmd = Some(cmd);
-        self.mailbox = Some(cmd);
-        self.pending_job = Some(*job);
-        self.doorbell = true;
-        self.irq = false;
-        self.last_cpl = None;
-        self.fence_done = false;
-        self.last_fence = if job.fence_id != 0 {
-            Some(job.fence_id)
-        } else {
-            None
-        };
-        Ok(self.npu.seq)
+        self.submit_xqueue(0, job)
+    }
+
+    fn create_queue(&mut self, queue: u16, stream_id: u32, priority: u8) -> Result<(), HalError> {
+        self.create_xqueue(queue, StreamId::from_raw(stream_id), priority)
+    }
+
+    fn submit_queue(&mut self, queue: u16, job: &AccelJobDesc) -> Result<u32, HalError> {
+        self.submit_xqueue(queue, job)
+    }
+
+    fn suspend_queue(&mut self, queue: u16) -> Result<PreemptionLevel, HalError> {
+        self.suspend_xqueue(queue)
+    }
+
+    fn resume_queue(&mut self, queue: u16) -> Result<(), HalError> {
+        self.resume_xqueue(queue)
     }
 
     fn poll(&mut self) -> Option<Completion> {
@@ -451,6 +669,7 @@ mod tests {
     use aether_core::partition::{
         BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
     };
+    use aether_core::space::Place;
     use aether_core::types::{ChipletId, TenantId};
     use aether_hal::{
         AccelDevice, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
@@ -493,7 +712,10 @@ mod tests {
         assert_ne!(info.backend, ACCEL_BACKEND_VIRTIO_SOFTNPU);
         assert_ne!(info.backend, ACCEL_BACKEND_PARTNER_STUB);
         assert_eq!(info.device, 0x0003);
+        assert_eq!(info.n_queues, SOFT_CP_XQUEUES as u16);
         assert_eq!(d.name(), "soft-cp");
+        assert_eq!(d.xqueue(0).unwrap().state, XQueueState::Running);
+        assert_eq!(d.xqueue(1).unwrap().state, XQueueState::Running);
     }
 
     #[test]
@@ -790,5 +1012,181 @@ mod tests {
         assert!(timeline.wait(done.id).unwrap().completed);
         assert_eq!(timeline.in_flight(), 0);
         assert_eq!(timeline.retired(), fence.id.0);
+    }
+
+    fn place_sid(chiplet: u8, tile: u16) -> (Place, StreamId) {
+        let place =
+            Place::new(ChipletId(chiplet), aether_core::space::MemorySpace::Host).with_tile(tile);
+        let sid = StreamId::accel(ChipletId(chiplet), TileId(tile), CP_SSID);
+        (place, sid)
+    }
+
+    fn write_matmul_pair(backing: &mut [u8], base: usize) {
+        for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+            let o = base + i * 4;
+            backing[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [5i32, 6, 7, 8].iter().enumerate() {
+            let o = base + 16 + i * 4;
+            backing[o..o + 4].copy_from_slice(&v.to_le_bytes());
+        }
+    }
+
+    fn two_queue_jobs(backing: &mut [u8]) -> (AccelJobDesc, AccelJobDesc, StreamId, StreamId) {
+        write_matmul_pair(backing, 0);
+        write_matmul_pair(backing, 64);
+        let (place_a, sid_a) = place_sid(0, 2);
+        let (place_b, sid_b) = place_sid(1, 3);
+        let mut job_a =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        job_a.place = place_a;
+        let mut job_b =
+            AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(64), PhysAddr(80), PhysAddr(96), 2);
+        job_b.place = place_b;
+        (job_a, job_b, sid_a, sid_b)
+    }
+
+    #[test]
+    fn xqueue_suspend_a_b_progresses_blast_radius() {
+        let mut backing = [0u8; 256];
+        let (job_a, job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 1).unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_a))
+            .unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_b))
+            .unwrap();
+
+        d.submit_xqueue(0, &job_a).unwrap();
+        d.submit_xqueue(1, &job_b).unwrap();
+        assert_eq!(d.xqueue(0).unwrap().pending(), 1);
+        assert_eq!(d.xqueue(1).unwrap().pending(), 1);
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
+        assert_eq!(d.xqueue(1).unwrap().sid, Some(sid_b));
+
+        let level = d.suspend_xqueue(0).unwrap();
+        assert_eq!(level, PreemptionLevel::QueueBoundary);
+        assert_ne!(level, PreemptionLevel::MidOp);
+        assert_eq!(d.xqueue(0).unwrap().state, XQueueState::Suspended);
+        assert!(d.doorbell_pending(), "B is Running with work");
+
+        let serviced = d.service().unwrap();
+        assert_eq!(serviced.status, 0);
+        assert_eq!(d.last_queue(), Some(1));
+        assert_eq!(d.poll().unwrap().status, 0);
+        assert_eq!(d.xqueue(0).unwrap().pending(), 1, "A stayed frozen");
+        assert_eq!(d.xqueue(1).unwrap().pending(), 0);
+        assert!(d.service().is_none(), "A is suspended; no mid-op steal");
+        let out_b = i32::from_le_bytes(d.mem.bytes[96..100].try_into().unwrap());
+        let out_a = i32::from_le_bytes(d.mem.bytes[32..36].try_into().unwrap());
+        assert_eq!(out_b, 19, "B DMA under SID_B completed");
+        assert_eq!(out_a, 0, "A C tensor untouched while frozen");
+
+        d.resume_xqueue(0).unwrap();
+        assert_eq!(d.xqueue(0).unwrap().state, XQueueState::Running);
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_queue(), Some(0));
+        assert_eq!(d.poll().unwrap().status, 0);
+        let out_a = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        assert_eq!(out_a, 19);
+    }
+
+    #[test]
+    fn xqueue_priority_picks_b_while_both_running() {
+        let mut backing = [0u8; 256];
+        let (job_a, job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 7).unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_a))
+            .unwrap();
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_b))
+            .unwrap();
+        d.submit_xqueue(0, &job_a).unwrap();
+        d.submit_xqueue(1, &job_b).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(d.last_queue(), Some(1));
+        let out_b = i32::from_le_bytes(d.mem.bytes[96..100].try_into().unwrap());
+        let out_a = i32::from_le_bytes(d.mem.bytes[32..36].try_into().unwrap());
+        assert_eq!(out_b, 19);
+        assert_eq!(out_a, 0);
+    }
+
+    #[test]
+    fn xqueue_wrong_sid_still_aborts() {
+        let mut backing = [0u8; 256];
+        let (job_a, _job_b, sid_a, sid_b) = two_queue_jobs(&mut backing);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        d.create_xqueue(0, sid_a, 0).unwrap();
+        d.create_xqueue(1, sid_b, 0).unwrap();
+        // Pins live on B; queue A is stamped SID_A.
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 48, sid_b))
+            .unwrap();
+        assert_eq!(d.submit_xqueue(0, &job_a).unwrap_err(), HalError::Fault);
+
+        // Job place packs SID_B; queue A will not accept a foreign stamp.
+        let mut foreign = job_a;
+        foreign.place =
+            Place::new(ChipletId(1), aether_core::space::MemorySpace::Host).with_tile(3);
+        d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_a))
+            .unwrap();
+        assert_eq!(d.submit_xqueue(0, &foreign).unwrap_err(), HalError::Fault);
+    }
+
+    #[test]
+    fn xqueue_stamp_hook_inherits_then_refuses_override() {
+        let (mut backing, mut job) = matmul_backing();
+        job.place = job.place.with_tile(2);
+        let sid = stream_for_job(&job);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
+        d.stamp_queue_sid(0, sid).unwrap();
+        let other = StreamId::accel(ChipletId(0), TileId(2), 7);
+        assert_eq!(d.stamp_queue_sid(0, other).unwrap_err(), HalError::Busy);
+        assert_eq!(
+            AccelDevice::create_queue(&mut d, 2, sid.raw(), 0).unwrap_err(),
+            HalError::BadArg
+        );
+        assert_eq!(d.suspend_xqueue(9).unwrap_err(), HalError::BadArg);
+    }
+
+    #[test]
+    fn iree_shaped_stays_device_mailbox() {
+        // XQueue this cut is Soft-CP only. IreeShapedCp keeps defaults.
+        use crate::IreeShapedCp;
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = IreeShapedCp::new(mem);
+        assert_eq!(d.probe().unwrap().n_queues, 1);
+        assert_eq!(
+            AccelDevice::create_queue(&mut d, 0, 0, 0).unwrap_err(),
+            HalError::Unsupported
+        );
+        assert_eq!(
+            AccelDevice::suspend_queue(&mut d, 0).unwrap_err(),
+            HalError::Unsupported
+        );
     }
 }
