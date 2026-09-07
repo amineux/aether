@@ -9,6 +9,8 @@
 //!
 //! Derivation edges (`parent` / `cdt`) let `revoke` empty descendants. This is
 //! a small capability derivation tree, not a seL4 CNode/MDB and not a proof.
+//! Host property tests (`caps_props.rs`) lock mint → derive → `revoke_in`
+//! (named tables only), unrelated survival, and unforgeability.
 
 use crate::types::TenantId;
 
@@ -629,3 +631,8 @@ mod tests {
         assert!(tb.require(child, CapKind::Memory, CapRights::READ).is_ok());
     }
 }
+
+/// Property / exhaustive CDT tests (not a seL4 proof). See `docs/SECURITY.md`.
+#[cfg(test)]
+#[path = "caps_props.rs"]
+mod caps_props;

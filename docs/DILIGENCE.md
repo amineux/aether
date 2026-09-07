@@ -112,6 +112,8 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 10. Compute waves with a foreign bank color are refused; Exchange may transfer.
 11. Revoke of a parent empties derived children in that table;
     `revoke_in` empties GRANT-children in named tables. Unrelated caps live.
+    Property tests in `core/src/caps_props.rs` (`P-Revoke`, `P-Unrelated`,
+    `P-Named`, `P-Unforge`, `P-Monotone`) lock this; they are not a seL4 proof.
 
 Not enforced in hardware yet: SMMU stream IDs, RISC-V virtio-mmio,
 aarch64 GICv3 / virtio-mmio, measured boot. The RISC-V PLIC is programmed and the
@@ -132,7 +134,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
+| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
