@@ -66,8 +66,7 @@ RISC-V PLIC + SoftNPU software doorbell (UART THRE → source 10;
 path B BAR; not virtio-mmio) is **done** as the follow-up interrupt
 path. Neither is product-class. AffinityLaplacian n≤32 placement is
 **done** as a prototype eigensolve (`from_placement` +
-`bind_laplacian_cut` + `ChipletTaskScope` pick/steal; enum stays n≤8;
-not GiFt-Placer; Fleet Chiplet-task is inspiration only). SpecForge
+`bind_laplacian_cut`; enum stays n≤8; not GiFt-Placer). SpecForge
 virtio path B is **done** (ADR in [ACCEL.md](ACCEL.md); golden MMIO
 trace on SoftNPU submit/complete; BAR frozen). Path A is **done**
 as optional (`qemu/`; stock QEMU stays B). The
@@ -124,6 +123,9 @@ Kernel calendar items:
   half-year clock, a seL4 clone, or a reason to pull CXL / Laplacian.
 - Y2 manufacturing / bring-up playbook as a climax goal
   ([DILIGENCE.md](DILIGENCE.md) already exists).
+- ChipletFleet as a *calendar* item. A thin host-tested chiplet-affinity
+  stub (`ChipletTaskScope` on `two_chiplet_mesh`) is not a Year-1
+  pillar, not a partner ask, and not a Fleet claim.
 
 ### DEFER
 
@@ -266,8 +268,9 @@ above override what Kernel actually sequences. Criteria below are
    cross-cut without BIND; AffinityLaplacian used in sched placement
    (not only Cut enum n≤8) for at least an n≤32 host-tested case.
    **Landed** as a prototype (`two_chiplet_mesh` n=16/32, Fiedler
-   median-cut, `bind_laplacian_cut`, `ChipletTaskScope` pick/steal).
-   Not GiFt-Placer. Not a Fleet runtime. Enumeration stays at n≤8.
+   median-cut, `bind_laplacian_cut`). Not GiFt-Placer. Enumeration
+   stays at n≤8. ChipletFleet / chiplet-local steal is **KILL** as a
+   calendar item (thin host stub only; not a partner ask).
 2. CXL region objects: `MemorySpace::CxlRegion` is a real typed place
    with pin/map path; coherent remote load still refused without
    UNIFIED; QEMU stub window OK — no claim of real CXL.mem.
@@ -316,9 +319,9 @@ for new qemu/smp targets.
    **SMP first (kernel threads)** then **per-task PML4**, or one owner
    for both to avoid conflict.
 4. **Laplacian in sched:** n≤32 Fiedler placement + `bind_laplacian_cut`
-   + `ChipletTaskScope` pick/steal landed as a prototype. BIND / CrossCut
-   semantics are frozen; do not grow `MAX_VERTS` past 32 without a wider
-   mask type. Still not a production eigensolve and not a Fleet runtime.
+   landed as a prototype. BIND / CrossCut semantics are frozen; do not
+   grow `MAX_VERTS` past 32 without a wider mask type. Still not a
+   production eigensolve. ChipletFleet is KILL as a calendar item.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.

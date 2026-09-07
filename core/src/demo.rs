@@ -327,7 +327,7 @@ pub fn run_boot_demo() -> DemoReport {
         partition_id: Some(part.id.0),
         fence_id: Some(fence.id.0),
         arena_color: Some(arena.color),
-        chiplet_scope: Some(crate::sched::ChipletTaskScope::new(ChipletId(0))),
+        chiplet_scope: None,
     });
     sched.enqueue(Job {
         id: 0,
@@ -342,7 +342,7 @@ pub fn run_boot_demo() -> DemoReport {
         partition_id: Some(part.id.0),
         fence_id: Some(fence.id.0),
         arena_color: Some(arena.color),
-        chiplet_scope: Some(crate::sched::ChipletTaskScope::new(ChipletId(0))),
+        chiplet_scope: None,
     });
     let wave = sched.pick(TileId(2));
     events.emit(

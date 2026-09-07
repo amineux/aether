@@ -4,10 +4,9 @@
 //! places both `Thread` and `AccelWave` on the same fabric scheduler so
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
 //!
-//! Chiplet-local work uses [`ChipletTaskScope`]: pick/steal prefer (Soft) or
-//! require (Strict) the job's chiplet. Fleet's Chiplet-task is inspiration
-//! only — not a Fleet runtime, not an L2-coherence claim, and not a
-//! reproduction of unpublished Fleet numbers.
+//! Chiplet-local work uses [`ChipletTaskScope`] as a **thin exploration
+//! stub** (not a Year-1 pillar, not a partner ask): pick/steal prefer
+//! (Soft) or require (Strict) the job's chiplet.
 
 use crate::color::{admit_wave, BankColor, ColorError};
 use crate::cut::{vert_bit, AffinityGraph, CutError, CutId, SpectralCut, MAX_CUTS_SCHED};
@@ -36,11 +35,12 @@ pub enum JobKind {
     AccelWave,
 }
 
-/// A job named for one chiplet's tiles (Fleet Chiplet-task *inspiration*).
+/// A job named for one chiplet's tiles.
 ///
-/// Pick and steal consult this against the bound affinity graph. A bound
-/// [`SpectralCut`] still refuses [`CutError::CrossCut`] independently.
-/// This is not a Fleet runtime and not an L2-coherence scheduler.
+/// Thin exploration stub: pick/steal consult this against the bound
+/// affinity graph. A bound [`SpectralCut`] still refuses
+/// [`CutError::CrossCut`] independently. Not a Year-1 pillar, not a
+/// partner ask, not ChipletFleet-as-milestone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ChipletTaskScope {
     pub chiplet: ChipletId,
@@ -55,7 +55,7 @@ impl ChipletTaskScope {
 /// How pick/steal treat [`Job::chiplet_scope`].
 ///
 /// Unscoped jobs are unrestricted under both modes. Strict is the default:
-/// a Chiplet-task stays on its die. Soft is the optional preference-only
+/// scoped work stays on its die. Soft is the optional preference-only
 /// path (same-chiplet score + steal local-first, still allowed to cross).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ChipletLocalPolicy {
