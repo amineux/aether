@@ -794,7 +794,28 @@ Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 IRQ. The fabric object itself still returns `WouldBlock`; the
 kernel thread queue sleeps.
 
+## Six-month plan (next calendar)
+
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the Falsifier-revised
+calendar after Year-1 + hardening (through PR #37) and the M1 opcode
+device (PR #38):
+
+- **M1 landed (PR #38):** `IreeShapedCp` (`backend = 4`) — frozen IREE
+  HAL packet; research opcodes, not a vendor-as-partner claim.
+- **NOW–M2:** PJRT/IREE-shaped host shim (Device / MemorySpace /
+  Buffer / Executable / Event) that submits through that device.
+  Primary partner story — take, do not defer.
+- Soft SMMU / Soft-CP / SMP / PML4 are **not** re-scheduled.
+- SpecForge OS-completeness theater (fork, POSIX, CXL productization,
+  ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
+  opcodes) is **not** the schedule. There is no M3–M4 clock.
+
 ## Suggested next cuts (technical, not calendar)
+
+The Kernel **calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
+(M1 `IreeShapedCp` landed; M2 PJRT/IREE host shim is the remaining
+clock). The list below
+is leftover engineering, not M3–M4.
 
 1. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
@@ -802,6 +823,8 @@ kernel thread queue sleeps.
    (GPA in the job wire; Soft SMMU stays the cap table) is still
    open. Soft-CP (`backend = 3`) and `IreeShapedCp` (`backend = 4`)
    already cover extra AccelDevice paths on the host.
+   SIX_MONTH_PLAN pulls this **only if** path-A DMA must prove Soft-SMMU
+   IOVA.
 2. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
    ATS-shaped invalidate in software. Program a real SMMU context / PT
    walk. Do not claim the software table is silicon. Partner silicon
@@ -827,9 +850,12 @@ kernel thread queue sleeps.
 
 ## Two-year plan
 
-[YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
+[YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06). The
+Falsifier ACTIVE track through PR #37 is **complete as research
+slices**; do not sequence new work against it. Next calendar:
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md).
 
-- **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
+- **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
@@ -855,7 +881,7 @@ kernel thread queue sleeps.
   Y2H1 security work, not a SpecForge clock.
 
 Soft SMMU (PR #7), SoftCommandProcessor (PR #8), IreeShapedCp
-  (this cut; IREE HAL packet, not a vendor), SMP smoke (PR #9),
+  (PR #38; IREE HAL packet, not a vendor), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
@@ -880,7 +906,8 @@ per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
 The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
 not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
-match this active track and [DILIGENCE.md](DILIGENCE.md) non-claims
+match the landed Year-1 track, [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md),
+and [DILIGENCE.md](DILIGENCE.md) non-claims
 — no partnership, no booked silicon bring-up, no manufacturing climax.
 
 ## What we will not claim

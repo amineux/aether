@@ -247,8 +247,9 @@ The kernel and `/init` are **separate Cargo projects** so
   window (in-kernel SoftNPU; no GIC doorbell). Neither is a
   product-class second architecture.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the path toward something a silicon
-team could take into bring-up.
+See [docs/ROADMAP.md](docs/ROADMAP.md) and
+[docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status and
+the next partner-shaped HAL calendar.
 
 ## Docs
 
@@ -260,7 +261,9 @@ team could take into bring-up.
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
-- [docs/ROADMAP.md](docs/ROADMAP.md) — Month 1–6 status, stubs, next cuts
+- [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1 `IreeShapedCp` landed; M2 PJRT/IREE shim)
+- [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 
 ## Website
 

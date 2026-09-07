@@ -3,6 +3,14 @@
 Leave-behind for Kernel tracking. SpecForge draft 2026-09-06; Falsifier
 revision 2026-09-06. Filed on main via PR.
 
+**Status (2026-09-07):** the Falsifier ACTIVE track through PR #37 is
+**complete as research slices.** `IreeShapedCp` (PR #38) landed the
+six-month M1 opcode device. The **next calendar** is
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M2 PJRT/IREE host shim). Do
+not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
+from the KEEP list below. SpecForge appendix remains aspirational
+only.
+
 ## Non-negotiables
 
 - Research prototype. SoftNPU + stock QEMU (in-kernel BAR) is the
@@ -11,15 +19,18 @@ revision 2026-09-06. Filed on main via PR.
 - No fake NVIDIA partnership, no FLOP benchmarks, no tape-out / readiness
   claims.
 - [`docs/ABI.md`](ABI.md) syscall 0–8 stay frozen; additive only
-  (`exit=9`, `clone=10`). In-kernel ramfs adds no user syscall.
+  (`exit=9`, `clone=10`; later `mmap=11`). Live freeze is **0–11** in
+  [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md). In-kernel ramfs adds no user
+  syscall.
 - Prefer extending `aether_hal::AccelDevice` + `AccelJobDesc` over
   inventing a second IR.
 
 ## Falsifier revision — execution track
 
-**This is the ACTIVE track.** SpecForge's half-year calendar
+**This was the ACTIVE track through PR #37.** SpecForge's half-year calendar
 ([appendix](#specforge-criteria-aspirational-appendix)) is aspirational
-only — do not schedule Kernel work against it. Soft SMMU (PR #7;
+only — do not schedule Kernel work against it. New sequencing lives in
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md). Soft SMMU (PR #7;
 deepened as STE→CD→S1/S2 + ATS invalidate, still not hardware) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
 **done** as software models. `IreeShapedCp` (`backend = 4`) is **done**
