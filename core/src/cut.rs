@@ -18,7 +18,8 @@
 
 use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable};
 use crate::laplacian::AffinityLaplacian;
-use crate::types::{BankId, TileId};
+use crate::types::{BankId, TenantId, TileId};
+use crate::window::TypedWindow;
 
 /// Dense affinity-graph capacity. Masks are `u32`, so this is also the
 /// host-tested placement ceiling.
@@ -437,6 +438,19 @@ impl SpectralCut {
         }
         Ok(ts)
     }
+
+    /// Typed-window bind. A foreign-tenant window is [`CutError::CrossCut`].
+    ///
+    /// This is the SpectralCut gate for Exploration E (`TypedWindow`).
+    /// It does not program CXL.mem and does not replace [`Self::allow_place`].
+    pub fn allow_window(&self, win: &TypedWindow, caller: TenantId) -> Result<(), CutError> {
+        let _ = self;
+        if win.tenant != caller {
+            Err(CutError::CrossCut)
+        } else {
+            Ok(())
+        }
+    }
 }
 
 /// Cap surface: BIND is required. Without it the cut object is inert.
@@ -455,6 +469,18 @@ pub fn bind_place(
 ) -> Result<Side, CutError> {
     require_cut_bind(tab, cptr).map_err(|_| CutError::NotBound)?;
     cut.allow_place(g, tile, bank)
+}
+
+/// BIND a SpectralCut, then refuse a foreign-tenant [`TypedWindow`].
+pub fn bind_window(
+    tab: &CapTable,
+    cptr: CPtr,
+    cut: &SpectralCut,
+    win: &TypedWindow,
+    caller: TenantId,
+) -> Result<(), CutError> {
+    require_cut_bind(tab, cptr).map_err(|_| CutError::NotBound)?;
+    cut.allow_window(win, caller)
 }
 
 #[cfg(test)]
@@ -635,5 +661,49 @@ mod tests {
         let g32 = AffinityGraph::two_chiplet_mesh(32);
         assert_eq!(g32.nth_tile_on(1, 0), Some(TileId(16)));
         assert_eq!(g32.chiplet_of_tile(TileId(16)), Some(1));
+    }
+
+    #[test]
+    fn bind_window_refuses_foreign_tenant() {
+        use crate::iommu::StreamId;
+        use crate::types::{ChipletId, PhysAddr};
+        use crate::window::{TypedWindow, WindowKind};
+
+        let t = TenantId(1);
+        let mut tab = CapTable::new(t);
+        let (g, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
+        let _ = g;
+        let q = tab
+            .mint(Capability::new(
+                CapKind::SpectralCut,
+                CapRights::CUT_FULL,
+                cut.id.0,
+                t,
+            ))
+            .unwrap();
+        let own = TypedWindow::new(
+            PhysAddr(0xB000),
+            0x1000,
+            WindowKind::CxlMemStub,
+            StreamId::accel(ChipletId(0), TileId(2), 2),
+            t,
+        );
+        let foreign = TypedWindow::new(
+            PhysAddr(0xC000),
+            0x1000,
+            WindowKind::Hbm,
+            StreamId::accel(ChipletId(1), TileId(1), 0),
+            TenantId(2),
+        );
+        assert!(bind_window(&tab, q, &cut, &own, t).is_ok());
+        assert_eq!(
+            bind_window(&tab, q, &cut, &foreign, t).unwrap_err(),
+            CutError::CrossCut
+        );
+        let empty = CapTable::new(TenantId(2));
+        assert_eq!(
+            bind_window(&empty, q, &cut, &own, TenantId(2)).unwrap_err(),
+            CutError::NotBound
+        );
     }
 }

@@ -195,6 +195,23 @@ in the user image (also Soft-SMMU-pinned at boot) or in a mapped arena.
 
 Do **not** map “all of HBM” into the NPU. The arena + cap is the point.
 
+## Typed windows (exploration stub; not CXL.mem)
+
+`TypedWindow { base, len, kind: Hbm | CxlMemStub | Dram, sid }` is a
+host/kernel range Soft SMMU can pin with Memory+MAP. CXL.mem is
+inspiration for the `CxlMemStub` noun only. See [WINDOW.md](WINDOW.md).
+
+```text
+IommuMap::map_window(Memory+MAP, win)     // pin on win.sid; not identity
+IommuMap::map_window_sid(..., sid)        // sid must equal win.sid
+IommuMap::unmap_window(..., sid, iova)    // WrongStream / CrossTenant
+SpectralCut::allow_window(win, caller)    // foreign tenant → CrossCut
+AccelDevice::map_window / map_window_with_cap
+```
+
+This is **not** a CXL.mem HDM decoder and not QEMU CXL. Host tests cover
+the stub. Hardware CXL.mem still requires partner silicon.
+
 ## Bank coloring
 
 Tensor arenas carry a `BankColor { tenant, bank }`:

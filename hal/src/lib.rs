@@ -13,6 +13,7 @@ use aether_core::accel::{AccelJobDesc, Completion};
 use aether_core::iommu::MapRequest;
 use aether_core::space::{map_place, FabricAddr, Place, SpaceError};
 use aether_core::types::PhysAddr;
+use aether_core::window::TypedWindow;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct AccelInfo {
@@ -65,6 +66,14 @@ pub trait AccelDevice {
     /// This is a *local* pin. Remote `(place, local)` addresses must go
     /// through [`map_fabric`] — never a silent coherent load.
     fn map(&mut self, req: MapRequest) -> Result<PhysAddr, HalError>;
+    /// Pin a [`TypedWindow`] (HBM / CXL.mem stub / DRAM) on its SID.
+    ///
+    /// Default forwards to [`Self::map`] with the window's SID. Cap-gated
+    /// drivers still refuse until `map_window_with_cap`. This is not a
+    /// CXL.mem HDM decoder.
+    fn map_window(&mut self, win: TypedWindow) -> Result<PhysAddr, HalError> {
+        self.map(win.request())
+    }
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
         let _ = iova;
         Ok(())

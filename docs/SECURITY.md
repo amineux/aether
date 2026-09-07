@@ -44,7 +44,9 @@ Each `Capability` stores:
    ioctl. Jobs bind a `PartitionProfile` (spatial slice, credits, blast
    radius). Isolation is spatial (slices/columns) first, temporal second—QoS and blast radius are invariants.
 9. **Typed spaces.** A Memory cap does not imply a unified VAS.
-   `CapRights::UNIFIED` must be granted explicitly.
+   `CapRights::UNIFIED` must be granted explicitly. `TypedWindow` is a
+   Soft-SMMU pin stub (Exploration E); foreign-tenant windows are
+   `CrossCut`. Not a CXL.mem decoder.
 10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
     `revoke(parent)` empties that lineage in the same table;
     `revoke_in(parent, others)` empties grant-children in the named
@@ -84,7 +86,7 @@ These are marked so a security review does not assume them:
 | --- | --- | --- |
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode / EL0 + user page tables — **landed** on x86, RISC-V, and aarch64: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
-| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; hardware SMMU still needs partner silicon |
+| No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, and refuses maps/binds without Memory+MAP; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
 | Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |

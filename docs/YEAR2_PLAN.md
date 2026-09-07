@@ -129,8 +129,11 @@ Kernel calendar items:
   refuses; EventRing credit-drain theater is not a Y1 goal).
 - Second partner stub enrichment without a signed partner
   (`PartnerNpuStub` stays a labeled sketch).
-- CXL region objects — keep the typed `MemorySpace::CxlRegion` place
-  only; no pin/map productization, no CXL.mem claim.
+- CXL region objects / CXL.mem window — **stays killed as a milestone.**
+  Keep the typed `MemorySpace::CxlRegion` place. `TypedWindow`
+  ([WINDOW.md](WINDOW.md)) is an unscheduled honest stub (inspiration
+  nouns + Soft SMMU SID refuse). It is **not** pin/map productization
+  and does **not** check off SpecForge Y2H1.
 - Cap CDT as a *calendar* item. A small derivation-edge revoke landed
   as unscheduled Y2H1 security work; do not treat it as a SpecForge
   half-year clock, a seL4 clone, or a reason to pull CXL / Laplacian.
@@ -213,6 +216,7 @@ After AccelDevice bites a real-shaped path — not before:
 | AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
 | Virtio path B (golden MMIO) | `drivers/src/{mmio,virtio_accel,softnpu}.rs`, `docs/{ACCEL,ROADMAP,YEAR2_PLAN}.md` |
 | RISC-V PLIC SoftNPU doorbell | `kernel/src/arch/riscv64/{plic,idt}.rs`, `kernel/src/{world,task}.rs`, `Makefile` |
+| TypedWindow stub (Exploration E) | `core/src/{window,iommu,cut,demo}.rs`, `docs/WINDOW.md` |
 
 The Soft SMMU / Soft-CP track asked not to open `kernel/src/arch/` PRs.
 That gate opened after AccelDevice (PR #8). SMP smoke is the first
@@ -223,7 +227,8 @@ cut is `aether-core` + driver retire (`retire_into`); no new
 syscall. Laplacian-in-sched is the same kind of `aether-core` slice
 (no new syscall, AccelDevice frozen). Path B is a docs + host-test
 slice on the existing BAR (no new syscall, no QEMU device). Still
-do not open CXL PRs here.
+do not open CXL **product** PRs here. Exploration E (typed-window stub)
+is the honest exception: host tests only, no QEMU CXL, no calendar claim.
 
 ---
 
@@ -294,7 +299,8 @@ above override what Kernel actually sequences. Criteria below are
    of named tables). Property tests lock mint → derive → `revoke_in`;
    formal caps stay killed as a calendar item. No `SYS_REVOKE`. Kernel
    World is still one shared `CapTable`. The Laplacian item above is
-   **landed** as a prototype; CXL is **not** done.
+   **landed** as a prototype; CXL is **not** done. Exploration E
+   (`TypedWindow`) is an honest stub, not this criterion.
 
 ### Y2H2 — Bring-up + ecosystem docs
 

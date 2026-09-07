@@ -782,7 +782,7 @@ Search for `// STUB:` / `STUB` :
 | ChipletFleet | `core/src/sched.rs` | **KILL as calendar.** Thin host stub (`ChipletTaskScope` affinity / steal). Not a Year-1 pillar, not a partner ask |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
-| Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
+| Real CXL.mem window | `MemorySpace::CxlRegion`, `core/src/window.rs` | **killed as a milestone.** `TypedWindow` is an honest pin stub (SID refuse, host tests), not this item. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
@@ -848,7 +848,9 @@ kernel thread queue sleeps.
   softmmu build. `fork` remains deferred.
 - **Aspirational (SpecForge appendix):** original Y1H1–Y2H2 acceptance.
   Bank QoS beyond admit/refuse, partner-stub enrichment, CXL objects,
-  and a Y2 bring-up climax stay killed as milestones. Cap CDT was
+  and a Y2 bring-up climax stay killed as milestones. Exploration E
+  (`TypedWindow`) is an unscheduled honest stub, not that CXL check-off.
+  Cap CDT was
   killed *as a calendar item*; the small revoke slice is unscheduled
   Y2H1 security work, not a SpecForge clock.
 
@@ -892,6 +894,7 @@ match this active track and [DILIGENCE.md](DILIGENCE.md) non-claims
 - Partnerships with silicon vendors (`PartnerNpuStub` is a sketch)
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
 - That the RISC-V or aarch64 port is a product-class second architecture
+- That `TypedWindow` / `CxlMemStub` is CXL.mem silicon (Exploration E is a stub)
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
 `AccelJobDesc`, and either `SoftCommandProcessor` (`CpCmd`) or

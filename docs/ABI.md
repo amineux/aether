@@ -10,6 +10,7 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 | --- | --- | --- |
 | Device | `abi::Device` / `Activity` | A compute unit on the fabric, not an ioctl node |
 | MemorySpace | `space::MemorySpace` | `HOST`, `DEVICE_HBM`, `TILE_SRAM`, `CXL_REGION`, `SCRATCH`, `STREAMING` |
+| TypedWindow | `window::TypedWindow` | `{ base, len, kind: Hbm\|CxlMemStub\|Dram, sid }` — Soft SMMU pin stub; not CXL.mem silicon |
 | Buffer | `abi::Buffer` | Bound to one space + a `(place, local)` address |
 | Executable | `abi::Executable` | Opaque `isa_blob_id`; kernel does not parse it |
 | Event | `abi::Event` | A `FenceId` on a partition timeline |
@@ -34,6 +35,8 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 - Invent a CUDA stream or a default unified virtual address space.
 - Treat UCIe / EMIB / CXL as a programming model. Those are transports;
   the programming model is activities, places, and fences.
+  [`TypedWindow`](../core/src/window.rs) (`CxlMemStub`) is an exploration
+  stub for typed fabric memory, **not** a CXL.mem programming model.
 
 A runtime (IREE, XLA/PJRT, a vendor compiler) compiles to the tile ISA,
 then submits `AccelJobDesc` records through an `Activity` endpoint.

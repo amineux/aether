@@ -7,7 +7,7 @@ use crate::activity::{Activity, ActivityId, ActivityKind};
 use crate::arena::{ArenaAllocator, ArenaRequest};
 use crate::caps::{CapKind, CapRights, CapTable, Capability};
 use crate::color::{admit_arena_wave, ColorError};
-use crate::cut::{bind_place, AffinityGraph, CutError, CutId, SpectralCut};
+use crate::cut::{bind_place, bind_window, AffinityGraph, CutError, CutId, SpectralCut};
 use crate::fabric::{ChipletRoute, Fabric, FabricError, Message, MsgFlags};
 use crate::fence::Timeline;
 use crate::hodge::{authorize, FlowClass, HodgeError, CLASS_ALL, CLASS_CURL, CLASS_GRADIENT};
@@ -22,6 +22,7 @@ use crate::sched::{Job, JobKind, TileKind, TileScheduler};
 use crate::space::{map_place, FabricAddr, MemorySpace, Place, SpaceError};
 use crate::sparsify::{decide_header, SparsifiedCollective, SparsifyAction};
 use crate::types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
+use crate::window::{TypedWindow, WindowKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct DemoReport {
@@ -41,6 +42,7 @@ pub struct DemoReport {
     pub opkernel_ok: bool,
     pub sparsify_ok: bool,
     pub dtype_ok: bool,
+    pub window_ok: bool,
     pub job_seq: u32,
     pub c00: i32,
     pub c11: i32,
@@ -69,6 +71,7 @@ impl DemoReport {
             && self.opkernel_ok
             && self.sparsify_ok
             && self.dtype_ok
+            && self.window_ok
     }
 }
 
@@ -272,6 +275,58 @@ pub fn run_boot_demo() -> DemoReport {
     // Tenant B cannot bind A's cut (no cap).
     let b_no_cut = !caps_b.holds(CapKind::SpectralCut, cut.id.0);
     let cut_ok = place_ok && cut_refuse && b_no_cut && cut.phi_milli <= cut.bound_milli;
+
+    // Exploration E: typed window stub (CXL.mem-inspired nouns only).
+    let win_sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+    let win_a = TypedWindow::new(
+        PhysAddr(0xB000),
+        0x1000,
+        WindowKind::CxlMemStub,
+        win_sid,
+        tenant_a,
+    );
+    let mapped_win = iommu
+        .map_window(caps_a.lookup(mem_cap).unwrap(), win_a)
+        .unwrap();
+    events.emit(
+        EventKind::WindowMap,
+        mapped_win.region.iova.0,
+        win_a.kind as u64,
+    );
+    let wrong_sid = iommu.unmap_window(
+        caps_a.lookup(mem_cap).unwrap(),
+        StreamId::accel(ChipletId(0), TileId(2), 3),
+        mapped_win.region.iova,
+    ) == Err(MapError::WrongStream);
+    let win_b = TypedWindow::new(
+        PhysAddr(0xC000),
+        0x1000,
+        WindowKind::Hbm,
+        StreamId::accel(ChipletId(1), TileId(1), 0),
+        tenant_b,
+    );
+    let foreign_win = bind_window(&caps_a, cut_cap, &cut, &win_b, tenant_a);
+    let window_cross = foreign_win == Err(CutError::CrossCut);
+    if window_cross {
+        events.emit(
+            EventKind::WindowRefuse,
+            tenant_b.0 as u64,
+            win_b.kind as u64,
+        );
+    }
+    let own_win = bind_window(&caps_a, cut_cap, &cut, &win_a, tenant_a).is_ok();
+    let b_no_win_bind =
+        bind_window(&caps_b, cut_cap, &cut, &win_a, tenant_b) == Err(CutError::NotBound);
+    let window_ok = mapped_win.region.iova != win_a.base
+        && mapped_win.window.kind == WindowKind::CxlMemStub
+        && wrong_sid
+        && window_cross
+        && own_win
+        && b_no_win_bind
+        && iommu
+            .resolve_result(win_sid.raw(), mapped_win.region.iova, Some(tenant_a))
+            .unwrap()
+            == win_a.base;
 
     let part = PartitionProfile::new(
         PartitionId(1),
@@ -635,6 +690,7 @@ pub fn run_boot_demo() -> DemoReport {
         opkernel_ok,
         sparsify_ok,
         dtype_ok,
+        window_ok,
         job_seq: cpl.job_seq,
         c00,
         c11,
@@ -669,6 +725,7 @@ mod tests {
         assert!(r.opkernel_ok, "opkernel");
         assert!(r.sparsify_ok, "sparsify");
         assert!(r.dtype_ok, "f16/f32 soft-float");
+        assert!(r.window_ok, "typed window stub");
         assert!(r.all_ok());
         assert!(r.fence_id > 0);
         assert!(r.cut_phi_milli > 0 && r.cut_phi_milli <= 400);

@@ -20,7 +20,9 @@ pub enum MemorySpace {
     DeviceHbm = 1,
     /// Per-tile scratch SRAM — first-class, not a cache of HBM.
     TileSram = 2,
-    /// CXL.mem region. Coherence is not assumed across the link.
+    /// CXL.mem-inspired typed place. Coherence is not assumed across the
+    /// link. [`crate::window::TypedWindow`] (`CxlMemStub`) is the pin/map
+    /// stub — not a CXL.mem HDM decoder and not QEMU CXL silicon.
     CxlRegion = 3,
     /// Transient scratch (software-managed, not cacheable).
     Scratch = 4,

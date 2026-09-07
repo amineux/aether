@@ -13,6 +13,7 @@ use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, DEFAULT_STREAM};
 use aether_core::partition::PartitionError;
 use aether_core::types::PhysAddr;
+use aether_core::window::{MappedWindow, TypedWindow};
 use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_VIRTIO_SOFTNPU};
 
 use crate::mmio::AccelMmio;
@@ -155,6 +156,15 @@ impl<M: DmaView> SoftNpuDevice<M> {
     ) -> Result<PhysAddr, HalError> {
         let region = self.iommu.map(cap, req).map_err(map_hal_error)?;
         Ok(region.iova)
+    }
+
+    /// Pin a typed window (SID + Memory+MAP). Not a CXL.mem decoder.
+    pub fn map_window_with_cap(
+        &mut self,
+        cap: &Capability,
+        win: TypedWindow,
+    ) -> Result<MappedWindow, HalError> {
+        self.iommu.map_window(cap, win).map_err(map_hal_error)
     }
 
     /// IOVA → guest PA only. No guest-PA identity shortcut when Soft SMMU
@@ -540,5 +550,34 @@ mod tests {
         assert_eq!(serviced.status, 0);
         let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn map_window_with_cap_pins_cxl_stub() {
+        use aether_core::iommu::StreamId;
+        use aether_core::types::{ChipletId, TileId};
+        use aether_core::window::{TypedWindow, WindowKind};
+
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        let sid = StreamId::accel(ChipletId(0), TileId(0), 0);
+        let win = TypedWindow::new(
+            PhysAddr(0xB000),
+            0x1000,
+            WindowKind::CxlMemStub,
+            sid,
+            TenantId(1),
+        );
+        assert_eq!(dev.map_window(win).unwrap_err(), HalError::NoMemoryCap);
+        let mapped = dev.map_window_with_cap(&mem_cap(), win).unwrap();
+        assert_ne!(mapped.region.iova.0, 0xB000);
+        assert_eq!(
+            dev.translate_stream(sid.raw(), PhysAddr(0xB400)).unwrap().0,
+            mapped.region.iova.0 + 0x400
+        );
     }
 }

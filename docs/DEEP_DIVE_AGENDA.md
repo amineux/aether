@@ -57,6 +57,7 @@ What to point at on the serial:
 3. `[cut] bind SpectralCut … CrossCut refuse`.
 4. `[hodge] … harmonic-tree REFUSE ok`.
 5. `[map] Soft SMMU pin + Memory-cap refuse ok`.
+5b. `[window] TypedWindow CxlMemStub … (stub; not CXL.mem)`.
 6. `[color] tenant/bank paint  Compute foreign refuse + Exchange ok`.
 7. `[laplace] L=D-A n=6 … chiplet-split=ok`.
 8. x86: `[mm] SMEP+SMAP` + `[mm] aspace isolate ok`, then

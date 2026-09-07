@@ -26,6 +26,10 @@ pub enum EventKind {
     FenceComplete = 20,
     SpaceRefuse = 21,
     CapRevoke = 22,
+    /// Soft SMMU pinned a [`crate::window::TypedWindow`].
+    WindowMap = 23,
+    /// Foreign-tenant typed window (SpectralCut `CrossCut`) or wrong SID.
+    WindowRefuse = 24,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

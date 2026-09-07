@@ -36,6 +36,7 @@ pub mod space;
 pub mod sparsify;
 pub mod sysnr;
 pub mod types;
+pub mod window;
 
 pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
@@ -98,6 +99,7 @@ pub use sysnr::{
     COW_PRIVATE_WORD, COW_TEMPLATE_WORD, MMAP_GROW_WORD,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
+pub use window::{MappedWindow, TypedWindow, WindowKind};
 
 /// Research-prototype version string printed by the boot demo.
 pub const VERSION: &str = "0.1.0";
