@@ -56,13 +56,14 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
+        smmu-bringup \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests (caps, fabric, arenas, sched, L, elf, ramfs, bootfs, aether-pjrt)"
+	@echo "  make test         - host unit tests + Soft SMMU bring-up script check"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
@@ -77,6 +78,7 @@ help:
 	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + aspace + fabric"
 	@echo "  make accel-test   - path-A QEMU device model (host; no QEMU rebuild)"
 	@echo "  make qemu-accel   - accel-test; if QEMU_ACCEL is set, boot with -device aether-accel"
+	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
 	@echo "  make clean"
 
 target:
@@ -92,6 +94,15 @@ test: test-host
 
 test-host:
 	cargo test --workspace
+	python3 scripts/smmu_replay.py --check
+	python3 scripts/smmu_dump.py --check
+
+# Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
+smmu-bringup:
+	python3 scripts/smmu_replay.py --check
+	python3 scripts/smmu_dump.py --check
+	cargo test -p aether-core --lib smmu_bringup
+	cargo test -p aether-drivers --lib fakecp -- bringup
 
 # Path A: portable BAR + SoftNPU I32 model. No QEMU headers.
 ACCEL_TEST := $(BUILD)/aether-accel-test

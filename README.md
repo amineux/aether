@@ -253,10 +253,11 @@ The kernel and `/init` are **separate Cargo projects** so
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) and
 [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status.
-The Month 1–2 spine (opcodes → PJRT shim) is done. Soft-CP now has two
-software XQueues (queue-boundary suspend/resume; not a silicon queuing
-unit). Optional Soft SMMU kit / path-A guest bind stay gated. SID-at-submit
-can stamp the queue SID already hooked on Soft-CP.
+The Month 1–2 spine (opcodes → PJRT shim) is done. Soft-CP XQueue is
+**M4 done** (PR #47; two software queues, queue-boundary suspend/resume;
+not a silicon queuing unit). **M3 SID-at-submit is still cooking**
+(`stamp_queue_sid` is the hook). Optional Soft SMMU kit is this cut
+(software tables). Path-A guest bind stays gated.
 
 ## Docs
 
@@ -271,7 +272,8 @@ can stamp the queue SID already hooked on Soft-CP.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — Falsifier spine (M1 `IreeShapedCp` + M2 `aether-pjrt` landed; optional Soft SMMU kit / path A gated)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M2 and M4 done; M3 SID-at-submit cooking)
+- [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 
 ## Website

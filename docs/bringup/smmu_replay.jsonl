@@ -1,0 +1,16 @@
+{"step": 0, "op": "note", "text": "Soft SMMU bring-up kit. Software tables only. Not hardware SMMU, not an SMMUv3 emulator, not a Soft-SMMU redo. Pins: AccelDevice::map / Soft-CP SID bind (ssid=1). M1 IreeShapedCp ssid=2 on the same STE."}
+{"step": 1, "op": "capture", "sid": "cp", "expect": "Captured"}
+{"step": 2, "op": "translate", "sid": "cp", "guest_pa": "0x1000", "expect": "StreamAbort"}
+{"step": 3, "op": "map", "sid": "cp", "guest_pa": "0x1000", "len": "0x1000", "with_cap": false, "expect": "NoMemoryCap"}
+{"step": 4, "op": "bind_nested", "sid": "cp", "with_cap": true, "expect": "Bound"}
+{"step": 5, "op": "map", "sid": "cp", "guest_pa": "0x1000", "len": "0x1000", "with_cap": true, "expect": "ok", "expect_iova_ge": "0x100000000", "expect_iova_ne_pa": true}
+{"step": 6, "op": "walk", "sid": "cp", "addr": "iova", "expect": "ok", "expect_pa": "0x1000", "expect_ipa_ne_pa": true, "expect_config": "Nested"}
+{"step": 7, "op": "translate", "sid": "cp", "guest_pa": "0x1000", "expect": "ok"}
+{"step": 8, "op": "translate", "sid": "wrong", "guest_pa": "0x1000", "expect": "StreamAbort"}
+{"step": 9, "op": "bind_stream", "sid": "iree", "with_cap": true, "expect": "Bound"}
+{"step": 10, "op": "translate", "sid": "iree", "guest_pa": "0x1000", "expect": "WrongStream"}
+{"step": 11, "op": "resolve_ats", "sid": "cp", "addr": "iova", "expect_pa": "0x1000"}
+{"step": 12, "op": "invalidate", "sid": "cp", "cmd": "Ats", "iova": "iova", "len": "0x1000", "expect_dropped": 1}
+{"step": 13, "op": "walk", "sid": "cp", "addr": "iova", "expect": "ok", "expect_pa": "0x1000", "expect_config": "Nested"}
+{"step": 14, "op": "resolve_ats", "sid": "cp", "addr": "iova", "expect_pa": "0x1000"}
+{"step": 15, "op": "dump"}

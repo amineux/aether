@@ -26,6 +26,11 @@ jobs:
       - name: Host tests
         run: cargo test --workspace
 
+      - name: Soft SMMU bring-up kit (dump/replay scripts)
+        run: |
+          python3 scripts/smmu_replay.py --check
+          python3 scripts/smmu_dump.py --check
+
       # Path A device model only. Does not rebuild QEMU. Stock make qemu
       # stays path B (in-kernel BAR). See qemu/README.md / QEMU_ACCEL.
       - name: Path-A virtio-accel device model

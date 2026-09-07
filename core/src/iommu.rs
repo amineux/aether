@@ -35,6 +35,9 @@
 //! - `unbind_cd` drops one SSID. `unbind_stream` / `flr` drop the STE
 //!   (all SSIDs) and its pins — the FLR analogue.
 //!
+//! Dump/replay (optional bring-up kit, not a redo): [`crate::smmu_bringup`]
+//! plus `docs/bringup/`. [`IommuMap::dump`] copies these software tables.
+//!
 //! Policy:
 //! - Overlap is **per full SID** (STE + SSID) on guest PA. Two SIDs may
 //!   pin the same guest PA to different IOVAs.
@@ -196,6 +199,71 @@ pub struct SoftPte {
     pub writable: bool,
 }
 
+/// Observational dump of one software CD. Not a hardware CD word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CdTableDump {
+    pub ssid: u8,
+    pub valid: bool,
+    pub asid: u16,
+    pub s1: [Option<SoftPte>; MAX_PTES],
+}
+
+/// Observational dump of one software STE + its CDs and Stage-2.
+/// Not a hardware STE word.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SteTableDump {
+    pub key: u32,
+    pub state: StreamState,
+    pub tenant: TenantId,
+    pub config: SteConfig,
+    pub s1cdmax: u8,
+    pub distinct_ipa: bool,
+    pub s2_vmid: u16,
+    pub cds: [Option<CdTableDump>; MAX_CDS],
+    pub s2: [Option<SoftPte>; MAX_PTES],
+}
+
+/// One software ATC line. Not a device ATC.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AtcDumpLine {
+    pub sid: u32,
+    pub iova: u64,
+    pub pa: u64,
+    pub len: u64,
+}
+
+/// Software-table snapshot for the bring-up dump/replay kit.
+/// Not silicon, not an SMMUv3 emulator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftSmmuDump {
+    pub stes: [Option<SteTableDump>; MAX_STES],
+    pub regions: [Option<MappedRegion>; MAX_MAPS],
+    pub atc: [Option<AtcDumpLine>; MAX_ATC],
+    pub atc_hits: u32,
+    pub atc_misses: u32,
+}
+
+impl StreamState {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Unbound => "Unbound",
+            Self::Captured => "Captured",
+            Self::Bound => "Bound",
+        }
+    }
+}
+
+impl SteConfig {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Abort => "Abort",
+            Self::Stage1 => "Stage1",
+            Self::Stage2 => "Stage2",
+            Self::Nested => "Nested",
+        }
+    }
+}
+
 /// Pin request. `stream_id` is a packed [`StreamId`] (chiplet/tile/ssid).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct MapRequest {
@@ -259,6 +327,22 @@ pub enum MapError {
     StreamAbort,
     /// Nested / Stage-2 walk: Stage-1 hit, Stage-2 miss.
     Stage2Fault,
+}
+
+impl MapError {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::NoMemoryCap => "NoMemoryCap",
+            Self::BadRange => "BadRange",
+            Self::Overlap => "Overlap",
+            Self::TableFull => "TableFull",
+            Self::NotMapped => "NotMapped",
+            Self::CrossTenant => "CrossTenant",
+            Self::WrongStream => "WrongStream",
+            Self::StreamAbort => "StreamAbort",
+            Self::Stage2Fault => "Stage2Fault",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -1281,6 +1365,59 @@ impl IommuMap {
 
     pub fn iter(&self) -> impl Iterator<Item = MappedRegion> + '_ {
         self.regions.iter().flatten().copied()
+    }
+
+    /// Observational snapshot of software STE / CD / S1 / S2 / ATC.
+    /// Tables are copied; this is not a hardware probe and not a redo of the walk.
+    pub fn dump(&self) -> SoftSmmuDump {
+        let mut stes = [None; MAX_STES];
+        for (i, ste) in self.stes.iter().enumerate() {
+            let Some(s) = ste.as_ref() else {
+                continue;
+            };
+            let mut cds = [None; MAX_CDS];
+            for (j, cd) in s.cds.iter().enumerate() {
+                let Some(c) = cd.as_ref() else {
+                    continue;
+                };
+                cds[j] = Some(CdTableDump {
+                    ssid: c.ssid,
+                    valid: c.valid,
+                    asid: c.asid,
+                    s1: c.s1,
+                });
+            }
+            stes[i] = Some(SteTableDump {
+                key: s.key,
+                state: s.state,
+                tenant: s.tenant,
+                config: s.config,
+                s1cdmax: s.s1cdmax,
+                distinct_ipa: s.distinct_ipa,
+                s2_vmid: s.s2_vmid,
+                cds,
+                s2: s.s2,
+            });
+        }
+        let mut atc = [None; MAX_ATC];
+        for (i, line) in self.atc.iter().enumerate() {
+            let Some(l) = line.as_ref() else {
+                continue;
+            };
+            atc[i] = Some(AtcDumpLine {
+                sid: l.sid,
+                iova: l.iova,
+                pa: l.pa,
+                len: l.len,
+            });
+        }
+        SoftSmmuDump {
+            stes,
+            regions: self.regions,
+            atc,
+            atc_hits: self.atc_hits,
+            atc_misses: self.atc_misses,
+        }
     }
 }
 

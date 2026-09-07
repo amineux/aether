@@ -665,11 +665,12 @@ mod tests {
     use aether_core::accel::{DType, SliceMem};
     use aether_core::caps::{CapKind, CapRights, Capability};
     use aether_core::fence::{FenceId, Timeline};
-    use aether_core::iommu::{StreamState, SOFT_SMMU_IOVA_BASE};
+    use aether_core::iommu::{InvCmd, MapError, SteConfig, StreamState, SOFT_SMMU_IOVA_BASE};
     use aether_core::partition::{
         BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
     };
     use aether_core::space::Place;
+    use aether_core::smmu_bringup::{kit_cp_sid, kit_iree_sid, kit_wrong_sid};
     use aether_core::types::{ChipletId, TenantId};
     use aether_hal::{
         AccelDevice, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
@@ -1188,5 +1189,71 @@ mod tests {
             AccelDevice::suspend_queue(&mut d, 0).unwrap_err(),
             HalError::Unsupported
         );
+    }
+
+    /// AccelDevice::map / Soft-CP SID bind twin of `docs/bringup/smmu_replay.jsonl`.
+    /// Default Soft-CP map is Nested + identity Stage-2 (not `bind_nested`).
+    #[test]
+    fn bringup_accel_map_soft_cp_sid_bind() {
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        let sid = kit_cp_sid();
+        assert_eq!(
+            AccelDevice::map(
+                &mut d,
+                MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid)
+            ),
+            Err(HalError::NoMemoryCap)
+        );
+        assert_eq!(d.iommu.capture(sid).unwrap(), StreamState::Captured);
+        assert_eq!(
+            d.iommu
+                .translate_result(sid.raw(), PhysAddr(0x1000), None)
+                .unwrap_err(),
+            MapError::StreamAbort
+        );
+        assert_eq!(d.bind_stream(&mem_cap(), sid).unwrap(), StreamState::Bound);
+        let iova = d
+            .map_with_cap(
+                &mem_cap(),
+                MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid),
+            )
+            .unwrap();
+        assert!(iova.0 >= SOFT_SMMU_IOVA_BASE);
+        assert_ne!(iova.0, 0x1000);
+        let w = d.iommu.walk(sid, iova).unwrap();
+        assert_eq!(w.pa.0, 0x1000);
+        assert_eq!(w.ipa.0, 0x1000, "Soft-CP default map: identity Stage-2");
+        assert_eq!(w.config, SteConfig::Nested);
+        assert_eq!(
+            d.iommu
+                .translate_result(kit_wrong_sid().raw(), PhysAddr(0x1000), None)
+                .unwrap_err(),
+            MapError::StreamAbort
+        );
+        d.bind_stream(&mem_cap(), kit_iree_sid()).unwrap();
+        assert_eq!(
+            d.iommu
+                .translate_result(kit_iree_sid().raw(), PhysAddr(0x1000), None)
+                .unwrap_err(),
+            MapError::WrongStream
+        );
+        assert_eq!(d.iommu.resolve_ats(sid.raw(), iova).unwrap().0, 0x1000);
+        let dropped = d
+            .iommu
+            .invalidate(InvCmd::Ats {
+                sid,
+                iova: Some(iova),
+                len: 0x1000,
+            })
+            .unwrap();
+        assert_eq!(dropped, 1);
+        assert_eq!(d.iommu.walk(sid, iova).unwrap().pa.0, 0x1000);
+        let dump = d.iommu.dump();
+        assert_eq!(dump.stes[0].as_ref().unwrap().state, StreamState::Bound);
     }
 }
