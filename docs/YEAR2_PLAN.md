@@ -136,6 +136,9 @@ Kernel calendar items:
   half-year clock, a seL4 clone, or a reason to pull CXL / Laplacian.
 - Y2 manufacturing / bring-up playbook as a climax goal
   ([DILIGENCE.md](DILIGENCE.md) already exists).
+- ChipletFleet as a *calendar* item. A thin host-tested chiplet-affinity
+  stub (`ChipletTaskScope` on `two_chiplet_mesh`) is not a Year-1
+  pillar, not a partner ask, and not a Fleet claim.
 
 ### DEFER
 
@@ -280,7 +283,8 @@ above override what Kernel actually sequences. Criteria below are
    (not only Cut enum n≤8) for at least an n≤32 host-tested case.
    **Landed** as a prototype (`two_chiplet_mesh` n=16/32, Fiedler
    median-cut, `bind_laplacian_cut`). Not GiFt-Placer. Enumeration
-   stays at n≤8.
+   stays at n≤8. ChipletFleet / chiplet-local steal is **KILL** as a
+   calendar item (thin host stub only; not a partner ask).
 2. CXL region objects: `MemorySpace::CxlRegion` is a real typed place
    with pin/map path; coherent remote load still refused without
    UNIFIED; QEMU stub window OK — no claim of real CXL.mem.
@@ -332,7 +336,7 @@ for new qemu/smp targets.
 4. **Laplacian in sched:** n≤32 Fiedler placement + `bind_laplacian_cut`
    landed as a prototype. BIND / CrossCut semantics are frozen; do not
    grow `MAX_VERTS` past 32 without a wider mask type. Still not a
-   production eigensolve.
+   production eigensolve. ChipletFleet is KILL as a calendar item.
 5. **Cap CDT:** Touches every mint/derive path. The small revoke
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.

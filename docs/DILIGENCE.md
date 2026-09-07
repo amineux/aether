@@ -52,6 +52,7 @@ gaps:
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
+| ChipletFleet | KILL as calendar. Thin `ChipletTaskScope` host stub; not a Year-1 pillar, not a partner ask |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW + growable anon `SYS_MMAP` + identity teardown landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write; `USER_MMAP_BASE` `0x02C0_0000` first-fit 4 KiB). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands only; SoftNPU is Soft SMMU + HH. Not a secret slide, not Meltdown-complete, not POSIX `mmap` / `fork` |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
@@ -162,6 +163,8 @@ We will not claim:
 - Readiness for tape-out or safety certification
 - That the RISC-V or aarch64 port is a product-class second architecture
 - That `AffinityLaplacian` is a production eigensolver
+- That chiplet-local steal / `ChipletTaskScope` is ChipletFleet, a
+  Year-1 pillar, a partner ask, or unpublished Fleet numbers
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That `SoftCommandProcessor` is a silicon driver
 - That `IreeShapedCp` is an IREE runtime, a PJRT plugin, or a signed vendor

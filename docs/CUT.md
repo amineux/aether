@@ -44,6 +44,13 @@ same-side Fiedler hint. BIND is still required on the cap surface
 spatial/QoS object; the cut is the graph bipartition. Both are
 capabilities.
 
+Jobs may also carry a `ChipletTaskScope` (`Job.chiplet_scope`). That is a
+**thin exploration stub**, not a Year-1 pillar and **not a partner ask**:
+Strict (default) keeps scoped work on its die for `pick` / `steal`;
+Soft is a same-chiplet score + local-first steal preference. A bound
+SpectralCut still refuses `CrossCut` independently. Prototype only —
+not ChipletFleet-as-milestone, not GiFt-Placer.
+
 QEMU topology (static):
 
 ```
@@ -122,5 +129,8 @@ tests in `core/src/sparsify.rs` lock the matrix. No new syscall.
 
 - **AffinityLaplacian** — implemented (integer prototype, n≤32
   host-tested placement in sched). See above. Not GiFt-Placer.
+- **ChipletTaskScope** — thin exploration stub (chiplet affinity /
+  local steal on `two_chiplet_mesh`). KILL as a calendar milestone.
+  Prototype, not a partner ask.
 - **OperatorKernelHandle** — implemented (cap + Hodge bind/refuse).
 - **SparsifiedCollective** — implemented (integer milli threshold).

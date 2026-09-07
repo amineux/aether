@@ -3,13 +3,20 @@
 //! Traditional kernels enqueue GPU work as a device ioctl and hope. Aether
 //! places both `Thread` and `AccelWave` on the same fabric scheduler so
 //! priority, deadlines, bank affinity, and work-stealing apply uniformly.
+//!
+//! Chiplet-local work uses [`ChipletTaskScope`] as a **thin exploration
+//! stub** (not a Year-1 pillar, not a partner ask): pick/steal prefer
+//! (Soft) or require (Strict) the job's chiplet.
 
 use crate::color::{admit_wave, BankColor, ColorError};
 use crate::cut::{vert_bit, AffinityGraph, CutError, CutId, SpectralCut, MAX_CUTS_SCHED};
 use crate::laplacian::AffinityLaplacian;
 use crate::partition::{PartitionError, PartitionProfile};
 use crate::phase::Phase;
-use crate::types::{BankId, TileId, MAX_TILES};
+use crate::types::{BankId, ChipletId, TileId, MAX_TILES};
+
+/// Soft same-chiplet score when [`Job::chiplet_scope`] matches the tile.
+const CHIPLET_SCOPE_BONUS: i32 = 40;
 
 pub const MAX_JOBS: usize = 32;
 pub const N_PRIO: usize = 8;
@@ -26,6 +33,42 @@ pub enum TileKind {
 pub enum JobKind {
     Thread,
     AccelWave,
+}
+
+/// A job named for one chiplet's tiles.
+///
+/// Thin exploration stub: pick/steal consult this against the bound
+/// affinity graph. A bound [`SpectralCut`] still refuses
+/// [`CutError::CrossCut`] independently. Not a Year-1 pillar, not a
+/// partner ask, not ChipletFleet-as-milestone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChipletTaskScope {
+    pub chiplet: ChipletId,
+}
+
+impl ChipletTaskScope {
+    pub const fn new(chiplet: ChipletId) -> Self {
+        Self { chiplet }
+    }
+}
+
+/// How pick/steal treat [`Job::chiplet_scope`].
+///
+/// Unscoped jobs are unrestricted under both modes. Strict is the default:
+/// scoped work stays on its die. Soft is the optional preference-only
+/// path (same-chiplet score + steal local-first, still allowed to cross).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ChipletLocalPolicy {
+    /// Score hint only. Steal may still cross chiplets (local pass first).
+    Soft,
+    /// Scoped jobs run only on that chiplet. Unscoped jobs are unrestricted.
+    Strict,
+}
+
+impl Default for ChipletLocalPolicy {
+    fn default() -> Self {
+        Self::Strict
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -48,6 +91,8 @@ pub struct Job {
     pub fence_id: Option<u64>,
     /// Arena tenant/bank paint. `None` = unrestricted (legacy jobs).
     pub arena_color: Option<BankColor>,
+    /// Chiplet-task scope. `None` = unrestricted (legacy jobs).
+    pub chiplet_scope: Option<ChipletTaskScope>,
 }
 
 impl Job {
@@ -105,6 +150,7 @@ pub struct TileScheduler {
     fiedler_mask: u32,
     cuts: [Option<SpectralCut>; MAX_CUTS_SCHED],
     partition: Option<PartitionProfile>,
+    chiplet_policy: ChipletLocalPolicy,
 }
 
 impl TileScheduler {
@@ -119,11 +165,20 @@ impl TileScheduler {
             fiedler_mask: 0,
             cuts: [None; MAX_CUTS_SCHED],
             partition: None,
+            chiplet_policy: ChipletLocalPolicy::Strict,
         }
     }
 
     pub fn bind_partition(&mut self, p: PartitionProfile) {
         self.partition = Some(p);
+    }
+
+    pub fn set_chiplet_policy(&mut self, policy: ChipletLocalPolicy) {
+        self.chiplet_policy = policy;
+    }
+
+    pub fn chiplet_policy(&self) -> ChipletLocalPolicy {
+        self.chiplet_policy
     }
 
     pub fn set_graph(&mut self, g: AffinityGraph) {
@@ -252,6 +307,9 @@ impl TileScheduler {
         if self.place_ok(job, tile.id).is_err() {
             return i32::MIN;
         }
+        if !self.scope_ok(job, tile.id) {
+            return i32::MIN;
+        }
         let mut s = 1000 - job.effective_prio(self.now) as i32 * 100;
         if job.tile_hint == Some(tile.id) {
             s += 50;
@@ -260,6 +318,7 @@ impl TileScheduler {
             s += 25;
         }
         s += self.laplacian_bonus(job, tile);
+        s += self.chiplet_scope_bonus(job, tile);
         if let Some(dl) = job.deadline_ticks {
             if dl <= self.now {
                 s += 80;
@@ -292,6 +351,54 @@ impl TileScheduler {
         }
     }
 
+    fn chiplet_of(&self, tile: TileId) -> Option<ChipletId> {
+        self.graph.chiplet_of_tile(tile).map(ChipletId)
+    }
+
+    fn same_chiplet(&self, a: TileId, b: TileId) -> Option<bool> {
+        match (self.chiplet_of(a), self.chiplet_of(b)) {
+            (Some(x), Some(y)) => Some(x == y),
+            _ => None,
+        }
+    }
+
+    /// Without a bound graph, scope cannot be enforced (fail-open).
+    fn scope_ok(&self, job: &Job, tile: TileId) -> bool {
+        let Some(scope) = job.chiplet_scope else {
+            return true;
+        };
+        match self.chiplet_of(tile) {
+            None => true,
+            Some(c) => match self.chiplet_policy {
+                ChipletLocalPolicy::Soft => true,
+                ChipletLocalPolicy::Strict => c == scope.chiplet,
+            },
+        }
+    }
+
+    /// Eligible in the chiplet-local steal pass: unscoped, unknown topology,
+    /// or a scope that matches the thief.
+    fn job_local_to(&self, job: &Job, thief: TileId) -> bool {
+        match (job.chiplet_scope, self.chiplet_of(thief)) {
+            (None, _) => true,
+            (Some(_), None) => true,
+            (Some(scope), Some(c)) => scope.chiplet == c,
+        }
+    }
+
+    fn chiplet_scope_bonus(&self, job: &Job, tile: &Tile) -> i32 {
+        if !self.scope_ok(job, tile.id) {
+            return 0;
+        }
+        let Some(scope) = job.chiplet_scope else {
+            return 0;
+        };
+        match self.chiplet_of(tile.id) {
+            Some(c) if c == scope.chiplet => CHIPLET_SCOPE_BONUS,
+            _ => 0,
+        }
+    }
+
     /// Pick the best ready job for `tile`.
     pub fn pick(&mut self, tile: TileId) -> Option<Job> {
         let t = *self.tile(tile)?;
@@ -313,40 +420,63 @@ impl TileScheduler {
 
     /// Work-steal: take a compatible job that is *not* pinned to another tile
     /// and is not higher-priority than what the victim would keep.
-    /// We steal the *lowest* scoring compatible job (classic WS).
+    ///
+    /// Job pass 1: Chiplet-task-local / unscoped work. Job pass 2: remote
+    /// scoped work (Soft only — Strict already scores it `i32::MIN`).
+    /// Inside a pass, same-chiplet victims are visited first. Classic WS
+    /// still takes the *lowest* scoring job inside those filters.
     pub fn steal(&mut self, thief: TileId) -> Option<Job> {
         let t = *self.tile(thief)?;
         let n = MAX_TILES;
-        for k in 0..n {
-            let idx = (self.steal_cursor + k) % n;
-            let Some(victim) = self.tiles[idx] else {
-                continue;
-            };
-            if victim.id == thief {
-                continue;
-            }
-            if victim.kind != t.kind {
-                continue;
-            }
-            let mut worst: Option<(usize, i32)> = None;
-            for (i, job) in self.ready.iter().enumerate() {
-                let Some(job) = job else { continue };
-                if job.tile_hint == Some(victim.id) {
-                    continue; // hard affinity — do not steal
+        for job_local_pass in [true, false] {
+            for victim_local_pass in [true, false] {
+                for k in 0..n {
+                    let idx = (self.steal_cursor + k) % n;
+                    let Some(victim) = self.tiles[idx] else {
+                        continue;
+                    };
+                    if victim.id == thief {
+                        continue;
+                    }
+                    if victim.kind != t.kind {
+                        continue;
+                    }
+                    match self.same_chiplet(thief, victim.id) {
+                        None => {
+                            if !victim_local_pass {
+                                continue;
+                            }
+                        }
+                        Some(same) => {
+                            if same != victim_local_pass {
+                                continue;
+                            }
+                        }
+                    }
+                    let mut worst: Option<(usize, i32)> = None;
+                    for (i, job) in self.ready.iter().enumerate() {
+                        let Some(job) = job else { continue };
+                        if job.tile_hint == Some(victim.id) {
+                            continue; // hard affinity — do not steal
+                        }
+                        if self.job_local_to(job, thief) != job_local_pass {
+                            continue;
+                        }
+                        let s = self.score(job, &t);
+                        if s == i32::MIN {
+                            continue;
+                        }
+                        match worst {
+                            None => worst = Some((i, s)),
+                            Some((_, ws)) if s < ws => worst = Some((i, s)),
+                            _ => {}
+                        }
+                    }
+                    if let Some((i, _)) = worst {
+                        self.steal_cursor = (idx + 1) % n;
+                        return self.ready[i].take();
+                    }
                 }
-                let s = self.score(job, &t);
-                if s == i32::MIN {
-                    continue;
-                }
-                match worst {
-                    None => worst = Some((i, s)),
-                    Some((_, ws)) if s < ws => worst = Some((i, s)),
-                    _ => {}
-                }
-            }
-            if let Some((i, _)) = worst {
-                self.steal_cursor = (idx + 1) % n;
-                return self.ready[i].take();
             }
         }
         self.steal_cursor = (self.steal_cursor + 1) % n;
@@ -413,6 +543,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         assert!(s.pick(TileId(0)).is_none());
         assert!(s.pick(TileId(2)).is_some());
@@ -434,6 +565,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -448,6 +580,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.priority, 1);
@@ -470,6 +603,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         s.enqueue(Job {
             id: 0,
@@ -484,6 +618,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.deadline_ticks, Some(100));
@@ -505,6 +640,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         s.enqueue(Job {
             id: 11,
@@ -519,6 +655,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         let j = s.pick(TileId(0)).unwrap();
         assert_eq!(j.id, 11);
@@ -541,6 +678,7 @@ mod tests {
                 partition_id: None,
                 fence_id: None,
                 arena_color: None,
+                chiplet_scope: None,
             });
         }
         let (c0, c1) = s.drive_two_cpu_tiles(TileId(0), TileId(1));
@@ -568,6 +706,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         // tile 1 has nothing local; steals from the ready pool
         let j = s.steal(TileId(1)).unwrap();
@@ -590,6 +729,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         assert!(s.steal(TileId(1)).is_none());
         assert!(s.pick(TileId(0)).is_some());
@@ -614,6 +754,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         // tile 1 is chiplet 1; bank 0 is chiplet 0 → CrossCut
         assert!(s.pick(TileId(1)).is_none());
@@ -650,6 +791,7 @@ mod tests {
             partition_id: Some(1),
             fence_id: Some(1),
             arena_color: None,
+            chiplet_scope: None,
         });
         // tile 1 is not in the slice mask
         assert!(s.pick(TileId(1)).is_none());
@@ -672,6 +814,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         });
         assert!(s.steal(TileId(2)).is_none());
     }
@@ -692,6 +835,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: Some(BankColor::new(crate::types::TenantId(1), BankId(1))),
+            chiplet_scope: None,
         });
         // NPU tile 2 lives on bank 0; arena color is bank 1.
         assert!(s.pick(TileId(2)).is_none());
@@ -714,6 +858,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: Some(BankColor::new(crate::types::TenantId(1), BankId(1))),
+            chiplet_scope: None,
         });
         let j = s.pick(TileId(2)).unwrap();
         assert_eq!(j.id, 21);
@@ -754,6 +899,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: Some(painted.color),
+            chiplet_scope: None,
         });
         assert_eq!(s.pick(TileId(2)).unwrap().id, 22);
     }
@@ -786,6 +932,7 @@ mod tests {
             partition_id: None,
             fence_id: None,
             arena_color: None,
+            chiplet_scope: None,
         }
     }
 
@@ -834,5 +981,113 @@ mod tests {
         assert_eq!(j.id, 11);
         let j = s.pick(t1).unwrap();
         assert_eq!(j.id, 10);
+    }
+
+    fn scoped_thread(id: u32, bank: BankId, cut: Option<u32>, chiplet: ChipletId) -> Job {
+        Job {
+            chiplet_scope: Some(ChipletTaskScope::new(chiplet)),
+            ..thread_job(id, bank, cut)
+        }
+    }
+
+    /// Two CPU tiles per chiplet so steal has a same-die victim.
+    fn mesh_sched_pair(
+        n: usize,
+    ) -> (
+        TileScheduler,
+        crate::cut::SpectralCut,
+        TileId,
+        TileId,
+        TileId,
+        TileId,
+    ) {
+        let g = crate::cut::AffinityGraph::two_chiplet_mesh(n);
+        let t00 = g.nth_tile_on(0, 0).unwrap();
+        let t01 = g.nth_tile_on(0, 1).unwrap();
+        let t10 = g.nth_tile_on(1, 0).unwrap();
+        let t11 = g.nth_tile_on(1, 1).unwrap();
+        let mut s = TileScheduler::new();
+        s.add_tile(t00, TileKind::Cpu, BankId(0));
+        s.add_tile(t01, TileKind::Cpu, BankId(0));
+        s.add_tile(t10, TileKind::Cpu, BankId(1));
+        s.add_tile(t11, TileKind::Cpu, BankId(1));
+        s.set_graph(g);
+        let cut = s
+            .bind_laplacian_cut(crate::cut::CutId(n as u32), 400)
+            .unwrap();
+        (s, cut, t00, t01, t10, t11)
+    }
+
+    fn assert_chiplet_local_strict(n: usize) {
+        let (mut s, cut, t00, t01, t10, _t11) = mesh_sched_pair(n);
+        assert_eq!(s.chiplet_policy(), ChipletLocalPolicy::Strict);
+        let c0 = crate::cut::AffinityGraph::mesh_chiplet0_mask(n);
+        assert!(cut.left == c0 || cut.right == c0);
+        // Scope only (no cut_id): CrossCut is not why remote pick fails.
+        s.enqueue(scoped_thread(20, BankId(0), None, ChipletId(0)));
+        assert!(
+            s.pick(t10).is_none(),
+            "n={n} Strict Chiplet-task stays on die"
+        );
+        assert!(s.steal(t10).is_none(), "n={n} Strict refuse remote steal");
+        let stolen = s.steal(t01).expect("same-chiplet steal");
+        assert_eq!(stolen.id, 20);
+        s.enqueue(scoped_thread(21, BankId(0), None, ChipletId(0)));
+        assert_eq!(s.pick(t00).unwrap().id, 21);
+    }
+
+    #[test]
+    fn chiplet_task_scope_n16_strict_pick_and_steal() {
+        assert_chiplet_local_strict(16);
+    }
+
+    #[test]
+    fn chiplet_task_scope_n32_strict_pick_and_steal() {
+        assert_chiplet_local_strict(32);
+    }
+
+    #[test]
+    fn chiplet_local_steal_prefers_unscoped_before_remote_scope() {
+        let (mut s, _cut, _t00, _t01, t10, _t11) = mesh_sched_pair(16);
+        s.set_chiplet_policy(ChipletLocalPolicy::Soft);
+        s.enqueue(scoped_thread(30, BankId(0), None, ChipletId(0)));
+        let mut remote_ok = thread_job(31, BankId(1), None);
+        remote_ok.priority = 7;
+        s.enqueue(remote_ok);
+        // Soft: chiplet-0 scoped job is stealable on chiplet 1, but the
+        // local-first pass takes the unscoped (bank1) job first.
+        let j = s.steal(t10).unwrap();
+        assert_eq!(j.id, 31);
+        let j = s.steal(t10).unwrap();
+        assert_eq!(j.id, 30);
+    }
+
+    #[test]
+    fn chiplet_scope_soft_pick_prefers_matching_die() {
+        let g = crate::cut::AffinityGraph::two_chiplet_mesh(16);
+        let t0 = g.first_tile_on(0).unwrap();
+        let t1 = g.first_tile_on(1).unwrap();
+        let mut s = TileScheduler::new();
+        s.add_tile(t0, TileKind::Cpu, BankId(0));
+        s.add_tile(t1, TileKind::Cpu, BankId(1));
+        s.set_graph(g);
+        s.set_chiplet_policy(ChipletLocalPolicy::Soft);
+        s.enqueue(scoped_thread(40, BankId(1), None, ChipletId(1)));
+        s.enqueue(scoped_thread(41, BankId(0), None, ChipletId(0)));
+        assert_eq!(s.pick(t0).unwrap().id, 41);
+        assert_eq!(s.pick(t1).unwrap().id, 40);
+    }
+
+    #[test]
+    fn unscoped_jobs_still_steal_across_chiplets() {
+        let g = crate::cut::AffinityGraph::two_chiplet_mesh(16);
+        let t00 = g.nth_tile_on(0, 0).unwrap();
+        let t10 = g.nth_tile_on(1, 0).unwrap();
+        let mut s = TileScheduler::new();
+        s.add_tile(t00, TileKind::Cpu, BankId(0));
+        s.add_tile(t10, TileKind::Cpu, BankId(1));
+        s.set_graph(g);
+        s.enqueue(thread_job(51, BankId(0), None));
+        assert_eq!(s.steal(t10).unwrap().id, 51);
     }
 }

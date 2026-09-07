@@ -345,6 +345,10 @@ production package solver, **not** an EDA replacement:
 - Complexity (dense integer): iterate O(iters·n²), commute O(n³).
   No libm. No new syscall. AccelDevice / qemu arch CI unchanged.
 
+Chiplet-local steal (`ChipletTaskScope`) is a **thin exploration stub**
+on the same mesh tests — **KILL** as a calendar milestone, not a Year-1
+pillar, not a partner ask. See [YEAR2_PLAN.md](YEAR2_PLAN.md).
+
 ## Higher-half kernel map (this cut)
 
 Landed as a **documented subset**, not KASLR, not KPTI, not PCID,
@@ -775,6 +779,7 @@ Search for `// STUB:` / `STUB` :
 | aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | **done** as EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). GICv3 / virtio-mmio still stub |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** as U-mode + PLIC software doorbell (path B AccelMmio; UART THRE → source 10). Real virtio-mmio still stub |
 | Production Fiedler | `core/src/laplacian.rs` | **done** as a prototype (n≤32 host-tested median-cut + sched bind). Not GiFt-Placer; enum stays n≤8 |
+| ChipletFleet | `core/src/sched.rs` | **KILL as calendar.** Thin host stub (`ChipletTaskScope` affinity / steal). Not a Year-1 pillar, not a partner ask |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
 | Real CXL.mem window | `MemorySpace::CxlRegion` | QEMU stub place today; no coherent load |
