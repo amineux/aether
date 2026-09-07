@@ -6,7 +6,7 @@ use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
 use aether_drivers::softnpu::KernelDma;
-use aether_drivers::SoftCommandProcessor;
+use aether_drivers::{IreeShapedCp, SoftCommandProcessor};
 use aether_hal::AccelDevice;
 
 use crate::arch::irq;
@@ -82,6 +82,24 @@ pub fn run_kernel_selfcheck() {
             }
             Err(_) => {
                 write_str("[accel] SoftCommandProcessor probe FAIL");
+                console::nl();
+            }
+        }
+    }
+
+    {
+        let mut hal = IreeShapedCp::new(KernelDma);
+        match hal.probe() {
+            Ok(info) => {
+                write_str("[accel] IreeShapedCp probe backend=");
+                write_u64(info.backend as u64);
+                write_str(" ");
+                write_str(hal.name());
+                write_str(" (IREE HAL packet; not a vendor)");
+                console::nl();
+            }
+            Err(_) => {
+                write_str("[accel] IreeShapedCp probe FAIL");
                 console::nl();
             }
         }

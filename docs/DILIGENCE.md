@@ -22,6 +22,7 @@ active track the site must match.
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types only; no graph IR | `core/src/abi.rs`, `docs/ABI.md` |
@@ -67,11 +68,12 @@ doorbell). aarch64 now has the same syscall numbers over
 ## How a silicon team plugs `AccelDevice`
 
 ```text
-1. PCI / MMIO / NoC probe. Fill AccelInfo { backend: 3 (or your id),
+1. PCI / MMIO / NoC probe. Fill AccelInfo { backend: 4 (or your id),
    vendor, ... }. Do not reuse 0 (SoftNPU), 1 (virtqueue SoftNPU),
-   or 2 (PartnerNpuStub).
+   2 (PartnerNpuStub), 3 (Soft-CP), or 4 (IreeShapedCp).
 2. Implement aether_hal::AccelDevice { probe, submit, poll, map }.
-   SoftCommandProcessor is the in-tree worked example.
+   SoftCommandProcessor is the Aether-native packet example.
+   IreeShapedCp is the partner-shaped IREE HAL packet example.
 3. map(): bind_stream + pin from a Memory cap walk. Refuse anything
    that did not come from the cap table. Refuse a silent remote
    (place, local) — aether_hal::map_fabric already does.
@@ -80,6 +82,7 @@ doorbell). aarch64 now has the same syscall numbers over
    on silicon; do not treat this as one.
 4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
    uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId.
+   IreeShapedCp uses the 96-byte IreeHalCmd (IREE HAL nouns; not AccelOp).
    Doorbell. Do not execute in the syscall.
 5. IRQ: AccelDevice::poll, retire the job's fence seq through
    `Timeline::complete` / `retire_into`, fabric REPLY to
@@ -93,8 +96,8 @@ blob (`abi::Executable`). Aether admits the job against a partition,
 a SpectralCut, a bank color, and a fence. It does not fuse a graph.
 
 Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md). Start from
-`SoftCommandProcessor`. `PartnerNpuStub` is a leftover no-op sketch,
-not a partnership and not this path.
+`SoftCommandProcessor` or `IreeShapedCp`. `PartnerNpuStub` is a leftover
+no-op sketch, not a partnership and not this path.
 
 ## Security invariants (what we will defend)
 
@@ -160,6 +163,7 @@ We will not claim:
 - That `AffinityLaplacian` is a production eigensolver
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That `SoftCommandProcessor` is a silicon driver
+- That `IreeShapedCp` is an IREE runtime, a PJRT plugin, or a signed vendor
 - That `PartnerNpuStub` is a design win
 
 ## Design-win narrative

@@ -32,6 +32,9 @@ pub const ACCEL_BACKEND_VIRTIO_SOFTNPU: u8 = 1;
 pub const ACCEL_BACKEND_PARTNER_STUB: u8 = 2;
 /// Software command processor: packed packet + Soft SMMU + IRQ/fence.
 pub const ACCEL_BACKEND_SOFT_CP: u8 = 3;
+/// IREE HAL-shaped command processor: public Device/Buffer/Executable/Event
+/// nouns packed into a frozen dispatch packet. Not a vendor, not Soft-CP 2.0.
+pub const ACCEL_BACKEND_IREE_SHAPED: u8 = 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HalError {

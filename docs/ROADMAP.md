@@ -30,6 +30,7 @@ product kernel.
 | Arena tenant/bank color; Compute refuse + Exchange/transfer | **done** |
 | Partner `AccelDevice` sketch (`PartnerNpuStub`) | **done** (no-op; not a partnership; not a CP path) |
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + Soft SMMU SID + IRQ/fence; host tests) |
+| Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2`; not a signed vendor) |
 
 ## Month 5–6 (this cut): Portability & partners
 
@@ -58,6 +59,10 @@ Honest limits of this cut:
 - SoftCommandProcessor is a **software CP**, not a silicon driver. It
   uses Soft SMMU (`StreamId` + bind/abort). QEMU still demos SoftNPU.
   `PartnerNpuStub` is unchanged.
+- `IreeShapedCp` (`backend = 4`) is the **partner-shaped HAL spine**:
+  an IREE HAL dispatch packet (public Device/Buffer/Executable/Event
+  nouns), not Soft-CP 2.0 and not a signed vendor. SoftNPU path B and
+  Soft-CP stay.
 
 ## Year-2: aarch64 thin HAL (this cut)
 
@@ -789,7 +794,8 @@ kernel thread queue sleeps.
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
    (GPA in the job wire; Soft SMMU stays the cap table) is still
-   open. Soft-CP already covers a second AccelDevice path on the host.
+   open. Soft-CP (`backend = 3`) and `IreeShapedCp` (`backend = 4`)
+   already cover extra AccelDevice paths on the host.
 2. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
    ATS-shaped invalidate in software. Program a real SMMU context / PT
    walk. Do not claim the software table is silicon. Partner silicon
@@ -818,6 +824,7 @@ kernel thread queue sleeps.
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06):
 
 - **Active (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
+  IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),
   SMP smoke, per-task PML4 + SMEP/SMAP, a minimal cap CDT / revoke,
   an aarch64 thin HAL, Multiboot mmap → frames,
   OperatorKernelHandle, SparsifiedCollective, the hardware-shaped
@@ -839,7 +846,8 @@ kernel thread queue sleeps.
   killed *as a calendar item*; the small revoke slice is unscheduled
   Y2H1 security work, not a SpecForge clock.
 
-Soft SMMU (PR #7), SoftCommandProcessor (PR #8), SMP smoke (PR #9),
+Soft SMMU (PR #7), SoftCommandProcessor (PR #8), IreeShapedCp
+  (this cut; IREE HAL packet, not a vendor), SMP smoke (PR #9),
 per-task PML4 / SMEP / SMAP (PR #10), cap CDT / revoke (PR #12), the
   aarch64 thin HAL (PR #13), Multiboot mmap (PR #14),
   OperatorKernelHandle (PR #15), SparsifiedCollective (PR #16),
@@ -880,7 +888,8 @@ match this active track and [DILIGENCE.md](DILIGENCE.md) non-claims
 - That the RISC-V or aarch64 port is a product-class second architecture
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
-`AccelJobDesc`, and `SoftCommandProcessor` (`CpCmd` in [ACCEL.md](ACCEL.md)),
+`AccelJobDesc`, and either `SoftCommandProcessor` (`CpCmd`) or
+`IreeShapedCp` (`IreeHalCmd` — IREE HAL nouns) in [ACCEL.md](ACCEL.md),
 then tell us which opcode/dtype/route fields your command processor
 already has. `PartnerNpuStub` is a leftover no-op sketch, not a starting
 point. The rest of Aether is meant to stay out of your way.

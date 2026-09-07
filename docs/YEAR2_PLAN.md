@@ -22,7 +22,12 @@ revision 2026-09-06. Filed on main via PR.
 only — do not schedule Kernel work against it. Soft SMMU (PR #7;
 deepened as STE→CD→S1/S2 + ATS invalidate, still not hardware) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are
-**done** as software models. SMP smoke (INIT-SIPI + per-CPU `gs` +
+**done** as software models. `IreeShapedCp` (`backend = 4`) is **done**
+as the partner-shaped HAL spine: a frozen IREE HAL dispatch packet
+(public Device / Buffer / Executable / Event nouns from
+`iree-org/iree` headers), Soft SMMU `ssid = 2`, IRQ/fence. It is **not**
+Soft-CP 2.0, **not** `PartnerNpuStub` enrichment, **not** a signed
+vendor. SoftNPU path B and Soft-CP stay. SMP smoke (INIT-SIPI + per-CPU `gs` +
 two-hart work-steal) is **done** as a QEMU `-smp 2` slice. SpecForge
 virtio path B (in-kernel BAR canonical + golden MMIO trace) is
 **done**; path A landed as an optional QEMU device model
@@ -90,6 +95,10 @@ documented subset (seed from virtio-blk or embedded blobs; loader
 `open`/`read`; not POSIX; no new syscall). x86 virtio-blk → ramfs
 (legacy PCI I/O + AETHFS01; `make qemu-blk-ci`) is **done** as the
 follow-up; `make qemu-ci` stays on the embedded fallback.
+`IreeShapedCp` (`backend = 4`) is **done** as the partner-shaped HAL
+spine (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU
+`ssid = 2`; host tests + boot probe). Not a signed vendor. SoftNPU
+path B and Soft-CP (`backend = 3`) are unchanged.
 
 ### KEEP / ACTIVE Y1
 
@@ -102,6 +111,10 @@ follow-up; `make qemu-ci` stays on the embedded fallback.
    **concrete command packet** + fence/IRQ complete (software model OK).
    Distinct backend id; probe/submit/poll/map contract tests. This is
    **not** `PartnerNpuStub` enrichment theater.
+   **Landed** as Soft-CP (`backend = 3`, Aether-native `CpCmd`) and as
+   the partner-shaped spine `IreeShapedCp` (`backend = 4`, IREE HAL
+   `IreeHalCmd`). The latter is a public HAL noun mapping, not a signed
+   vendor.
 3. Keep `AccelDevice` / `AccelJobDesc` ABI stable. New surface = new
    numbers or caps bits only after [ABI.md](ABI.md) amendment in the
    same PR. Do not reshape `UserAccelJob` wire without a version bump
@@ -183,6 +196,7 @@ After AccelDevice bites a real-shaped path — not before:
 | --- | --- |
 | Soft SMMU SIDs | `core/src/iommu.rs`, `drivers/src/{mmio,softnpu,fakecp}.rs`, tests under `core/` |
 | Second software CP | `hal/`, `drivers/` (new backend, not partner-stub paint), `docs/ACCEL.md` |
+| Partner-shaped IREE HAL CP | `drivers/src/ireecp.rs`, `hal/src/lib.rs`, `docs/ACCEL.md` (opcode/packet ADR) |
 | Cross-cutting | this file, ROADMAP status rows, CI only if a new host test target appears |
 | SMP smoke | `kernel/src/arch/{irq,x86_64/{smp,cpu,apic,idt}}.rs`, `Makefile`, `qemu-smp-ci` |
 | Per-task PML4 | `kernel/src/{mm,task,elfload}.rs`, `core/src/aspace.rs`, `user/probe/`, `qemu-ci` |
