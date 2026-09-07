@@ -1110,6 +1110,11 @@ section.band + section.band {
   box-shadow: 0 0 0 4px rgba(106, 168, 255, 0.1);
 }
 
+.tl.next .tl-dot {
+  border-color: var(--amber);
+  box-shadow: 0 0 0 4px rgba(240, 195, 106, 0.12);
+}
+
 .tl-card {
   padding: 20px 22px 18px;
   border-radius: 18px;
@@ -1122,6 +1127,11 @@ section.band + section.band {
   box-shadow: 0 0 0 1px rgba(61, 220, 151, 0.08), 0 16px 40px rgba(0, 0, 0, 0.25);
 }
 
+.tl.next .tl-card {
+  border-color: rgba(240, 195, 106, 0.32);
+  box-shadow: 0 0 0 1px rgba(240, 195, 106, 0.08), 0 16px 40px rgba(0, 0, 0, 0.25);
+}
+
 .tl-when {
   font-family: var(--mono);
   font-size: 11px;
@@ -1132,6 +1142,10 @@ section.band + section.band {
 
 .tl.future .tl-when {
   color: var(--blue);
+}
+
+.tl.next .tl-when {
+  color: var(--amber);
 }
 
 .tl-card h3 {
