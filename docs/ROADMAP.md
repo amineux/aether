@@ -169,10 +169,8 @@ CNode/MDB and **not** a proof claim:
 - `revoke(parent)` empties the lineage in that table.
   `revoke_in(parent, others)` empties grant-children in named tables.
 - Host tests: mint child → revoke parent → child unusable; unrelated
-  caps live. Boot demo + QEMU `[cdt] revoke descendants ok`.
-  Property / exhaustive cases in `core/src/caps_props.rs` lock
-  `P-Revoke`, `P-Unrelated`, `P-Named`, `P-Unforge`, `P-Monotone`
-  ([SECURITY.md](SECURITY.md)). Tests, not a proof.
+  caps live. Property cases in `core/src/caps_props.rs`. Boot demo +
+  QEMU `[cdt] revoke descendants ok`. Tests, not a proof.
 - No new syscall (0–8 frozen). Kernel World still has one shared
   `CapTable`.
 

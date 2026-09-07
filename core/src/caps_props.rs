@@ -1,8 +1,6 @@
 //! CapTable CDT properties: exhaustive small cases + a seeded random walk.
 //!
-//! These are tests, not a seL4 proof and not an MDB. Identifiers `P-Revoke`,
-//! `P-Unrelated`, `P-Named`, `P-Unforge`, and `P-Monotone` match
-//! `docs/SECURITY.md`.
+//! Tests, not a proof. Identifiers match `docs/SECURITY.md`.
 
 use super::*;
 
@@ -353,8 +351,7 @@ fn p_named_grant_move_is_not_a_derivation_edge() {
     assert_eq!(ta.revoke(child).unwrap_err(), CapError::EmptySlot);
     assert_live_mem(&ta, root);
     assert!(tb.require(moved, CapKind::Memory, CapRights::READ).is_ok());
-    // The moved cap kept the parent edge to root, so revoke_in of root
-    // *does* collect it. That is parent-pointer revoke, not seL4 MDB move.
+    // Moved child still points at root, so revoke_in(root) collects it.
     ta.revoke_in(root, &mut [&mut tb]).unwrap();
     assert_emptied(&tb, moved);
 }

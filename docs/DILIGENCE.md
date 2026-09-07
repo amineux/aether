@@ -112,8 +112,7 @@ Implemented and host-tested ([SECURITY.md](SECURITY.md)):
 10. Compute waves with a foreign bank color are refused; Exchange may transfer.
 11. Revoke of a parent empties derived children in that table;
     `revoke_in` empties GRANT-children in named tables. Unrelated caps live.
-    Property tests in `core/src/caps_props.rs` (`P-Revoke`, `P-Unrelated`,
-    `P-Named`, `P-Unforge`, `P-Monotone`) lock this; they are not a seL4 proof.
+    Host property tests in `core/src/caps_props.rs` lock this (not a proof).
 
 Not enforced in hardware yet: SMMU stream IDs, RISC-V virtio-mmio,
 aarch64 GICv3 / virtio-mmio, measured boot. The RISC-V PLIC is programmed and the

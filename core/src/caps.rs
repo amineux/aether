@@ -8,9 +8,8 @@
 //! **no communication or DMA exists outside a capability**.
 //!
 //! Derivation edges (`parent` / `cdt`) let `revoke` empty descendants. This is
-//! a small capability derivation tree, not a seL4 CNode/MDB and not a proof.
-//! Host property tests (`caps_props.rs`) lock mint → derive → `revoke_in`
-//! (named tables only), unrelated survival, and unforgeability.
+//! a small parent pointer, not a proof. Host property tests (`caps_props.rs`)
+//! lock mint → derive → `revoke_in` (named tables only).
 
 use crate::types::TenantId;
 
@@ -632,7 +631,7 @@ mod tests {
     }
 }
 
-/// Property / exhaustive CDT tests (not a seL4 proof). See `docs/SECURITY.md`.
+/// Property / exhaustive CDT tests. See `docs/SECURITY.md`.
 #[cfg(test)]
 #[path = "caps_props.rs"]
 mod caps_props;

@@ -48,52 +48,33 @@ Each `Capability` stores:
 10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
     `revoke(parent)` empties that lineage in the same table;
     `revoke_in(parent, others)` empties grant-children in the named
-    tables too. Unrelated caps stay. This is a small derivation tree,
-    not a seL4 CNode/MDB and not a proof. Locked by property tests
-    `P-Revoke` / `P-Unrelated` / `P-Named` below.
+    tables too. Unrelated caps stay.
 
 This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
-seL4-level proofs.
+seL4-level proofs. Formal caps are not a calendar item.
 
-Host tests in `core/src/caps.rs` (directed cases), `core/src/caps_props.rs`
-(property / exhaustive CDT), and `core/src/demo.rs` lock these down.
+Host tests in `core/src/caps.rs`, `core/src/caps_props.rs`, and
+`core/src/demo.rs` lock the statements below.
 
-## CDT properties (tested, not proved)
+## CDT properties (host tests, not a proof)
 
-seL4's capability derivation tree is an MDB plus a machine-checked
-proof (Klein et al., SOSP 2009). Aether keeps a *small parent pointer*
-(`CdtNode` = table owner + mint generation) and locks the same *kind*
-of statements with host tests. That is an analogy for a design review,
-**not** a proof, **not** a CNode, and **not** an MDB. There is no
-Isabelle/HOL spec; CI failing is the falsifier.
+Aether stores a parent pointer (`CdtNode` = table owner + mint
+generation). The tests in `core/src/caps_props.rs` are property /
+exhaustive cases on that pointer. They are **not** a proof, **not** a
+syscall, and **not** a reason to schedule a formal cap kernel.
 
-| Id | Statement | What would falsify it |
-| --- | --- | --- |
-| **P-Revoke** | Mint a root, `derive` a chain, optionally GRANT-copy (and derive further in the dest table). `revoke_in(root, named tables)` empties every cap whose parent-chain reaches the root, in this table and in every named table. | A descendant still `lookup`-able in a named table. |
-| **P-Unrelated** | A cap whose lineage does not reach the revoked node stays live (`require` succeeds). | A sentinel Memory/Endpoint emptied by someone else's revoke. |
-| **P-Named** | GRANT-copy across tables is collected **only** when the dest table is passed to `revoke_in`. `revoke` (no others) leaves the foreign child live. GRANT-move of a root relocates the slot and does **not** walk descendants of the vacated CPtr. | A GRANT-child emptied without its table being named, or a leftover child of a moved root disappearing because the dest was revoked. |
-| **P-Unforge** | A `CPtr` is a slot index in *one* table. `mint` rejects a tenant field that is not the table owner. Table B never answers table A's `CPtr` with A's capability record (empty slot, or B's own cap at that index). GRANT-copy retargets `tenant` to the dest owner. | Cross-tenant `mint` succeeding, or `tb.lookup(a's_cptr)` yielding A's `CdtNode`. |
-| **P-Monotone** | `derive` / GRANT-copy / GRANT-move refuse rights that are not a subset (`WouldEscalate`). GRANT is required to derive or transfer. | A child with a bit the parent did not hold, or a no-GRANT source that still copies. |
+| Id | Statement |
+| --- | --- |
+| **P-Revoke** | mint → derive (optional GRANT-copy) → `revoke_in(root, named tables)` empties descendants in those tables |
+| **P-Unrelated** | a cap outside that lineage stays live |
+| **P-Named** | GRANT-copy across tables is collected only if the dest table is passed to `revoke_in`; `revoke` alone leaves the foreign child live |
+| **P-Unforge** | `mint` rejects a foreign tenant; a `CPtr` is a slot in *one* table |
+| **P-Monotone** | derive / GRANT may only shrink rights; GRANT is required |
 
-Directed cases live next to the implementation; exhaustive small trees
-(depth ≤ 3, branch ≤ 2) and a seeded random walk (mint / derive /
-GRANT-copy / `revoke` / `revoke_in` on two tables) live in
-`core/src/caps_props.rs`. No new syscall: revoke is a kernel-internal
-`CapTable` method. Syscall numbers 0–8 stay frozen.
-
-### Non-claims (do not cargo-cult seL4 here)
-
-- No machine-checked spec. The table above is prose + tests.
-- No seL4 MDB (no doubly-linked derivation list, no `capRevoke` syscall).
-- `revoke_in` is an explicit walk of *named* tables, not a kernel-global
-  CNode broadcast. A GRANT-child in a table the caller did not pass
-  survives — that is `P-Named`, not a bug.
-- GRANT-move relocates a slot. Descendants of a moved *root* keep the
-  old `CdtNode` and are not collected by revoking the dest copy.
-- Kernel `mint` is trusted: a kernel caller that stuffs a fake `parent`
-  on `Capability` is outside this test surface. Userspace never holds
-  a `Capability` record.
+`revoke_in` walks tables the caller names. A GRANT-child in a table
+that was not passed survives — that is `P-Named`, not a missing global
+walk. No `SYS_REVOKE`. Syscall numbers 0–8 stay frozen.
 
 ## What we do *not* yet enforce
 
