@@ -9,7 +9,6 @@ use aether_core::caps::Capability;
 use aether_core::iommu::{IommuMap, MapRequest};
 use aether_core::space::Place;
 use aether_core::types::PhysAddr;
-use aether_core::window::{MappedWindow, TypedWindow};
 use aether_hal::{AccelDevice, AccelInfo, HalError};
 
 /// Command packet a partner command processor would ingest.
@@ -95,22 +94,6 @@ impl PartnerNpuStub {
             _ => HalError::Fault,
         })?;
         Ok(region.iova)
-    }
-
-    /// Pin a typed window (SID + Memory+MAP). Not a CXL.mem decoder.
-    pub fn map_window_with_cap(
-        &mut self,
-        cap: &Capability,
-        win: TypedWindow,
-    ) -> Result<MappedWindow, HalError> {
-        self.iommu.map_window(cap, win).map_err(|e| match e {
-            aether_core::iommu::MapError::NoMemoryCap => HalError::NoMemoryCap,
-            aether_core::iommu::MapError::BadRange | aether_core::iommu::MapError::Overlap => {
-                HalError::BadArg
-            }
-            aether_core::iommu::MapError::TableFull => HalError::Busy,
-            _ => HalError::Fault,
-        })
     }
 
     fn encode(job: &AccelJobDesc) -> u32 {
@@ -210,21 +193,6 @@ mod tests {
             .unwrap();
         assert_ne!(iova.0, 0x1000);
         assert_eq!(d.translate(PhysAddr(0x1400)).unwrap().0, iova.0 + 0x400);
-    }
-
-    #[test]
-    fn map_window_with_cap_pins_dram() {
-        use aether_core::iommu::StreamId;
-        use aether_core::types::{ChipletId, TileId};
-        use aether_core::window::{TypedWindow, WindowKind};
-
-        let mut d = PartnerNpuStub::new();
-        let sid = StreamId::accel(ChipletId(0), TileId(0), 0);
-        let win = TypedWindow::new(PhysAddr(0xD000), 0x1000, WindowKind::Dram, sid, TenantId(1));
-        assert_eq!(d.map_window(win).unwrap_err(), HalError::NoMemoryCap);
-        let mapped = d.map_window_with_cap(&mem_cap(), win).unwrap();
-        assert_ne!(mapped.region.iova.0, 0xD000);
-        assert_eq!(mapped.window.kind, WindowKind::Dram);
     }
 
     #[test]

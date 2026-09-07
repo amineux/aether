@@ -12,7 +12,7 @@ active track the site must match.
 | --- | --- | --- |
 | Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo}.rs` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
-| TypedWindow (CXL.mem-inspired stub) | Host-tested exploration stub; not silicon | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
+| TypedWindow (honest pin stub) | Host-tested; CXL.mem window **not** a milestone | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
 | `IommuMap` Soft SMMU (STE→CD→S1/S2 walk, ATS invalidate) | Implemented, host-tested | `core/src/iommu.rs` |
 | Tile scheduler + SpectralCut refuse | Implemented (n≤32 Fiedler placement; enum n≤8) | `core/src/{sched,cut}.rs` |

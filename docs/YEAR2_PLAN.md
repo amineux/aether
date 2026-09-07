@@ -129,11 +129,11 @@ Kernel calendar items:
   refuses; EventRing credit-drain theater is not a Y1 goal).
 - Second partner stub enrichment without a signed partner
   (`PartnerNpuStub` stays a labeled sketch).
-- CXL region objects — keep the typed `MemorySpace::CxlRegion` place
-  only; no pin/map **productization**, no CXL.mem claim. Exploration E
-  (`TypedWindow` / [WINDOW.md](WINDOW.md)) is an **unscheduled honest
-  stub** (Soft SMMU SID + CrossCut foreign-tenant). It does **not**
-  check off SpecForge Y2H1 and is not a calendar item.
+- CXL region objects / CXL.mem window — **stays killed as a milestone.**
+  Keep the typed `MemorySpace::CxlRegion` place. `TypedWindow`
+  ([WINDOW.md](WINDOW.md)) is an unscheduled honest stub (inspiration
+  nouns + Soft SMMU SID refuse). It is **not** pin/map productization
+  and does **not** check off SpecForge Y2H1.
 - Cap CDT as a *calendar* item. A small derivation-edge revoke landed
   as unscheduled Y2H1 security work; do not treat it as a SpecForge
   half-year clock, a seL4 clone, or a reason to pull CXL / Laplacian.

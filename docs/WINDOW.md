@@ -1,7 +1,8 @@
-# Typed memory windows (Exploration E)
+# Typed memory windows (honest stub)
 
-**Falsifier: not a calendar milestone.** This is an honest software stub.
-CXL.mem is **inspiration for typed fabric memory**, not a product claim.
+**Falsifier: CXL.mem window stays killed as a milestone.** This is a
+thin software stub. CXL.mem is **inspiration for typed fabric memory**,
+not a product claim and not a calendar item.
 
 ## What this is
 

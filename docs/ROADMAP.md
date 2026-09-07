@@ -632,23 +632,6 @@ Honest limits (do not market these as done):
 Still stubbed: a recycled PCID allocator, Meltdown-complete
 trampoline unmap, POSIX MM, hardware SMMU.
 
-## Exploration E: CXL.mem typed window stub (this cut)
-
-Landed as an **honest stub**, **not** a SpecForge Y2H1 calendar item
-and **not** CXL.mem silicon. See [WINDOW.md](WINDOW.md).
-
-- `TypedWindow { base, len, kind: Hbm | CxlMemStub | Dram, sid }` in
-  `core/src/window.rs`. Soft SMMU `map_window` / `unmap_window` require
-  Memory+MAP. Wrong SID is `WrongStream`. Foreign-tenant pin is
-  `CrossTenant`; SpectralCut `bind_window` is `CrossCut`.
-- AccelDevice: `map_window` (default → `map`) plus driver
-  `map_window_with_cap`. EventRing `WindowMap` / `WindowRefuse`.
-- Host tests + boot-demo serial. QEMU CXL (`cxl-type3`) is not used
-  and is not claimed.
-
-Do not treat this as a CXL.mem product, a HDM decoder, or a reason
-to pull SpecForge CXL objects off the KILL list.
-
 ## User-level threads / `SYS_CLONE` (this cut)
 
 Landed as a **documented subset**, not Linux `clone`, not `fork`,
@@ -799,7 +782,7 @@ Search for `// STUB:` / `STUB` :
 | ChipletFleet | `core/src/sched.rs` | **KILL as calendar.** Thin host stub (`ChipletTaskScope` affinity / steal). Not a Year-1 pillar, not a partner ask |
 | OperatorKernelHandle | `core/src/opkernel.rs` | **done** (cap + Hodge bind/refuse; not a compiler; no new syscall) |
 | SparsifiedCollective | `core/src/sparsify.rs` | **done** (integer milli threshold; Hodge refuse still wins; not an eigensolve) |
-| Real CXL.mem window | `core/src/window.rs` | **done** as Exploration E stub (`TypedWindow` `CxlMemStub` + Soft SMMU SID; host tests). Not a HDM decoder, not QEMU CXL, not a Y2H1 check-off. See [WINDOW.md](WINDOW.md) |
+| Real CXL.mem window | `MemorySpace::CxlRegion`, `core/src/window.rs` | **killed as a milestone.** `TypedWindow` is an honest pin stub (SID refuse, host tests), not this item. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Compiler ISA blob | `abi::Executable` | Kernel stores a handle; IREE/PJRT owns the bytes |
 | Hardware fence/timeline | `core/src/fence.rs` | **done** (CP-shaped seq / wait / complete + credit limit; timeout is software; QEMU IRQ is still software; not a silicon timeline) |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
