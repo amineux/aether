@@ -211,21 +211,31 @@ killed.
 
 ## Exploration menu (directions, not calendar)
 
-Kernel / user may pull these later. **Month 5 is only the four
-digests above.** Everything else here is a direction.
+Kernel / user may pull these later. SpectraScout filed five M5–6
+bets as a **menu** (suggested order below). A later redirect put
+the first four on the Month 5 clock; they are still **not one
+spine**. SoftNoI-IS, PASID/SVA, OperatorInject, and FlowHodgeQuota
+stay parked / gated. Skip shipped work (SoftChipletSync CCT in
+PR #51 is a deepen, not a re-landing).
+
+Suggested digest order (menu):
+
+```text
+SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
+```
 
 ### SpectraScout M5–6 bets
 
-| Bet | Status | Honest bound |
-| --- | --- | --- |
-| **SoftGreenCtx** | Month 5 digest 1 | Fake SM/WQ partitions; not MIG |
-| **SoftCmdFirewall** | Month 5 digest 2 | Copy-then-validate; not confidential GPU |
-| **SoftCCT** | Month 5 digest 3 (deepen #51) | Labeled elision + incorrect-elision fail; not UCIe |
-| **SoftSFI** | Month 5 digest 4 | Toy ISA bounds + SID; not safe multi-tenant kernels |
-| **SoftNoI-IS** | **Parked** | Admit when `IS > budget`; not topology synth |
-| PASID / SVA | **Parked leftover** | Software PASID; no zero-copy without invalidate |
-| OperatorInject | **Parked leftover** | Resident worker + versioned ops; not NVRTC |
-| FlowHodgeQuota | Gated digest | Class headers required or stay killed |
+| Bet | Status | Slice | Honest bound |
+| --- | --- | --- | --- |
+| **SoftGreenCtx** | Month 5 digest 1 | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
+| **SoftCmdFirewall** | Month 5 digest 2 | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate fails without the firewall, passes with it | Host1x lesson. **Not confidential GPU.** |
+| **SoftCCT** | Month 5 digest 3 (deepen #51) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails | CPElide last-writer table. **Not UCIe.** Skip if #51 already meets the slice |
+| **SoftSFI** | Month 5 digest 4 | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
+| **SoftNoI-IS** | **Parked** (menu #5) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth** |
+| PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
+| OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add third; no Soft-CP restart | Own IR. **Not NVRTC/CUDA** |
+| FlowHodgeQuota | Gated digest | Class headers on Soft-CP DMA + admit/refuse counters | Headers required or stay killed as theater |
 
 ### Partner / HAL
 
