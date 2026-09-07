@@ -81,6 +81,9 @@ FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
 
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
 `make qemu` treats that as a clean run. CI runs `make qemu-ci` (45s timeout).
+The kernel self-check also prints `[blast] two-tenant blast radius sealed`
+(CrossCut + wrong-SID refuse). A one-week diligence clip, not a track.
+See [`docs/BLAST.md`](docs/BLAST.md).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
 
@@ -257,6 +260,7 @@ the next partner-shaped HAL calendar.
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + AffinityLaplacian + Hodge
+- [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch

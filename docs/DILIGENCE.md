@@ -11,7 +11,7 @@ active track the site must match. The **next calendar** is
 
 | Surface | Status | Where |
 | --- | --- | --- |
-| Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo}.rs` |
+| Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo,blast}.rs` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | TypedWindow (honest pin stub) | Host-tested; CXL.mem window **not** a milestone | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
@@ -39,7 +39,9 @@ active track the site must match. The **next calendar** is
 
 The portable specification is `aether-core`. Host tests execute the same
 `run_boot_demo()` the kernels print (caps, fabric, map, color, cut), plus
-the Multiboot mmap parser. The RISC-V and aarch64 ports did not change
+the Multiboot mmap parser. `run_blast_demo()` is a one-week diligence
+clip (two tenants, CrossCut + wrong-SID refuse, serial `[blast]`) — not
+a Year-2 isolation track. The RISC-V and aarch64 ports did not change
 `aether-hal` or the syscall / AccelDevice ABI.
 
 ## What is stubbed

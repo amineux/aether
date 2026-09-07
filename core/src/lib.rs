@@ -11,6 +11,7 @@ pub mod accel;
 pub mod activity;
 pub mod arena;
 pub mod aspace;
+pub mod blast;
 pub mod bootfs;
 pub mod caps;
 pub mod color;
@@ -42,20 +43,21 @@ pub use abi::{Buffer, Device, Event, Executable};
 pub use accel::{demo_f16_f32_ok, AccelJobDesc, AccelOp, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
-pub use bootfs::{
-    parse_bootfs, pack_bootfs, BootFs, BootFsError, BootFsFile, BOOTFS_ENT, BOOTFS_HDR,
-    BOOTFS_MAGIC, BOOTFS_MAX_FILES, BOOTFS_NAME, BOOTFS_SECTOR,
-};
 pub use aspace::{
     cr3_pa, cr3_pcid, cr3_tagged, hh_to_phys, identity_keep_2m, identity_keep_pa, kaslr_slide,
     kaslr_slide_valid, kernel_text_va_slid, parse_kaslr_cmdline, phys_to_hh, phys_to_hh_slid,
-    phys_to_kva, IdentityAs, PcidAlloc, Sv39As, Ttbr0As, APIC_MMIO_BASE, APIC_MMIO_END, CR3_NOFLUSH,
-    CR3_PCID_MASK, CR4_PCIDE, CR4_SMAP, CR4_SMEP, IDENTITY_KEEP_LOW, INVPCID_ALL,
-    INVPCID_ALL_GLOBAL, INVPCID_INDIV, INVPCID_SINGLE, KASLR_HH_PD0, KASLR_HH_PD1, KASLR_KERNEL_SPAN,
-    KASLR_MAILBOX, KASLR_MAILBOX_RELOCS, KASLR_MAILBOX_SLIDE, KASLR_SLIDE_COUNT, KASLR_SLIDE_STRIDE,
-    KERNEL_HH_SPAN, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_SLOT_BASE, KPTI_TRAMP_IDT,
-    KPTI_TRAMP_PAS, KPTI_TRAMP_STACK, KPTI_TRAMP_STACK_TOP, KPTI_TRAMP_VA, PCID_KERNEL,
-    PCID_USER_BASE,
+    phys_to_kva, IdentityAs, PcidAlloc, Sv39As, Ttbr0As, APIC_MMIO_BASE, APIC_MMIO_END,
+    CR3_NOFLUSH, CR3_PCID_MASK, CR4_PCIDE, CR4_SMAP, CR4_SMEP, IDENTITY_KEEP_LOW, INVPCID_ALL,
+    INVPCID_ALL_GLOBAL, INVPCID_INDIV, INVPCID_SINGLE, KASLR_HH_PD0, KASLR_HH_PD1,
+    KASLR_KERNEL_SPAN, KASLR_MAILBOX, KASLR_MAILBOX_RELOCS, KASLR_MAILBOX_SLIDE, KASLR_SLIDE_COUNT,
+    KASLR_SLIDE_STRIDE, KERNEL_HH_SPAN, KERNEL_LMA, KERNEL_TEXT_VA, KERNEL_VMA, KPTI_SLOT_BASE,
+    KPTI_TRAMP_IDT, KPTI_TRAMP_PAS, KPTI_TRAMP_STACK, KPTI_TRAMP_STACK_TOP, KPTI_TRAMP_VA,
+    PCID_KERNEL, PCID_USER_BASE,
+};
+pub use blast::{run_blast_demo, BlastReport, SID_A, SID_B};
+pub use bootfs::{
+    pack_bootfs, parse_bootfs, BootFs, BootFsError, BootFsFile, BOOTFS_ENT, BOOTFS_HDR,
+    BOOTFS_MAGIC, BOOTFS_MAX_FILES, BOOTFS_NAME, BOOTFS_SECTOR,
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use color::{admit_wave, BankColor, ColorError};
@@ -66,7 +68,7 @@ pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlag
 pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
-    IommuMap, InvCmd, MapError, MapRequest, MappedRegion, SteConfig, StreamId, StreamState,
+    InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SteConfig, StreamId, StreamState,
     WalkResult, DEFAULT_STREAM, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
@@ -89,14 +91,14 @@ pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
 pub use sysnr::{
-    UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, SYS_ACCEL_SUBMIT,
+    UserAccelJob, UserCompletion, UserIpcMsg, BLK_WINDOW_BASE, BLK_WINDOW_END, COW_PRIVATE_WORD,
+    COW_TEMPLATE_WORD, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD, SYS_ACCEL_SUBMIT,
     SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT, SYS_MAP, SYS_MMAP,
     SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_AA_IMAGE_BASE, USER_AA_IMAGE_END,
     USER_AA_MMAP_BASE, USER_AA_MMAP_END, USER_AA_STACK_TOP, USER_COW_BASE, USER_COW_END,
     USER_IMAGE_BASE, USER_IMAGE_END, USER_MMAP_BASE, USER_MMAP_END, USER_MMAP_MAX, USER_PROBE_BASE,
     USER_PROBE_END, USER_PROBE_STACK_TOP, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END, USER_RV_MMAP_BASE,
-    USER_RV_MMAP_END, USER_RV_STACK_TOP, USER_STACK_TOP, BLK_WINDOW_BASE, BLK_WINDOW_END,
-    COW_PRIVATE_WORD, COW_TEMPLATE_WORD, MMAP_GROW_WORD,
+    USER_RV_MMAP_END, USER_RV_STACK_TOP, USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
 pub use window::{MappedWindow, TypedWindow, WindowKind};

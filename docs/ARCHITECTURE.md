@@ -160,7 +160,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
 | `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
-| `kernel/src/init.rs` | Kernel-side `run_boot_demo` self-check |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius diligence clip |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |

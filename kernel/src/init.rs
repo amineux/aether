@@ -2,6 +2,7 @@
 //! The COMPLETE banner and SoftNPU verify are printed by user `/init`
 //! (x86 ring-3 / RISC-V U-mode / aarch64 EL0).
 
+use aether_core::blast::run_blast_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
@@ -156,6 +157,24 @@ pub fn run_kernel_selfcheck() {
     write_u64(report.events as u64);
     console::nl();
 
+    // Diligence clip: sequential so IommuMap does not share the stack
+    // with run_boot_demo.
+    let blast = run_blast_demo();
+    write_str("[blast] tenant A=1 B=2 Memory/Activity/Cut refuse  ");
+    write_str(flag(blast.mem_ok && blast.activity_ok && blast.cut_ok));
+    console::nl();
+    write_str("[blast] SpectralCut CrossCut refuse  ");
+    write_str(flag(blast.cut_ok));
+    console::nl();
+    write_str("[blast] Soft SMMU wrong SID abort  ");
+    write_str(flag(blast.smmu_ok));
+    console::nl();
+    if blast.all_ok() {
+        println!("[blast] two-tenant blast radius sealed");
+    } else {
+        println!("[blast] FAIL -- two-tenant refuse");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -168,7 +187,7 @@ pub fn run_kernel_selfcheck() {
         }
     }
 
-    if !report.all_ok() {
+    if !report.all_ok() || !blast.all_ok() {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);
         crate::arch::idle();
