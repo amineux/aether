@@ -2,6 +2,7 @@
 //! [`SoftCommandProcessor`] is the host-tested Aether-native CP path
 //! (packed `CpCmd` + SET_SID-at-submit + two software XQueues +
 //! SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines +
+//! SoftCCT elision +
 //! SoftCmdFirewall copy-then-validate + IRQ/fence).
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
 //! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped

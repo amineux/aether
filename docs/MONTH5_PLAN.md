@@ -9,7 +9,8 @@ closed M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
 OS-completeness theater is still not the schedule. Month 5 is
 **four SpectraScout exploration digests** — not one pillar, not a
 half-year of OS-completeness. SoftGreenCtx and SoftCmdFirewall are
-**landed**. Remaining: SoftCCT → SoftSFI. PASID/SVA and
+**landed**. SoftCCT (digest 3) is **landed**. Remaining: SoftSFI.
+PASID/SVA and
 OperatorInject stay **parked leftovers**.
 SoftNoI-IS stays parked. The exploration menu below is a direction
 list for later cuts.
@@ -66,7 +67,7 @@ numbers. Skip a digest only if its honest slice is already met on
 main (SoftCCT: see below).
 
 ```text
-SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT  →  SoftSFI
+SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT (landed)  →  SoftSFI
 SoftNoI-IS parked
 PASID / SVA  and  OperatorInject deepen  parked leftovers
 ```
@@ -94,7 +95,7 @@ completion.
    **Not** hardware SM partitioning. No new syscall. `CpCmd` layout
    unchanged.
 
-### 2. SoftCmdFirewall (**landed**)
+### 2. SoftCmdFirewall (**landed, PR #55**)
 
 Copy-then-validate submit. Inspiration: Host1x “don’t execute the
 caller’s live buffer” — not a Tegra driver, not a confidential GPU.
@@ -114,38 +115,34 @@ fails without the firewall and passes with it.
 3. Docs: Host1x lesson, software only. **Not** confidential compute.
    **Not** a silicon command parser. No new syscall.
 
-### 3. SoftCCT (deepen landed SoftChipletSync)
+### 3. SoftCCT (**landed**)
 
 Chiplet Coherence Table on the **already-landed** SoftChipletSync
-(CPElide inspiration). Last-writer chiplet per buffer label elides
-the package fence when the consumer is on that chiplet.
+(CPElide inspiration). Soft-CP buffer labels + last-writer chiplet.
+SoftChipletSync issues a package-scope fence **only** on a
+cross-chiplet hazard. Same-chiplet consume on ≥2 fake chiplets
+elides. Single-chiplet CCT is a no-op.
 
-PR #51 already ships scoped timelines + optional CCT and fence-count
-host tests. This digest is a **deepen**, not a re-landing:
+This digest **deepens** PR #51 (scoped timelines + optional CCT);
+it is not a second CCT object.
 
 - chiplet0 → chiplet1 **labeled** buffer producer/consumer
-- package-fence count ≪ naive broadcast
-- **incorrect** elision (last-writer ≠ consumer, or label mismatch)
-  **fails** — that refuse must be host-tested if it is not already
-  the `cct_cannot_elide_cross_chiplet_consumer` case
+- package-fence count ≪ broadcast baseline
+- **incorrect** elision (elide whenever a label is known) **fails**
 
 Do not claim a latency win from single-die QEMU / host numbers.
 Multi-chiplet **sim** metrics stay in the exploration menu.
 
-**Done when:**
+**Done when (met):**
 
-1. Labeled-buffer chiplet0→1 path is explicit (not only an anonymous
-   fence-count smoke).
+1. Labeled-buffer chiplet0→1 path is explicit (`SoftCct` +
+   `submit_scoped` write/read labels).
 2. Host tests: package-fence ≪ broadcast; incorrect elision is
-   Fault / no-elide (not a silent skip). Existing CCT tests still
-   pass.
-3. Docs still name Fleet / CPElide as inspiration only. **Not** a
-   coherence directory, **Not** UCIe, **Not** ChipletFleet
-   placement. Fence **counts** only.
-
-If the incorrect-elision refuse and labeled chiplet0→1 slice are
-already met on main, close this digest as “landed in #51” with a
-one-line ADR — do not invent a second CCT.
+   no-elide / PackageFence; single-chiplet is a no-op. Existing
+   CCT tests still pass.
+3. Docs name CPElide as inspiration only. **Not** a coherence
+   directory, **Not** UCIe, **Not** ChipletFleet placement, **Not**
+   a Vulkan / ROCm product. Fence **counts** only.
 
 ### 4. SoftSFI
 
@@ -235,7 +232,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | --- | --- | --- | --- |
 | **SoftGreenCtx** | **Landed** | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
 | **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
-| **SoftCCT** | Month 5 digest 3 (deepen #51) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails | CPElide last-writer table. **Not UCIe.** Skip if #51 already meets the slice |
+| **SoftCCT** | **Landed** (Month 5 digest 3) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails; single-chiplet no-op | CPElide last-writer table. **Not UCIe.** Not a coherence protocol |
 | **SoftSFI** | Month 5 digest 4 | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
 | **SoftNoI-IS** | **Parked** (menu #5) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth** |
 | PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
@@ -310,9 +307,9 @@ fake NVIDIA / FLOPs / tape-out.
 
 1. This file + pointers from [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
    and [ROADMAP.md](ROADMAP.md) — **this cut**
-2. SoftGreenCtx — **landed**
-3. SoftCmdFirewall — **landed**
-4. SoftCCT (skip / ADR if #51 already meets the slice)
+2. SoftGreenCtx — **landed** (PR #54)
+3. SoftCmdFirewall — **landed** (PR #55)
+4. SoftCCT — **landed**
 5. SoftSFI
 
 Do not open calendar PRs for the killed list or the parked
@@ -325,7 +322,7 @@ redirects. A later site progress refresh is not a milestone.
 | --- | --- |
 | SoftGreenCtx (**landed**) | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
 | SoftCmdFirewall | `drivers/src/firewall.rs` + Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
-| SoftCCT | `core/src/chipsync.rs`, Soft-CP / IreeShapedCp `submit_scoped`, host tests — deepen #51 |
+| SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP / IreeShapedCp `submit_scoped`, host tests — **landed** |
 | SoftSFI | `drivers/src/fakecp.rs` (toy ISA verifier + SID window), host tests |
 | SoftNoI-IS (parked) | `core/src/chipsync.rs` / fabric admit — not this month |
 | PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |

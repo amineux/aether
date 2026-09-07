@@ -6,9 +6,9 @@ checklist, or a benchmark brief. The public site (`site/`) is the same
 leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
-landed; SoftChipletSync landed; SoftGreenCtx landed; SoftCmdFirewall
-landed). The **next
-calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md). Site-as-milestone stays killed.
+landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
+SoftCmdFirewall landed). The **next calendar** is
+[MONTH5_PLAN.md](MONTH5_PLAN.md). Site-as-milestone stays killed.
 
 ## What ships in this tree
 
@@ -26,10 +26,11 @@ calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md). Site-as-milestone stays killed.
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCmdFirewall copy-then-validate + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall}.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftCmdFirewall copy-then-validate + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
-| SoftChipletSync | Scoped wave/CU/chiplet/package timelines + optional CCT (Fleet / CPElide inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
+| SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
+| SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
@@ -48,8 +49,10 @@ the Multiboot mmap parser. `run_blast_demo()` is a one-week diligence
 clip (two tenants, CrossCut + wrong-SID refuse, serial `[blast]`) — not
 a Year-2 isolation track. `run_sid_submit_demo()` is the Host1x-shaped
 SET_SID-at-submit clip (serial `[sid]`); not a Tegra driver. `run_chipsync_demo()`
-is the scoped-timeline clip (serial `[chipsync]`); Fleet / CPElide inspiration
+is the scoped-timeline clip (serial `[chipsync]`); Fleet inspiration
 only — not UCIe, not a Vulkan timeline, not ChipletFleet placement.
+`run_softcct_demo()` is the SoftCCT clip (serial `[softcct]`); CPElide
+inspiration only — not a coherence protocol, not a Vulkan / ROCm product.
 `run_firewall_demo()` is the Host1x copy-then-validate clip (serial
 `[firewall]`); command-stream integrity only — not confidential GPU.
 `run_greenctx_demo()` is the SM/WQ partition clip (serial `[greenctx]`);
@@ -76,7 +79,7 @@ gaps:
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
 | No CXL.mem | `TypedWindow` (`CxlMemStub`) is a host-tested pin/map stub; `MemorySpace::CxlRegion` is still a typed place. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
-| Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines + CCT elision on that model; fence **counts** only, not a latency claim |
+| Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines; SoftCCT is last-writer elision on that model; fence **counts** only, not a latency claim |
 | SoftGreenCtx SM/WQ | **Landed** as a software partition on Soft-CP (fake 70/30 pool). Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
@@ -192,6 +195,8 @@ We will not claim:
   Year-1 pillar, a partner ask, or unpublished Fleet numbers
 - That SoftChipletSync is a Vulkan timeline product, UCIe sync, a
   coherence protocol, or a multi-chiplet latency win from single-die tests
+- That SoftCCT is a full coherence protocol, CPElide silicon, or a
+  Vulkan / ROCm product
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That `TypedWindow` / `CxlMemStub` is CXL.mem silicon or QEMU CXL
 - That `SoftCommandProcessor` is a silicon driver

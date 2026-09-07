@@ -77,8 +77,9 @@ encryption, not GPU-CC HMAC (optional later), and not NVIDIA SEC2.
 Serial: `[firewall]`.
 
 SoftChipletSync (`core/src/chipsync.rs`) is a software fence-domain
-model (scoped timelines + optional CCT). It is **not** a coherence
-protocol, not UCIe, and not hardware-grade isolation across chiplets.
+model (scoped timelines + SoftCCT last-writer elision). It is **not**
+a coherence protocol, not UCIe, not a Vulkan / ROCm product, and not
+hardware-grade isolation across chiplets.
 
 SoftGreenCtx (`core/src/greenctx.rs`) is a software SM/WQ partition
 on Soft-CP. CUDA Green Contexts / DetShare are inspiration only. It

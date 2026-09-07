@@ -7,15 +7,16 @@ as **M4 (PR #47)**. Soft SMMU bring-up kit landed (PR #48). **M3
 SID-at-submit is landed** (Host1x-shaped SET_SID; SID sticks on the
 XQueue). SoftChipletSync scoped timelines **landed** after M3+M4
 (PR #51). SoftGreenCtx SM/WQ partitions **landed** (Month 5 digest 1).
-Site progress through PR #52. Month 5 digest 2 (SoftCmdFirewall)
-is **landed** — see [MONTH5_PLAN.md](MONTH5_PLAN.md).
+SoftCCT (Month 5 digest 3) **landed**. Site progress through PR #52.
+Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
+[MONTH5_PLAN.md](MONTH5_PLAN.md).
 
-**This calendar is closed (M1–M4 + SoftChipletSync).** The **next
-calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx landed;
-SoftCmdFirewall landed; SoftCCT → SoftSFI remain; PASID/SVA and
-OperatorInject parked). SpecForge OS-completeness
-theater is not the schedule. SpectraScout Soft-CP items are
-software models, not fork / POSIX / CXL.mem / ChipletFleet.
+**This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).** The
+**next calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx,
+SoftCmdFirewall, and SoftCCT landed; SoftSFI remains; PASID/SVA and
+OperatorInject parked). SpecForge OS-completeness theater is not the
+schedule. SpectraScout Soft-CP items are software models, not fork /
+POSIX / CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -62,13 +63,13 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 
 ## Execution spine (this is the calendar)
 
-**M1–M4 are done.** SoftChipletSync scoped timelines are **landed**.
-SoftGreenCtx (Month 5 digest 1) is **landed**. SoftCmdFirewall
-(digest 2) is **landed**. Month 5 is **not** a
+**M1–M4 are done.** SoftChipletSync scoped timelines and SoftCCT
+elision are **landed**. SoftGreenCtx (Month 5 digest 1) is **landed**.
+SoftCmdFirewall (digest 2) is **landed**. Month 5 is **not** a
 second half-year of this file — see [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(remaining: SoftCCT → SoftSFI).
-Optional / conditional work in *this* file is leave-behind, not a
-pillar. Site-as-milestone stays killed (PR #46 / #50 / #52 were
+(remaining: SoftSFI). Optional / conditional work in *this* file is
+leave-behind, not a pillar. Site-as-milestone stays killed (PR #46 /
+#50 / #52 were
 progress refreshes, not a marketing climax).
 
 ### M1 — partner-shaped opcode table (**landed, PR #38**)
@@ -194,11 +195,10 @@ LD_PRELOAD CUDA/HIP shim, not a silicon queueing unit. Path B SoftNPU
 Chiplet-local fence domains on the existing seq / wait / complete model.
 Scopes `{wave, CU, chiplet, package}`. Chiplet-local signal is free;
 package-scope costs a hierarchical fence (last worker per participating
-chiplet). Optional CCT (last-writer chiplet per buffer label) elides
-that fence when the consumer is on the same chiplet.
+chiplet). SoftCCT (below) is the elision layer on this object.
 
-Fleet hierarchical counters and CPElide CCT are **inspiration** — not a
-port, not a Vulkan timeline product, not UCIe. Distinct from ChipletFleet
+Fleet hierarchical counters are **inspiration** — not a port, not a
+Vulkan timeline product, not UCIe. Distinct from ChipletFleet
 **placement** (`ChipletTaskScope`, still KILL-as-calendar). Host tests
 measure fence **counts**. Latency wins need a multi-chiplet sim —
 single-die QEMU / host numbers are not partner proof.
@@ -211,8 +211,29 @@ SID-at-submit + XQueue stay. Path B SoftNPU / `make qemu` unchanged.
 1. Soft-CP (and IreeShapedCp mailbox) scoped timelines + one
    producer/consumer across two fake chiplets.
 2. Host tests: package-scope fence count ≪ naive global fence;
-   CCT elision when last-writer chiplet matches consumer.
-3. Docs name Fleet / CPElide as inspiration only; non-claims above.
+   producer/consumer across two fake chiplets.
+3. Docs name Fleet as inspiration only; non-claims above.
+
+### SoftCCT elision on SoftChipletSync (**landed**)
+
+Soft-CP buffer labels + last-writer chiplet (CPElide MICRO’24-shaped).
+SoftChipletSync issues a package-scope fence **only** when SoftCCT says
+a cross-chiplet hazard. Same-chiplet consume on a ≥2-chiplet package
+elides. Single-chiplet CCT is a no-op.
+
+CPElide is **inspiration** — not a full coherence protocol, not a
+Vulkan / ROCm product, not silicon. Host tests measure fence **counts**
+(CCT ≪ broadcast). An incorrect-elision test (ignore writer chiplet)
+must fail. Path B SoftNPU / `make qemu` unchanged. No new syscall.
+
+**Done when (met):**
+
+1. Soft-CP / IreeShapedCp labeled producer (chiplet0) / consumer
+   (chiplet1) consult SoftCCT.
+2. Host tests: package-fence count with CCT ≪ broadcast-fence baseline
+   on ≥2 fake chiplets; single-chiplet is a no-op; incorrect elision
+   fails.
+3. Docs name CPElide as inspiration only; non-claims above.
 
 ### SoftGreenCtx SM/WQ partitions (**landed**)
 
@@ -295,29 +316,32 @@ If A had landed as a shim over SoftNPU / Soft-CP (`backend` 1 / 3)
 only, M2 would still be open. PR #41 packs `IreeHalCmd` and submits
 through `IreeShapedCp`; SoftNPU stays the qemu demo.
 
-## SpectraScout leftovers (after SoftChipletSync + SoftGreenCtx)
+## SpectraScout leftovers (after SoftChipletSync + SoftCCT + SoftGreenCtx)
 
-M3 SID-at-submit, M4 XQueue, SoftChipletSync, and SoftGreenCtx are
-**landed**. Still software models, still no vendor claim. Sequencing
-moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
+M3 SID-at-submit, M4 XQueue, SoftChipletSync, SoftCCT, and SoftGreenCtx
+are **landed**. Still software models, still no vendor claim.
+Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 
 1. **SoftChipletSync scoped timelines** (**landed**). Chiplet-local
-   fence domains; Fleet / CPElide inspiration only. Not UCIe sync.
-   Month 5 SoftCCT is a deepen, not a re-landing.
-2. **SoftGreenCtx SM/WQ partitions** (**landed**, Month 5 digest 1).
+   fence domains; Fleet inspiration only. Not UCIe sync.
+2. **SoftCCT** (**landed**, Month 5 digest 3). Last-writer chiplet per
+   buffer label; package fence only on a cross-chiplet hazard.
+   CPElide inspiration only. Not a coherence protocol, not Vulkan /
+   ROCm. Single-chiplet is a no-op.
+3. **SoftGreenCtx SM/WQ partitions** (**landed**, Month 5 digest 1).
    Fake 70/30 SM/WQ pool; XQueue bind; memcpy interference vs
    unpartitioned; migrate-to-yield without SID change. Not HW MIG.
-3. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
+4. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
    bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
    Software only. Not zero-copy SVA without the invalidate path.
-4. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
+5. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
    only if the shim injects fabric class headers; else theater.
-5. **OperatorInject deepen** — **parked leftover** (Soft-CP
+6. **OperatorInject deepen** — **parked leftover** (Soft-CP)
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
 
-Month 5 remaining (not leftovers): SoftCCT → SoftSFI.
-SoftGreenCtx and SoftCmdFirewall are **landed**. SoftNoI-IS parked.
+Month 5 remaining (not leftovers): SoftSFI. SoftGreenCtx,
+SoftCmdFirewall, and SoftCCT are **landed**. SoftNoI-IS parked.
 See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
@@ -337,9 +361,9 @@ a Y2 bring-up climax.
 
 [ROADMAP.md](ROADMAP.md) points at [MONTH5_PLAN.md](MONTH5_PLAN.md)
 for what to sequence next. This file remains the closed M1–M4
-record. SoftGreenCtx (digest 1) and SoftCmdFirewall (digest 2)
+record. SoftChipletSync, SoftCCT, SoftGreenCtx, and SoftCmdFirewall
 are landed. Suggested next cuts in ROADMAP that are not the
-remaining Month 5 digests remain **technical leftovers**.
+remaining Month 5 digest (SoftSFI) remain **technical leftovers**.
 
 ## Kernel PR order (this calendar)
 
@@ -352,12 +376,13 @@ remaining Month 5 digests remain **technical leftovers**.
 5. Optional Soft-SMMU bring-up kit (docs + dump/replay) — **landed** (PR #48)
 6. M3 Soft-CP SID-at-submit (Host1x-shaped) — **landed**
 7. SoftChipletSync scoped timelines — **landed**
-8. SoftGreenCtx (Month 5 digest 1) — **landed** (this cut)
-9. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
-   be shown on path-A DMA (gated digest; see
-   [MONTH5_PLAN.md](MONTH5_PLAN.md))
-10. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
-    (SoftCCT → SoftSFI; PASID/SVA and OperatorInject parked)
+8. SoftGreenCtx (Month 5 digest 1) — **landed** (PR #54)
+9. SoftCCT elision on SoftChipletSync — **landed** (Month 5 digest 3)
+10. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
+    be shown on path-A DMA (gated digest; see
+    [MONTH5_PLAN.md](MONTH5_PLAN.md))
+11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
+    (SoftSFI; PASID/SVA and OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -376,6 +401,7 @@ milestone.
 | SoftChipletSync | `core/src/{fence,chipsync}.rs`, Soft-CP / IreeShapedCp retire, host tests — **landed** |
 | SoftGreenCtx | `core/src/greenctx.rs`, Soft-CP / HAL `sm_wq_budget`, host tests — **landed** |
 | SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
+| SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP buffer labels, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
@@ -401,6 +427,8 @@ target appears. No new syscall.
   bandwidth result
 - That SoftCmdFirewall is a Tegra Host1x driver, confidential GPU,
   HBM encryption, GPU-CC HMAC, or NVIDIA SEC2
+- That SoftCCT is a full coherence protocol, CPElide silicon, or a
+  Vulkan / ROCm product
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
-  + SoftGreenCtx is the software-model track; that theater is not.
+  + SoftGreenCtx + SoftCCT is the software-model track; that theater is not.
