@@ -43,8 +43,8 @@ product kernel.
 
 The **next Kernel calendar** after M1–M4 + SoftChipletSync is
 [MONTH5_PLAN.md](MONTH5_PLAN.md). SoftGreenCtx (**landed**).
-SoftCmdFirewall (**landed**). Two exploration digests remain:
-SoftCCT → SoftSFI; PASID/SVA and OperatorInject parked. The
+SoftCmdFirewall (**landed**). SoftCCT (**landed**). SoftSFI
+(digest 4) is **landed**. PASID/SVA and OperatorInject parked. The
 portability / partner slices below already landed; they are not
 Month 5.
 
@@ -807,6 +807,7 @@ Search for `// STUB:` / `STUB` :
 | SoftCCT | `core/src/chipsync.rs` | **done** as last-writer elision on SoftChipletSync. CPElide inspiration. Not a coherence protocol, not Vulkan / ROCm. Single-chiplet is a no-op |
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
+| SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape). Not NVVM. Atomics / tensor / heap refused, not modeled |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -852,6 +853,10 @@ opcode device (PR #38). **What to sequence next:**
 - **SoftCmdFirewall landed:** copy-then-validate on Soft-CP submit
   (kernel-owned arena; Host1x lesson). Command-stream integrity only
   — not confidential GPU.
+- **SoftSFI landed:** toy Soft-CP ISA (`load` / `store` / `add` /
+  `dma`) with an SFI verifier (GPU-AToLL shape). Every memory op
+  proves `base+bound` in the SID window. Not an NVVM pipeline. Not
+  “safe multi-tenant kernels.” Atomics / tensor / heap stay refused.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
@@ -862,16 +867,17 @@ opcode device (PR #38). **What to sequence next:**
 
 The Kernel **calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md)
 (M1–M4 + SoftChipletSync + SoftCCT closed in
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx and
-SoftCmdFirewall landed). Remaining: SoftSFI. PASID/SVA and
-OperatorInject are parked leftovers. The list below is leftover
-engineering, not a fifth digest.
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
+SoftCCT, and SoftSFI landed). PASID/SVA and OperatorInject are
+parked leftovers. The list below is leftover engineering, not a
+fifth digest.
 
 1. **Month 5 remaining** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
-   SoftSFI (toy ISA bounds + SID; not a safe multi-tenant kernel).
-   SoftGreenCtx is **landed** (not MIG). SoftCmdFirewall is
-   **landed** (not confidential GPU). SoftCCT is **landed**
-   (last-writer elision; incorrect elision fails). SoftNoI-IS parked.
+   SoftSFI is **landed** (toy ISA bounds + SID; not a safe
+   multi-tenant kernel). SoftGreenCtx is **landed** (not MIG).
+   SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
+   **landed** (last-writer elision; incorrect elision fails).
+   SoftNoI-IS parked.
    **PASID / SVA** stays a parked leftover (per-`AccelDevice`
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
@@ -918,7 +924,7 @@ Falsifier ACTIVE track through PR #37 is **complete as research
 slices**; do not sequence new work against it. Closed M1–M4 calendar:
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (SoftChipletSync + SoftCCT
 landed). **Next calendar:** [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(SoftGreenCtx, SoftCmdFirewall, and SoftCCT landed; SoftSFI remains).
+(SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),

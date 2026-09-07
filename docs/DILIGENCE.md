@@ -8,7 +8,8 @@ active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
 landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
 SoftCmdFirewall landed). The **next calendar** is
-[MONTH5_PLAN.md](MONTH5_PLAN.md). Site-as-milestone stays killed.
+[MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftSFI is Month 5 digest 4).
+Site-as-milestone stays killed.
 
 ## What ships in this tree
 
@@ -32,6 +33,7 @@ SoftCmdFirewall landed). The **next calendar** is
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
+| SoftSFI | Toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape; not NVVM; atomics/tensor/heap refused) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
@@ -57,7 +59,10 @@ inspiration only — not a coherence protocol, not a Vulkan / ROCm product.
 `[firewall]`); command-stream integrity only — not confidential GPU.
 `run_greenctx_demo()` is the SM/WQ partition clip (serial `[greenctx]`);
 Green Contexts / DetShare inspiration only — not HW MIG, not a BAR
-firewall, not FLOPs. The RISC-V
+firewall, not FLOPs.
+`run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
+GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
+The RISC-V
 and aarch64 ports did not change `aether-hal` or the syscall /
 AccelDevice ABI.
 

@@ -165,7 +165,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
 | `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
-| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall clips |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall + SoftGreenCtx + SoftSFI clips |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
@@ -179,6 +179,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftGreenCtx + SoftChipletSync + SoftCCT + SoftCmdFirewall + IRQ/`retire_into`) |
 | `drivers/src/firewall.rs` | SoftCmdFirewall copy-then-validate (Host1x lesson; cmd-stream integrity, not confidential GPU) |
+| `drivers/src/softsfi.rs` | Soft-CP host for the toy SoftSFI sandbox (keeps `fakecp.rs` thin) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
@@ -197,6 +198,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
 | `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + SoftCCT elision |
 | `core/src/greenctx.rs` | SoftGreenCtx fake SM/WQ partitions (70/30) + memcpy interference + migrate-to-yield (not MIG) |
+| `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |

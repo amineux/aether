@@ -522,6 +522,60 @@ Host tests: `memcpy_interference_partitioned_beats_unpartitioned`,
 `greenctx_two_queue_70_30_memcpy_beats_unpartitioned`,
 `greenctx_migrate_to_yield_sid_unchanged`. Kernel serial `[greenctx]`.
 
+## SoftSFI (software; GPU-AToLL-shaped)
+
+**Status:** **Landed** (SpectraScout M5 leftover). Toy Soft-CP ISA
+(`load` / `store` / `add` / `dma`) with an SFI verifier. Every
+load/store/dma proves `base+bound` sits in the SID-allowed IOVA
+range. Not an NVVM pipeline. Not CUDA.
+
+**Inspiration.** [GPU-AToLL](https://github.com/AERO-Project-EU/gpu-atoll)
+hardens NVVM-IR so each memory side-effect proves a distinct location
+and PTX state space before a tenant kernel may run. SoftSFI borrows
+that *shape* on Soft-CP bytecode: abstract-interpret registers
+(`r0 = 0`, `Add` / `AddImm` refine constants) and refuse a memory op
+whose base is not a proved constant (`UnknownBase`) or whose span
+escapes the SID window (`Oob`).
+
+**This is not:**
+
+- An NVVM / LLVM pass, a PTX rewriter, or a CUDA runtime.
+- “Safe multi-tenant kernels” covering all side-effects. GPU-AToLL
+  itself only claims memory isolation at validation time.
+- A replacement for Soft-SMMU or SET_SID. SFI + SID stack: the
+  verifier proves the span; Soft SMMU still walks the SID at
+  execute. Fault injection skips the static verifier; the SID
+  sandbox still traps and does not cross-read.
+
+**Honest TODOs (stay open):**
+
+- Atomics (`ATOMIC_ADD`) are **refused**, not modeled.
+- Tensor copies / SoftNPU `MatMul` / `Wave` / TMA-shaped ops are
+  **refused**, not modeled.
+- Heap / dynamic allocation is not a sandbox (no heap in this ISA).
+
+**Contract** (`aether_core::softsfi` + `drivers/src/softsfi.rs` on Soft-CP):
+
+```text
+verify(program, SidSandbox::from_iommu(sid))
+  Load/Store: prove [rs+imm, +4) ⊆ SID IOVA window
+  Dma:        prove src and dst spans ⊆ window
+  Add/AddImm: no memory; refine constants
+  Atomic/Tensor/unknown: Unmodeled
+Soft-CP submit_sfi(sid, program)     // verify then execute
+Soft-CP inject_sfi_skip_verify(...)  // runtime SID trap only
+```
+
+`CpCmd` / XQueue / SET_SID / SoftChipletSync stay unchanged. Path B
+SoftNPU / `make qemu` unchanged. Two tenants on the same Soft-CP use
+distinct SIDs; host tests accept in-bounds, reject OOB, and show
+skip-verify does not leak tenant B.
+
+Host tests: `verifier_accepts_in_bounds_program`,
+`verifier_rejects_oob`, `verifier_rejects_atomics_and_tensor`,
+`softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
+`[softsfi]`.
+
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
 **Status:** Accepted 2026-09-07.

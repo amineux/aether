@@ -4,6 +4,7 @@
 //! SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines +
 //! SoftCCT elision +
 //! SoftCmdFirewall copy-then-validate + IRQ/fence).
+//! SoftSFI (`softsfi`) is a toy bytecode sandbox beside the CP.
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
 //! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped
 //! timelines). [`PartnerNpuStub`] remains a documented no-op sketch.
@@ -16,6 +17,7 @@ pub mod ireecp;
 pub mod mmio;
 pub mod partner;
 pub mod softnpu;
+pub mod softsfi;
 pub mod virtio_accel;
 
 pub use fakecp::{
