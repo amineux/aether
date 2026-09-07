@@ -82,8 +82,9 @@ FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
 The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
 `make qemu` treats that as a clean run. CI runs `make qemu-ci` (45s timeout).
 The kernel self-check also prints `[blast] two-tenant blast radius sealed`
-(CrossCut + wrong-SID refuse). A one-week diligence clip, not a track.
-See [`docs/BLAST.md`](docs/BLAST.md).
+(CrossCut + wrong-SID refuse) and `[sid] two-SID Host1x-shaped submit sealed`
+(SET_SID at submit, not only at map). Diligence clips, not a track.
+See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
 
@@ -255,9 +256,10 @@ See [docs/ROADMAP.md](docs/ROADMAP.md) and
 [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status.
 The Month 1–2 spine (opcodes → PJRT shim) is done. Soft-CP XQueue is
 **M4 done** (PR #47; two software queues, queue-boundary suspend/resume;
-not a silicon queuing unit). **M3 SID-at-submit is still cooking**
-(`stamp_queue_sid` is the hook). Optional Soft SMMU kit is this cut
-(software tables). Path-A guest bind stays gated.
+not a silicon queuing unit). **M3 SID-at-submit is landed** (Host1x-shaped
+SET_SID; StreamId inherits / sticks on the XQueue; not a Tegra driver).
+Optional Soft SMMU kit is PR #48 (software tables). Path-A guest bind
+stays gated.
 
 ## Docs
 
@@ -272,7 +274,7 @@ not a silicon queuing unit). **M3 SID-at-submit is still cooking**
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M2 and M4 done; M3 SID-at-submit cooking)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M4 done; SoftChipletSync next bite)
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 

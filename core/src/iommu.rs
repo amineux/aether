@@ -47,7 +47,12 @@
 //! - SSID ≥ `MAX_CDS` / above `S1CDMax`, or a missing / invalid CD, is
 //!   `StreamAbort` (SSID/CD walk hardening).
 //! - `CrossTenant` / `WrongStream` / `StreamAbort` / `NotMapped` /
-//!   `Stage2Fault` as below.
+//!   `Stage2Fault` / `SubmitSid` / `SidBudget` as below.
+//! - **SID-at-submit (Host1x-shaped):** [`IommuMap::set_sid`] programs
+//!   the job-head StreamID. [`IommuMap::resolve_submit`] refuses DMA
+//!   until that SET_SID is armed for the submit. Not a Tegra driver.
+//! - Per-tenant SID budget ([`SID_BUDGET_PER_TENANT`]) — process/tenant
+//!   contexts, not a silicon SID allocator.
 //! - Typed windows ([`crate::window::TypedWindow`]) pin through
 //!   [`IommuMap::map_window`]. That is a CXL.mem-inspired stub, not a
 //!   HDM decoder.
@@ -84,6 +89,16 @@ pub const SOFT_SMMU_CD_SHIFT: u32 = 22;
 
 /// Software S1CDMax (SSID must be `<=` this). Matches [`MAX_CDS`] − 1.
 pub const SOFT_SMMU_S1CDMAX: u8 = (MAX_CDS - 1) as u8;
+
+/// Per-tenant software SID budget (Bound CDs). Process/tenant-level
+/// contexts. Exhausting it is [`MapError::SidBudget`]. Not a silicon
+/// SID allocator and not hardware-grade isolation.
+pub const SID_BUDGET_PER_TENANT: usize = 4;
+
+/// Host1x-shaped job-head opcode (software). Soft-CP / IreeShapedCp
+/// stamp `stream_id` as the SET_SID operand at submit. **Not** a Tegra
+/// class opcode and not [`crate::accel::AccelOp`].
+pub const SET_SID: u16 = 0x0001;
 
 /// Accelerator / chiplet StreamID. **Not** a PCIe BDF.
 ///
@@ -327,6 +342,11 @@ pub enum MapError {
     StreamAbort,
     /// Nested / Stage-2 walk: Stage-1 hit, Stage-2 miss.
     Stage2Fault,
+    /// DMA / walk on the submit path with no programmed SET_SID.
+    /// Bind-at-map is not enough; Host1x-shaped submit must stamp SID.
+    SubmitSid,
+    /// Per-tenant SID pool exhausted ([`SID_BUDGET_PER_TENANT`]).
+    SidBudget,
 }
 
 impl MapError {
@@ -341,6 +361,8 @@ impl MapError {
             Self::WrongStream => "WrongStream",
             Self::StreamAbort => "StreamAbort",
             Self::Stage2Fault => "Stage2Fault",
+            Self::SubmitSid => "SubmitSid",
+            Self::SidBudget => "SidBudget",
         }
     }
 }
@@ -383,6 +405,8 @@ pub struct IommuMap {
     atc: [Option<AtsLine>; MAX_ATC],
     atc_hits: u32,
     atc_misses: u32,
+    /// Host1x-shaped job-head StreamID. `None` until [`Self::set_sid`].
+    submit_sid: Option<u32>,
 }
 
 impl IommuMap {
@@ -393,6 +417,7 @@ impl IommuMap {
             atc: [None; MAX_ATC],
             atc_hits: 0,
             atc_misses: 0,
+            submit_sid: None,
         }
     }
 
@@ -527,13 +552,20 @@ impl IommuMap {
         let _ = self.capture(sid)?;
         let ste_i = self.ste_index(sid).ok_or(MapError::TableFull)?;
         {
-            let ste = self.stes[ste_i].as_mut().unwrap();
+            let ste = self.stes[ste_i].as_ref().unwrap();
             if sid.ssid() > ste.s1cdmax {
                 return Err(MapError::StreamAbort);
             }
             if ste.state == StreamState::Bound && ste.tenant != cap.tenant {
                 return Err(MapError::CrossTenant);
             }
+        }
+        let already = self.cd_slot_of(sid).is_some();
+        if !already && self.tenant_sid_count(cap.tenant) >= SID_BUDGET_PER_TENANT {
+            return Err(MapError::SidBudget);
+        }
+        {
+            let ste = self.stes[ste_i].as_mut().unwrap();
             ste.tenant = cap.tenant;
             ste.state = StreamState::Bound;
             if ste.config == SteConfig::Abort {
@@ -575,6 +607,7 @@ impl IommuMap {
             }
         }
         self.invalidate_ste_key(key);
+        self.clear_submit_if(|s| s.stream_key() == key);
         self.stes[ste_i] = None;
         Ok(())
     }
@@ -596,6 +629,7 @@ impl IommuMap {
         }
         self.stes[ste_i].as_mut().unwrap().cds[cd_i] = None;
         self.gc_s2(ste_i);
+        self.clear_submit_if(|s| s.raw() == raw);
         let _ = self.invalidate(InvCmd::CfgCd { sid });
         let empty = self.stes[ste_i]
             .as_ref()
@@ -673,6 +707,83 @@ impl IommuMap {
 
     pub fn is_bound(&self, sid: StreamId) -> bool {
         self.stream_state(sid) == StreamState::Bound
+    }
+
+    /// Bound CDs charged to `tenant` (software SID pool).
+    pub fn tenant_sid_count(&self, tenant: TenantId) -> usize {
+        self.stes
+            .iter()
+            .flatten()
+            .filter(|ste| ste.tenant == tenant)
+            .map(|ste| ste.cds.iter().filter(|c| c.is_some()).count())
+            .sum()
+    }
+
+    pub fn sid_budget_left(&self, tenant: TenantId) -> usize {
+        SID_BUDGET_PER_TENANT.saturating_sub(self.tenant_sid_count(tenant))
+    }
+
+    /// Host1x-shaped SET_SID: program the job-head StreamID.
+    ///
+    /// Privileged: Memory+MAP. SID must already be Bound. Does not DMA.
+    /// Soft-CP / IreeShapedCp call this (or [`Self::set_sid_bound`]) at
+    /// submit before walking IOVAs. Not a Tegra Host1x class opcode.
+    pub fn set_sid(&mut self, cap: &Capability, sid: StreamId) -> Result<StreamId, MapError> {
+        Self::check_cap(cap)?;
+        self.require_bound(sid)?;
+        if self.ste(sid).is_some_and(|s| s.tenant != cap.tenant) {
+            return Err(MapError::CrossTenant);
+        }
+        self.submit_sid = Some(sid.raw());
+        Ok(sid)
+    }
+
+    /// SET_SID when the SID is already Bound. `AccelDevice::submit` has
+    /// no cap; bind already required Memory+MAP.
+    pub fn set_sid_bound(&mut self, sid: StreamId) -> Result<StreamId, MapError> {
+        self.require_bound(sid)?;
+        self.submit_sid = Some(sid.raw());
+        Ok(sid)
+    }
+
+    /// Programmed job-head StreamID, if SET_SID has armed this submit.
+    pub fn submit_sid(&self) -> Option<StreamId> {
+        self.submit_sid.map(StreamId::from_raw)
+    }
+
+    /// Drop the submit latch (end of job / FLR analogue).
+    pub fn clear_submit_sid(&mut self) {
+        self.submit_sid = None;
+    }
+
+    fn clear_submit_if(&mut self, pred: impl Fn(StreamId) -> bool) {
+        if self.submit_sid.is_some_and(|s| pred(StreamId(s))) {
+            self.submit_sid = None;
+        }
+    }
+
+    /// STE→CD→S1→S2 **for this submit**. Refuses until SET_SID is
+    /// programmed; packet SID ≠ armed SID is [`MapError::WrongStream`].
+    pub fn walk_submit(&self, sid: StreamId, addr: PhysAddr) -> Result<WalkResult, MapError> {
+        let armed = self.submit_sid.ok_or(MapError::SubmitSid)?;
+        if armed != sid.raw() {
+            return Err(MapError::WrongStream);
+        }
+        self.walk(sid, addr)
+    }
+
+    /// IOVA → PA on the submit path. Bind-at-map is not enough.
+    pub fn resolve_submit(
+        &self,
+        stream_id: u32,
+        iova: PhysAddr,
+        tenant: Option<TenantId>,
+    ) -> Result<PhysAddr, MapError> {
+        let armed = self.submit_sid.ok_or(MapError::SubmitSid)?;
+        if armed != stream_id {
+            return Err(MapError::WrongStream);
+        }
+        self.resolve_result(stream_id, iova, tenant)
     }
 
     /// STE → CD → Stage-1 → Stage-2. Does not touch the ATC.
@@ -1790,5 +1901,130 @@ mod tests {
                 .0,
             0x8000
         );
+    }
+
+    #[test]
+    fn set_sid_required_for_submit_walk() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let sid = StreamId::accel(ChipletId(0), TileId(2), 1);
+        let r = iommu
+            .map(&cap, MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid))
+            .unwrap();
+        // Bind-at-map is not enough for the Host1x-shaped submit path.
+        assert_eq!(iommu.submit_sid(), None);
+        assert_eq!(
+            iommu.resolve_submit(sid.raw(), r.iova, None),
+            Err(MapError::SubmitSid)
+        );
+        assert_eq!(iommu.walk_submit(sid, r.iova), Err(MapError::SubmitSid));
+        // Ordinary walk still works (SoftNPU path B).
+        assert_eq!(iommu.walk(sid, r.iova).unwrap().pa.0, 0x1000);
+
+        let no_map = mem_cap(1, CapRights::READ | CapRights::WRITE, TenantId(1));
+        assert_eq!(iommu.set_sid(&no_map, sid), Err(MapError::NoMemoryCap));
+        assert_eq!(iommu.set_sid(&cap, sid).unwrap(), sid);
+        assert_eq!(iommu.submit_sid(), Some(sid));
+        assert_eq!(
+            iommu.resolve_submit(sid.raw(), r.iova, None).unwrap().0,
+            0x1000
+        );
+        assert_eq!(iommu.walk_submit(sid, r.iova).unwrap().pa.0, 0x1000);
+
+        let other = StreamId::accel(ChipletId(0), TileId(2), 2);
+        assert_eq!(
+            iommu.resolve_submit(other.raw(), r.iova, None),
+            Err(MapError::WrongStream)
+        );
+        iommu.clear_submit_sid();
+        assert_eq!(
+            iommu.resolve_submit(sid.raw(), r.iova, None),
+            Err(MapError::SubmitSid)
+        );
+    }
+
+    #[test]
+    fn two_tenants_two_sids_set_sid() {
+        let mut iommu = IommuMap::new();
+        let a = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let b = mem_cap(2, CapRights::MEM_FULL.0, TenantId(2));
+        let sid_a = StreamId::accel(ChipletId(0), TileId(2), 1);
+        let sid_b = StreamId::accel(ChipletId(1), TileId(3), 1);
+        let ra = iommu
+            .map(&a, MapRequest::pin_accel(PhysAddr(0x2000), 0x1000, sid_a))
+            .unwrap();
+        let rb = iommu
+            .map(&b, MapRequest::pin_accel(PhysAddr(0x4000), 0x1000, sid_b))
+            .unwrap();
+        assert_eq!(iommu.set_sid(&a, sid_b), Err(MapError::CrossTenant));
+        iommu.set_sid(&a, sid_a).unwrap();
+        assert_eq!(
+            iommu.resolve_submit(sid_a.raw(), ra.iova, None).unwrap().0,
+            0x2000
+        );
+        assert_eq!(
+            iommu.resolve_submit(sid_b.raw(), rb.iova, None),
+            Err(MapError::WrongStream)
+        );
+        iommu.set_sid(&b, sid_b).unwrap();
+        assert_eq!(
+            iommu.resolve_submit(sid_b.raw(), rb.iova, None).unwrap().0,
+            0x4000
+        );
+        assert_eq!(
+            iommu.resolve_submit(sid_a.raw(), ra.iova, None),
+            Err(MapError::WrongStream)
+        );
+    }
+
+    #[test]
+    fn sid_budget_per_tenant() {
+        let mut iommu = IommuMap::new();
+        let a = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let b = mem_cap(2, CapRights::MEM_FULL.0, TenantId(2));
+        for i in 0..SID_BUDGET_PER_TENANT {
+            let sid = StreamId::accel(ChipletId(0), TileId(0), i as u8);
+            assert_eq!(iommu.bind_stream(&a, sid).unwrap(), StreamState::Bound);
+        }
+        assert_eq!(iommu.tenant_sid_count(TenantId(1)), SID_BUDGET_PER_TENANT);
+        assert_eq!(iommu.sid_budget_left(TenantId(1)), 0);
+        assert_eq!(
+            iommu.bind_stream(&a, StreamId::accel(ChipletId(0), TileId(0), 4)),
+            Err(MapError::SidBudget)
+        );
+        // Re-bind of an existing SID does not consume another slot.
+        assert_eq!(
+            iommu.bind_stream(&a, StreamId::accel(ChipletId(0), TileId(0), 0)),
+            Ok(StreamState::Bound)
+        );
+        // Other tenant has its own budget.
+        assert_eq!(
+            iommu.bind_stream(&b, StreamId::accel(ChipletId(1), TileId(0), 0)),
+            Ok(StreamState::Bound)
+        );
+        iommu
+            .unbind_cd(StreamId::accel(ChipletId(0), TileId(0), 3))
+            .unwrap();
+        assert_eq!(iommu.sid_budget_left(TenantId(1)), 1);
+        assert_eq!(
+            iommu.bind_stream(&a, StreamId::accel(ChipletId(0), TileId(0), 4)),
+            Ok(StreamState::Bound)
+        );
+    }
+
+    #[test]
+    fn set_sid_unbound_aborts() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let sid = StreamId::accel(ChipletId(0), TileId(1), 1);
+        assert_eq!(iommu.set_sid(&cap, sid), Err(MapError::StreamAbort));
+        assert_eq!(iommu.set_sid_bound(sid), Err(MapError::StreamAbort));
+        assert_eq!(iommu.capture(sid).unwrap(), StreamState::Captured);
+        assert_eq!(iommu.set_sid(&cap, sid), Err(MapError::StreamAbort));
+        iommu.bind_stream(&cap, sid).unwrap();
+        assert_eq!(iommu.set_sid_bound(sid).unwrap(), sid);
+        iommu.flr(sid).unwrap();
+        assert_eq!(iommu.submit_sid(), None);
+        assert_eq!(iommu.set_sid_bound(sid), Err(MapError::StreamAbort));
     }
 }

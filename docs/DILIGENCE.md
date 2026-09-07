@@ -5,8 +5,8 @@ time on Aether. It is **not** a partnership announcement, a tape-out
 checklist, or a benchmark brief. The public site (`site/`) is the same
 leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The **next calendar** is
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M2 and M4 done, PR #47;
-M3 SID-at-submit cooking). Site-as-milestone stays killed.
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
+landed; SoftChipletSync next bite). Site-as-milestone stays killed.
 
 ## What ships in this tree
 
@@ -24,8 +24,8 @@ M3 SID-at-submit cooking). Site-as-milestone stays killed.
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + Soft SMMU SID + two software XQueues (queue-boundary; M4 PR #47) + IRQ/fence | `drivers/src/fakecp.rs` |
-| IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
@@ -42,8 +42,10 @@ The portable specification is `aether-core`. Host tests execute the same
 `run_boot_demo()` the kernels print (caps, fabric, map, color, cut), plus
 the Multiboot mmap parser. `run_blast_demo()` is a one-week diligence
 clip (two tenants, CrossCut + wrong-SID refuse, serial `[blast]`) — not
-a Year-2 isolation track. The RISC-V and aarch64 ports did not change
-`aether-hal` or the syscall / AccelDevice ABI.
+a Year-2 isolation track. `run_sid_submit_demo()` is the Host1x-shaped
+SET_SID-at-submit clip (serial `[sid]`); not a Tegra driver. The RISC-V
+and aarch64 ports did not change `aether-hal` or the syscall /
+AccelDevice ABI.
 
 ## What is stubbed
 
@@ -89,7 +91,7 @@ doorbell). aarch64 now has the same syscall numbers over
 4. submit(): pack AccelJobDesc into the chip's command packet. Soft-CP
    uses the 64-byte CpCmd in [ACCEL.md](ACCEL.md) with a packed StreamId
    on a software XQueue (two queues; queue-boundary suspend/resume; SID
-   sticks to the queue). IreeShapedCp uses the 96-byte IreeHalCmd (IREE
+   sticks to the queue at SET_SID / first submit). IreeShapedCp uses the 96-byte IreeHalCmd (IREE
    HAL nouns; not AccelOp) on a single mailbox. Doorbell. Do not
    execute in the syscall. Not a silicon queuing unit.
 5. IRQ: AccelDevice::poll, retire the job's fence seq through

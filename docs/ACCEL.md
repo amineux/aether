@@ -180,7 +180,16 @@ Rules:
    or an STE whose SSID has no valid CD, is `StreamAbort`. Wrong SID is
    `WrongStream`. Wrong tenant is `CrossTenant`. Unmapped Stage-1 on a
    bound SID is `NotMapped`. Nested Stage-2 miss is `Stage2Fault`.
-5. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
+5. **SID-at-submit (Host1x-shaped).** Soft-CP / IreeShapedCp program
+   SET_SID at the job head (`IommuMap::set_sid` / `set_sid_bound`)
+   before DMA. `resolve_submit` / `walk_submit` abort (`SubmitSid`)
+   until that SID is armed for **this** submit; packet SID ≠ armed SID
+   is `WrongStream`. Bind-at-map is not enough on the CP submit path.
+   SoftNPU path B still walks Bound SIDs without a submit latch.
+6. Per-tenant SID budget (`SID_BUDGET_PER_TENANT = 4` Bound CDs).
+   Exhausting it is `SidBudget`. Process/tenant-level contexts, not a
+   silicon SID allocator.
+7. `AccelDevice::map` without a prior cap walk returns `NoMemoryCap`.
    Use `SoftNpuDevice::map_with_cap` / `IommuMap::map`. SoftNPU DMA
    uses stream 0: first pin binds that SID (Nested, identity Stage-2);
    submit writes IOVAs into the virtqueue; `service` walks
@@ -248,11 +257,13 @@ that job submit, ownership, and completion look like silicon.
 
 The Aether-native worked example is `aether_drivers::SoftCommandProcessor`
 (`backend = 3`, name `soft-cp`). It is a **software model** of a
-silicon CP mailbox: it packs a 64-byte packet, translates through the
-Soft SMMU (`StreamId` + bind/abort), and completes on an IRQ/poll path
-into a fence. It is not SoftNPU (virtqueue BAR, `backend = 1`), not the
-in-process SoftNPU engine (`backend = 0`), and not the no-op
-`PartnerNpuStub` (`backend = 2`). SoftNPU path B and Soft-CP stay.
+silicon CP mailbox: it packs a 64-byte packet, programs SET_SID at
+submit (Host1x-shaped job head; SID sticks on the XQueue), translates
+through the Soft SMMU (`StreamId` + bind/abort + submit latch), and
+completes on an IRQ/poll path into a fence. It is not SoftNPU
+(virtqueue BAR, `backend = 1`), not the in-process SoftNPU engine
+(`backend = 0`), and not the no-op `PartnerNpuStub` (`backend = 2`).
+SoftNPU path B and Soft-CP stay.
 
 The **partner-shaped HAL spine** is `aether_drivers::IreeShapedCp`
 (`backend = 4`, name `iree-shaped-cp`). It packs a frozen IREE HAL
@@ -267,8 +278,8 @@ opcode/packet ADR below.
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + Soft SMMU + IRQ/fence |
-| 4 | `IreeShapedCp` | IREE HAL dispatch packet + Soft SMMU + IRQ/fence; not a vendor |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + Soft SMMU + IRQ/fence |
+| 4 | `IreeShapedCp` | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
 
@@ -282,8 +293,8 @@ offset  type   field
 0x08    u16    m
 0x0A    u16    n
 0x0C    u16    k
-0x0E    u16    flags        bit0 = HAS_BIAS
-0x10    u32    stream_id    StreamId: [31:24] chiplet | [23:8] tile | [7:0] ssid
+0x0E    u16    flags        bit0 = HAS_BIAS; bit1 = SET_SID (job head stamped)
+0x10    u32    stream_id    SET_SID operand: [31:24] chiplet | [23:8] tile | [7:0] ssid
 0x14    u16    chiplet      job.place.chiplet
 0x16    u16    tile         job.place.tile (0 if none)
 0x18    u64    iova_a
@@ -306,11 +317,16 @@ image.
 2. bind_stream(Memory+MAP, sid) and/or map_with_cap(pin_accel(...)):
    first authorized map captures+binds. Capture alone leaves the SID
    aborting. map() without a cap walk returns NoMemoryCap.
-3. submit(): CpCmd::pack(job, &iommu) → mailbox, doorbell=1.
-   Unbound / captured / missing / partial / wrong-stream → Fault.
+3. submit() / submit_xqueue(): SET_SID at the job head, then
+   CpCmd::pack_on_stream on the queue SID. Privileged
+   `set_sid(Memory+MAP, sid)` programs the latch; first submit inherits
+   `stream_for_job` (or the latch) and sticks it on the XQueue. Unbound /
+   captured / missing / partial / wrong-stream / no SET_SID → Fault.
    Does not execute. poll() is empty until service().
-4. service() (IRQ / kthread poll): resolve_stream each IOVA, run the
-   integer engine, write a Completion, raise IRQ.
+4. service() (IRQ / kthread poll): dequeue a Running XQueue, re-arm
+   SET_SID from the packet, resolve_submit each IOVA, run the integer
+   engine, write a Completion, raise IRQ, clear the submit latch.
+   Tampered packet SID is status -2.
 5. poll(): pop the completion and ack the IRQ. The job's fence_id
    (a timeline seq) is retired through `Timeline::complete` /
    `retire_into`. `wait` polls the retired watermark. Do not treat
@@ -336,7 +352,7 @@ separate optional BAR device; stock `make qemu` does not attach it.
 
 **Status:** **M4 done (PR #47).** Two software queues; queue-boundary
 suspend/resume. Not a silicon queuing unit. Not an XSched LD_PRELOAD
-shim. SID-at-submit (M3) is still cooking.
+shim. SID-at-submit (M3) is landed (SET_SID sticks on the queue).
 
 **Inspiration.** [XSched](https://github.com/XpuOS/xsched) (OSDI’25)
 exposes an **XQueue** as the schedulable object on an open, multi-level
@@ -371,11 +387,12 @@ AccelDevice::submit                    // queue 0 (device-shaped compat)
 
 Soft-SMMU SID **sticks to the queue**. `create_queue` / Soft-CP
 `stamp_queue_sid` program it. If the queue has no SID yet, first
-submit inherits today’s `stream_for_job` pack stamp and sticks it —
-that is the hook for SID-at-submit (Host1x-shaped doorbell write;
-not landed). A job whose place-derived SID does not match the
-sticky SID is `Fault`. Pins on another SID are still `Fault`.
-`CpCmd` layout is unchanged (`stream_id` at 0x10).
+submit inherits `stream_for_job` (or a privileged SET_SID latch) and
+sticks it — that is SID-at-submit (Host1x-shaped doorbell write;
+landed). An empty queue may restamp from SET_SID between jobs; a
+pending queue refuses a foreign SID (`Fault` / `Busy`). Pins on
+another SID are still `Fault`. `CpCmd` layout is unchanged
+(`stream_id` at 0x10); `CP_FLAG_SET_SID` marks the job-head stamp.
 
 Two queues (`SOFT_CP_XQUEUES = 2`, depth 4). Freeze A and B keeps
 DMA under B’s SID (blast-radius). Priority picks among Running
@@ -483,7 +500,7 @@ offset  type   field                 IREE HAL noun
 0x18    u32    workgroup_count_z     [2]
 0x1C    u32    element_type          iree_hal_element_type_t
 0x20    u32    queue_affinity        iree_hal_queue_affinity_t (low 32)
-0x24    u32    stream_id             Soft-SMMU StreamId (Aether pin; ssid=2)
+0x24    u32    stream_id             SET_SID operand / Soft-SMMU StreamId (ssid=2)
 0x28    u64    binding0_offset       iree_hal_buffer_ref_t.offset (IOVA A)
 0x30    u64    binding1_offset       IOVA B
 0x38    u64    binding2_offset       IOVA C
@@ -508,13 +525,15 @@ is additive).
 2. bind_stream(Memory+MAP, sid) and/or map_with_cap(pin_accel(...)):
    first authorized map captures+binds. map() without a cap walk
    returns NoMemoryCap. SoftNPU ssid 0 and Soft-CP ssid 1 are WrongStream.
-3. submit(): IreeHalCmd::pack(job, &iommu) → mailbox, doorbell=1.
-   PJRT host path: abi nouns → pack IreeHalCmd → submit_hal.
-   Unbound / captured / missing / partial / wrong-stream → Fault.
-   TRANSFER-only image → Fault. Other isa_blob_id → Unsupported.
-   Does not execute. poll() is empty until service().
-4. service() (IRQ / kthread poll): resolve_stream each binding IOVA,
-   run the integer engine, write a Completion, raise IRQ.
+3. submit(): SET_SID then IreeHalCmd::pack_on → mailbox, doorbell=1.
+   PJRT host path: abi nouns → pack IreeHalCmd → submit_hal (arms
+   SET_SID from `stream_id`). Unbound / captured / missing / partial /
+   wrong-stream / no SET_SID → Fault. TRANSFER-only image → Fault.
+   Other isa_blob_id → Unsupported. Does not execute. poll() is empty
+   until service().
+4. service() (IRQ / kthread poll): resolve_submit each binding IOVA
+   (armed SID must match the packet), run the integer engine, write a
+   Completion, raise IRQ, clear the submit latch.
 5. poll(): pop the completion and ack the IRQ. signal_payload (fence
    seq) retires through Timeline::complete / retire_into.
 6. Never accept a PA that did not come from a cap walk + IommuMap pin.
@@ -530,6 +549,44 @@ The compiler-facing nouns on this path live in `host/aether-pjrt`
 lower onto `AccelJobDesc` + Soft SMMU. The host session submits through
 SoftNPU and `IreeShapedCp` (`backend = 4`), not Soft-CP. That crate is
 not a PJRT plugin, not an IREE HAL driver, and not a vendor runtime.
+
+## ADR: Host1x-shaped SET_SID at submit
+
+**Status:** Accepted 2026-09-07.
+
+**Context.** SpectraScout post-M2 #1: Soft SMMU already binds SIDs at
+map. A Host1x-shaped CP programs StreamID at the **job head** (doorbell)
+so DMA cannot start on a Bound-but-not-submitted SID. NVIDIA Tegra
+Host1x is the inspiration for “first command sets the channel SID.”
+
+**Decision.** Extend Soft-CP (`CpCmd.stream_id`, `CP_FLAG_SET_SID`) and
+IreeShapedCp (`IreeHalCmd.stream_id`) — no second IR, no packet-offset
+change, no new syscall.
+
+```text
+map / bind_stream (Memory+MAP)     // STE+CD Bound; SID pool charged
+set_sid / submit auto-arm          // job-head SET_SID; latch armed
+XQueue inherit / stick             // first submit or empty-queue restamp
+pack stream_id = queue SID         // existing field; Host1x operand
+service: resolve_submit            // re-arm from packet; WrongStream
+clear_submit_sid                   // end of job / FLR / unbind
+```
+
+- Privileged `IommuMap::set_sid` requires Memory+MAP and a Bound SID
+  owned by that tenant. Soft-CP `submit_xqueue` uses `set_sid_bound`
+  and sticks the SID on the XQueue (bind already walked the cap).
+  `IreeShapedCp` stays a single mailbox.
+- Two tenants / two SIDs: host tests in `core/src/sid.rs`,
+  `drivers/src/{fakecp,ireecp}.rs`; optional QEMU serial `[sid]`.
+- Limited pool: `SID_BUDGET_PER_TENANT = 4`. `SidBudget` on the 5th
+  Bound CD. Process/tenant-level contexts.
+- Fault injection: `inject_wrong_sid` after submit; service status -2.
+
+**Not claimed.** This is **not** a Tegra Host1x driver, not a Host1x
+class opcode ROM, not a silicon stream-ID allocator, and **not**
+hardware-grade isolation. Soft SMMU remains a software table. A real
+SMMU / Host1x still needs partner silicon, a SID budget that matches
+the part, and broader fault-injection than these host tests.
 
 ## Co-scheduling
 
