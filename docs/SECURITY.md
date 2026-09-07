@@ -67,6 +67,10 @@ per tenant) plus the `inject_wrong_sid` / `SubmitSid` host tests are
 the isolation we can unit-test today; they are not a silicon SID
 allocator or a Host1x fault-injection campaign.
 
+SoftChipletSync (`core/src/chipsync.rs`) is a software fence-domain
+model (scoped timelines + optional CCT). It is **not** a coherence
+protocol, not UCIe, and not hardware-grade isolation across chiplets.
+
 ## CDT properties (host tests, not a proof)
 
 Aether stores a parent pointer (`CdtNode` = table owner + mint

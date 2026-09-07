@@ -402,6 +402,49 @@ Host tests: `xqueue_suspend_a_b_progresses_blast_radius`,
 `xqueue_wrong_sid_still_aborts`, plus the existing wrong-stream
 pack tests.
 
+## SoftChipletSync (software; Fleet / CPElide-shaped)
+
+**Status:** **Landed** (SpectraScout post-M2 leftover after M3+M4).
+Scoped timelines `{wave, CU, chiplet, package}` on the existing seq /
+wait / complete model. Not a Vulkan timeline product. Not UCIe.
+Not ChipletFleet placement (`ChipletTaskScope` stays a killed calendar
+stub).
+
+**Inspiration.**
+
+- [Fleet](https://arxiv.org/abs/2604.15379) hierarchical event counters:
+  workers increment a chiplet-local counter with **no** package fence;
+  only the last worker on a participating chiplet issues a package-scope
+  fence. Chiplet-local signal is free; package-scope costs more.
+- [CPElide](https://doi.org/10.1109/MICRO61859.2024.00058) Chiplet
+  Coherence Table (CCT): last-writer chiplet per buffer label. A consumer
+  on that same chiplet **elides** the package fence.
+
+This is **not** a Fleet port, not CPElide silicon, not a cache-coherence
+directory, and not a multi-chiplet latency result. Host tests measure
+fence **counts** (package ≪ naive global). Latency wins need a
+multi-chiplet sim — single-die QEMU / host numbers are not partner proof.
+
+**Contract** (`aether_core::chipsync::SoftChipletSync` + Soft-CP /
+IreeShapedCp `submit_scoped`):
+
+```text
+open(scope) / expect(chiplet, n_workers)
+arrive(chiplet, write_label)   // chiplet-local free; last worker may fence
+wait(consumer, read_label)     // CCT elides if last-writer == consumer
+Soft-CP submit_scoped(queue, job, scope, write, read)
+IreeShapedCp submit_scoped     // still a single mailbox
+```
+
+`submit_xqueue` / `AccelDevice::submit` stay unscoped (SID / XQueue
+intact). `CpCmd` / `IreeHalCmd` layouts unchanged. Path B SoftNPU /
+`make qemu` unchanged.
+
+Host tests: `package_scope_fence_count_much_less_than_naive`,
+`cct_elides_when_last_writer_matches_consumer`, Soft-CP two-fake-chiplet
+producer/consumer, IreeShapedCp sequential producer/consumer. Kernel
+serial `[chipsync]`.
+
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
 **Status:** Accepted 2026-09-07.
@@ -602,7 +645,9 @@ watermark, in-order `complete`). That is not a CUDA stream: there
 is no implicit catch-up, and a partition that is out of credits
 refuses submit. `timeout` is a software overlay — it does not
 claim a device IRQ. SoftCommandProcessor, IreeShapedCp, and SoftNPU
-all retire through this API. QEMU's used-ring IRQ is still software on x86
+all retire through this API. SoftChipletSync adds scoped (wave / CU /
+chiplet / package) timelines on the same seq model — Fleet / CPElide
+inspiration, not Vulkan, not UCIe. QEMU's used-ring IRQ is still software on x86
 (kthread poll after the PIC timer). On RISC-V the same AccelMmio
 BAR is serviced from a **PLIC claim** (UART THRE software doorbell,
 source 10) — a real interrupt path, still path B, still not a

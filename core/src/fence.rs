@@ -3,7 +3,13 @@
 //! This is a **software model** of what a command processor would retire:
 //! a named [`TimelineId`], monotonic seq ([`FenceId`]), in-order retire,
 //! and a credit limit on outstanding seqs. It is **not** a silicon
-//! timeline, not a CUDA stream, and not a hardware fence unit.
+//! timeline, not a CUDA stream, not a Vulkan timeline product, and not
+//! a hardware fence unit.
+//!
+//! Scoped (wave / CU / chiplet / package) timelines, Fleet-shaped
+//! hierarchical counters, and optional CPElide CCT elision live in
+//! [`crate::chipsync::SoftChipletSync`]. That is **not** UCIe sync and
+//! not ChipletFleet placement.
 //!
 //! Hardware-shaped (what a CP mailbox / IRQ would name):
 //! - [`Timeline::submit`] allocates the next seq and takes a credit.
@@ -94,6 +100,7 @@ impl Timeline {
         Self::named(TimelineId(partition.0), partition)
     }
 
+    /// Named timeline. SoftChipletSync uses one id per [`crate::chipsync::SyncScope`].
     pub const fn named(id: TimelineId, partition: PartitionId) -> Self {
         Self {
             id,

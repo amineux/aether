@@ -15,7 +15,8 @@ little-endian `IreeHalCmd` (magic `0xAE7E1EE1`, `backend = 4`,
 `ssid = 2`) and submits through `IreeShapedCp`. SoftNPU is an extra
 host backend for virtqueue tests; `make qemu` remains the path-B
 SoftNPU demo. Soft-CP (`backend = 3`) stays in-tree as the
-Aether-native packet path with two software XQueues; this crate does
+Aether-native packet path with two software XQueues and optional
+SoftChipletSync scoped timelines; this crate does
 not submit through it.
 There is no fake vendor runtime and no `PartnerNpuStub` path.
 

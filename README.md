@@ -258,6 +258,8 @@ The Month 1–2 spine (opcodes → PJRT shim) is done. Soft-CP XQueue is
 **M4 done** (PR #47; two software queues, queue-boundary suspend/resume;
 not a silicon queuing unit). **M3 SID-at-submit is landed** (Host1x-shaped
 SET_SID; StreamId inherits / sticks on the XQueue; not a Tegra driver).
+**SoftChipletSync is landed** (scoped timelines + optional CCT; Fleet /
+CPElide inspiration; not Vulkan, not UCIe, not ChipletFleet placement).
 Optional Soft SMMU kit is PR #48 (software tables). Path-A guest bind
 stays gated.
 
@@ -274,7 +276,7 @@ stays gated.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M4 done; SoftChipletSync next bite)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1–M4 done; SoftChipletSync landed)
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 
