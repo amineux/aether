@@ -85,7 +85,8 @@ The kernel self-check also prints `[blast] two-tenant blast radius sealed`
 (CrossCut + wrong-SID refuse) and `[sid] two-SID Host1x-shaped submit sealed`
 (SET_SID at submit, not only at map) and `[firewall] copy-then-validate
 race sealed` (Host1x copy-then-validate; command-stream integrity,
-not confidential GPU). Diligence clips, not a track.
+not confidential GPU) and `[softsfi] two-tenant SFI+SID sandbox sealed`
+(GPU-AToLL-shaped toy ISA; not NVVM). Diligence clips, not a track.
 See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
@@ -268,8 +269,11 @@ inspiration; not a coherence protocol, not Vulkan / ROCm).
 XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield
 without SID change; Green Contexts / DetShare inspiration; not HW MIG,
 not a BAR firewall, not FLOPs).
-Optional Soft SMMU kit is PR #48 (software tables). Path-A guest bind
-stays gated.
+**SoftSFI is landed** (Month 5 digest 4; toy Soft-CP load/store/add/dma
++ SFI verifier; GPU-AToLL inspiration; not NVVM; atomics/tensor/heap
+refused). Optional Soft SMMU kit is PR #48 (software tables). Path-A
+guest bind stays gated. The Month 5 clock is
+[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md).
 
 ## Docs
 
@@ -284,8 +288,8 @@ stays gated.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar (SoftChipletSync + SoftCCT landed)
-- [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — next calendar (SoftGreenCtx + SoftCmdFirewall + SoftCCT landed; SoftSFI remains)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar
+- [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — next calendar (four digests landed)
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 

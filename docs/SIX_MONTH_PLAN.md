@@ -13,10 +13,11 @@ Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 
 **This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).** The
 **next calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx,
-SoftCmdFirewall, and SoftCCT landed; SoftSFI remains; PASID/SVA and
-OperatorInject parked). SpecForge OS-completeness theater is not the
-schedule. SpectraScout Soft-CP items are software models, not fork /
-POSIX / CXL.mem / ChipletFleet.
+SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed; PASID/SVA and
+OperatorInject parked). SoftSFI is a toy Soft-CP bytecode sandbox.
+SpecForge OS-completeness theater is not the schedule. SpectraScout
+Soft-CP items are software models, not fork / POSIX / CXL.mem /
+ChipletFleet.
 
 ## Non-negotiables
 
@@ -340,8 +341,10 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
 
-Month 5 remaining (not leftovers): SoftSFI. SoftGreenCtx,
-SoftCmdFirewall, and SoftCCT are **landed**. SoftNoI-IS parked.
+Month 5 remaining (not leftovers): none of the four digests.
+SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI (**digest 4**;
+GPU-AToLL-shaped toy ISA; atomics / tensor / heap refused) are
+**landed**. SoftNoI-IS parked.
 See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
@@ -362,8 +365,8 @@ a Y2 bring-up climax.
 [ROADMAP.md](ROADMAP.md) points at [MONTH5_PLAN.md](MONTH5_PLAN.md)
 for what to sequence next. This file remains the closed M1–M4
 record. SoftChipletSync, SoftCCT, SoftGreenCtx, and SoftCmdFirewall
-are landed. Suggested next cuts in ROADMAP that are not the
-remaining Month 5 digest (SoftSFI) remain **technical leftovers**.
+are landed. SoftSFI (digest 4) is **landed**. Suggested next cuts
+in ROADMAP that are not parked leftovers remain **technical leftovers**.
 
 ## Kernel PR order (this calendar)
 
@@ -377,12 +380,12 @@ remaining Month 5 digest (SoftSFI) remain **technical leftovers**.
 6. M3 Soft-CP SID-at-submit (Host1x-shaped) — **landed**
 7. SoftChipletSync scoped timelines — **landed**
 8. SoftGreenCtx (Month 5 digest 1) — **landed** (PR #54)
-9. SoftCCT elision on SoftChipletSync — **landed** (Month 5 digest 3)
+9. SoftCCT elision on SoftChipletSync — **landed** (PR #57)
 10. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
     be shown on path-A DMA (gated digest; see
     [MONTH5_PLAN.md](MONTH5_PLAN.md))
 11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
-    (SoftSFI; PASID/SVA and OperatorInject parked)
+    (SoftSFI digest 4 **landed**; PASID/SVA and OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -402,6 +405,7 @@ milestone.
 | SoftGreenCtx | `core/src/greenctx.rs`, Soft-CP / HAL `sm_wq_budget`, host tests — **landed** |
 | SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP buffer labels, host tests — **landed** |
+| SoftSFI | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` `submit_sfi` / skip-verify, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 

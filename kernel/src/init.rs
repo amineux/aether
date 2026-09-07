@@ -9,6 +9,7 @@ use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
 use aether_core::sid::run_sid_submit_demo;
+use aether_core::softsfi::run_softsfi_demo;
 use aether_drivers::softnpu::KernelDma;
 use aether_drivers::{run_firewall_demo, IreeShapedCp, SoftCommandProcessor};
 use aether_hal::AccelDevice;
@@ -237,6 +238,7 @@ pub fn run_kernel_selfcheck() {
 
     // Sequential blocks: IommuMap in the firewall clip must not share
     // the stack with chipsync / sid / softcct / SoftGreenCtx.
+    // SoftSFI uses a 128-byte flat clip (no IommuMap).
     let firewall_ok = {
         let firewall = run_firewall_demo();
         write_str("[firewall] copy-then-validate Host1x race  sneak=");
@@ -274,6 +276,21 @@ pub fn run_kernel_selfcheck() {
         green.all_ok()
     };
 
+    let softsfi = run_softsfi_demo();
+    write_str("[softsfi] in-bounds accept / OOB+unmodeled reject  ");
+    write_str(flag(
+        softsfi.in_bounds && softsfi.oob_reject && softsfi.unmodeled_reject,
+    ));
+    console::nl();
+    write_str("[softsfi] skip-verify no cross-read  ");
+    write_str(flag(softsfi.no_cross_read));
+    console::nl();
+    if softsfi.all_ok() {
+        println!("[softsfi] two-tenant SFI+SID sandbox sealed");
+    } else {
+        println!("[softsfi] FAIL -- SoftSFI");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -293,6 +310,7 @@ pub fn run_kernel_selfcheck() {
         || !softcct.all_ok()
         || !firewall_ok
         || !green_ok
+        || !softsfi.all_ok()
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);

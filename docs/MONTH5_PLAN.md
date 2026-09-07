@@ -9,9 +9,8 @@ closed M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
 OS-completeness theater is still not the schedule. Month 5 is
 **four SpectraScout exploration digests** — not one pillar, not a
 half-year of OS-completeness. SoftGreenCtx and SoftCmdFirewall are
-**landed**. SoftCCT (digest 3) is **landed**. Remaining: SoftSFI.
-PASID/SVA and
-OperatorInject stay **parked leftovers**.
+**landed**. SoftCCT (digest 3) is **landed**. SoftSFI (digest 4)
+is **landed**. PASID/SVA and OperatorInject stay **parked leftovers**.
 SoftNoI-IS stays parked. The exploration menu below is a direction
 list for later cuts.
 
@@ -26,8 +25,9 @@ Do **not** re-schedule any of the following as new milestones.
 | **M3 SID-at-submit (PR #49)** | Host1x-shaped SET_SID; SID sticks on the XQueue. Not a Tegra driver |
 | **M4 XQueue (PR #47)** | Two software queues; queue-boundary suspend/resume. Not silicon, not XSched LD_PRELOAD |
 | **SoftChipletSync (PR #51)** | Scoped `{wave, CU, chiplet, package}` + optional CCT. Fence **counts** only |
-| **SoftGreenCtx (this cut)** | Fake 70/30 SM/WQ partitions; XQueue bind; memcpy BW vs unpartitioned; migrate-to-yield without SID change. Not MIG |
+| **SoftGreenCtx (PR #54)** | Fake 70/30 SM/WQ partitions; XQueue bind; memcpy BW vs unpartitioned; migrate-to-yield without SID change. Not MIG |
 | **SoftCmdFirewall (PR #55)** | Copy-then-validate Soft-CP submit. Host1x lesson. Not confidential GPU |
+| **SoftCCT (PR #57)** | Last-writer chiplet elision on SoftChipletSync. Package fence ≪ broadcast; incorrect elision fails. Not a coherence protocol |
 | Soft SMMU bring-up kit (PR #48) | Dump/replay of STE→CD→S1/S2 + ATS. Not a Soft-SMMU redo |
 | Explorations A–E | A merged into M2; B blast-radius clip; C `ChipletTaskScope` stub; D CDT props; E `TypedWindow` stub |
 | Site through PR #52 | Research leave-behind / progress refresh. **Not** a calendar item |
@@ -67,7 +67,7 @@ numbers. Skip a digest only if its honest slice is already met on
 main (SoftCCT: see below).
 
 ```text
-SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT (landed)  →  SoftSFI
+SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT (landed)  →  SoftSFI (landed)
 SoftNoI-IS parked
 PASID / SVA  and  OperatorInject deepen  parked leftovers
 ```
@@ -95,7 +95,7 @@ completion.
    **Not** hardware SM partitioning. No new syscall. `CpCmd` layout
    unchanged.
 
-### 2. SoftCmdFirewall (**landed, PR #55**)
+### 2. SoftCmdFirewall (**landed**, PR #55)
 
 Copy-then-validate submit. Inspiration: Host1x “don’t execute the
 caller’s live buffer” — not a Tegra driver, not a confidential GPU.
@@ -144,24 +144,31 @@ Multi-chiplet **sim** metrics stay in the exploration menu.
    directory, **Not** UCIe, **Not** ChipletFleet placement, **Not**
    a Vulkan / ROCm product. Fence **counts** only.
 
-### 4. SoftSFI
+### 4. SoftSFI (**landed**)
 
 Soft-CP bytecode **memory sandbox**. Inspiration: GPU-AToLL-shaped
 verifier — not a full safe multi-tenant kernel claim.
 
-A toy ISA verifier accepts load/store whose bounds stay inside the
-SID-mapped range and rejects OOB. Two tenants: SFI + SID together
-(wrong-SID still Fault; in-range SID-A must not touch SID-B pins).
+A toy ISA (`load` / `store` / `add` / `dma`) verifier accepts
+load/store/dma whose `base+bound` stays inside the SID-mapped
+range and rejects OOB. Atomics / tensor / heap stay **refused**,
+not modeled. Two tenants: SFI + SID together (skip-verify fault
+injection still traps; in-range SID-A must not touch SID-B pins).
 
-**Done when:**
+**Contract** (`aether_core::softsfi` + Soft-CP `submit_sfi`):
 
-1. Soft-CP (own bytecode only) runs a bounds verifier on load/store
-   against the submit SID’s Soft-SMMU window.
+1. Soft-CP (own bytecode only) runs a bounds verifier on
+   load/store/dma against the submit SID’s Soft-SMMU IOVA window.
 2. Host tests: in-bounds accept; OOB reject; two tenants SFI+SID
-   (A cannot store into B’s pin). Existing SET_SID refuse unchanged.
+   (A cannot load/store B’s pin; skip-verify does not cross-read).
+   Existing SET_SID refuse unchanged.
 3. Docs: GPU-AToLL pattern, software sandbox. **Not** a verified
-   multi-tenant GPU, **Not** NVRTC, **Not** confidential GPU. No
-   new syscall. Own IR only.
+   multi-tenant GPU, **Not** NVRTC, **Not** confidential GPU, **not**
+   “safe multi-tenant kernels.” No new syscall. Own IR only.
+
+Primary touches: `core/src/softsfi.rs` (ISA + verifier),
+`drivers/src/softsfi.rs` (Soft-CP submit/inject; keep `fakecp.rs`
+thin so SoftGreenCtx / SoftCmdFirewall can land beside this).
 
 ## Parked leftovers (not this month)
 
@@ -233,7 +240,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | **SoftGreenCtx** | **Landed** | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
 | **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
 | **SoftCCT** | **Landed** (Month 5 digest 3) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails; single-chiplet no-op | CPElide last-writer table. **Not UCIe.** Not a coherence protocol |
-| **SoftSFI** | Month 5 digest 4 | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
+| **SoftSFI** | **Landed** (digest 4) | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
 | **SoftNoI-IS** | **Parked** (menu #5) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth** |
 | PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
 | OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add third; no Soft-CP restart | Own IR. **Not NVRTC/CUDA** |
@@ -256,7 +263,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 - Per-task CapTable + additive `SYS_REVOKE` **only if**
   revoke → `unbind_stream` / FLR is the demo. Internal `revoke` /
   `revoke_in` already exist.
-- SoftSFI (Month 5 digest 4). SoftCmdFirewall (**landed**).
+- SoftSFI (Month 5 digest 4) — **landed**. SoftCmdFirewall (**landed**).
 
 ### Soft-CP / sched
 
@@ -309,8 +316,8 @@ fake NVIDIA / FLOPs / tape-out.
    and [ROADMAP.md](ROADMAP.md) — **this cut**
 2. SoftGreenCtx — **landed** (PR #54)
 3. SoftCmdFirewall — **landed** (PR #55)
-4. SoftCCT — **landed**
-5. SoftSFI
+4. SoftCCT — **landed** (PR #57)
+5. SoftSFI — **landed** (toy ISA + SID sandbox; not NVVM)
 
 Do not open calendar PRs for the killed list or the parked
 leftovers (PASID/SVA, OperatorInject, SoftNoI-IS) unless the user
@@ -323,7 +330,7 @@ redirects. A later site progress refresh is not a milestone.
 | SoftGreenCtx (**landed**) | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
 | SoftCmdFirewall | `drivers/src/firewall.rs` + Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP / IreeShapedCp `submit_scoped`, host tests — **landed** |
-| SoftSFI | `drivers/src/fakecp.rs` (toy ISA verifier + SID window), host tests |
+| SoftSFI | `core/src/softsfi.rs` + `drivers/src/softsfi.rs` (toy ISA + SID window). Keep `fakecp.rs` thin — **landed** |
 | SoftNoI-IS (parked) | `core/src/chipsync.rs` / fabric admit — not this month |
 | PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
 | OperatorInject (parked) | `drivers/src/fakecp.rs` resident worker — not this month |
