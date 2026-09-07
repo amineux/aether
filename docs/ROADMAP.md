@@ -35,6 +35,7 @@ product kernel.
 | PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 | SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package + optional CCT; Fleet / CPElide inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
+| SoftCmdFirewall (copy-then-validate) | **done** (kernel-owned arena; opcode / reloc / SID / addr-cap walk on the copy; race/mutation host tests). Host1x inspiration. Command-stream integrity only — not confidential GPU. |
 
 ## Month 5–6 (this cut): Portability & partners
 

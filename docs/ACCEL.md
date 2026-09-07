@@ -278,7 +278,7 @@ opcode/packet ADR below.
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + Soft SMMU + IRQ/fence |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftCmdFirewall + Soft SMMU + IRQ/fence |
 | 4 | `IreeShapedCp` | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
@@ -318,11 +318,14 @@ image.
    first authorized map captures+binds. Capture alone leaves the SID
    aborting. map() without a cap walk returns NoMemoryCap.
 3. submit() / submit_xqueue(): SET_SID at the job head, then
-   CpCmd::pack_on_stream on the queue SID. Privileged
-   `set_sid(Memory+MAP, sid)` programs the latch; first submit inherits
-   `stream_for_job` (or the latch) and sticks it on the XQueue. Unbound /
-   captured / missing / partial / wrong-stream / no SET_SID → Fault.
-   Does not execute. poll() is empty until service().
+   CpCmd::pack_on_stream on the queue SID, then SoftCmdFirewall
+   copy-then-validate (opcode / reloc / SID / addr cap on the kernel
+   copy). Privileged `set_sid(Memory+MAP, sid)` programs the latch;
+   first submit inherits `stream_for_job` (or the latch) and sticks it
+   on the XQueue. Unbound / captured / missing / partial / wrong-stream
+   / no SET_SID / identity IOVA sneak → Fault. Does not execute.
+   poll() is empty until service(). `submit_cmdbuf` is the userspace
+   image path (same arena).
 4. service() (IRQ / kthread poll): dequeue a Running XQueue, re-arm
    SET_SID from the packet, resolve_submit each IOVA, run the integer
    engine, write a Completion, raise IRQ, clear the submit latch.
@@ -630,6 +633,52 @@ class opcode ROM, not a silicon stream-ID allocator, and **not**
 hardware-grade isolation. Soft SMMU remains a software table. A real
 SMMU / Host1x still needs partner silicon, a SID budget that matches
 the part, and broader fault-injection than these host tests.
+
+## ADR: SoftCmdFirewall (copy-then-validate)
+
+**Status:** Accepted 2026-09-07.
+
+**Context.** SpectraScout M5 digest #2. Tegra Host1x DRM taught a
+hard lesson: if the kernel validates a userspace command buffer
+**in place**, a client can rewrite opcodes, relocs, StreamID, or
+addresses after the check and before enqueue. The engine then sees
+the mutated stream. GPU-CC HMAC over a kernel copy is optional
+later integrity — **not** confidential GPU / HBM encryption, and
+not NVIDIA SEC2.
+
+**Decision.** Soft-CP submit copies the packed `CpCmd` image into a
+kernel-owned arena (`SoftCmdFirewall`), then validates the **copy**
+(opcodes, IOVA relocs, SID, Soft-SMMU addr caps), then enqueues the
+copy. `submit_cmdbuf` is the userspace-image path; `submit_xqueue`
+packs then admits through the same arena. IreeShapedCp
+`submit_hal` round-trips the frozen image the same way (parse the
+copy). Not a Host1x class ROM and not a second IR.
+
+```text
+client image  ──copy──►  kernel arena
+                          │
+                     validate copy
+                     (op / reloc / SID / IOVA cap)
+                          │
+                     enqueue copy
+```
+
+- In-place validate-then-re-read is a **test-only** hole
+  (`FirewallMode::ValidateInPlace`) so the race is unit-testable.
+  Default submit is copy-then-validate. Mutation during the
+  window is ignored.
+- Relocs are the packet IOVA fields (`iova_a/b/c/bias`). Addr cap:
+  refuse identity guest PAs (`< SOFT_SMMU_IOVA_BASE`) sneaking into
+  the stream. SID must be Soft-CP `ssid = 1` and match the queue.
+- `FirewallSim.{copy_steps,validate_steps}` is a software step
+  count. **Not** a vendor microsecond claim.
+
+Host tests: `drivers/src/firewall.rs` (race sneak / hold / refuse)
+and Soft-CP golden + cmdbuf tests in `fakecp.rs`. Kernel serial
+`[firewall] copy-then-validate race sealed`.
+
+**Not claimed.** Not confidential GPU. Not HBM encryption. Not
+GPU-CC / SEC2. Not a Tegra driver. Soft SMMU is still software.
 
 ## Co-scheduling
 

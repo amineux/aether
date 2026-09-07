@@ -9,7 +9,7 @@ use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
 use aether_core::sid::run_sid_submit_demo;
 use aether_drivers::softnpu::KernelDma;
-use aether_drivers::{IreeShapedCp, SoftCommandProcessor};
+use aether_drivers::{run_firewall_demo, IreeShapedCp, SoftCommandProcessor};
 use aether_hal::AccelDevice;
 
 use crate::arch::irq;
@@ -210,6 +210,22 @@ pub fn run_kernel_selfcheck() {
         println!("[chipsync] FAIL -- SoftChipletSync");
     }
 
+    // Sequential: IommuMap in the firewall clip must not share the stack
+    // with chipsync / sid.
+    let firewall = run_firewall_demo();
+    write_str("[firewall] copy-then-validate Host1x race  sneak=");
+    write_str(flag(firewall.sneak_without));
+    write_str(" hold=");
+    write_str(flag(firewall.hold_with));
+    write_str(" (cmd-stream integrity; not confidential GPU)  ");
+    write_str(flag(firewall.all_ok()));
+    console::nl();
+    if firewall.all_ok() {
+        println!("[firewall] copy-then-validate race sealed");
+    } else {
+        println!("[firewall] FAIL -- SoftCmdFirewall");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -222,7 +238,12 @@ pub fn run_kernel_selfcheck() {
         }
     }
 
-    if !report.all_ok() || !blast.all_ok() || !sid.all_ok() || !chipsync.all_ok() {
+    if !report.all_ok()
+        || !blast.all_ok()
+        || !sid.all_ok()
+        || !chipsync.all_ok()
+        || !firewall.all_ok()
+    {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);
         crate::arch::idle();

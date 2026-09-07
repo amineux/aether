@@ -83,7 +83,9 @@ The guest then exits QEMU via `isa-debug-exit` (status 1 means success).
 `make qemu` treats that as a clean run. CI runs `make qemu-ci` (45s timeout).
 The kernel self-check also prints `[blast] two-tenant blast radius sealed`
 (CrossCut + wrong-SID refuse) and `[sid] two-SID Host1x-shaped submit sealed`
-(SET_SID at submit, not only at map). Diligence clips, not a track.
+(SET_SID at submit, not only at map) and `[firewall] copy-then-validate
+race sealed` (Host1x copy-then-validate; command-stream integrity,
+not confidential GPU). Diligence clips, not a track.
 See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):

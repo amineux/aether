@@ -67,6 +67,15 @@ per tenant) plus the `inject_wrong_sid` / `SubmitSid` host tests are
 the isolation we can unit-test today; they are not a silicon SID
 allocator or a Host1x fault-injection campaign.
 
+SoftCmdFirewall (`drivers/src/firewall.rs`) copies the Soft-CP
+command image into a kernel-owned arena **before** opcode / reloc /
+SID / addr-cap validate, then enqueues the copy. That is Host1x's
+copy-then-validate lesson: a client that mutates the buffer in the
+validate window cannot sneak a rewritten stream. It is **integrity
+of the command stream only** — not confidential GPU, not HBM
+encryption, not GPU-CC HMAC (optional later), and not NVIDIA SEC2.
+Serial: `[firewall]`.
+
 SoftChipletSync (`core/src/chipsync.rs`) is a software fence-domain
 model (scoped timelines + optional CCT). It is **not** a coherence
 protocol, not UCIe, and not hardware-grade isolation across chiplets.

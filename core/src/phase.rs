@@ -16,6 +16,15 @@ pub enum Phase {
 }
 
 impl Phase {
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Compute),
+            1 => Some(Self::Exchange),
+            2 => Some(Self::Barrier),
+            _ => None,
+        }
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Compute => "COMPUTE",

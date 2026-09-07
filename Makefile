@@ -237,6 +237,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[chipsync\\] package fences=" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
@@ -276,6 +277,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
 		if grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log; then \
 			echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -309,6 +311,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-nopcid-serial.log; then \
 		echo "qemu-nopcid-ci: full-flush fallback + SoftNPU /init ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -352,6 +355,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
@@ -404,6 +408,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-blk-serial.log; then \
 		echo "qemu-blk-ci: virtio-blk → ramfs + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -453,6 +458,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[sid\\] SET_SID-at-submit two tenants" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
@@ -515,6 +521,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[sid\\] SET_SID-at-submit two tenants" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/aarch64-serial.log \
