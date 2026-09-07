@@ -6,8 +6,9 @@
 //!
 //! Host-facing nouns: Device, MemorySpace, Buffer, Executable, Event.
 //! The working host session is `aether-pjrt` (`host/aether-pjrt`): it
-//! lowers these nouns onto `AccelJobDesc` and submits into SoftNPU /
-//! IreeShapedCp. That crate is not a PJRT plugin and not an IREE HAL driver.
+//! maps these nouns onto a frozen `IreeHalCmd` and submits into
+//! IreeShapedCp. SoftNPU remains the path-B qemu demo. That crate is
+//! not a PJRT plugin and not an IREE HAL driver.
 
 use crate::activity::ActivityId;
 use crate::fence::FenceId;

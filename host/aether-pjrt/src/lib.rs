@@ -7,9 +7,10 @@
 //! `iree_hal_event_t`, `iree_hal_fence_t`). See [`docs/HOST.md`].
 //!
 //! This crate is **not** a PJRT plugin, **not** an IREE HAL driver, and
-//! **not** a vendor runtime. It lowers those nouns onto [`AccelJobDesc`]
-//! and submits into SoftNPU or IreeShapedCp. `PartnerNpuStub` is
-//! not used.
+//! **not** a vendor runtime. It maps `abi::{Device,Buffer,Executable,Event}`
+//! onto a frozen [`IreeHalCmd`] image and submits into [`IreeShapedCp`].
+//! SoftNPU remains a host backend for virtqueue tests; `make qemu` still
+//! demos path-B SoftNPU. `PartnerNpuStub` is not used.
 //!
 //! [`docs/HOST.md`]: https://github.com/amineux/aether/blob/main/docs/HOST.md
 
@@ -29,7 +30,10 @@ use aether_core::partition::{
 use aether_core::phase::Phase;
 use aether_core::space::{FabricAddr, MemorySpace, Place, SpaceError};
 use aether_core::types::{ChipletId, PhysAddr, TenantId, TileId};
-use aether_drivers::ireecp::{stream_for_job, IreeShapedCp, IREE_SSID};
+use aether_drivers::ireecp::{
+    stream_for_job, IreeHalCmd, IreeHalNouns, IreeShapedCp, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC,
+    IREE_REF_EXECUTABLE, IREE_SSID,
+};
 use aether_drivers::SoftNpuDevice;
 use aether_hal::{AccelDevice, AccelInfo, HalError};
 
@@ -75,6 +79,8 @@ pub enum Error {
     JobFault(i32),
     OutOfMemory,
     Unsupported,
+    /// Packed `IreeHalCmd` did not match the SpecForge freeze.
+    FrozenImage,
 }
 
 impl From<HalError> for Error {
@@ -176,6 +182,23 @@ impl Engine {
         match self {
             Self::SoftNpu(d) => d.submit(job),
             Self::IreeShaped(d) => d.submit(job),
+        }
+    }
+
+    fn submit_iree(&mut self, job: &AccelJobDesc, nouns: &IreeHalNouns) -> Result<u32, HalError> {
+        match self {
+            Self::IreeShaped(d) => {
+                let cmd = IreeHalCmd::pack_with_nouns(job, &d.iommu, nouns)?;
+                d.submit_hal(cmd, job)
+            }
+            Self::SoftNpu(_) => Err(HalError::Unsupported),
+        }
+    }
+
+    fn last_iree_cmd(&self) -> Option<IreeHalCmd> {
+        match self {
+            Self::IreeShaped(d) => d.last_cmd(),
+            Self::SoftNpu(_) => None,
         }
     }
 
@@ -481,11 +504,33 @@ impl Client {
 
     /// Load a compiler-owned executable handle. The kernel/host does not
     /// parse an ISA blob; v0.1 stand-in is opcode + dtype.
+    ///
+    /// On [`BackendKind::IreeShaped`] the frozen blob id is
+    /// [`IREE_REF_EXECUTABLE`] (`0x0001EE00`). SoftNPU uses a sequential
+    /// host handle (path-B qemu demo).
     pub fn load_executable(&mut self, op: AccelOp, dtype: DType) -> Result<ExecutableId, Error> {
+        let isa_blob_id = match self.kind {
+            BackendKind::SoftNpu => (self.execs.len() as u32).saturating_add(1),
+            BackendKind::IreeShaped => IREE_REF_EXECUTABLE,
+        };
+        self.load_executable_blob(isa_blob_id, op, dtype)
+    }
+
+    /// Same as [`Self::load_executable`] with an explicit `isa_blob_id`.
+    /// IreeShaped refuses any id other than [`IREE_REF_EXECUTABLE`].
+    pub fn load_executable_blob(
+        &mut self,
+        isa_blob_id: u32,
+        op: AccelOp,
+        dtype: DType,
+    ) -> Result<ExecutableId, Error> {
         if !matches!(op, AccelOp::Nop | AccelOp::MatMul | AccelOp::Wave) {
             return Err(Error::Unsupported);
         }
-        let isa_blob_id = (self.execs.len() as u32).saturating_add(1);
+        if self.kind == BackendKind::IreeShaped && isa_blob_id != IREE_REF_EXECUTABLE {
+            return Err(Error::Unsupported);
+        }
+        let handle = (self.execs.len() as u32).saturating_add(1);
         self.execs.push(Loaded {
             exec: AbiExecutable {
                 activity: self.activity.id,
@@ -494,7 +539,7 @@ impl Client {
             op,
             dtype,
         });
-        Ok(ExecutableId(isa_blob_id))
+        Ok(ExecutableId(handle))
     }
 
     pub fn executable(&self, id: ExecutableId) -> Result<AbiExecutable, Error> {
@@ -508,18 +553,22 @@ impl Client {
 
     /// `PJRT_LoadedExecutable_Execute` / `iree_hal_device_queue_dispatch`.
     ///
-    /// Submits an [`AccelJobDesc`]; does **not** run the job. Completions
-    /// arrive on [`Self::wait`].
+    /// Maps `abi::{Device,Buffer,Executable,Event}` onto a frozen
+    /// [`IreeHalCmd`] (IreeShaped) or a virtqueue `AccelJobDesc` (SoftNPU).
+    /// Does **not** parse graph IR. Completions arrive on [`Self::wait`].
     pub fn execute(&mut self, job: Dispatch) -> Result<AbiEvent, Error> {
-        let (op, dtype) = {
+        let (op, dtype, exec_abi) = {
             let loaded = self.loaded(job.executable)?;
-            (loaded.op, loaded.dtype)
+            (loaded.op, loaded.dtype, loaded.exec)
         };
+        if self.kind == BackendKind::IreeShaped && exec_abi.isa_blob_id != IREE_REF_EXECUTABLE {
+            return Err(Error::Unsupported);
+        }
         if (job.m == 0 || job.n == 0 || job.k == 0) && op != AccelOp::Nop {
             return Err(Error::Accel(AccelError::BadShape));
         }
         let es = dtype.size_bytes() as u64;
-        let (space, place, pa_a, pa_b, pa_c, bias_pa) = {
+        let (space, place, pa_a, pa_b, pa_c, bias_pa, buf_nouns) = {
             let a = self.alloc(job.a)?;
             let b = self.alloc(job.b)?;
             let c = self.alloc(job.c)?;
@@ -532,7 +581,7 @@ impl Client {
             {
                 return Err(Error::Hal(HalError::BadArg));
             }
-            let bias_pa = if let Some(id) = job.bias {
+            let (bias_pa, bias_abi) = if let Some(id) = job.bias {
                 let bias = self.alloc(id)?;
                 if bias.space != c.space {
                     return Err(Error::SpaceMismatch);
@@ -540,12 +589,21 @@ impl Client {
                 if es * job.n as u64 > bias.len {
                     return Err(Error::Hal(HalError::BadArg));
                 }
-                bias.guest_pa
+                (bias.guest_pa, bias.as_abi())
             } else {
-                PhysAddr(0)
+                (
+                    PhysAddr(0),
+                    AbiBuffer::new(c.space, FabricAddr::new(c.place, 0), 0),
+                )
             };
             (
-                c.space, c.place, a.guest_pa, b.guest_pa, c.guest_pa, bias_pa,
+                c.space,
+                c.place,
+                a.guest_pa,
+                b.guest_pa,
+                c.guest_pa,
+                bias_pa,
+                [a.as_abi(), b.as_abi(), c.as_abi(), bias_abi],
             )
         };
 
@@ -566,16 +624,74 @@ impl Client {
             return Err(Error::Hal(HalError::Fault));
         }
 
-        match self.engine.submit(&desc) {
-            Ok(_) => Ok(AbiEvent {
-                fence: fence.id,
-                partition: self.profile.id,
-            }),
+        let event = AbiEvent {
+            fence: fence.id,
+            partition: self.profile.id,
+        };
+        let submit = if self.kind == BackendKind::IreeShaped {
+            let nouns = IreeHalNouns {
+                device: self.device,
+                executable: exec_abi,
+                event,
+                buffers: buf_nouns,
+            };
+            match self.engine.submit_iree(&desc, &nouns) {
+                Ok(_) => {
+                    if let Some(cmd) = self.engine.last_iree_cmd() {
+                        if let Err(e) = Self::check_frozen(&cmd, &desc) {
+                            let _ = self.timeline.timeout(fence.id);
+                            return Err(e);
+                        }
+                    }
+                    Ok(())
+                }
+                Err(e) => Err(e),
+            }
+        } else {
+            self.engine.submit(&desc).map(|_| ())
+        };
+
+        match submit {
+            Ok(()) => Ok(event),
             Err(e) => {
                 let _ = self.timeline.timeout(fence.id);
                 Err(Error::Hal(e))
             }
         }
+    }
+
+    /// SpecForge freeze: magic 0xAE7E1EE1, 96-byte LE, ssid=2, backend=4
+    /// (probed), DISPATCH or 0, executable 0x0001EE00, workgroup = m,n,k,
+    /// binding lengths = dtype-aware byte spans.
+    fn check_frozen(cmd: &IreeHalCmd, job: &AccelJobDesc) -> Result<(), Error> {
+        cmd.check_v1().map_err(Error::Hal)?;
+        let wire = cmd.to_le_bytes();
+        if cmd.magic != IREE_HAL_PKT_MAGIC || wire.len() != IREE_HAL_CMD_SIZE {
+            return Err(Error::FrozenImage);
+        }
+        if StreamId::from_raw(cmd.stream_id).ssid() != IREE_SSID {
+            return Err(Error::FrozenImage);
+        }
+        if job.op != AccelOp::Nop {
+            if cmd.workgroup_count_x != job.m
+                || cmd.workgroup_count_y != job.n
+                || cmd.workgroup_count_z != job.k
+            {
+                return Err(Error::FrozenImage);
+            }
+            let es = job.elem_bytes().max(1);
+            if cmd.binding0_length as u64 != job.bytes_a().max(es)
+                || cmd.binding1_length as u64 != job.bytes_b().max(es)
+                || cmd.binding2_length as u64 != job.bytes_c().max(es)
+            {
+                return Err(Error::FrozenImage);
+            }
+        }
+        Ok(())
+    }
+
+    pub fn last_iree_cmd(&self) -> Option<IreeHalCmd> {
+        self.engine.last_iree_cmd()
     }
 
     /// `PJRT_Event_Await` / `iree_hal_fence_wait`.
@@ -830,5 +946,88 @@ mod tests {
         let e = c.executable(id).unwrap();
         assert_eq!(e.activity, ActivityId(1));
         assert_eq!(e.isa_blob_id, 1);
+    }
+
+    #[test]
+    fn iree_shaped_uses_frozen_ref_executable() {
+        let mut c = Client::iree_shaped().unwrap();
+        let id = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+        assert_eq!(c.executable(id).unwrap().isa_blob_id, IREE_REF_EXECUTABLE);
+        assert_eq!(
+            c.load_executable_blob(0xDEAD, AccelOp::MatMul, DType::I32)
+                .unwrap_err(),
+            Error::Unsupported
+        );
+        assert_eq!(c.info().backend, ACCEL_BACKEND_IREE_SHAPED);
+    }
+
+    #[test]
+    fn iree_execute_packs_frozen_hal_image() {
+        use aether_drivers::ireecp::{
+            IREE_HAL_COMMAND_CATEGORY_DISPATCH, IREE_HAL_ELEMENT_TYPE_INT_32,
+        };
+
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+        c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+        let exec = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+        let ev = c
+            .execute(Dispatch::matmul(exec, 2, 2, 2, a, b, out))
+            .unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+        assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
+        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+        assert_eq!(cmd.workgroup_count_x, 2);
+        assert_eq!(cmd.workgroup_count_y, 2);
+        assert_eq!(cmd.workgroup_count_z, 2);
+        assert_eq!(cmd.binding0_length, 16, "I32 2×2 is 16 bytes, not 4 elems");
+        assert_ne!(cmd.binding0_length, 4);
+        assert_eq!(cmd.element_type, IREE_HAL_ELEMENT_TYPE_INT_32);
+        assert_eq!(
+            aether_core::iommu::StreamId::from_raw(cmd.stream_id).ssid(),
+            IREE_SSID
+        );
+        c.wait(ev).unwrap();
+    }
+
+    #[test]
+    fn iree_nop_categories_zero_ignores_function() {
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        let exec = c.load_executable(AccelOp::Nop, DType::I32).unwrap();
+        let ev = c
+            .execute(Dispatch::matmul(exec, 0, 0, 0, a, b, out))
+            .unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.command_categories, 0);
+        assert_eq!(cmd.function, 0);
+        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Nop);
+        c.wait(ev).unwrap();
+    }
+
+    #[test]
+    fn iree_workgroup_counts_are_job_shape_not_tiles() {
+        let mut c = Client::iree_shaped().unwrap();
+        // 3×4×5 I32: A=3×5×4=60, B=5×4×4=80, C=3×4×4=48 bytes.
+        let a = c.allocate(MemorySpace::Host, 64).unwrap();
+        let b = c.allocate(MemorySpace::Host, 80).unwrap();
+        let out = c.allocate(MemorySpace::Host, 64).unwrap();
+        let exec = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+        c.execute(Dispatch::matmul(exec, 3, 4, 5, a, b, out))
+            .unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.workgroup_count_x, 3);
+        assert_eq!(cmd.workgroup_count_y, 4);
+        assert_eq!(cmd.workgroup_count_z, 5);
+        assert_eq!(cmd.binding0_length, 60);
+        assert_eq!(cmd.binding1_length, 80);
+        assert_eq!(cmd.binding2_length, 48);
     }
 }

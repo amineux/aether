@@ -139,7 +139,7 @@ aether-hal      AccelDevice / Console / Timer
 aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + IreeShapedCp + PartnerNpuStub
      ▲
      ├── aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
-     └── aether-pjrt     std host shim: PJRT/IREE nouns → AccelJobDesc (SoftNPU / IreeShapedCp)
+     └── aether-pjrt     std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
 user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
 user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 ```
@@ -192,7 +192,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
-| `host/aether-pjrt` | std host session over those nouns → AccelDevice (SoftNPU / IreeShapedCp) |
+| `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
 
 ## Boot (RISC-V / QEMU virt)
 

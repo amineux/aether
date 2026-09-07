@@ -101,9 +101,10 @@ a SpectralCut, a bank color, and a fence. It does not fuse a graph.
 Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md), [HOST.md](HOST.md).
 Start from `IreeShapedCp` (partner-shaped HAL packet) or
 `SoftCommandProcessor` (Aether-native `CpCmd`). The host crate
-`aether-pjrt` is the compiler-facing nouns; it submits through SoftNPU /
-`IreeShapedCp`. `PartnerNpuStub` is a leftover no-op sketch, not a
-partnership and not this path.
+`aether-pjrt` is the compiler-facing nouns; it packs frozen `IreeHalCmd`
+and submits through `IreeShapedCp`. SoftNPU is the path-B qemu demo.
+`PartnerNpuStub` is a leftover no-op sketch, not a partnership and not
+this path.
 
 ## Security invariants (what we will defend)
 

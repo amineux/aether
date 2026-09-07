@@ -111,8 +111,9 @@ spine (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU
 `ssid = 2`; host tests + boot probe). Not a signed vendor. SoftNPU
 path B and Soft-CP (`backend = 3`) are unchanged. The host crate
 `aether-pjrt` (`host/aether-pjrt`) is **done** as the PJRT/IREE-shaped
-compiler contract on SoftNPU / `IreeShapedCp` (not a PJRT plugin, not
-an IREE HAL driver, not a vendor runtime).
+compiler contract: abi nouns → frozen `IreeHalCmd` → `IreeShapedCp`
+(not a PJRT plugin, not an IREE HAL driver, not a vendor runtime).
+SoftNPU stays the `make qemu` path-B demo.
 
 ### KEEP / ACTIVE Y1
 

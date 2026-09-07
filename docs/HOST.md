@@ -10,9 +10,12 @@ graph IR.
 The working crate is `aether-pjrt` (`host/aether-pjrt`). It is a `std`
 workspace member. Host tests create a device, allocate typed buffer
 places, pin through Soft SMMU, submit `MatMul` / `Wave`, and wait on
-an event/fence. The backends are SoftNPU (virtqueue, `backend = 1`)
-and IreeShapedCp (`backend = 4`). Soft-CP (`backend = 3`) stays in-tree
-as the Aether-native packet path; this crate does not submit through it.
+an event/fence. The **IREE/PJRT contract** consumes a frozen 96-byte
+little-endian `IreeHalCmd` (magic `0xAE7E1EE1`, `backend = 4`,
+`ssid = 2`) and submits through `IreeShapedCp`. SoftNPU is an extra
+host backend for virtqueue tests; `make qemu` remains the path-B
+SoftNPU demo. Soft-CP (`backend = 3`) stays in-tree as the
+Aether-native packet path; this crate does not submit through it.
 There is no fake vendor runtime and no `PartnerNpuStub` path.
 
 Kernel CI is unchanged: the crate is not linked into `aether-kernel`.
@@ -26,7 +29,7 @@ Kernel CI is unchanged: the crate is not linked into `aether-kernel`.
 | Device | PJRT `PJRT_Device`; IREE [`iree_hal_device_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/device.h) | `abi::Device` + `AccelInfo` | `Activity` on the fabric, not `/dev` ioctl |
 | Memory / MemorySpace | PJRT `PJRT_Memory`; IREE `iree_hal_memory_type_t` (`HOST_LOCAL`, `DEVICE_LOCAL`, …) | `space::MemorySpace` | `HOST`, `DEVICE_HBM`, `TILE_SRAM`, `CXL_REGION`, … — typed places, not a unified VAS |
 | Buffer | PJRT `PJRT_Buffer`; IREE [`iree_hal_buffer_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/buffer.h) | `abi::Buffer` | `(place, local)` + Soft-SMMU IOVA |
-| Executable | PJRT `PJRT_Executable` / `PJRT_LoadedExecutable`; IREE [`iree_hal_executable_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/executable.h) | `abi::Executable` | opaque `isa_blob_id`; v0.1 stand-in is `AccelOp` + `DType` |
+| Executable | PJRT `PJRT_Executable` / `PJRT_LoadedExecutable`; IREE [`iree_hal_executable_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/executable.h) | `abi::Executable` | opaque `isa_blob_id`; IreeShaped frozen id is `0x0001EE00` (`IREE_REF_EXECUTABLE`); refuse any other |
 | Event / Fence | PJRT `PJRT_Event`; IREE `iree_hal_event_t` / `iree_hal_fence_t` | `abi::Event` | `FenceId` on a CP-shaped `Timeline` |
 
 IREE's HAL device is the handle that allocates buffers, prepares
@@ -52,10 +55,18 @@ Client::create(SoftNpu | IreeShaped)
         → Buffer { space, (place, local), unified=false }
     load_executable(op, dtype)
         → Executable { isa_blob_id }       // no graph parse
+                                           // IreeShaped: 0x0001EE00 only
     execute(executable, A, B, C [, bias])
         Timeline::submit → FenceId
-        AccelJobDesc { op, shape, PAs, space, place, phase, fence_id }
-        AccelDevice::submit                // doorbell; does not execute
+        map abi::{Device,Buffer,Executable,Event}
+        IreeShaped:
+            pack IreeHalCmd (magic 0xAE7E1EE1, 96-byte LE, ssid=2)
+            workgroup_count = AccelJobDesc m,n,k (shape, not tile sizes)
+            binding.length = dtype-aware byte spans (not element counts)
+            categories = 0 (Nop) or DISPATCH; TRANSFER alone is Fault
+            IreeShapedCp::submit_hal
+        SoftNpu:
+            AccelJobDesc → virtqueue submit   // path-B qemu demo
         → Event { fence, partition }
     wait(event)
         service()                          // host IRQ pump (SoftNPU used-ring / IreeShapedCp mailbox)
@@ -65,11 +76,11 @@ Client::create(SoftNpu | IreeShaped)
 ```
 
 `AccelJobDesc` is the architectural dispatch record (see
-[ACCEL.md](ACCEL.md)). IreeShapedCp packs it into a 96-byte `IreeHalCmd`
-(IREE HAL nouns, Soft-SMMU `ssid = 2`). SoftNPU writes Soft-SMMU IOVAs
-into the virtqueue. Both refuse a pin without a Memory+MAP cap walk.
-Soft-CP's Aether-native `CpCmd` is a separate AccelDevice, not this
-crate's submit path.
+[ACCEL.md](ACCEL.md)). IreeShapedCp consumes the frozen 96-byte
+`IreeHalCmd` (IREE HAL nouns, Soft-SMMU `ssid = 2`). SoftNPU writes
+Soft-SMMU IOVAs into the virtqueue. Both refuse a pin without a
+Memory+MAP cap walk. Soft-CP's Aether-native `CpCmd` is a separate
+AccelDevice, not this crate's submit path. There is no graph IR.
 
 Host copies (`copy_from_host` / `copy_to_host`) are explicit transfers
 in the sense of PJRT `BufferFromHostBuffer` / `ToHostBuffer` and IREE

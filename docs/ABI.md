@@ -48,8 +48,10 @@ fusion pass.
 `core/src/abi.rs` names the nouns. The working host session is
 `host/aether-pjrt`: a `std` workspace crate that creates a device,
 allocates typed buffer places, pins them through Soft SMMU, submits
-matmul/wave, and waits on an event/fence. Backends are SoftNPU and
-IreeShapedCp — not Soft-CP, not a fake vendor runtime.
+matmul/wave, and waits on an event/fence. The IREE/PJRT contract
+packs frozen `IreeHalCmd` and submits through IreeShapedCp. SoftNPU
+is an extra host backend; `make qemu` stays path B. Not Soft-CP, not
+a fake vendor runtime.
 
 That crate is the **partner compiler contract** sketched against public
 PJRT / IREE HAL vocabulary. It is not a PJRT plugin, not an IREE HAL
