@@ -31,6 +31,18 @@ pub enum MemorySpace {
 }
 
 impl MemorySpace {
+    pub const fn from_u8(v: u8) -> Option<Self> {
+        match v {
+            0 => Some(Self::Host),
+            1 => Some(Self::DeviceHbm),
+            2 => Some(Self::TileSram),
+            3 => Some(Self::CxlRegion),
+            4 => Some(Self::Scratch),
+            5 => Some(Self::Streaming),
+            _ => None,
+        }
+    }
+
     pub const fn name(self) -> &'static str {
         match self {
             Self::Host => "HOST",
@@ -124,7 +136,10 @@ pub enum SpaceError {
 /// Map a fabric address as if it were a local load. Remote places and
 /// non-mappable spaces are refused — use an explicit DMA/NoC Exchange.
 pub fn map_place(here: Place, addr: FabricAddr) -> Result<crate::types::PhysAddr, SpaceError> {
-    if matches!(addr.place.space, MemorySpace::Streaming | MemorySpace::Scratch) {
+    if matches!(
+        addr.place.space,
+        MemorySpace::Streaming | MemorySpace::Scratch
+    ) {
         return Err(SpaceError::NotMappable);
     }
     if addr.is_remote(here) {
@@ -160,17 +175,11 @@ mod tests {
     #[test]
     fn remote_addr_is_explicit() {
         let here = Place::new(ChipletId(0), MemorySpace::TileSram).with_tile(0);
-        let there = FabricAddr::new(
-            Place::new(ChipletId(1), MemorySpace::DeviceHbm),
-            0x1000,
-        );
+        let there = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::DeviceHbm), 0x1000);
         assert!(there.is_remote(here));
         let local = FabricAddr::new(here, 0x40);
         assert!(!local.is_remote(here));
-        assert_eq!(
-            map_place(here, there),
-            Err(SpaceError::SilentRemoteLoad)
-        );
+        assert_eq!(map_place(here, there), Err(SpaceError::SilentRemoteLoad));
         assert_eq!(
             coherent_load(CapRights::MEM_FULL, here, there),
             Err(SpaceError::UnifiedNotGranted)

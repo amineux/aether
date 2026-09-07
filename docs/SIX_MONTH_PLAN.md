@@ -6,7 +6,8 @@ affinity stub, PJRT/IREE shim) landed on main. Soft-CP XQueue landed
 as **M4 (PR #47)**. Soft SMMU bring-up kit landed (PR #48). **M3
 SID-at-submit is landed** (Host1x-shaped SET_SID; SID sticks on the
 XQueue). SoftChipletSync scoped timelines **landed** after M3+M4
-(PR #51). Site progress through PR #52.
+(PR #51). Site progress through PR #52. Month 5 digest 2
+(SoftCmdFirewall) is **landed** — see [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **This calendar is closed (M1–M4 + SoftChipletSync).** The **next
 calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration
@@ -40,7 +41,7 @@ re-schedule any of the following as new milestones:
 | Landed | Honest reading |
 | --- | --- |
 | Soft SMMU | STE→CD→S1/S2 + ATS invalidate; not hardware |
-| Soft-CP | `backend = 3`, packed `CpCmd` + SET_SID-at-submit + two software XQueues (queue-boundary) + IRQ/fence |
+| Soft-CP | `backend = 3`, packed `CpCmd` + SET_SID-at-submit + two software XQueues (queue-boundary) + SoftCmdFirewall copy-then-validate + IRQ/fence |
 | **IreeShapedCp (PR #38)** | `backend = 4`, frozen `IreeHalCmd` from public IREE HAL nouns; **this is M1**; not a signed vendor |
 | Path A | optional QEMU `aether-accel`; stock QEMU stays B |
 | Cap CDT / revoke | small parent/child + `revoke_in`; no `SYS_REVOKE` |
@@ -283,8 +284,9 @@ software models, still no vendor claim. Sequencing moved to
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
 
-Month 5 clock (not leftovers): SoftGreenCtx → SoftCmdFirewall →
-SoftCCT → SoftSFI. SoftNoI-IS parked. See [MONTH5_PLAN.md](MONTH5_PLAN.md).
+Month 5 clock (not leftovers): SoftGreenCtx → SoftCmdFirewall
+(**landed**, copy-then-validate) → SoftCCT → SoftSFI. SoftNoI-IS
+parked. See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
 silicon; UCIe stays transport. Full kill / exploration menu lives in
@@ -339,6 +341,7 @@ milestone.
 | M3 SID-at-submit | `drivers/src/fakecp.rs`, `docs/ACCEL.md`, host tests |
 | M4 XQueue | `drivers/src/fakecp.rs`, `hal/` (`n_queues`) — **landed PR #47** |
 | SoftChipletSync | `core/src/{fence,chipsync}.rs`, Soft-CP / IreeShapedCp retire, host tests — **landed** |
+| SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
@@ -359,6 +362,8 @@ target appears. No new syscall.
 - That SoftChipletSync is a Vulkan timeline product, UCIe sync, a
   coherence protocol, ChipletFleet placement, or a multi-chiplet
   latency result from single-die host tests
+- That SoftCmdFirewall is a Tegra Host1x driver, confidential GPU,
+  HBM encryption, GPU-CC HMAC, or NVIDIA SEC2
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
   is the software-model track; that theater is not.

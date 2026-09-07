@@ -395,6 +395,33 @@ impl IreeHalCmd {
         b[88..96].copy_from_slice(&self.signal_payload.to_le_bytes());
         b
     }
+
+    /// Inverse of [`Self::to_le_bytes`]. SoftCmdFirewall-shaped: parse the
+    /// kernel copy, not a live userspace alias.
+    pub fn from_le_bytes(b: [u8; IREE_HAL_CMD_SIZE]) -> Result<Self, HalError> {
+        Ok(Self {
+            magic: u32::from_le_bytes(b[0..4].try_into().unwrap()),
+            command_categories: u16::from_le_bytes(b[4..6].try_into().unwrap()),
+            binding_count: u16::from_le_bytes(b[6..8].try_into().unwrap()),
+            executable: u32::from_le_bytes(b[8..12].try_into().unwrap()),
+            function: u32::from_le_bytes(b[12..16].try_into().unwrap()),
+            workgroup_count_x: u32::from_le_bytes(b[16..20].try_into().unwrap()),
+            workgroup_count_y: u32::from_le_bytes(b[20..24].try_into().unwrap()),
+            workgroup_count_z: u32::from_le_bytes(b[24..28].try_into().unwrap()),
+            element_type: u32::from_le_bytes(b[28..32].try_into().unwrap()),
+            queue_affinity: u32::from_le_bytes(b[32..36].try_into().unwrap()),
+            stream_id: u32::from_le_bytes(b[36..40].try_into().unwrap()),
+            binding0_offset: u64::from_le_bytes(b[40..48].try_into().unwrap()),
+            binding1_offset: u64::from_le_bytes(b[48..56].try_into().unwrap()),
+            binding2_offset: u64::from_le_bytes(b[56..64].try_into().unwrap()),
+            binding3_offset: u64::from_le_bytes(b[64..72].try_into().unwrap()),
+            binding0_length: u32::from_le_bytes(b[72..76].try_into().unwrap()),
+            binding1_length: u32::from_le_bytes(b[76..80].try_into().unwrap()),
+            binding2_length: u32::from_le_bytes(b[80..84].try_into().unwrap()),
+            binding3_length: u32::from_le_bytes(b[84..88].try_into().unwrap()),
+            signal_payload: u64::from_le_bytes(b[88..96].try_into().unwrap()),
+        })
+    }
 }
 
 /// Software IREE-shaped command processor. Completions arrive on the
@@ -496,6 +523,8 @@ impl<M: DmaView> IreeShapedCp<M> {
         if self.doorbell || self.mailbox.is_some() {
             return Err(HalError::Busy);
         }
+        // Copy-then-validate the frozen image (same Host1x lesson as Soft-CP).
+        let cmd = IreeHalCmd::from_le_bytes(cmd.to_le_bytes())?;
         let op = cmd.decode_op()?;
         if op != AccelOp::Nop {
             if let Err(e) = self

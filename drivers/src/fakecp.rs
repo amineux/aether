@@ -30,6 +30,10 @@
 //! ```
 //!
 //! SET_SID is **not** a Tegra Host1x class opcode and not a second IR.
+//! SoftCmdFirewall copies the packed image into a kernel-owned arena
+//! before opcode / reloc / SID / addr-cap validate. Host1x lesson:
+//! validate after copy or userspace races the rewrite. Integrity of
+//! the command stream only — not confidential GPU.
 //!
 //! SoftChipletSync (wave / CU / chiplet / package timelines, Fleet-shaped
 //! hierarchical counters, optional CPElide CCT) is a **software** fence
@@ -45,6 +49,8 @@ use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::types::{ChipletId, PhysAddr, TileId};
 use aether_core::window::{MappedWindow, TypedWindow};
 use aether_hal::{AccelDevice, AccelInfo, HalError, PreemptionLevel, ACCEL_BACKEND_SOFT_CP};
+
+use crate::firewall::{job_template_from_cmd, ClientCmdStream, FirewallSim, SoftCmdFirewall};
 
 /// Packet magic a CP mailbox would DMA (`AE7E` + command-processor `0C01`).
 pub const CP_PKT_MAGIC: u32 = 0xAE7E_0C01;
@@ -324,6 +330,29 @@ impl CpCmd {
         b[56..64].copy_from_slice(&self.fence_id.to_le_bytes());
         b
     }
+
+    /// Inverse of [`Self::to_le_bytes`]. Used on the kernel copy only.
+    pub fn from_le_bytes(b: [u8; CP_CMD_SIZE]) -> Result<Self, HalError> {
+        Ok(Self {
+            magic: u32::from_le_bytes(b[0..4].try_into().unwrap()),
+            opcode: b[4],
+            dtype: b[5],
+            space: b[6],
+            phase: b[7],
+            m: u16::from_le_bytes(b[8..10].try_into().unwrap()),
+            n: u16::from_le_bytes(b[10..12].try_into().unwrap()),
+            k: u16::from_le_bytes(b[12..14].try_into().unwrap()),
+            flags: u16::from_le_bytes(b[14..16].try_into().unwrap()),
+            stream_id: u32::from_le_bytes(b[16..20].try_into().unwrap()),
+            chiplet: u16::from_le_bytes(b[20..22].try_into().unwrap()),
+            tile: u16::from_le_bytes(b[22..24].try_into().unwrap()),
+            iova_a: u64::from_le_bytes(b[24..32].try_into().unwrap()),
+            iova_b: u64::from_le_bytes(b[32..40].try_into().unwrap()),
+            iova_c: u64::from_le_bytes(b[40..48].try_into().unwrap()),
+            iova_bias: u64::from_le_bytes(b[48..56].try_into().unwrap()),
+            fence_id: u64::from_le_bytes(b[56..64].try_into().unwrap()),
+        })
+    }
 }
 
 /// Software command processor. Completions arrive on the IRQ/poll path,
@@ -346,6 +375,8 @@ pub struct SoftCommandProcessor<M: DmaView> {
     /// Scoped timelines + hierarchical counters + optional CCT.
     pub chipsync: SoftChipletSync,
     last_scoped: Option<ScopedFence>,
+    /// Copy-then-validate arena (Host1x-shaped). Not GPU-CC.
+    pub firewall: SoftCmdFirewall,
 }
 
 impl<M: DmaView> SoftCommandProcessor<M> {
@@ -371,6 +402,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             fence_done: false,
             chipsync: SoftChipletSync::new(PartitionId(1)),
             last_scoped: None,
+            firewall: SoftCmdFirewall::new(),
         }
     }
 
@@ -506,6 +538,15 @@ impl<M: DmaView> SoftCommandProcessor<M> {
                 return Err(e);
             }
         };
+        // Host1x lesson: copy the packed image, validate the copy, enqueue
+        // the copy. A later rewrite of a userspace alias cannot sneak.
+        let cmd = match self.firewall.admit_packed(cmd, &self.iommu, Some(sid)) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                restore_sid(self);
+                return Err(e);
+            }
+        };
         let push_err = {
             let q = self.queue_mut(queue)?;
             q.push(XQueueSlot {
@@ -533,6 +574,85 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         };
         self.submit_seq = self.submit_seq.wrapping_add(1);
         Ok(self.submit_seq)
+    }
+
+    /// Userspace command-image submit: copy-then-validate, then enqueue.
+    ///
+    /// `job` is the DMA template (`service` resolves IOVAs back to guest
+    /// PAs). The packet comes from `stream`, not from a second pack.
+    pub fn submit_cmdbuf<S: ClientCmdStream>(
+        &mut self,
+        queue: u16,
+        stream: &mut S,
+        job: &AccelJobDesc,
+    ) -> Result<u32, HalError> {
+        let prev_sid = self.xqueue(queue).and_then(|q| q.sid);
+        let sid = self.sid_for_submit(queue, job)?;
+        let restore_sid = |this: &mut Self| {
+            this.iommu.clear_submit_sid();
+            if let Ok(q) = this.queue_mut(queue) {
+                q.sid = prev_sid;
+            }
+        };
+        if job.op != AccelOp::Nop {
+            if let Err(e) = self.iommu.set_sid_bound(sid) {
+                restore_sid(self);
+                return Err(map_hal_error(e));
+            }
+        }
+        let cmd = match self.firewall.ingest(stream, &self.iommu, Some(sid)) {
+            Ok(cmd) => cmd,
+            Err(e) => {
+                restore_sid(self);
+                return Err(e);
+            }
+        };
+        let job = match job_template_from_cmd(&cmd) {
+            Ok(mut t) => {
+                t.tenant = job.tenant;
+                t.completion_ep = job.completion_ep;
+                t.partition = job.partition;
+                t.a = job.a;
+                t.b = job.b;
+                t.c = job.c;
+                t.bias = job.bias;
+                t
+            }
+            Err(e) => {
+                restore_sid(self);
+                return Err(e);
+            }
+        };
+        let push_err = {
+            let q = self.queue_mut(queue)?;
+            q.push(XQueueSlot {
+                cmd,
+                job,
+                scoped: None,
+            })
+            .err()
+        };
+        if let Some(e) = push_err {
+            restore_sid(self);
+            return Err(e);
+        }
+        self.iommu.clear_submit_sid();
+        self.last_cmd = Some(cmd);
+        self.irq = false;
+        self.last_cpl = None;
+        self.fence_done = false;
+        self.last_fence = if cmd.fence_id != 0 {
+            Some(cmd.fence_id)
+        } else {
+            None
+        };
+        self.submit_seq = self.submit_seq.wrapping_add(1);
+        Ok(self.submit_seq)
+    }
+
+    /// Software copy + validate steps from the last firewall admit.
+    pub fn last_firewall_sim(&self) -> FirewallSim {
+        self.firewall.last_sim
     }
 
     /// Submit onto an XQueue and tag SoftChipletSync (scope + CCT labels).
@@ -1640,5 +1760,75 @@ mod tests {
         assert_eq!(d.xqueue(0).unwrap().sid, Some(sid));
         let cmd = d.last_cmd().unwrap();
         assert_eq!(cmd.flags & CP_FLAG_SET_SID, CP_FLAG_SET_SID);
+    }
+
+    #[test]
+    fn firewall_golden_submit_still_executes() {
+        use crate::firewall::{FirewallMode, RacingCmdStream, CP_OFF_OPCODE};
+
+        let (mut backing, mut job) = matmul_backing();
+        job.place = job.place.with_tile(2);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        let iova = pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        assert!(d.last_firewall_sim().noted(), "copy+validate sim note");
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.opcode, AccelOp::MatMul as u32 as u8);
+        assert_eq!(cmd.iova_a, iova.0);
+        assert_eq!(d.service().unwrap().status, 0);
+        d.poll();
+
+        // Cmdbuf path: copy-then-validate a racing client; mutation ignored.
+        let good = cmd.to_le_bytes();
+        let mut poison = good;
+        poison[CP_OFF_OPCODE] = 0x7F;
+        let mut race = RacingCmdStream::new(good, poison, 1);
+        d.firewall.mode = FirewallMode::CopyThenValidate;
+        d.submit_cmdbuf(0, &mut race, &job).unwrap();
+        assert!(race.mutated());
+        assert_eq!(
+            d.last_cmd().unwrap().opcode,
+            AccelOp::MatMul as u32 as u8,
+            "firewall ignores the rewrite"
+        );
+        assert_eq!(d.service().unwrap().status, 0);
+        let out0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
+        assert_eq!(out0, 19);
+    }
+
+    #[test]
+    fn firewall_in_place_mutation_sneaks_on_cmdbuf() {
+        use crate::firewall::{FirewallMode, RacingCmdStream, CP_OFF_IOVA_A};
+
+        let (mut backing, mut job) = matmul_backing();
+        job.place = job.place.with_tile(2);
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        d.submit(&job).unwrap();
+        let good = d.last_cmd().unwrap().to_le_bytes();
+        d.service();
+        d.poll();
+
+        let mut poison = good;
+        poison[CP_OFF_IOVA_A..CP_OFF_IOVA_A + 8].copy_from_slice(&0x1000u64.to_le_bytes());
+        let mut race = RacingCmdStream::new(good, poison, 1);
+        d.firewall.mode = FirewallMode::ValidateInPlace;
+        d.submit_cmdbuf(0, &mut race, &job).unwrap();
+        assert_eq!(
+            d.last_cmd().unwrap().iova_a,
+            0x1000,
+            "without copy the identity PA sneaks onto the queue"
+        );
+        // Soft SMMU will not resolve a guest PA that skipped the IOVA window.
+        let cpl = d.service().unwrap();
+        assert_ne!(cpl.status, 0);
     }
 }

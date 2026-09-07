@@ -89,7 +89,7 @@ completion.
    **Not** hardware SM partitioning. No new syscall. `CpCmd` layout
    unchanged.
 
-### 2. SoftCmdFirewall
+### 2. SoftCmdFirewall (**landed, this PR**)
 
 Copy-then-validate submit. Inspiration: Host1x “don’t execute the
 caller’s live buffer” — not a Tegra driver, not a confidential GPU.
@@ -98,13 +98,13 @@ Submit copies the command buffer, validates opcodes / relocs / SID /
 caps on the **copy**, then enqueues. A mutation-during-validate race
 fails without the firewall and passes with it.
 
-**Done when:**
+**Done when (met on this branch):**
 
 1. Soft-CP (and IreeShapedCp mailbox if it shares the path) copies
    the cmdbuf before validate + enqueue. Validation covers opcodes,
    relocs, SID, and the Memory+MAP / submit cap walk.
-2. Host tests: mutation-during-validate is Fault without the
-   firewall and ok with it; existing wrong-SID / unbound refuse
+2. Host tests: mutation-during-validate sneaks without the
+   firewall and is ignored with it; existing wrong-SID / unbound refuse
    unchanged.
 3. Docs: Host1x lesson, software only. **Not** confidential compute.
    **Not** a silicon command parser. No new syscall.
@@ -229,7 +229,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | Bet | Status | Slice | Honest bound |
 | --- | --- | --- | --- |
 | **SoftGreenCtx** | Month 5 digest 1 | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
-| **SoftCmdFirewall** | Month 5 digest 2 | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate fails without the firewall, passes with it | Host1x lesson. **Not confidential GPU.** |
+| **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
 | **SoftCCT** | Month 5 digest 3 (deepen #51) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails | CPElide last-writer table. **Not UCIe.** Skip if #51 already meets the slice |
 | **SoftSFI** | Month 5 digest 4 | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
 | **SoftNoI-IS** | **Parked** (menu #5) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth** |
@@ -306,7 +306,7 @@ fake NVIDIA / FLOPs / tape-out.
 1. This file + pointers from [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
    and [ROADMAP.md](ROADMAP.md) — **this cut**
 2. SoftGreenCtx
-3. SoftCmdFirewall
+3. SoftCmdFirewall — **landed** (this PR)
 4. SoftCCT (skip / ADR if #51 already meets the slice)
 5. SoftSFI
 
@@ -319,7 +319,7 @@ redirects. A later site progress refresh is not a milestone.
 | Step | Primary touches |
 | --- | --- |
 | SoftGreenCtx | `drivers/src/fakecp.rs` (partition + XQueue bind), host tests, [ACCEL.md](ACCEL.md) |
-| SoftCmdFirewall | `drivers/src/fakecp.rs` (copy-then-validate), maybe `ireecp.rs`, host tests |
+| SoftCmdFirewall | `drivers/src/firewall.rs` + Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs`, Soft-CP / IreeShapedCp `submit_scoped`, host tests — deepen #51 |
 | SoftSFI | `drivers/src/fakecp.rs` (toy ISA verifier + SID window), host tests |
 | SoftNoI-IS (parked) | `core/src/chipsync.rs` / fabric admit — not this month |

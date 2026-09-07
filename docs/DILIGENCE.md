@@ -25,7 +25,7 @@ landed; SoftChipletSync landed). The **next calendar** is
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftChipletSync scoped timelines + Soft SMMU SID + IRQ/fence | `drivers/src/fakecp.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftChipletSync scoped timelines + SoftCmdFirewall copy-then-validate + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines + optional CCT (Fleet / CPElide inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
@@ -47,7 +47,10 @@ clip (two tenants, CrossCut + wrong-SID refuse, serial `[blast]`) — not
 a Year-2 isolation track. `run_sid_submit_demo()` is the Host1x-shaped
 SET_SID-at-submit clip (serial `[sid]`); not a Tegra driver. `run_chipsync_demo()`
 is the scoped-timeline clip (serial `[chipsync]`); Fleet / CPElide inspiration
-only — not UCIe, not a Vulkan timeline, not ChipletFleet placement. The RISC-V
+only — not UCIe, not a Vulkan timeline, not ChipletFleet placement.
+`run_firewall_demo()` is the Host1x copy-then-validate clip (serial
+`[firewall]`); command-stream integrity only — not confidential GPU.
+The RISC-V
 and aarch64 ports did not change `aether-hal` or the syscall /
 AccelDevice ABI.
 
