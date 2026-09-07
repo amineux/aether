@@ -93,9 +93,11 @@ Files, in this order:
 4. `drivers/src/softnpu.rs` + `drivers/src/mmio.rs` — virtqueue BAR + SoftNPU.
 5. `drivers/src/fakecp.rs` — software CP: packed Aether-native packet + Soft SMMU + IRQ/fence.
 6. `drivers/src/ireecp.rs` — partner-shaped HAL spine: IREE HAL dispatch packet (`backend = 4`; not a vendor).
-7. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
-8. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
-9. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` and
+7. `host/aether-pjrt` + `docs/HOST.md` — compiler-facing nouns; submits through SoftNPU / IreeShapedCp
+   (not a PJRT plugin / IREE driver / partnership).
+8. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
+9. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
+10. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` and
    `boot/aarch64/trampoline.S` + `kernel/src/arch/aarch64/` — evidence
    the HAL split is real: new UART/timer/page tables, same core.
 

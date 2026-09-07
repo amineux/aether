@@ -43,6 +43,18 @@ then submits `AccelJobDesc` records through an `Activity` endpoint.
 `Wave` in v0.1 is a software stand-in for one compiled dispatch, not a
 fusion pass.
 
+## Host crate (`aether-pjrt`)
+
+`core/src/abi.rs` names the nouns. The working host session is
+`host/aether-pjrt`: a `std` workspace crate that creates a device,
+allocates typed buffer places, pins them through Soft SMMU, submits
+matmul/wave, and waits on an event/fence. Backends are SoftNPU and
+IreeShapedCp — not Soft-CP, not a fake vendor runtime.
+
+That crate is the **partner compiler contract** sketched against public
+PJRT / IREE HAL vocabulary. It is not a PJRT plugin, not an IREE HAL
+driver, and not a partnership claim. See [HOST.md](HOST.md).
+
 ## Syscall numbers (frozen 0–10; 11 additive)
 
 Ring-3 / U-mode uses the same numbers on every arch. x86_64 is the

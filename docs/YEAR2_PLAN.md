@@ -109,7 +109,10 @@ follow-up; `make qemu-ci` stays on the embedded fallback.
 `IreeShapedCp` (`backend = 4`) is **done** as the partner-shaped HAL
 spine (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU
 `ssid = 2`; host tests + boot probe). Not a signed vendor. SoftNPU
-path B and Soft-CP (`backend = 3`) are unchanged.
+path B and Soft-CP (`backend = 3`) are unchanged. The host crate
+`aether-pjrt` (`host/aether-pjrt`) is **done** as the PJRT/IREE-shaped
+compiler contract on SoftNPU / `IreeShapedCp` (not a PJRT plugin, not
+an IREE HAL driver, not a vendor runtime).
 
 ### KEEP / ACTIVE Y1
 

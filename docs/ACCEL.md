@@ -436,6 +436,12 @@ visible on the serial log (`[accel] IreeShapedCp probe backend=4
 iree-shaped-cp (IREE HAL packet; not a vendor)`). QEMU still demos
 SoftNPU. This backend does not add a QEMU device.
 
+The compiler-facing nouns on this path live in `host/aether-pjrt`
+([HOST.md](HOST.md)): Device, MemorySpace, Buffer, Executable, Event
+lower onto `AccelJobDesc` + Soft SMMU. The host session submits through
+SoftNPU and `IreeShapedCp` (`backend = 4`), not Soft-CP. That crate is
+not a PJRT plugin, not an IREE HAL driver, and not a vendor runtime.
+
 ## Co-scheduling
 
 `TileScheduler` has an `Npu` tile. Init enqueues an `AccelWave` with a

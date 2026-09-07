@@ -1,0 +1,15 @@
+[package]
+name = "aether-pjrt"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host-side PJRT/IREE-HAL-shaped shim over AccelDevice (SoftNPU / IreeShapedCp)"
+publish = false
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-hal = { path = "../../hal" }
+aether-drivers = { path = "../../drivers" }
+
+[lints]
+workspace = true
