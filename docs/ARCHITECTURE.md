@@ -27,6 +27,8 @@ Supporting rules (implemented in types, not just prose):
 2. **Typed memory spaces.** Buffers bind to
    `HOST | DEVICE_HBM | TILE_SRAM | CXL_REGION | SCRATCH | STREAMING`.
    `UNIFIED_MEMORY` is an explicit capability bit, never the default.
+   `TypedWindow` (`Hbm` / `CxlMemStub` / `Dram`) is a Soft-SMMU pin stub
+   for those places ([WINDOW.md](WINDOW.md)) — not CXL.mem silicon.
 3. **`(place, local)` addresses.** Remote access is an explicit DMA/NoC
    Exchange. The HAL refuses a silent coherent load.
 4. **Partition profiles.** Spatial slice + QoS (bw/credits) + blast-radius
@@ -49,7 +51,8 @@ Supporting rules (implemented in types, not just prose):
 
 What this document will not claim: a CUDA-style unified virtual address
 space; seL4-level formal proofs; wafer-scale marketing that hides SRAM-first
-placement; or cache coherence across chiplets.
+placement; cache coherence across chiplets; or that `TypedWindow` is
+CXL.mem silicon.
 
 ## Boot (x86_64 / QEMU)
 
@@ -167,6 +170,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/arena.rs` | Bank-aware allocator + tenant color |
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate (not hardware) |
+| `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` IREE HAL nouns + SID + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |

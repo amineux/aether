@@ -96,4 +96,6 @@ IOMMU / cache-maintenance hook has a place to run.
 Memory is a typed place: tile SRAM, HBM, CXL region—never a single address space by default.
 A `FabricAddr` is `(place, local)`. Crossing a place is an Exchange
 phase, not a load. Chiplets extend the NoC; UCIe is transport, not the
-programming model.
+programming model. `TypedWindow` (`Hbm` / `CxlMemStub` / `Dram`) is an
+exploration stub Soft SMMU can pin with a SID — CXL.mem nouns only,
+not a HDM decoder. See [WINDOW.md](WINDOW.md).

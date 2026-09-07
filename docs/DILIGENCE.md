@@ -12,6 +12,7 @@ active track the site must match.
 | --- | --- | --- |
 | Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo}.rs` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
+| TypedWindow (CXL.mem-inspired stub) | Host-tested exploration stub; not silicon | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
 | `IommuMap` Soft SMMU (STE→CD→S1/S2 walk, ATS invalidate) | Implemented, host-tested | `core/src/iommu.rs` |
 | Tile scheduler + SpectralCut refuse | Implemented (n≤32 Fiedler placement; enum n≤8) | `core/src/{sched,cut}.rs` |
@@ -56,7 +57,7 @@ gaps:
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW + growable anon `SYS_MMAP` + identity teardown landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write; `USER_MMAP_BASE` `0x02C0_0000` first-fit 4 KiB). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands only; SoftNPU is Soft SMMU + HH. Not a secret slide, not Meltdown-complete, not POSIX `mmap` / `fork` |
 | No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
-| No CXL.mem | `MemorySpace::CxlRegion` is a typed place, not a window |
+| No CXL.mem | `TypedWindow` (`CxlMemStub`) is a host-tested pin/map stub; `MemorySpace::CxlRegion` is still a typed place. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence |
 
@@ -137,7 +138,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
+| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
@@ -166,6 +167,7 @@ We will not claim:
 - That chiplet-local steal / `ChipletTaskScope` is ChipletFleet, a
   Year-1 pillar, a partner ask, or unpublished Fleet numbers
 - That `IommuMap` / Soft SMMU is a hardware SMMU
+- That `TypedWindow` / `CxlMemStub` is CXL.mem silicon or QEMU CXL
 - That `SoftCommandProcessor` is a silicon driver
 - That `IreeShapedCp` is an IREE runtime, a PJRT plugin, or a signed vendor
 - That `PartnerNpuStub` is a design win

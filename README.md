@@ -172,7 +172,7 @@ flowchart TB
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
 | **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd`); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
-| **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit |
+| **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit. `TypedWindow` is a CXL.mem-inspired pin stub (not silicon) |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
 | **Observability** | COM1 console + structured `EventRing` |
@@ -202,7 +202,9 @@ The kernel and `/init` are **separate Cargo projects** so
 - **Research prototype.** Soft SMMU (software STE→CD→Stage-1/2 IOVA
   walk + ATS-shaped invalidate) is in tree; there is no hardware SMMU,
   no verified cap derivation tree, no real silicon driver. Hardware
-  SMMU still requires partner silicon. SMP is a QEMU `-smp 2` smoke
+  SMMU still requires partner silicon. `TypedWindow` (`CxlMemStub`) is
+  a CXL.mem-inspired pin stub, not a HDM decoder and not QEMU CXL.
+  SMP is a QEMU `-smp 2` smoke
   (INIT-SIPI, per-CPU `gs`, two-hart work-steal); APs do not run `/init`.
 - **VirtIO-Accel path B is an in-kernel MMIO virtqueue**, not a tree in
   upstream QEMU. `make qemu` stays on that BAR so the demo does not

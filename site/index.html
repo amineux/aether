@@ -300,7 +300,7 @@
               <div class="place"><span class="tag">HOST</span><b>Host DRAM</b><span>CPU-local</span></div>
               <div class="place"><span class="tag">DEVICE_HBM</span><b>HBM banks</b><span>color + tenant</span></div>
               <div class="place"><span class="tag">TILE_SRAM</span><b>On-tile</b><span>honest first place</span></div>
-              <div class="place"><span class="tag">CXL_REGION</span><b>CXL.mem</b><span>typed; no window yet</span></div>
+              <div class="place"><span class="tag">CXL_REGION</span><b>CXL.mem stub</b><span>typed window; not silicon</span></div>
               <div class="place"><span class="tag">SCRATCH</span><b>Scratch</b><span>ephemeral</span></div>
               <div class="place"><span class="tag">STREAMING</span><b>Streaming</b><span>no random load</span></div>
             </div>
@@ -534,7 +534,7 @@
               <h3>Package topology as a solver input</h3>
               <ul>
                 <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Chiplet-local steal is a host-tested stub (not ChipletFleet, not a partner ask)</li>
-                <li>CXL stays a typed place — no pin/map productization, no CXL.mem claim</li>
+                <li>CXL.mem window stays killed as a milestone — <code>TypedWindow</code> is an honest pin stub (SID refuse), not silicon</li>
                 <li>Formal subset of caps — inspired by seL4, not a proof claim</li>
               </ul>
             </div>

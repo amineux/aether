@@ -45,6 +45,9 @@
 //!   `StreamAbort` (SSID/CD walk hardening).
 //! - `CrossTenant` / `WrongStream` / `StreamAbort` / `NotMapped` /
 //!   `Stage2Fault` as below.
+//! - Typed windows ([`crate::window::TypedWindow`]) pin through
+//!   [`IommuMap::map_window`]. That is a CXL.mem-inspired stub, not a
+//!   HDM decoder.
 //!
 //! Bank QoS / bandwidth coloring is out of scope here.
 

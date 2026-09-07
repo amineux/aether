@@ -15,6 +15,10 @@ require(cptr, SpectralCut, BIND)
     → allow_place(tile, bank)
         refuse CrossCut if tile and bank are on opposite sides
         refuse ConductanceExceeded if Φ(cut) > bound (mint-time)
+
+bind_window(cptr, cut, TypedWindow, caller)
+        refuse CrossCut if the window's tenant is not the caller
+        (exploration stub; not a CXL.mem decoder — see WINDOW.md)
 ```
 
 **Intended construction:** Fiedler vector of `L = D − A` (or a multicut

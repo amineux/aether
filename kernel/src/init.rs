@@ -69,6 +69,11 @@ pub fn run_kernel_selfcheck() {
     write_str(flag(report.map_ok));
     console::nl();
 
+    write_str("[window] TypedWindow CxlMemStub map + wrong-SID refuse + CrossCut foreign-tenant  ");
+    write_str(flag(report.window_ok));
+    write_str(" (stub; not CXL.mem)");
+    console::nl();
+
     {
         let mut cp = SoftCommandProcessor::new(KernelDma);
         match cp.probe() {

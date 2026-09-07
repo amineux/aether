@@ -220,6 +220,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[window\\] TypedWindow" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] ring-3 /probe" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[ramfs\\] seed embedded" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/qemu-serial.log \
@@ -325,6 +326,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[window\\] TypedWindow" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[ramfs\\] seed embedded" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/smp-serial.log \
@@ -415,6 +417,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[window\\] TypedWindow" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] U-mode /init" $(BUILD)/riscv-serial.log \
@@ -470,6 +473,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[map\\] Soft SMMU pin + Memory-cap refuse" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[window\\] TypedWindow" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[mm\\] aspace isolate ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] EL0 /init" $(BUILD)/aarch64-serial.log \

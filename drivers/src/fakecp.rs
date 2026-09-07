@@ -21,6 +21,7 @@ use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
 use aether_core::partition::PartitionError;
 use aether_core::types::{PhysAddr, TileId};
+use aether_core::window::{MappedWindow, TypedWindow};
 use aether_hal::{AccelDevice, AccelInfo, HalError, ACCEL_BACKEND_SOFT_CP};
 
 /// Packet magic a CP mailbox would DMA (`AE7E` + command-processor `0C01`).
@@ -252,6 +253,15 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     ) -> Result<PhysAddr, HalError> {
         let region = self.iommu.map(cap, req).map_err(map_hal_error)?;
         Ok(region.iova)
+    }
+
+    /// Pin a typed window (SID + Memory+MAP). Not a CXL.mem decoder.
+    pub fn map_window_with_cap(
+        &mut self,
+        cap: &Capability,
+        win: TypedWindow,
+    ) -> Result<MappedWindow, HalError> {
+        self.iommu.map_window(cap, win).map_err(map_hal_error)
     }
 
     pub fn last_cmd(&self) -> Option<CpCmd> {
@@ -534,6 +544,40 @@ mod tests {
                 .0,
             0x1400
         );
+    }
+
+    #[test]
+    fn map_window_with_cap_sid_and_rights() {
+        use aether_core::window::{TypedWindow, WindowKind};
+
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        let sid = StreamId::accel(ChipletId(0), TileId(2), CP_SSID);
+        let win = TypedWindow::new(
+            PhysAddr(0xB000),
+            0x1000,
+            WindowKind::CxlMemStub,
+            sid,
+            TenantId(1),
+        );
+        assert_eq!(d.map_window(win).unwrap_err(), HalError::NoMemoryCap);
+        let mapped = d.map_window_with_cap(&mem_cap(), win).unwrap();
+        assert_ne!(mapped.region.iova.0, 0xB000);
+        assert_eq!(mapped.window.kind, WindowKind::CxlMemStub);
+        let other = StreamId::accel(ChipletId(0), TileId(2), 3);
+        assert_eq!(
+            d.iommu
+                .unmap_window(&mem_cap(), other, mapped.region.iova)
+                .unwrap_err(),
+            MapError::WrongStream
+        );
+        d.iommu
+            .unmap_window(&mem_cap(), sid, mapped.region.iova)
+            .unwrap();
     }
 
     #[test]
