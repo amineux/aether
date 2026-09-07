@@ -38,6 +38,12 @@ product kernel.
 
 ## Month 5–6 (this cut): Portability & partners
 
+The **next Kernel calendar** after M1–M4 + SoftChipletSync is
+[MONTH5_PLAN.md](MONTH5_PLAN.md) (four exploration digests:
+SoftGreenCtx → SoftCmdFirewall → SoftCCT → SoftSFI; PASID/SVA and
+OperatorInject parked). The portability / partner slices below
+already landed; they are not Month 5.
+
 Landed:
 
 - **RISC-V virt bring-up.** `boot/riscv64` trampoline + Sv39 identity
@@ -802,11 +808,12 @@ Blocking sync IPC waiter lists are no longer a stub: `SYS_RECV` and
 IRQ. The fabric object itself still returns `WouldBlock`; the
 kernel thread queue sleeps.
 
-## Six-month plan (next calendar)
+## Six-month plan (closed calendar)
 
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the Falsifier-revised
-calendar after Year-1 + hardening (through PR #37) and the M1 opcode
-device (PR #38):
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed Falsifier
+M1–M4 calendar after Year-1 + hardening (through PR #37) and the M1
+opcode device (PR #38). **What to sequence next:**
+[MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 - **M1 landed (PR #38):** `IreeShapedCp` (`backend = 4`) — frozen IREE
   HAL packet; research opcodes, not a vendor-as-partner claim.
@@ -829,18 +836,28 @@ device (PR #38):
   tests; single-die numbers are not partner proof.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
-  opcodes) is **not** the schedule. PR #46 was a site progress refresh,
-  not a milestone. There is no OS-completeness M3–M4 clock.
+  opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
+  progress refreshes, not milestones. There is no OS-completeness
+  M3–M4 clock and no OS-completeness Month 5.
 
 ## Suggested next cuts (technical, not calendar)
 
-The Kernel **calendar** is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-(M1–M4 done; SoftChipletSync landed). The list below is leftover
-engineering.
+The Kernel **calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md)
+(M1–M4 + SoftChipletSync closed in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)).
+Four exploration digests, not one spine: SoftGreenCtx →
+SoftCmdFirewall → SoftCCT → SoftSFI. PASID/SVA and OperatorInject
+are parked leftovers. The list below is leftover engineering, not
+a fifth digest.
 
-1. **Optional PASID / SVA.** Process-ASID on Soft-SMMU CDs if the host
-   shim needs per-client VAS. Software only. SoftChipletSync scoped
-   timelines landed (chiplet-local fence domains; not UCIe).
+1. **Month 5 digests** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
+   SoftGreenCtx (fake SM/WQ partitions; not MIG) → SoftCmdFirewall
+   (copy-then-validate; not confidential GPU) → SoftCCT (deepen
+   landed CCT; incorrect elision fails) → SoftSFI (toy ISA bounds
+   + SID; not a safe multi-tenant kernel). SoftNoI-IS parked.
+   **PASID / SVA** stays a parked leftover (per-`AccelDevice`
+   PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
+   invalidate). Software only. Not zero-copy SVA without the
+   invalidate path.
 2. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
@@ -880,9 +897,9 @@ engineering.
 
 [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06). The
 Falsifier ACTIVE track through PR #37 is **complete as research
-slices**; do not sequence new work against it. Next calendar:
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; SoftChipletSync
-landed).
+slices**; do not sequence new work against it. Closed M1–M4 calendar:
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md). **Next calendar:**
+[MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),
@@ -936,7 +953,8 @@ The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
 not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
 match the landed Year-1 track, [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md),
-and [DILIGENCE.md](DILIGENCE.md) non-claims
+[MONTH5_PLAN.md](MONTH5_PLAN.md), and [DILIGENCE.md](DILIGENCE.md)
+non-claims
 — no partnership, no booked silicon bring-up, no manufacturing climax.
 
 ## What we will not claim
