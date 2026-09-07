@@ -133,7 +133,7 @@ aether-core     alloc-free: caps, fabric, arenas, sched, SoftNPU math, ramfs, de
      ▲
 aether-hal      AccelDevice / Console / Timer
      ▲
-aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + PartnerNpuStub
+aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + IreeShapedCp + PartnerNpuStub
      ▲
 aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
 user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
@@ -168,6 +168,7 @@ user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 | `core/src/color.rs` | BankColor admit / refuse |
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate (not hardware) |
 | `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SID + IRQ/`retire_into`) |
+| `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` IREE HAL nouns + SID + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
 | `core/src/accel.rs` | Job desc + reference matmul |

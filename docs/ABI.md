@@ -99,7 +99,9 @@ User blobs: `UserIpcMsg`, `UserAccelJob`, `UserCompletion` in
 
 `UserAccelJob` has no `dtype` field (wire unchanged). Ring-3 `/init`
 submits I32. Additive `DType` values on `AccelJobDesc` / `CpCmd` /
-`AccelJobWire`: `I32=0`, `F16=1`, `F32=2`. Documented in
+`AccelJobWire` / `IreeHalCmd`: `I32=0`, `F16=1`, `F32=2`. `IreeHalCmd`
+stores IREE `iree_hal_element_type_t` (`INT_32` / `FLOAT_16` /
+`FLOAT_32`), not the Aether `DType` byte. Documented in
 [ACCEL.md](ACCEL.md). Do not reshape `UserAccelJob` without a version
 bump there.
 

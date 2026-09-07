@@ -224,13 +224,19 @@ that job submit, ownership, and completion look like silicon.
 
 ## How to plug a command processor
 
-The worked example is `aether_drivers::SoftCommandProcessor`
+The Aether-native worked example is `aether_drivers::SoftCommandProcessor`
 (`backend = 3`, name `soft-cp`). It is a **software model** of a
 silicon CP mailbox: it packs a 64-byte packet, translates through the
 Soft SMMU (`StreamId` + bind/abort), and completes on an IRQ/poll path
 into a fence. It is not SoftNPU (virtqueue BAR, `backend = 1`), not the
 in-process SoftNPU engine (`backend = 0`), and not the no-op
-`PartnerNpuStub` (`backend = 2`).
+`PartnerNpuStub` (`backend = 2`). SoftNPU path B and Soft-CP stay.
+
+The **partner-shaped HAL spine** is `aether_drivers::IreeShapedCp`
+(`backend = 4`, name `iree-shaped-cp`). It packs a frozen IREE HAL
+dispatch packet (public Device / Buffer / Executable / Event nouns),
+not Aether-native `AccelOp` bytes and not a signed vendor. See the
+opcode/packet ADR below.
 
 `AccelInfo.backend` ids:
 
@@ -239,7 +245,8 @@ in-process SoftNPU engine (`backend = 0`), and not the no-op
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed CP packet + Soft SMMU + IRQ/fence |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + Soft SMMU + IRQ/fence |
+| 4 | `IreeShapedCp` | IREE HAL dispatch packet + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
 
@@ -301,6 +308,117 @@ only probes it so the backend id is visible on the serial log. Soft-CP
 does not add a QEMU device. Path A (`qemu/aether_accel.c`) is a
 separate optional BAR device; stock `make qemu` does not attach it.
 
+## ADR: partner-shaped opcode packet (`IreeShapedCp`)
+
+**Status:** Accepted 2026-09-07.
+
+**Context.** Falsifier-revised spine item: land a partner-shaped
+`AccelDevice` whose frozen command packet uses a **concrete public ISA
+/ HAL noun set**, not `PartnerNpuStub` enrichment theater and not
+Soft-CP 2.0 with the same Aether-native opcodes (`Nop` / `MatMul` /
+`Wave`) only. SoftNPU path B (`backend = 1`) and Soft-CP
+(`backend = 3`) stay.
+
+**Choice: IREE HAL / PJRT-shaped Device / Buffer / Executable / Event.**
+
+Rejected alternatives:
+
+- **TT-Metal / other NPU command descriptors.** Viable only with cited
+  public field names. IREE HAL already matches the host nouns in
+  `aether_core::abi` and [ABI.md](ABI.md); adding a second public
+  vocabulary would be a second IR.
+- **Invented NVIDIA opcode list.** Forbidden. No partnership claim.
+
+Cited public IREE HAL fields (Apache-2.0-with-LLVM-exception headers
+on [iree-org/iree](https://github.com/iree-org/iree) `main`):
+
+| Packet field | IREE HAL noun | Header |
+| --- | --- | --- |
+| `command_categories` | `iree_hal_command_category_t` (`TRANSFER = 1<<0`, `DISPATCH = 1<<1`) | `runtime/src/iree/hal/command_buffer.h` |
+| `executable` / `function` | `iree_hal_executable_t` / `iree_hal_executable_function_t` | `runtime/src/iree/hal/{executable,command_buffer}.h` |
+| `workgroup_count[3]` | `iree_hal_dispatch_config_t.workgroup_count` | `command_buffer.h` |
+| `binding[i].offset` / `.length` | `iree_hal_buffer_ref_t.{offset,length}` | `command_buffer.h` |
+| `element_type` | `iree_hal_element_type_t` (`IREE_HAL_ELEMENT_TYPE_VALUE`) | `runtime/src/iree/hal/buffer_view.h` |
+| `queue_affinity` | `iree_hal_queue_affinity_t` (low 32; Place stand-in) | `runtime/src/iree/hal/device.h` |
+| `signal_payload` | `iree_hal_semaphore_t` payload | `runtime/src/iree/hal/semaphore.h` |
+
+Aether mapping (compiler-owned `AccelJobDesc` → HAL packet; kernel
+does **not** parse IREE VM bytecode):
+
+| AccelJobDesc | HAL packet |
+| --- | --- |
+| `op = Nop` | `command_categories = 0` (doorbell; no pins) |
+| `op = MatMul` | `DISPATCH`, `function = 0` (first export) |
+| `op = Wave` | `DISPATCH`, `function = 1` (fused export) |
+| `dtype` I32 / F16 / F32 | `IREE_HAL_ELEMENT_TYPE_{INT_32,FLOAT_16,FLOAT_32}` = `0x10000020` / `0x21000010` / `0x21000020` |
+| `m,n,k` | `workgroup_count_x/y/z` (shape stand-in; not compiler tiling) |
+| `a,b,c,bias` after Soft SMMU | `binding[0..3].offset` = IOVA; `.length` = byte span |
+| `place` | `queue_affinity` = `chiplet<<16 \| tile` |
+| `fence_id` | `signal_payload` (`abi::Event.fence`) |
+| — | `executable = 0x0001EE00` frozen `isa_blob_id` |
+
+`command_categories` and `function` are **not** `AccelOp` (`MatMul = 1`,
+`Wave = 2`). Soft-CP's `CpCmd.opcode` still is. That is the point of
+this backend.
+
+**Not claimed.** Not an IREE runtime in the kernel, not a PJRT plugin,
+not a signed IREE or silicon partnership, not FLOPs, not a vendor
+opcode ROM.
+
+### `IreeHalCmd` packet (96 bytes, little-endian)
+
+```text
+offset  type   field                 IREE HAL noun
+0x00    u32    magic                 0xAE7E1EE1 (not CpCmd 0xAE7E0C01)
+0x04    u16    command_categories    iree_hal_command_category_t
+0x06    u16    binding_count         iree_hal_buffer_ref_list_t.count (0–4)
+0x08    u32    executable            iree_hal_executable_t / isa_blob_id
+0x0C    u32    function              iree_hal_executable_function_t
+0x10    u32    workgroup_count_x     dispatch_config.workgroup_count[0]
+0x14    u32    workgroup_count_y     [1]
+0x18    u32    workgroup_count_z     [2]
+0x1C    u32    element_type          iree_hal_element_type_t
+0x20    u32    queue_affinity        iree_hal_queue_affinity_t (low 32)
+0x24    u32    stream_id             Soft-SMMU StreamId (Aether pin; ssid=2)
+0x28    u64    binding0_offset       iree_hal_buffer_ref_t.offset (IOVA A)
+0x30    u64    binding1_offset       IOVA B
+0x38    u64    binding2_offset       IOVA C
+0x40    u64    binding3_offset       IOVA bias (0 if unused)
+0x48    u32    binding0_length       iree_hal_buffer_ref_t.length
+0x4C    u32    binding1_length
+0x50    u32    binding2_length
+0x54    u32    binding3_length
+0x58    u64    signal_payload        iree_hal_semaphore payload / Event.fence
+```
+
+`IreeHalCmd::pack` fills this from `AccelJobDesc` after
+`IommuMap::translate_result` on `StreamId::accel(chiplet, tile, IREE_SSID)`
+(`ssid = 2`). Identity DMA is not a tensor path. `to_le_bytes()` is the
+wire image. `AccelDevice` / `AccelJobDesc` ABI is unchanged (this packet
+is additive).
+
+### Driver steps (what `IreeShapedCp` already does)
+
+```text
+1. probe() → AccelInfo { backend: 4, vendor: 0xAE7E, device: 0x0004 }.
+2. bind_stream(Memory+MAP, sid) and/or map_with_cap(pin_accel(...)):
+   first authorized map captures+binds. map() without a cap walk
+   returns NoMemoryCap. SoftNPU ssid 0 and Soft-CP ssid 1 are WrongStream.
+3. submit(): IreeHalCmd::pack(job, &iommu) → mailbox, doorbell=1.
+   Unbound / captured / missing / partial / wrong-stream → Fault.
+   Does not execute. poll() is empty until service().
+4. service() (IRQ / kthread poll): resolve_stream each binding IOVA,
+   run the integer engine, write a Completion, raise IRQ.
+5. poll(): pop the completion and ack the IRQ. signal_payload (fence
+   seq) retires through Timeline::complete / retire_into.
+6. Never accept a PA that did not come from a cap walk + IommuMap pin.
+```
+
+The kernel self-check only probes `IreeShapedCp` so backend 4 is
+visible on the serial log (`[accel] IreeShapedCp probe backend=4
+iree-shaped-cp (IREE HAL packet; not a vendor)`). QEMU still demos
+SoftNPU. This backend does not add a QEMU device.
+
 ## Co-scheduling
 
 `TileScheduler` has an `Npu` tile. Init enqueues an `AccelWave` with a
@@ -314,8 +432,8 @@ Jobs are fence-ordered and credit-limited per `PartitionProfile`.
 watermark, in-order `complete`). That is not a CUDA stream: there
 is no implicit catch-up, and a partition that is out of credits
 refuses submit. `timeout` is a software overlay — it does not
-claim a device IRQ. SoftCommandProcessor and SoftNPU both retire
-through this API. QEMU's used-ring IRQ is still software on x86
+claim a device IRQ. SoftCommandProcessor, IreeShapedCp, and SoftNPU
+all retire through this API. QEMU's used-ring IRQ is still software on x86
 (kthread poll after the PIC timer). On RISC-V the same AccelMmio
 BAR is serviced from a **PLIC claim** (UART THRE software doorbell,
 source 10) — a real interrupt path, still path B, still not a

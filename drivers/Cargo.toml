@@ -3,7 +3,7 @@ name = "aether-drivers"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "VirtIO-Accel protocol, SoftNPU, and SoftCommandProcessor"
+description = "VirtIO-Accel protocol, SoftNPU, SoftCommandProcessor, and IreeShapedCp"
 publish = false
 
 [dependencies]
