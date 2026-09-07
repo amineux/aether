@@ -54,8 +54,10 @@ This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
 seL4-level proofs. Formal caps are not a calendar item.
 
-Host tests in `core/src/caps.rs`, `core/src/caps_props.rs`, and
-`core/src/demo.rs` lock the statements below.
+Host tests in `core/src/caps.rs`, `core/src/caps_props.rs`,
+`core/src/demo.rs`, and `core/src/blast.rs` lock the statements below.
+The blast-radius diligence clip serial-prints `[blast]` after CrossCut
+and wrong-SID refuse.
 
 ## CDT properties (host tests, not a proof)
 

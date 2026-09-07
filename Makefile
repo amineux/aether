@@ -217,6 +217,10 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] cow write ok" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[probe\\] cow still template" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
@@ -252,6 +256,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
 		if grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log; then \
 			echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -282,6 +287,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-nopcid-serial.log; then \
 		echo "qemu-nopcid-ci: full-flush fallback + SoftNPU /init ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -322,6 +328,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] pcid" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
@@ -370,6 +377,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-blk-serial.log; then \
 		echo "qemu-blk-ci: virtio-blk → ramfs + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -412,6 +420,10 @@ qemu-riscv-ci: $(RV_ELF)
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
@@ -466,6 +478,10 @@ qemu-aarch64-ci: $(AA_ELF)
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/aarch64-serial.log \
