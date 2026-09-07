@@ -252,8 +252,9 @@ The kernel and `/init` are **separate Cargo projects** so
   product-class second architecture.
 
 See [docs/ROADMAP.md](docs/ROADMAP.md) and
-[docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status and
-the next partner-shaped HAL calendar.
+[docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) for landed status.
+The Month 1–2 spine (opcodes → PJRT shim) is done; optional Soft SMMU
+kit / path-A guest bind stay gated.
 
 ## Docs
 
@@ -268,7 +269,7 @@ the next partner-shaped HAL calendar.
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
-- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — next calendar (M1 `IreeShapedCp` landed; M2 PJRT/IREE shim)
+- [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — Falsifier spine (M1 `IreeShapedCp` + M2 `aether-pjrt` landed; optional Soft SMMU kit / path A gated)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 
 ## Website

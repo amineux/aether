@@ -433,7 +433,7 @@
           </article>
           <article class="glass" data-reveal data-d="1">
             <h3>Package OS under a vendor runtime</h3>
-            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether would admit the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose. That is an interface bet, not an integration.</p>
+            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether would admit the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose. <code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> onto <code>IreeShapedCp</code> — a host contract, not a plugin or vendor integration.</p>
           </article>
           <article class="glass" data-reveal data-d="2">
             <h3>MIG-like isolation, generalized to chiplets</h3>
@@ -452,10 +452,10 @@
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
-            <h2>Year-1 and hardening landed. Partner-shaped HAL packet landed; silicon bind stays open.</h2>
-            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>. Soft SMMU, Soft-CP, IreeShapedCp (IREE HAL packet, not a signed vendor), SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack are done. We do not tape out chips. Manufacturing support is not a milestone.</p>
+            <h2>Year-1, hardening, and the Month 1–2 spine landed. Optional kit stays gated.</h2>
+            <p class="lede">Active track from <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; next calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 <code>IreeShapedCp</code> and M2 <code>aether-pjrt</code> are done. Optional Soft SMMU kit / path-A guest bind stay open. We do not tape out chips. Manufacturing support is not a milestone.</p>
           </div>
-          <div class="honest-pill" data-reveal>Active track · not a foundry calendar</div>
+          <div class="honest-pill" data-reveal>Falsifier spine · not a foundry calendar</div>
         </div>
         <div class="timeline">
           <article class="tl now" data-reveal>
@@ -468,8 +468,6 @@
                 <li>SoftNPU virtqueue path B (in-kernel BAR is the canonical stock-QEMU demo; golden MMIO trace); I32 plus software F16/F32 (not a tensor ISA). Path A is an optional in-tree QEMU device model (<code>qemu/</code>; <code>make accel-test</code>)</li>
                 <li>Soft SMMU — STE→CD→Stage-1/2 software walk + ATS invalidate (not hardware SMMU; partner silicon still required)</li>
                 <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
-                <li>IreeShapedCp — frozen IREE HAL dispatch packet (<code>backend = 4</code>); public Device/Buffer/Executable/Event nouns; not a signed vendor; SoftNPU path B and Soft-CP stay</li>
-                <li>Host PJRT/IREE-shaped shim — <code>host/aether-pjrt</code> (Device / MemorySpace / Buffer / Executable / Event → frozen <code>IreeHalCmd</code> on IreeShapedCp; SoftNPU stays path-B qemu; not a plugin, not a vendor runtime)</li>
                 <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
                 <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
                 <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
@@ -503,15 +501,36 @@
               </ul>
             </div>
           </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Month 1–2</div>
+              <h3>Opcodes then PJRT — SIX_MONTH spine</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">M1 opcodes</span>
+                <span class="chip on">M2 PJRT shim</span>
+                <span class="chip wait">Soft SMMU kit</span>
+                <span class="chip wait">path A gated</span>
+              </div>
+              <ul>
+                <li><code>IreeShapedCp</code> (PR #38) — IREE HAL-shaped <code>AccelDevice</code>, <code>backend = 4</code>; frozen <code>IreeHalCmd</code> from public IREE HAL nouns; M1 spine; not a signed vendor; SoftNPU path B and Soft-CP stay</li>
+                <li><code>IreeHalCmd</code> freeze (PR #45) — <code>ACCEL.md</code> wording locked so PJRT hosts pack that packet only</li>
+                <li>PJRT/IREE host shim (PR #41) — <code>host/aether-pjrt</code> packs frozen <code>IreeHalCmd</code> onto <code>IreeShapedCp</code>; not a plugin, not a vendor runtime; SoftNPU stays the path-B qemu demo</li>
+                <li><code>SIX_MONTH_PLAN</code> (PR #44) — Falsifier spine is opcodes → PJRT; no M3–M4 clock; Year-1 + hardening are not re-scheduled</li>
+                <li>Exploration A–E landed as digests, not calendar pillars: A merged into M2; B two-tenant blast-radius clip (PR #43); C <code>ChipletTaskScope</code> stub (PR #40); D CDT property tests (PR #39; not a proof); E <code>TypedWindow</code> pin stub (PR #42; CXL.mem stays killed)</li>
+              </ul>
+            </div>
+          </article>
           <article class="tl future" data-reveal>
             <div class="tl-dot" aria-hidden="true"></div>
             <div class="tl-card">
-              <div class="tl-when">Open · silicon bind</div>
-              <h3>If a silicon team implements AccelDevice</h3>
+              <div class="tl-when">Open · gated leave-behind</div>
+              <h3>Optional Soft SMMU kit / path A</h3>
               <ul>
+                <li>Optional Soft SMMU bring-up kit — docs + dump/replay of the existing STE→CD→S1/S2 walk; not a Soft-SMMU redo; not a half-year pillar</li>
+                <li>Conditional guest PCI bind for path A — only if Soft-SMMU IOVA must be shown on path-A DMA; <code>-device aether-accel</code> model landed; stock QEMU stays path B; CI does not rebuild QEMU</li>
                 <li>Hardware SMMU — program a real SID / PT on partner silicon; Soft SMMU is a deepened software table only</li>
-                <li>Guest PCI bind for path A (<code>-device aether-accel</code> model landed; stock QEMU stays path B)</li>
-                <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen. The partner-shaped packet landed as <code>IreeShapedCp</code> (IREE HAL nouns) — not a signed vendor</li>
+                <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen. The partner-shaped packet landed as <code>IreeShapedCp</code> — not a signed vendor</li>
                 <li><code>PartnerNpuStub</code> stays a labeled sketch — no second-stub enrichment theater</li>
               </ul>
             </div>
@@ -534,9 +553,9 @@
               <div class="tl-when">Later · research</div>
               <h3>Package topology as a solver input</h3>
               <ul>
-                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Chiplet-local steal is a host-tested stub (not ChipletFleet, not a partner ask)</li>
-                <li>CXL.mem window stays killed as a milestone — <code>TypedWindow</code> is an honest pin stub (SID refuse), not silicon</li>
-                <li>Formal subset of caps — inspired by seL4, not a proof claim</li>
+                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Chiplet-local steal is an exploration digest (PR #40 stub), not ChipletFleet</li>
+                <li>CXL.mem window stays killed as a milestone — <code>TypedWindow</code> is an exploration digest pin stub (PR #42; SID refuse), not silicon</li>
+                <li>Formal subset of caps — inspired by seL4, not a proof claim. CDT property tests (PR #39) are host tests, not a seL4 CNode</li>
               </ul>
             </div>
           </article>
@@ -547,7 +566,7 @@
               <h3>Bring-up notes if a team asks — not manufacturing</h3>
               <ul>
                 <li>Optional how-to: map a command processor into <code>AccelDevice</code></li>
-                <li>In-tree <code>ACCEL.md</code> / <code>DILIGENCE.md</code> stay the leave-behind</li>
+                <li>In-tree <code>ACCEL.md</code> / <code>DILIGENCE.md</code> / <code>SIX_MONTH_PLAN.md</code> stay the leave-behind</li>
                 <li>Not a foundry playbook, not a tape-out checklist, not a climax goal</li>
                 <li>No certification claim — orientation docs only if someone needs them</li>
               </ul>
@@ -562,7 +581,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
           <h2>What you can boot. What is still open.</h2>
-          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1 and the x86 hardening stack have landed. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, and the Month 1–2 opcode / PJRT spine have landed. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -603,8 +622,8 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
-                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · DILIGENCE · YEAR2_PLAN · ROADMAP</a>
-                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · SIX_MONTH_PLAN · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Month 1–2 spine is in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
           </div>
