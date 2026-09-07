@@ -829,6 +829,12 @@ section.band + section.band {
   background: var(--mint-dim);
 }
 
+.chip.wait {
+  border-color: rgba(240, 195, 106, 0.32);
+  color: var(--amber);
+  background: rgba(240, 195, 106, 0.1);
+}
+
 .places {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
