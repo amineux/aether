@@ -237,12 +237,12 @@ examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
-docs/design-win/     IREE HAL research stand-in worksheet (`make design-win-standin`; not a partner)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
-docs/            architecture, fabric, accel, security, diligence, roadmap
+docs/            architecture, fabric, accel, security, diligence, pitch, Week 1 call pack
+docs/design-win/ IREE HAL research stand-in worksheet (`make design-win-standin`; not a partner)
 ```
 
 The kernel and `/init` are **separate Cargo projects** so
