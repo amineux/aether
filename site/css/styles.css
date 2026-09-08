@@ -1163,6 +1163,113 @@ section.band + section.band {
   margin-top: 4px;
 }
 
+.horizon-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin: 2px 0 14px;
+}
+
+.horizon-phase {
+  position: relative;
+  padding: 12px 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: #10141c;
+  overflow: hidden;
+}
+
+.horizon-phase.done {
+  border-color: rgba(61, 220, 151, 0.35);
+  background: var(--mint-dim);
+}
+
+.horizon-phase.mid {
+  border-color: rgba(106, 168, 255, 0.28);
+}
+
+.horizon-phase.end {
+  border-color: rgba(240, 195, 106, 0.32);
+}
+
+.horizon-phase small {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--faint);
+}
+
+.horizon-phase.done small {
+  color: var(--mint);
+}
+
+.horizon-phase.mid small {
+  color: var(--blue);
+}
+
+.horizon-phase.end small {
+  color: var(--amber);
+}
+
+.horizon-phase b {
+  display: block;
+  margin: 4px 0 2px;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+}
+
+.horizon-phase p {
+  margin: 0;
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.4;
+}
+
+.horizon-phase .fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 3px;
+  background: var(--line);
+}
+
+.horizon-phase .fill i {
+  display: block;
+  height: 100%;
+  width: 100%;
+  transform: scaleX(0);
+  transform-origin: left center;
+  background: var(--mint);
+}
+
+.horizon-phase.mid .fill i {
+  background: var(--blue);
+}
+
+.horizon-phase.end .fill i {
+  background: var(--amber);
+}
+
+.reveal .horizon-phase.done .fill i {
+  animation: horizon-grow 0.85s var(--ease) 0.12s forwards;
+}
+
+.reveal .horizon-phase.mid .fill i {
+  animation: horizon-grow 0.85s var(--ease) 0.22s forwards;
+}
+
+.reveal .horizon-phase.end .fill i {
+  animation: horizon-grow 0.85s var(--ease) 0.32s forwards;
+}
+
+@keyframes horizon-grow {
+  to {
+    transform: scaleX(1);
+  }
+}
+
 /* ——— status ——— */
 .status-grid {
   display: grid;
@@ -1383,6 +1490,10 @@ footer {
     flex-direction: column;
     align-items: start;
   }
+
+  .horizon-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 1040px) {
@@ -1422,6 +1533,7 @@ footer {
   .partner-grid,
   .places,
   .hodge,
+  .horizon-row,
   .arch-row.tiles,
   .arch-row.kernel,
   .arch-row.tenants {
