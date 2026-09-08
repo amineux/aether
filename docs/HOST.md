@@ -16,8 +16,8 @@ little-endian `IreeHalCmd` (magic `0xAE7E1EE1`, `backend = 4`,
 host backend for virtqueue tests; `make qemu` remains the path-B
 SoftNPU demo. Soft-CP (`backend = 3`) stays in-tree as the
 Aether-native packet path with two software XQueues, SoftGreenCtx
-SM/WQ partitions, optional SoftChipletSync scoped timelines, and
-SoftCCT elision; this crate does not submit through it.
+SM/WQ partitions, optional SoftChipletSync scoped timelines,
+SoftCCT elision, and SoftNoI-IS admit; this crate does not submit through it.
 There is no fake vendor runtime and no `PartnerNpuStub` path.
 
 Kernel CI is unchanged: the crate is not linked into `aether-kernel`.

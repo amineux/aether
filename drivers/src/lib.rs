@@ -2,12 +2,13 @@
 //! [`SoftCommandProcessor`] is the host-tested Aether-native CP path
 //! (packed `CpCmd` + SET_SID-at-submit + two software XQueues +
 //! SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines +
-//! SoftCCT elision +
+//! SoftCCT elision + SoftNoI-IS admit +
 //! SoftCmdFirewall copy-then-validate + IRQ/fence).
 //! SoftSFI (`softsfi`) is a toy bytecode sandbox beside the CP.
 //! PASID/SVA (`sva`) binds process VA ↔ Soft-SMMU SSID on this CP.
 //! OperatorInject (`opinject`) is the resident worker + versioned op table
 //! (memcpy / saxpy + hot-add scale; GPUOS / Mirage MPK inspiration).
+//! SoftNoI-IS (`noi`) is Interference Score admit on a fake shared NoI.
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
 //! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped
 //! timelines). [`PartnerNpuStub`] remains a documented no-op sketch.
@@ -18,6 +19,7 @@ pub mod fakecp;
 pub mod firewall;
 pub mod ireecp;
 pub mod mmio;
+pub mod noi;
 pub mod opinject;
 pub mod partner;
 pub mod softnpu;

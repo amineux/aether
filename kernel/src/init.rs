@@ -8,6 +8,7 @@ use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
 use aether_core::greenctx::run_greenctx_demo;
 use aether_core::laplacian::AffinityLaplacian;
+use aether_core::noi::run_softnoi_demo;
 use aether_core::opinject::run_opinject_demo;
 use aether_core::sid::run_sid_submit_demo;
 use aether_core::softsfi::run_softsfi_demo;
@@ -327,6 +328,23 @@ pub fn run_kernel_selfcheck() {
         println!("[opinject] FAIL -- OperatorInject");
     }
 
+    let softnoi = run_softnoi_demo();
+    write_str("[softnoi] solo vs concurrent IS=");
+    write_u64(softnoi.heavy_is_milli as u64);
+    write_str(" budget=1500 (PARL/NoI; not topology synth)  ");
+    write_str(flag(softnoi.light_is_ok && softnoi.heavy_is_over));
+    console::nl();
+    write_str("[softnoi] admit light A+B / refuse heavy B  ");
+    write_str(flag(
+        softnoi.light_admit && softnoi.heavy_refuse && softnoi.advertised,
+    ));
+    console::nl();
+    if softnoi.all_ok() {
+        println!("[softnoi] two-tenant fake NoI admit/refuse sealed");
+    } else {
+        println!("[softnoi] FAIL -- SoftNoI-IS");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -349,6 +367,7 @@ pub fn run_kernel_selfcheck() {
         || !softsfi.all_ok()
         || !sva.all_ok()
         || !opinject.all_ok()
+        || !softnoi.all_ok()
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);

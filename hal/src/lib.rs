@@ -107,6 +107,21 @@ pub trait AccelDevice {
     fn sm_wq_budget(&self) -> Option<SmWqBudget> {
         None
     }
+    /// SoftNoI-IS estimate for a tenant. Default: none (no fake NoI).
+    ///
+    /// PARL / NoI inspiration. Admit control, not topology synthesis.
+    fn noi_is_milli(&self, tenant: u32) -> Option<u32> {
+        let _ = tenant;
+        None
+    }
+    /// Admit a tenant onto the fake NoI. Default: unsupported.
+    ///
+    /// Returns the projected IS in milli (1000 = 1.0×). Refuse with
+    /// [`HalError::Busy`] when IS > budget.
+    fn admit_noi(&mut self, tenant: u32, demand: u32) -> Result<u32, HalError> {
+        let _ = (tenant, demand);
+        Err(HalError::Unsupported)
+    }
     /// Create a SoftGreenCtx with an exclusive SM/WQ slice.
     ///
     /// Default: unsupported. Soft-CP implements a fake 10-SM / 10-WQ pool.

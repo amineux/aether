@@ -58,14 +58,15 @@ Do **not** re-schedule any of the following as new milestones. Do
 SoftNPU path-B opcodes stay Aether-native. `PartnerNpuStub`
 (`backend = 2`) stays a labeled no-op.
 
-**In flight / about to land as exploration — do not mark Done:**
+**In flight / landing this PR as exploration — do not mark Done until merge:**
 
-- SoftNoI-IS admit
+- SoftNoI-IS admit (this PR)
 - PASID/SVA software bind + invalidate
 - OperatorInject hot-add
 
-Those three sit in H2 2026 below. They are not Month 5 digests and
-they are not landed on this tip.
+Those three sit in H2 2026 below. They are not Month 5 digests.
+SoftNoI-IS is in-flight on this branch; do not treat it as Done on
+main until this PR merges. PASID/SVA and OperatorInject stay parked.
 
 ## H2 2026 (now → Dec 2026) — finish partner-HAL leftovers
 
@@ -87,7 +88,8 @@ SoftChipletSync fabric IS estimate; refuse when `IS > budget`.
 Slice: solo vs concurrent → IS; refuse `IS > 1.5` (or the named
 budget). **Admit control, not topology synthesis.**
 
-Do not mark Done until it lands. Not a Month 5 digest.
+This PR lands the slice. Do not mark Done until it merges. Not a
+Month 5 digest. Not in the Reality-on-main table above.
 
 **Done when:** host tests show solo vs concurrent IS; refuse
 `IS > budget`; docs name PARL / NoI as inspiration only. No new
@@ -256,7 +258,7 @@ calendar.
    [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md), and
    [YEAR2_PLAN.md](YEAR2_PLAN.md) — **this cut**
 2. H2 2026 explorations (do not mark Done until they land):
-   SoftNoI-IS, PASID/SVA, OperatorInject
+   SoftNoI-IS (this PR), PASID/SVA, OperatorInject
 3. Optional H2 2026: MicroPerceptron consumer; guest PCI path A
    **only if** Soft-SMMU IOVA needs BAR
 4. 2027 H1 deepen (PJRT polish, SoftSFI widen, gated CapTable /
@@ -274,7 +276,7 @@ numbered.
 
 | Slice | Primary touches |
 | --- | --- |
-| SoftNoI-IS | `core/src/chipsync.rs` / fabric admit, host tests |
+| SoftNoI-IS | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests |
 | PASID / SVA | `core/src/iommu.rs`, `drivers/src/fakecp.rs` |
 | OperatorInject | `drivers/src/fakecp.rs` resident worker |
 | MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
@@ -294,7 +296,7 @@ status pointers. CI only if a new host-test target appears. ABI
 ## What we will not claim
 
 - That SoftNoI-IS, PASID/SVA, or OperatorInject are Done on this
-  tip
+  tip (SoftNoI-IS is in-flight / landing this PR)
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or a
   CUDA unified virtual address space
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate

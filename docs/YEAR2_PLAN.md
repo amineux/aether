@@ -11,7 +11,8 @@ The closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 SoftCmdFirewall landed). [MONTH5_PLAN.md](MONTH5_PLAN.md) is the
 closed Month 5 record (SoftSFI digest 4 landed). The **next
 calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
-2028). Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 /
+2028). SoftNoI-IS is **in-flight / landing this PR** (H2 2026
+exploration; not marked Done). Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 /
 `IreeShapedCp` from the KEEP list below. SpecForge appendix remains
 aspirational only.
 

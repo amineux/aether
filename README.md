@@ -278,6 +278,8 @@ refused). Optional Soft SMMU kit is PR #48 (software tables). Path-A
 guest bind stays gated. Closed Month 5 record:
 [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). The **next calendar** is
 [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+SoftNoI-IS is **in-flight / landing this PR** (H2 2026 exploration;
+admit control, not topology synth; not marked Done until merge).
 
 ## Docs
 
