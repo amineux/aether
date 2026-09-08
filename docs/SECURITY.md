@@ -94,6 +94,13 @@ copies, heap, or other unmodeled side-effects — those ops are
 refused. Skip-verify fault injection still traps on the SID window
 and does not cross-read. Software only.
 
+PASID / SVA (`core/src/sva.rs`, `IommuMap::bind_mm` / `map_va` /
+`unmap_va`) binds a process mm to a Soft-SMMU SSID so Soft-CP DMA
+uses that process VA. Host unmap invalidates the SSID ATC. Skipping
+invalidate is a stale translate. Linux SVA / PASID inspiration. It
+is **not** ARM SVA, **not** PCIe PASID/PRI, **not** CUDA UVA, and
+**not** zero-copy SVA without invalidate. No new syscall.
+
 ## CDT properties (host tests, not a proof)
 
 Aether stores a parent pointer (`CdtNode` = table owner + mint

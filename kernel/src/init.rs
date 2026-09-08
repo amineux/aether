@@ -10,6 +10,7 @@ use aether_core::demo::run_boot_demo;
 use aether_core::laplacian::AffinityLaplacian;
 use aether_core::sid::run_sid_submit_demo;
 use aether_core::softsfi::run_softsfi_demo;
+use aether_core::sva::run_sva_demo;
 use aether_drivers::softnpu::KernelDma;
 use aether_drivers::{run_firewall_demo, IreeShapedCp, SoftCommandProcessor};
 use aether_hal::AccelDevice;
@@ -291,6 +292,22 @@ pub fn run_kernel_selfcheck() {
         println!("[softsfi] FAIL -- SoftSFI");
     }
 
+    // Sequential: IommuMap in the SVA clip must not share the stack
+    // with SoftSFI / SoftGreenCtx / firewall.
+    let sva = run_sva_demo();
+    write_str("[sva] bind mm↔ssid DMA VA  ");
+    write_str(flag(sva.bind_ok && sva.dma_va && sva.sid_submit));
+    write_str(" (Linux SVA/PASID inspiration; not hardware)");
+    console::nl();
+    write_str("[sva] unmap invalidates SSID TLB; stale translate faults  ");
+    write_str(flag(sva.unmap_inv && sva.stale_fault));
+    console::nl();
+    if sva.all_ok() {
+        println!("[sva] mm↔ssid Soft-SMMU SVA sealed");
+    } else {
+        println!("[sva] FAIL -- PASID/SVA");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -311,6 +328,7 @@ pub fn run_kernel_selfcheck() {
         || !firewall_ok
         || !green_ok
         || !softsfi.all_ok()
+        || !sva.all_ok()
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);

@@ -351,11 +351,14 @@ pub fn validate_cp_cmd(
     Ok(steps)
 }
 
-/// One command-stream reloc: IOVA must sit in the Soft-SMMU window,
-/// translate on `sid`, and be covered for `len` bytes. Addr cap =
-/// refuse identity guest PAs sneaking into the packet.
+/// One command-stream reloc: DMA address must translate on `sid` and
+/// cover `len` bytes. Non-SVA packets must use the Soft-SMMU IOVA
+/// window (refuse identity guest PAs sneaking into the packet). A
+/// SVA-bound SSID may use the bound process VA (Linux SVA-shaped;
+/// not CUDA UVA).
 fn validate_reloc(iommu: &IommuMap, sid: StreamId, iova: u64, len: u64) -> Result<(), HalError> {
-    if iova < SOFT_SMMU_IOVA_BASE {
+    let sva = iommu.mm_of(sid).is_some();
+    if !sva && iova < SOFT_SMMU_IOVA_BASE {
         return Err(HalError::Fault);
     }
     if !iommu.covers_iova(sid.raw(), PhysAddr(iova), len) {

@@ -40,6 +40,7 @@ pub mod softfloat;
 pub mod softsfi;
 pub mod space;
 pub mod sparsify;
+pub mod sva;
 pub mod sysnr;
 pub mod types;
 pub mod window;
@@ -83,7 +84,7 @@ pub use greenctx::{
 };
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
-    AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, SoftPte,
+    AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, MmId, SoftPte,
     SoftSmmuDump, SteConfig, SteTableDump, StreamId, StreamState, WalkResult, DEFAULT_STREAM,
     SET_SID, SID_BUDGET_PER_TENANT, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
@@ -116,6 +117,7 @@ pub use softsfi::{
 };
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
+pub use sva::{run_sva_demo, SvaReport, SVA_LEN, SVA_MM, SVA_PA, SVA_SID, SVA_VA};
 pub use sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, BLK_WINDOW_BASE, BLK_WINDOW_END, COW_PRIVATE_WORD,
     COW_TEMPLATE_WORD, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD, SYS_ACCEL_SUBMIT,
