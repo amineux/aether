@@ -55,6 +55,12 @@
 //! the SSID ATC. Linux SVA inspiration. Not ARM SVA / PCIe PASID / CUDA
 //! UVA, and not zero-copy SVA without invalidate. SID-at-submit and
 //! XQueue stay intact.
+//!
+//! OperatorInject keeps **one resident worker** and a versioned function
+//! table (`memcpy` / `saxpy`, hot-add `scale` without relaunch). GPUOS /
+//! Mirage MPK inspiration only — own IR, not NVRTC / CUDA, not a full LLM
+//! compiler. SID-at-submit + SoftCmdFirewall still gate every call.
+//! Lives in [`crate::opinject`] so this file stays the CP mailbox.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
@@ -64,6 +70,7 @@ use aether_core::greenctx::{
     GreenCtxError, GreenCtxId, MemcpyReport, SmWqBudget, SoftGreenPool, SOFT_SM_POOL, SOFT_WQ_POOL,
 };
 use aether_core::iommu::{IommuMap, MapError, MapRequest, MmId, StreamId};
+use aether_core::opinject::OperatorInject;
 use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::types::{ChipletId, PhysAddr, TileId};
 use aether_core::window::{MappedWindow, TypedWindow};
@@ -412,9 +419,9 @@ pub struct SoftCommandProcessor<M: DmaView> {
     pub mem: M,
     npu: SoftNpu,
     queues: [XQueue; SOFT_CP_XQUEUES],
-    submit_seq: u32,
+    pub(crate) submit_seq: u32,
     irq: bool,
-    last_cmd: Option<CpCmd>,
+    pub(crate) last_cmd: Option<CpCmd>,
     last_cpl: Option<Completion>,
     last_fence: Option<u64>,
     last_queue: Option<u8>,
@@ -427,6 +434,8 @@ pub struct SoftCommandProcessor<M: DmaView> {
     /// Fake SM/WQ Green Contexts. Soft partition, not MIG.
     pub green: SoftGreenPool,
     last_memcpy: Option<MemcpyReport>,
+    /// Resident worker + versioned op table. Not NVRTC.
+    pub opinject: OperatorInject,
 }
 
 impl<M: DmaView> SoftCommandProcessor<M> {
@@ -457,6 +466,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             firewall: SoftCmdFirewall::new(),
             green: SoftGreenPool::new(),
             last_memcpy: None,
+            opinject: OperatorInject::with_resident_memcpy_saxpy(),
         }
     }
 

@@ -583,7 +583,7 @@ Host tests: `verifier_accepts_in_bounds_program`,
 
 **Status:** Software bind + SSID TLB invalidate on Soft SMMU (Linux
 SVA-shaped). Not marked Done on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(H2 2026 exploration) until this PR merges. Per-`AccelDevice` PASID
+(H2 2026 exploration). Per-`AccelDevice` PASID
 space. Bind process mm ↔ SSID; Soft-CP DMA uses that process VA;
 host unmap invalidates the SSID ATC (TLB); a skipped invalidate is
 a stale translate. Software only.
@@ -626,6 +626,50 @@ Host tests: `sva_demo_bind_dma_unmap_stale`,
 `skip_invalidate_queued_cmd_stale_translate`,
 `two_acceldevices_have_independent_pasid_spaces`. Kernel serial
 `[sva]`.
+
+## OperatorInject (software; GPUOS / Mirage MPK-shaped)
+
+**Status:** this leftover slice (H2 2026 on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md);
+**not** marked Done). Soft-CP
+keeps **one resident worker**. The host publishes operator slots on a
+versioned function table. `memcpy` and `saxpy` seed at CP construct;
+`scale` **hot-adds** without Soft-CP restart (`epoch` / `launches`
+unchanged). SID is still enforced per submit. SoftCmdFirewall
+copy-then-validate admits the packed `CpCmd` before dispatch. Own
+bytecode / IR only.
+
+**Inspiration.** [GPUOS / XpuOS](https://github.com/XpuOS) is a
+resident GPU-side service: the host publishes work into a live worker
+instead of relaunching a kernel per fused op.
+[Mirage](https://github.com/mirage-project/mirage) MPK (persistent
+kernel) fuses tensor ops into a resident GPU kernel so a new fused
+graph does not relaunch CUDA. Soft-CP copies **neither** — a software
+table + loop. Distinct from landed `OperatorKernelHandle` Hodge
+inject.
+
+**This is not:**
+
+- NVRTC, CUDA, a vendor compiler, or NVIDIA.
+- A full LLM compiler or Mirage superoptimizer.
+- A `CpCmd` layout change or a second SoftNPU opcode. Calls pack a
+  MatMul-shaped reloc for firewall / SID walks; the resident worker
+  interprets the 32-byte `OpCall` IR.
+- A change to path-B SoftNPU, the virtqueue BAR, or `make qemu`.
+
+**Contract** (`aether_core::opinject` + `drivers/src/opinject.rs` on Soft-CP):
+
+```text
+OperatorInject::with_resident_memcpy_saxpy()  // one loop; slots 0,1
+publish(slot, kind) / hot_add_scale()         // table_version++; epoch stays
+submit(call, SidSandbox, mem)                 // SID window on src/dst
+Soft-CP submit_injected(sid, call)            // SET_SID + firewall + dispatch
+```
+
+Host tests: `memcpy_and_saxpy_on_resident_worker`,
+`hot_add_scale_does_not_relaunch`,
+`memcpy_saxpy_then_hot_add_scale_without_relaunch`,
+`sid_at_submit_refuses_unbound_and_foreign_iova`,
+`firewall_copy_then_validate_on_inject`. Kernel serial `[opinject]`.
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 

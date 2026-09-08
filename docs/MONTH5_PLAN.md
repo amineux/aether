@@ -194,10 +194,14 @@ unmap→SSID TLB invalidate; stale translate faults; docs non-claims
 ### OperatorInject deepen
 
 Soft-CP resident worker + versioned injectable ops (`memcpy` /
-`saxpy` + hot-add third) without Soft-CP restart. SID still at
-submit. Own bytecode / IR only — not NVRTC / CUDA.
+`saxpy` + hot-add `scale`) without Soft-CP restart. SID still at
+submit. SoftCmdFirewall copy-then-validate admits the packed image.
+Own bytecode / IR only — not NVRTC / CUDA.
 
 Distinct from landed `OperatorKernelHandle` Hodge inject.
+GPUOS / Mirage MPK inspiration only. Not a full LLM compiler, not
+NVIDIA. H2 2026 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) —
+**not** marked Done.
 
 ### SoftNoI-IS
 
@@ -246,7 +250,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | **SoftSFI** | **Landed** (digest 4) | Toy ISA: accept in-bounds load/store in the SID range; reject OOB; two tenants SFI+SID | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
 | **SoftNoI-IS** | **Parked** (menu #5) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth** |
 | PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
-| OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add third; no Soft-CP restart | Own IR. **Not NVRTC/CUDA** |
+| OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add scale; no Soft-CP restart | Own IR. **Not NVRTC/CUDA**. Not a full LLM compiler |
 | FlowHodgeQuota | Gated digest | Class headers on Soft-CP DMA + admit/refuse counters | Headers required or stay killed as theater |
 
 ### Partner / HAL
@@ -336,7 +340,7 @@ redirects. A later site progress refresh is not a milestone.
 | SoftSFI | `core/src/softsfi.rs` + `drivers/src/softsfi.rs` (toy ISA + SID window). Keep `fakecp.rs` thin — **landed** |
 | SoftNoI-IS (parked) | `core/src/chipsync.rs` / fabric admit — not this month |
 | PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
-| OperatorInject (parked) | `drivers/src/fakecp.rs` resident worker — not this month |
+| OperatorInject (parked) | `core/src/opinject.rs` + `drivers/src/opinject.rs` resident worker — H2 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md); **not** marked Done |
 | FlowHodgeQuota digest | `core/src/hodge.rs`, Soft-CP DMA header inject; only with class headers |
 | MicroPerceptron digest | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |

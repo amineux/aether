@@ -165,7 +165,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
 | `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
-| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall + SoftGreenCtx + SoftSFI + PASID/SVA clips |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall + SoftGreenCtx + SoftSFI + PASID/SVA + OperatorInject clips |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
@@ -181,6 +181,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `drivers/src/firewall.rs` | SoftCmdFirewall copy-then-validate (Host1x lesson; cmd-stream integrity, not confidential GPU) |
 | `drivers/src/softsfi.rs` | Soft-CP host for the toy SoftSFI sandbox (keeps `fakecp.rs` thin) |
 | `drivers/src/sva.rs` | Soft-CP host for PASID/SVA (mm↔SSID bind; VA DMA; unmap→SSID TLB) |
+| `drivers/src/opinject.rs` | Soft-CP host for OperatorInject (resident worker + SID/firewall; keeps `fakecp.rs` thin) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
@@ -201,6 +202,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/greenctx.rs` | SoftGreenCtx fake SM/WQ partitions (70/30) + memcpy interference + migrate-to-yield (not MIG) |
 | `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`) |
 | `core/src/sva.rs` | PASID/SVA clip (Linux SVA-shaped mm↔SSID; not ARM SVA / CUDA UVA) |
+| `core/src/opinject.rs` | OperatorInject resident worker + versioned op table (memcpy/saxpy + hot-add scale; GPUOS / Mirage MPK; not NVRTC) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
