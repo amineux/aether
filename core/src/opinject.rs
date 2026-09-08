@@ -509,6 +509,7 @@ fn read_i32(bytes: &[u8], off: usize) -> i32 {
 }
 
 /// Resident memcpy + saxpy, hot-add scale without relaunch, SID OOB refuse.
+#[inline(never)]
 pub fn run_opinject_demo() -> OpInjectReport {
     let mut bytes = [0u8; OPINJECT_SPAN as usize];
     for i in 0..DEMO_WORDS {

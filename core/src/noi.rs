@@ -373,6 +373,7 @@ impl SoftNoiReport {
 }
 
 /// Solo vs concurrent IS, then admit light / refuse heavy over 1.5.
+#[inline(never)]
 pub fn run_softnoi_demo() -> SoftNoiReport {
     let cap = NOI_CAPACITY;
     let a = TenantId(1);

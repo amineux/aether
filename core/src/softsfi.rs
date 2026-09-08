@@ -631,6 +631,7 @@ pub fn oob_load_prog(foreign_base: u64) -> Program {
 
 /// Two tenants, same toy Soft-CP ISA: accept in-bounds, reject OOB and
 /// unmodeled ops, skip-verify fault injection does not cross-read B.
+#[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
     let mut bytes = [0u8; 128];
     bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
