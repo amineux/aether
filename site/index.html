@@ -4,11 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Aether — fabric kernel for AI silicon</title>
-  <meta name="description" content="Aether is an accelerator-first fabric kernel for chiplet packages of CPU, NPU, GPU, and custom ASIC tiles. Accelerators are activities on a capability fabric, not ioctl endpoints.">
+  <meta name="description" content="Aether is an accelerator-first fabric kernel for chiplet packages of CPU, NPU, GPU, and custom ASIC tiles. Frozen IreeHalCmd, PJRT-shaped host shim, Soft SMMU SID, blast-radius refuse — a contract you can clone.">
   <meta name="theme-color" content="#070809">
   <link rel="canonical" href="https://amineux.github.io/aether/">
   <meta property="og:title" content="Aether — fabric kernel for AI silicon">
-  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. A fabric kernel for chiplet packages.">
+  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. Frozen IreeHalCmd + PJRT-shaped host shim + Soft SMMU SID + blast-radius refuse.">
   <meta property="og:type" content="website">
   <meta property="og:url" content="https://amineux.github.io/aether/">
   <meta name="twitter:card" content="summary">
@@ -31,7 +31,7 @@
         <li><a href="#solution">Solution</a></li>
         <li><a href="#how">How it works</a></li>
         <li><a href="#market">Market</a></li>
-        <li><a href="#partners">HAL path</a></li>
+        <li><a href="#partners">Why partner</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
         <li><a href="#status">Status</a></li>
         <li class="nav-mobile-only"><a href="https://github.com/amineux/aether">GitHub</a></li>
@@ -51,7 +51,7 @@
           <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
           <div class="cta-row">
             <a class="btn btn-primary" href="https://github.com/amineux/aether">View on GitHub</a>
-            <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Read the docs</a>
+            <a class="btn btn-ghost" href="#partners">Why partner</a>
           </div>
           <div class="hero-meta">
             <span><strong>make qemu</strong> · x86_64 · RISC-V · aarch64</span>
@@ -419,30 +419,168 @@
     <section class="band" id="partners">
       <div class="wrap">
         <div class="sec-head" data-reveal>
-          <p class="kicker">05 — HAL co-design (aspirational)</p>
-          <h2>What AccelDevice co-design would look like if a silicon team engaged.</h2>
+          <p class="kicker">05 — Why partner</p>
+          <h2>A contract you can clone. Not a booked lab.</h2>
+          <p class="lede">What a silicon OS team can evaluate today: a frozen packet, a PJRT-shaped host shim, Soft SMMU SIDs, and a two-tenant refuse. Proof is host-test behavior already in the tree — mechanisms, not invented FLOPs. Research HAL; <code>PartnerNpuStub</code> stays a leftover no-op. The leave-behind is the <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">diligence pack</a>.</p>
         </div>
-        <div class="disclaimer" data-reveal>
-          <strong>No partnership. No vendor deal. No silicon bring-up booked.</strong>
-          <span>Aether has no relationship with NVIDIA or any ASIC house. <code>PartnerNpuStub</code> is a leftover no-op sketch, not a design win. This section is HAL language from the <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">diligence pack</a> — not a pipeline, not a booked lab, not proximity to a vendor.</span>
+
+        <div class="gets-caption" data-reveal>
+          <h3>What a partner gets today</h3>
+          <span>Four surfaces in tree · host-tested · not a vendor announcement</span>
         </div>
-        <div class="partner-grid">
-          <article class="glass" data-reveal>
-            <h3>Co-design AccelDevice on a real command processor</h3>
-            <p>Probe / submit / poll / map is the doorbell. The job descriptor is opcode, shape, typed places, phase, fence. A silicon team would fill those fields from hardware they already have — Aether stays out of the ISA. Nobody is doing that with this tree today.</p>
+        <div class="gets-grid">
+          <article class="glass gets-card" data-reveal>
+            <div class="icon-dot">⌘</div>
+            <small>Frozen packet</small>
+            <h3><code>IreeHalCmd</code></h3>
+            <p>96-byte little-endian IREE HAL nouns. Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>, Soft-SMMU <code>ssid = 2</code>. Offsets locked in <code>ACCEL.md</code>. Aether stays out of the ISA; the partner CP fills opcode, shape, typed places, fence.</p>
+            <div class="chip-row">
+              <span class="chip on">IreeShapedCp</span>
+              <span class="chip">not a signed vendor</span>
+            </div>
           </article>
-          <article class="glass" data-reveal data-d="1">
-            <h3>Package OS under a vendor runtime</h3>
-            <p>Not a CUDA-library replacement. Compilers keep scheduling FLOPs. Aether would admit the job against a partition, a cut, a bank color, and a fence. The host nouns are shaped like PJRT / IREE on purpose. <code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> onto <code>IreeShapedCp</code> — a host contract, not a plugin or vendor integration.</p>
+          <article class="glass gets-card" data-reveal data-d="1">
+            <div class="icon-dot blue">◎</div>
+            <small>Host contract</small>
+            <h3>PJRT-shaped shim</h3>
+            <p><code>host/aether-pjrt</code> packs that frozen packet onto <code>IreeShapedCp</code>. Device, MemorySpace, Buffer, Executable, Event — compiler nouns on purpose. Not <code>GetPjRtApi</code>, not an IREE HAL driver, not a plugin.</p>
+            <div class="chip-row">
+              <span class="chip on">aether-pjrt</span>
+              <span class="chip">SoftNPU = qemu demo</span>
+            </div>
           </article>
-          <article class="glass" data-reveal data-d="2">
-            <h3>MIG-like isolation, generalized to chiplets</h3>
-            <p>Spatial slices + QoS + blast radius as capabilities, not a single-GPU product feature. Tenants cannot mint across each other. Cross-die placement is a cut, not a hint. This is the thesis; it is not a vendor feature we ship.</p>
+          <article class="glass gets-card" data-reveal data-d="2">
+            <div class="icon-dot">⚿</div>
+            <small>Stream identity</small>
+            <h3>Soft SMMU SID</h3>
+            <p>STE→CD→Stage-1/2 software walk. SET_SID at Soft-CP submit; StreamId inherits / sticks on the XQueue. Bind-at-map is not enough. Software tables — partner silicon still required for a hardware SMMU.</p>
+            <div class="chip-row">
+              <span class="chip on">SET_SID-at-submit</span>
+              <span class="chip">not Tegra / Host1x</span>
+            </div>
           </article>
-          <article class="glass" data-reveal data-d="3">
-            <h3>A QEMU slice they can evaluate — not a booked lab</h3>
-            <p>The offer is a HAL contract, a diligence pack, and a vertical slice that boots in QEMU. Manufacturing, foundry work, and silicon bring-up are not on our calendar and are not claimed.</p>
+          <article class="glass gets-card" data-reveal data-d="3">
+            <div class="icon-dot blue">⬡</div>
+            <small>Isolation</small>
+            <h3>Blast-radius refuse</h3>
+            <p>Two tenants. Cross-tenant mint is a type error. SpectralCut CrossCut is refused. Wrong-SID walk aborts. Spatial slice + QoS + blast radius as capabilities — not a MIG product feature we ship.</p>
+            <div class="chip-row">
+              <span class="chip on">run_blast_demo</span>
+              <span class="chip">not a second World</span>
+            </div>
           </article>
+        </div>
+
+        <div class="proof-caption" data-reveal>
+          <h3>Host-test proof points</h3>
+          <span>Same clips the kernel serial-prints · cargo test --workspace</span>
+        </div>
+        <div class="proof-board">
+          <article class="proof-card" data-reveal>
+            <div class="proof-head">
+              <span class="proof-serial">[blast]</span>
+              <span class="badge done">abort</span>
+            </div>
+            <h3>Wrong-SID abort</h3>
+            <p>A’s arena pins on SID-A. Walk of that IOVA on unbound SID-B is <code>StreamAbort</code>. After B binds SID-B for B’s arena, walking A’s IOVA on SID-B is <code>WrongStream</code>.</p>
+            <p class="proof-src">run_blast_demo() · serial <code>[blast] Soft SMMU wrong SID abort</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="1">
+            <div class="proof-head">
+              <span class="proof-serial">[firewall]</span>
+              <span class="badge done">hold</span>
+            </div>
+            <h3>Copy-then-validate</h3>
+            <p>Kernel-owned arena first; opcodes / relocs / SID / addr caps on the copy. A client that mutates during validate is ignored. Without the firewall the sneak lands. Command-stream integrity — not confidential GPU.</p>
+            <p class="proof-src">run_firewall_demo() · serial <code>[firewall] copy-then-validate race sealed</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="2">
+            <div class="proof-head">
+              <span class="proof-serial">[softcct]</span>
+              <span class="badge done">1 ≪ 10</span>
+            </div>
+            <h3>Fence elision vs broadcast</h3>
+            <p>Last-writer chiplet per buffer label. Same-chiplet consume elides; cross-chiplet cannot. Incorrect elision (ignore writer chiplet) fails. Fence <em>counts</em> only — not a latency claim.</p>
+            <div class="meter" aria-label="SoftCCT package fences versus broadcast baseline">
+              <div class="meter-row"><span>package</span><i style="--w:10%"><b></b></i><em>1</em></div>
+              <div class="meter-row bcast"><span>broadcast</span><i style="--w:100%"><b></b></i><em>10</em></div>
+            </div>
+            <p class="proof-src">run_softcct_demo() · two-chiplet clip: 1 package fence vs 10-fence broadcast</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">[softnoi]</span>
+              <span class="badge done">IS gate</span>
+            </div>
+            <h3>Admit / refuse on IS</h3>
+            <p>Fake shared NoI. Projected <code>IS = max T_solo / T_con</code>. Budget 1.5. Light 400+400 admits (IS = 1.0). Heavy 800+800 refuses the second tenant (IS = 1.6). Integer throughput units — not FLOPs, not topology synth.</p>
+            <div class="meter" aria-label="SoftNoI-IS light admit versus heavy refuse">
+              <div class="meter-row"><span>light</span><i style="--w:62%"><b></b></i><em>1.0 admit</em></div>
+              <div class="meter-row refuse"><span>heavy</span><i style="--w:100%"><b></b></i><em>1.6 refuse</em></div>
+            </div>
+            <p class="proof-src">run_softnoi_demo() · serial <code>[softnoi] two-tenant fake NoI admit/refuse sealed</code></p>
+          </article>
+          <article class="proof-card proof-wide" data-reveal data-d="4">
+            <div class="proof-head">
+              <span class="proof-serial">[sva]</span>
+              <span class="badge done">fault</span>
+            </div>
+            <h3>PASID stale-translate fault</h3>
+            <p>Bind process mm ↔ Soft-SMMU SSID. Soft-CP DMA uses that process VA. Host unmap → SSID TLB invalidate. Skip the invalidate and the ATC still hits the old PA — that stale translate is the negative test, not a unified VA. After <code>InvCmd::CfgCd</code> the walk is <code>NotMapped</code>.</p>
+            <p class="proof-src">run_sva_demo() · serial <code>[sva] unmap invalidates SSID TLB; stale translate faults</code> · not ARM SVA / CUDA UVA / hardware SMMU</p>
+          </article>
+        </div>
+
+        <div class="horizon-card" data-reveal>
+          <div class="horizon-card-copy">
+            <p class="kicker">Horizon · TWO_YEAR_PLAN</p>
+            <h3>2028 is a partner opcode handoff — or an ABI freeze.</h3>
+            <p>Not tape-out. Not a foundry calendar. Either a signed opcode list from a real partner CP replaces research <code>IreeHalCmd</code>, or the research ABI freezes and we stop inventing partners. Full kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028). The <a href="#roadmap">roadmap</a> below is the same story on the page.</p>
+          </div>
+          <div class="horizon-row" aria-label="Kernel calendar from H2 2026 through 2028">
+            <div class="horizon-phase done">
+              <small>H2 2026</small>
+              <b>Landed</b>
+              <p>Packet · SID · PASID · IS</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase mid">
+              <small>2027</small>
+              <b>Deepen</b>
+              <p>PJRT polish · one port if needed</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase end">
+              <small>2028</small>
+              <b>Stop or partner</b>
+              <p>Signed list or ABI freeze</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="partner-cta" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>run the diligence demo</span></div>
+            <pre><span class="cmd">$ git clone https://github.com/amineux/aether.git && cd aether</span>
+<span class="cmd">$ cargo test --workspace</span>
+<span class="ok"># host tests in CI — blast / firewall / SoftCCT / SoftNoI-IS / PASID clips</span>
+<span class="cmd">$ make qemu</span>
+<span class="ok">[blast] Soft SMMU wrong SID abort  ok
+[firewall] copy-then-validate race sealed
+[softcct] two-chiplet producer/consumer elision sealed
+[softnoi] two-tenant fake NoI admit/refuse sealed
+[sva] mm↔ssid Soft-SMMU SVA sealed</span></pre>
+          </div>
+          <div class="partner-cta-copy">
+            <h3>Clone it. Run the diligence demo.</h3>
+            <p>Host tests in CI execute the same clips the guest serial-prints. There is no separate <code>make diligence-demo</code> target on this tree yet — <code>cargo test --workspace</code> / <code>make test</code> is the diligence path; a follow-up can wire a named command. Path B <code>make qemu</code> is the bootable slice.</p>
+            <div class="cta-row" style="margin-top:18px">
+              <a class="btn btn-primary" href="https://github.com/amineux/aether">Clone on GitHub</a>
+              <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">Diligence pack</a>
+            </div>
+            <p class="muted partner-cta-note">Your compiler keeps the ISA and fusion. Aether admits the job against a partition, a cut, a bank color, and a fence. No booked silicon bring-up. No vendor announcement.</p>
+          </div>
         </div>
       </div>
     </section>
@@ -762,6 +900,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
       </div>
       <div class="foot-links">
         <a href="https://github.com/amineux/aether">GitHub</a>
+        <a href="#partners">Why partner</a>
         <a href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Docs</a>
         <a href="https://github.com/amineux/aether/blob/main/LICENSE">License</a>
         <a href="https://github.com/amineux/aether/issues">Contact</a>
