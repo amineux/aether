@@ -3,7 +3,8 @@
 This is what a silicon OS team would receive before spending bring-up
 time on Aether. It is **not** a partnership announcement, a tape-out
 checklist, or a benchmark brief. The public site (`site/`) is the same
-leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
+leave-behind — not a vendor pitch. The 8-minute call script is
+[PITCH.md](PITCH.md) (site `#pitch`). See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
 landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;

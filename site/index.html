@@ -34,6 +34,7 @@
         <li><a href="#partners">Why partner</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
         <li><a href="#status">Status</a></li>
+        <li><a href="#pitch">Pitch</a></li>
         <li class="nav-mobile-only"><a href="https://github.com/amineux/aether">GitHub</a></li>
       </ul>
       <a class="nav-cta" href="https://github.com/amineux/aether">GitHub</a>
@@ -52,6 +53,7 @@
           <div class="cta-row">
             <a class="btn btn-primary" href="https://github.com/amineux/aether">View on GitHub</a>
             <a class="btn btn-ghost" href="#partners">Why partner</a>
+            <a class="btn btn-ghost" href="#pitch">8-minute pitch</a>
           </div>
           <div class="hero-meta">
             <span><strong>make qemu</strong> · x86_64 · RISC-V · aarch64</span>
@@ -563,18 +565,17 @@
           <div class="term">
             <div class="term-bar"><i></i><i></i><i></i><span>run the diligence demo</span></div>
             <pre><span class="cmd">$ git clone https://github.com/amineux/aether.git && cd aether</span>
-<span class="cmd">$ cargo test --workspace</span>
-<span class="ok"># host tests in CI — blast / firewall / SoftCCT / SoftNoI-IS / PASID clips</span>
+<span class="cmd">$ make diligence-demo</span>
+<span class="ok">[diligence] host Path B sealed</span>
+<span class="cmd">$ make red-team</span>
+<span class="ok">[redteam] sealed</span>
 <span class="cmd">$ make qemu</span>
 <span class="ok">[blast] Soft SMMU wrong SID abort  ok
-[firewall] copy-then-validate race sealed
-[softcct] two-chiplet producer/consumer elision sealed
-[softnoi] two-tenant fake NoI admit/refuse sealed
-[sva] mm↔ssid Soft-SMMU SVA sealed</span></pre>
+[firewall] copy-then-validate race sealed</span></pre>
           </div>
           <div class="partner-cta-copy">
             <h3>Clone it. Run the diligence demo.</h3>
-            <p>Host tests in CI execute the same clips the guest serial-prints. There is no separate <code>make diligence-demo</code> target on this tree yet — <code>cargo test --workspace</code> / <code>make test</code> is the diligence path; a follow-up can wire a named command. Path B <code>make qemu</code> is the bootable slice.</p>
+            <p><code>make diligence-demo</code> is the host Path B partner clip (no QEMU). <code>make red-team</code> is the named-attack refuse clip. Path B <code>make qemu</code> is the bootable slice. Eight-minute call script: <a href="#pitch">#pitch</a>.</p>
             <div class="cta-row" style="margin-top:18px">
               <a class="btn btn-primary" href="https://github.com/amineux/aether">Clone on GitHub</a>
               <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">Diligence pack</a>
@@ -879,10 +880,69 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
-                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
-                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; the Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · PITCH · DESIGN_WIN · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; the Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="pitch">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">08 — 8-minute pitch</p>
+            <h2>A call script. Isolation is the product, not FLOPs.</h2>
+            <p class="lede">Read this on a live call. Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Proof commands that exist: <code>make diligence-demo</code> and <code>make red-team</code>. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>. <code>docs/PARTNER.md</code> is intended, not on <code>main</code> yet. There is no <code>make partner-hello</code>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>8 min · refuse paths · not a vendor pitch</div>
+        </div>
+
+        <ol class="beats">
+          <li class="beat glass" data-reveal>
+            <div class="beat-meta"><span class="chip on">0:00–1:30</span><span class="beat-n">01</span></div>
+            <h3>Problem</h3>
+            <p>Multi-tenant accelerator packages need a <strong>fabric kernel</strong>, not a bigger Linux driver. ioctl + a userspace runtime is already strained on a discrete GPU; it fails on a mesh of CPU, NPU, GPU, and ASIC tiles. Weights and KV are secrets. Isolation — blast radius, who can name a tile or a stream — is the product. FLOPs stay in the compiler.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="1">
+            <div class="beat-meta"><span class="chip on">1:30–3:00</span><span class="beat-n">02</span></div>
+            <h3>What ships</h3>
+            <p>Three frozen surfaces: <code>IreeHalCmd</code> (96-byte LE, magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>), PJRT-shaped host nouns in <code>aether-pjrt</code> (not <code>GetPjRtApi</code>, not a plugin), Soft SMMU SID-at-submit (Host1x-shaped SET_SID at the job head). Research opcodes, public IREE HAL nouns — <strong>not a signed vendor</strong>. Soft SMMU is software. <code>PartnerNpuStub</code> is a leftover no-op.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="2">
+            <div class="beat-meta"><span class="chip on">3:00–5:00</span><span class="beat-n">03</span></div>
+            <h3>Live proof</h3>
+            <p>On a call, run <code>make diligence-demo</code> (host Path B; greps <code>examples/diligence-demo/expected.txt</code>) then <code>make red-team</code> (<code>[redteam] attack=… result=refused</code>). Optional: <code>make qemu</code>, <code>make design-win-check</code>. Doorbell second consumer is <code>cargo run -p aether-accel-client</code> — not a Makefile target.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="3">
+            <div class="beat-meta"><span class="chip wait">5:00–6:30</span><span class="beat-n">04</span></div>
+            <h3>What we will not claim</h3>
+            <p>No NVIDIA partnership. No FLOPs. No tape-out. No hardware SMMU. No MIG-class isolation (SoftGreenCtx is a fake 70/30 SM/WQ partition). No confidential GPU (SoftCmdFirewall is copy-then-validate). If they push, stop. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="4">
+            <div class="beat-meta"><span class="chip wait">6:30–8:00</span><span class="beat-n">05</span></div>
+            <h3>2028 close</h3>
+            <p><a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>: 2028 is a <strong>signed opcode list</strong> from a real partner CP, or a <strong>research ABI freeze</strong>. Not a foundry date. Ask: <em>bring your opcode table.</em> Fill <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a> — or a written no. Not a logo.</p>
+          </li>
+        </ol>
+
+        <div class="pitch-proof" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>Makefile targets that exist</span></div>
+            <pre><span class="cmd">$ make diligence-demo</span>  <span class="ok"># host Path B; greps expected.txt</span>
+<span class="cmd">$ make red-team</span>          <span class="ok"># named attacks refused</span>
+<span class="cmd">$ make design-win-check</span>  <span class="ok"># filled DESIGN_WIN worksheet</span>
+<span class="cmd">$ make qemu</span>              <span class="ok"># path-B guest serial (optional on a call)</span>
+
+<span class="ok">[diligence] host Path B sealed</span>
+<span class="ok">[redteam] attack=wrong-sid-crosscut result=refused</span>
+<span class="ok">[redteam] sealed</span></pre>
+          </div>
+          <div class="disclaimer" style="margin:0">
+            <strong>No partnership. No FLOPs. No tape-out.</strong>
+            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. <code>PARTNER.md</code> is not on main yet.</span>
           </div>
         </div>
       </div>
@@ -902,6 +962,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
         <a href="https://github.com/amineux/aether">GitHub</a>
         <a href="#partners">Why partner</a>
         <a href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Docs</a>
+        <a href="#pitch">Pitch</a>
         <a href="https://github.com/amineux/aether/blob/main/LICENSE">License</a>
         <a href="https://github.com/amineux/aether/issues">Contact</a>
       </div>
