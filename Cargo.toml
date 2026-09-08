@@ -9,6 +9,7 @@ members = [
     "examples/red-team",
     "examples/accel-client",
     "examples/design-win-check",
+    "examples/partner-hello",
 ]
 default-members = [
     "core",
@@ -19,6 +20,7 @@ default-members = [
     "examples/red-team",
     "examples/accel-client",
     "examples/design-win-check",
+    "examples/partner-hello",
 ]
 exclude = ["kernel", "user/init", "user/probe"]
 

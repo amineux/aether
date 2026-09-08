@@ -867,6 +867,8 @@ The compiler-facing nouns on this path live in `host/aether-pjrt`
 lower onto `AccelJobDesc` + Soft SMMU. The host session submits through
 SoftNPU and `IreeShapedCp` (`backend = 4`), not Soft-CP. That crate is
 not a PJRT plugin, not an IREE HAL driver, and not a vendor runtime.
+Clone-and-run without QEMU: [PARTNER.md](PARTNER.md) /
+`examples/partner-hello` (`make partner-hello`).
 
 A second host consumer, `examples/accel-client` (`aether-accel-client`),
 packs the same frozen 96-byte image and calls `IreeShapedCp::submit_hal`.

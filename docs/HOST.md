@@ -118,10 +118,10 @@ HBM or tile SRAM. `UNIFIED` stays off unless that cap bit is granted
 
 Walkthrough for a silicon OS team: start at
 `aether_hal::AccelDevice` and `IreeShapedCp`, then this crate
-as the compiler-facing nouns on top. `examples/accel-client` is the
+as the compiler-facing nouns on top. Clone-and-run without QEMU:
+[PARTNER.md](PARTNER.md) / `make partner-hello`. `examples/accel-client` is the
 second caller of the frozen image (doorbell sketch). `SoftCommandProcessor` remains
 the Aether-native packet example. `PartnerNpuStub` is a leftover
 no-op sketch, not this path. Fill-in on a call:
 [DESIGN_WIN.md](DESIGN_WIN.md). [ABI.md](ABI.md) is the kernel ABI;
-[DILIGENCE.md](DILIGENCE.md) is the leave-behind. Intended partner
-landing page: [PARTNER.md](PARTNER.md) (not on `main` yet).
+[DILIGENCE.md](DILIGENCE.md) is the leave-behind.

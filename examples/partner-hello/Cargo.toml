@@ -1,0 +1,20 @@
+[package]
+name = "aether-partner-hello"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host clone-and-run of frozen IreeHalCmd through IreeShapedCp (no QEMU)"
+publish = false
+
+[[bin]]
+name = "aether-partner-hello"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-drivers = { path = "../../drivers" }
+aether-hal = { path = "../../hal" }
+aether-pjrt = { path = "../../host/aether-pjrt" }
+
+[lints]
+workspace = true

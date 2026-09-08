@@ -15,6 +15,7 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
 make diligence-demo  # partner host clip (Path B; no QEMU; greps golden lines)
+make partner-hello # host IreeHalCmd leave-behind (no QEMU rebuild)
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
 make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
@@ -50,6 +51,7 @@ transfer. There is no IPC except capability-checked messages.
 
 ```bash
 cargo test --workspace
+make partner-hello   # frozen IreeHalCmd → IreeShapedCp; no QEMU
 ```
 
 **Partner diligence clip** (host Path B, no QEMU rebuild; a few minutes
@@ -227,6 +229,7 @@ examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
+examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
@@ -315,6 +318,7 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
 - [docs/HOST.md](docs/HOST.md) — partner compiler contract (`aether-pjrt`); doorbell second consumer; not a plugin
+- [docs/PARTNER.md](docs/PARTNER.md) — clone-and-run `IreeHalCmd` leave-behind (no QEMU)
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + AffinityLaplacian + Hodge
 - [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)
@@ -322,7 +326,6 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch; `make diligence-demo` / `make red-team`
 - [docs/DESIGN_WIN.md](docs/DESIGN_WIN.md) — call worksheet (opcode / SID / spaces / frozen `IreeHalCmd` offsets)
-- [docs/PARTNER.md](docs/PARTNER.md) — intended partner landing page (not on `main` yet)
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar

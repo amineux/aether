@@ -12,9 +12,7 @@ fixture that **refuses** an unknown executable id, SID 0, and a
 TRANSFER-only packet. That is the proof the worksheet is executable,
 not a PDF.
 
-Intended partner landing page: [`docs/PARTNER.md`](PARTNER.md) (not on
-`main` yet). Until that page exists, this worksheet is linked from the
-[README](../README.md) and [DILIGENCE.md](DILIGENCE.md).
+Partner landing page: [`docs/PARTNER.md`](PARTNER.md) (`make partner-hello`).
 
 Public vocabulary is cited from IREE HAL headers on
 [iree-org/iree](https://github.com/iree-org/iree)
