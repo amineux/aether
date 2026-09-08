@@ -279,71 +279,83 @@ pub fn run_kernel_selfcheck() {
         green.all_ok()
     };
 
-    let softsfi = run_softsfi_demo();
-    write_str("[softsfi] in-bounds accept / OOB+unmodeled reject  ");
-    write_str(flag(
-        softsfi.in_bounds && softsfi.oob_reject && softsfi.unmodeled_reject,
-    ));
-    console::nl();
-    write_str("[softsfi] skip-verify no cross-read  ");
-    write_str(flag(softsfi.no_cross_read));
-    console::nl();
-    if softsfi.all_ok() {
-        println!("[softsfi] two-tenant SFI+SID sandbox sealed");
-    } else {
-        println!("[softsfi] FAIL -- SoftSFI");
-    }
+    let softsfi_ok = {
+        let softsfi = run_softsfi_demo();
+        write_str("[softsfi] in-bounds accept / OOB+unmodeled reject  ");
+        write_str(flag(
+            softsfi.in_bounds && softsfi.oob_reject && softsfi.unmodeled_reject,
+        ));
+        console::nl();
+        write_str("[softsfi] skip-verify no cross-read  ");
+        write_str(flag(softsfi.no_cross_read));
+        console::nl();
+        if softsfi.all_ok() {
+            println!("[softsfi] two-tenant SFI+SID sandbox sealed");
+        } else {
+            println!("[softsfi] FAIL -- SoftSFI");
+        }
+        softsfi.all_ok()
+    };
 
     // Sequential: IommuMap in the SVA clip must not share the stack
-    // with SoftSFI / SoftGreenCtx / firewall.
-    let sva = run_sva_demo();
-    write_str("[sva] bind mm↔ssid DMA VA  ");
-    write_str(flag(sva.bind_ok && sva.dma_va && sva.sid_submit));
-    write_str(" (Linux SVA/PASID inspiration; not hardware)");
-    console::nl();
-    write_str("[sva] unmap invalidates SSID TLB; stale translate faults  ");
-    write_str(flag(sva.unmap_inv && sva.stale_fault));
-    console::nl();
-    if sva.all_ok() {
-        println!("[sva] mm↔ssid Soft-SMMU SVA sealed");
-    } else {
-        println!("[sva] FAIL -- PASID/SVA");
-    }
+    // with SoftSFI / SoftGreenCtx / firewall / OperatorInject / SoftNoI.
+    let sva_ok = {
+        let sva = run_sva_demo();
+        write_str("[sva] bind mm↔ssid DMA VA  ");
+        write_str(flag(sva.bind_ok && sva.dma_va && sva.sid_submit));
+        write_str(" (Linux SVA/PASID inspiration; not hardware)");
+        console::nl();
+        write_str("[sva] unmap invalidates SSID TLB; stale translate faults  ");
+        write_str(flag(sva.unmap_inv && sva.stale_fault));
+        console::nl();
+        if sva.all_ok() {
+            println!("[sva] mm↔ssid Soft-SMMU SVA sealed");
+        } else {
+            println!("[sva] FAIL -- PASID/SVA");
+        }
+        sva.all_ok()
+    };
 
-    let opinject = run_opinject_demo();
-    write_str("[opinject] resident memcpy+saxpy  hot-add scale no-relaunch  ");
-    write_str(flag(
-        opinject.memcpy_ok
-            && opinject.saxpy_ok
-            && opinject.hot_add_no_relaunch
-            && opinject.scale_ok,
-    ));
-    console::nl();
-    write_str("[opinject] SID-at-submit refuse + scale unpublished  ");
-    write_str(flag(opinject.sid_oob && opinject.scale_refused_before));
-    console::nl();
-    if opinject.all_ok() {
-        println!("[opinject] resident worker + hot-add sealed");
-    } else {
-        println!("[opinject] FAIL -- OperatorInject");
-    }
+    let opinject_ok = {
+        let opinject = run_opinject_demo();
+        write_str("[opinject] resident memcpy+saxpy  hot-add scale no-relaunch  ");
+        write_str(flag(
+            opinject.memcpy_ok
+                && opinject.saxpy_ok
+                && opinject.hot_add_no_relaunch
+                && opinject.scale_ok,
+        ));
+        console::nl();
+        write_str("[opinject] SID-at-submit refuse + scale unpublished  ");
+        write_str(flag(opinject.sid_oob && opinject.scale_refused_before));
+        console::nl();
+        if opinject.all_ok() {
+            println!("[opinject] resident worker + hot-add sealed");
+        } else {
+            println!("[opinject] FAIL -- OperatorInject");
+        }
+        opinject.all_ok()
+    };
 
-    let softnoi = run_softnoi_demo();
-    write_str("[softnoi] solo vs concurrent IS=");
-    write_u64(softnoi.heavy_is_milli as u64);
-    write_str(" budget=1500 (PARL/NoI; not topology synth)  ");
-    write_str(flag(softnoi.light_is_ok && softnoi.heavy_is_over));
-    console::nl();
-    write_str("[softnoi] admit light A+B / refuse heavy B  ");
-    write_str(flag(
-        softnoi.light_admit && softnoi.heavy_refuse && softnoi.advertised,
-    ));
-    console::nl();
-    if softnoi.all_ok() {
-        println!("[softnoi] two-tenant fake NoI admit/refuse sealed");
-    } else {
-        println!("[softnoi] FAIL -- SoftNoI-IS");
-    }
+    let softnoi_ok = {
+        let softnoi = run_softnoi_demo();
+        write_str("[softnoi] solo vs concurrent IS=");
+        write_u64(softnoi.heavy_is_milli as u64);
+        write_str(" budget=1500 (PARL/NoI; not topology synth)  ");
+        write_str(flag(softnoi.light_is_ok && softnoi.heavy_is_over));
+        console::nl();
+        write_str("[softnoi] admit light A+B / refuse heavy B  ");
+        write_str(flag(
+            softnoi.light_admit && softnoi.heavy_refuse && softnoi.advertised,
+        ));
+        console::nl();
+        if softnoi.all_ok() {
+            println!("[softnoi] two-tenant fake NoI admit/refuse sealed");
+        } else {
+            println!("[softnoi] FAIL -- SoftNoI-IS");
+        }
+        softnoi.all_ok()
+    };
 
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
@@ -364,10 +376,10 @@ pub fn run_kernel_selfcheck() {
         || !softcct.all_ok()
         || !firewall_ok
         || !green_ok
-        || !softsfi.all_ok()
-        || !sva.all_ok()
-        || !opinject.all_ok()
-        || !softnoi.all_ok()
+        || !softsfi_ok
+        || !sva_ok
+        || !opinject_ok
+        || !softnoi_ok
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);
