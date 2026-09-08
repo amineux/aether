@@ -4,7 +4,8 @@ This is what a silicon OS team would receive before spending bring-up
 time on Aether. It is **not** a partnership announcement, a tape-out
 checklist, or a benchmark brief. The public site (`site/`) is the same
 leave-behind — not a vendor pitch. The 8-minute call script is
-[PITCH.md](PITCH.md) (site `#pitch`). See [ROADMAP.md](ROADMAP.md) for the
+[PITCH.md](PITCH.md) (site `#pitch`). Week 1 20-minute pack:
+[WEEK1_CALL.md](WEEK1_CALL.md). See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
 landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
@@ -349,4 +350,7 @@ packet offsets). A host fixture
 refuses an unknown executable id, SID 0, and a TRANSFER-only packet —
 the worksheet is executable, not a PDF. Check it with
 `make design-win-check` or `cargo run -p aether-design-win-check`.
+IREE HAL research stand-in (not a partner):
+[design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) /
+`make design-win-standin`.
 Partner landing page: [PARTNER.md](PARTNER.md). This is still not a signed vendor.

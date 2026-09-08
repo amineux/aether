@@ -11,7 +11,8 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > This is **not** production silicon, not a tutorial toy, and not a claim of
 > partnership with any chip vendor. It is a bootable v0.1 whose *interfaces
 > and invariants* are what we would pitch to an AI-chip OS team.
-> Eight-minute call script: [`docs/PITCH.md`](docs/PITCH.md)
+> Week 1 call pack (20 min): [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
+> Eight-minute script: [`docs/PITCH.md`](docs/PITCH.md)
 > ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
 
 ```
@@ -27,6 +28,7 @@ make accel-test   # path-A QEMU device model (host; no QEMU rebuild)
 make qemu-accel   # accel-test; attach -device aether-accel if QEMU_ACCEL is set
 make red-team     # host diligence clip: named attacks refused (scripted stdout)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
+make design-win-standin # admit the IREE HAL research stand-in (not a partner)
 ```
 
 ## Why this exists
@@ -74,6 +76,10 @@ See [`docs/DILIGENCE.md`](docs/DILIGENCE.md). Soft SMMU is software.
 Path B is canonical. No fake NVIDIA, no tape-out. The call fill-in is
 [`docs/DESIGN_WIN.md`](docs/DESIGN_WIN.md); check a filled copy with
 `cargo run -p aether-design-win-check` or `make design-win-check`.
+A **research stand-in** (public IREE HAL nouns, not a partner) lives in
+[`docs/design-win/iree-hal-standin.md`](docs/design-win/iree-hal-standin.md);
+`make design-win-standin` admits it. Week 1 call pack:
+[`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
 
 **QEMU demo** (also needs `qemu-system-x86_64`, GNU `as`/`ld` with `elf_i386`,
 `objcopy`, and `rustup target add x86_64-unknown-none`):
@@ -235,7 +241,8 @@ examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
-docs/            architecture, fabric, accel, security, diligence, roadmap
+docs/            architecture, fabric, accel, security, diligence, pitch, Week 1 call pack
+docs/design-win/ IREE HAL research stand-in worksheet (`make design-win-standin`; not a partner)
 ```
 
 The kernel and `/init` are **separate Cargo projects** so
@@ -327,9 +334,13 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/PITCH.md](docs/PITCH.md) — 8-minute founder call script (`make diligence-demo` / `make red-team`)
+- [docs/WEEK1_CALL.md](docs/WEEK1_CALL.md) — 20-minute Week 1 partner-call pack (captured logs + IREE stand-in)
 - [docs/pitch/transcript.txt](docs/pitch/transcript.txt) — expected refuse-path serial (from in-tree prints / CI greps)
+- [docs/pitch/diligence-demo.log](docs/pitch/diligence-demo.log) — captured `make diligence-demo` stdout
+- [docs/pitch/red-team.log](docs/pitch/red-team.log) — captured `make red-team` stdout
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch; `make diligence-demo` / `make red-team`
 - [docs/DESIGN_WIN.md](docs/DESIGN_WIN.md) — call worksheet (opcode / SID / spaces / frozen `IreeHalCmd` offsets)
+- [docs/design-win/iree-hal-standin.md](docs/design-win/iree-hal-standin.md) — filled IREE HAL research stand-in (not a partner)
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar

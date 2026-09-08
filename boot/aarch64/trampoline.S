@@ -45,7 +45,8 @@ _start:
 
 .el1_entry:
     msr     daifset, #0xf
-    /* Allow FP/SIMD so rustc memcpy does not UNDEF. */
+    /* Allow FP/SIMD so rustc memcpy does not UNDEF. IRQ/sync save
+     * q0–q31 (kernel/src/arch/aarch64/idt.rs) so CNTV does not clobber. */
     mov     x1, #(3 << 20)
     msr     cpacr_el1, x1
     isb

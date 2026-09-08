@@ -59,14 +59,14 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup partner-hello partner-hello-ci \
-        diligence-demo red-team design-win-check \
+        diligence-demo red-team design-win-check design-win-standin \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check + partner-hello"
+	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check + design-win-standin + partner-hello"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
@@ -85,6 +85,7 @@ help:
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
 	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
+	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make clean"
 
@@ -105,6 +106,7 @@ test-host:
 	python3 scripts/smmu_dump.py --check
 	$(MAKE) diligence-demo
 	$(MAKE) design-win-check
+	$(MAKE) design-win-standin
 	$(MAKE) partner-hello-ci
 
 # Partner one-command: host clips only. No QEMU rebuild. Soft SMMU is
@@ -159,6 +161,13 @@ red-team:
 # (POSIX /bin/sh on Ubuntu Make). Same as `cargo run -p aether-design-win-check`.
 design-win-check:
 	cargo run -p aether-design-win-check --quiet --bin design-win-check
+
+# IREE HAL research stand-in (public nouns already frozen on IreeHalCmd).
+# Not a signed vendor. Same checker, extra path argument. No pipes.
+DESIGN_WIN_STANDIN := docs/design-win/iree-hal-standin.toml
+
+design-win-standin:
+	cargo run -p aether-design-win-check --quiet --bin design-win-check -- $(DESIGN_WIN_STANDIN)
 
 # Partner leave-behind: frozen IreeHalCmd on the host. No QEMU rebuild.
 # Path B stays the canonical guest demo (stock make qemu).

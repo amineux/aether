@@ -1,0 +1,11 @@
+Aether red-team diligence clip (host).
+Same refuse paths as the kernel self-check — not a new isolator.
+
+[redteam] attack=wrong-sid-crosscut result=refused
+[redteam] attack=softcmdfirewall result=refused
+[redteam] attack=softsfi-oob result=refused
+[redteam] attack=softnoi-is result=refused
+[redteam] attack=pasid-stale result=refused
+
+[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
+[redteam] sealed

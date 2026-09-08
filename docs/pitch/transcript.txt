@@ -9,14 +9,17 @@ Makefile targets that exist (`make help`):
 make diligence-demo
 make red-team
 make design-win-check
+make design-win-standin
+make partner-hello
 make qemu
 make qemu-ci
 make test
 make smmu-bringup
 ```
 
-There is no `make partner-hello`. `docs/PARTNER.md` is cited from
-README / DESIGN_WIN as intended and is **not in this tree**.
+Week 1 20-minute pack: [WEEK1_CALL.md](../WEEK1_CALL.md).
+Captured host runs: [diligence-demo.log](diligence-demo.log),
+[red-team.log](red-team.log).
 
 Doorbell second consumer (not a Makefile target):
 
@@ -73,6 +76,10 @@ Host checker admits the filled sample in
 `examples/design-win-check`. It **refuses** an unknown executable id,
 SID 0, and a TRANSFER-only packet ([DESIGN_WIN.md](../DESIGN_WIN.md)).
 Not a signed vendor.
+
+IREE HAL research stand-in (not a partner):
+`make design-win-standin` loads
+[`docs/design-win/iree-hal-standin.toml`](../design-win/iree-hal-standin.toml).
 
 ---
 

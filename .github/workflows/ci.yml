@@ -35,6 +35,9 @@ jobs:
       - name: Design-win worksheet checker
         run: make design-win-check
 
+      - name: IREE HAL research stand-in worksheet
+        run: make design-win-standin
+
       # Host leave-behind. Does not rebuild QEMU. Path B stays canonical.
       - name: Partner hello (frozen IreeHalCmd; no QEMU)
         run: make partner-hello-ci
