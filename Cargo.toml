@@ -1,7 +1,25 @@
 [workspace]
 resolver = "2"
-members = ["core", "hal", "drivers", "host/aether-pjrt", "examples/diligence-demo", "examples/red-team", "examples/accel-client"]
-default-members = ["core", "hal", "drivers", "host/aether-pjrt", "examples/diligence-demo", "examples/red-team", "examples/accel-client"]
+members = [
+    "core",
+    "hal",
+    "drivers",
+    "host/aether-pjrt",
+    "examples/diligence-demo",
+    "examples/red-team",
+    "examples/accel-client",
+    "examples/design-win-check",
+]
+default-members = [
+    "core",
+    "hal",
+    "drivers",
+    "host/aether-pjrt",
+    "examples/diligence-demo",
+    "examples/red-team",
+    "examples/accel-client",
+    "examples/design-win-check",
+]
 exclude = ["kernel", "user/init", "user/probe"]
 
 [workspace.package]

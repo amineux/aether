@@ -17,6 +17,15 @@ name = "aether-core"
 version = "0.1.0"
 
 [[package]]
+name = "aether-design-win-check"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "aether-drivers",
+ "aether-hal",
+]
+
+[[package]]
 name = "aether-diligence-demo"
 version = "0.1.0"
 dependencies = [

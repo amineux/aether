@@ -23,6 +23,7 @@ make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
 make accel-test   # path-A QEMU device model (host; no QEMU rebuild)
 make qemu-accel   # accel-test; attach -device aether-accel if QEMU_ACCEL is set
 make red-team     # host diligence clip: named attacks refused (scripted stdout)
+make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 ```
 
 ## Why this exists
@@ -66,7 +67,9 @@ FLOPs), `[firewall]` mutation-during-validate fails, `[greenctx]`
 not* block. CI greps
 [`examples/diligence-demo/expected.txt`](examples/diligence-demo/expected.txt).
 See [`docs/DILIGENCE.md`](docs/DILIGENCE.md). Soft SMMU is software.
-Path B is canonical. No fake NVIDIA, no tape-out.
+Path B is canonical. No fake NVIDIA, no tape-out. The call fill-in is
+[`docs/DESIGN_WIN.md`](docs/DESIGN_WIN.md); check a filled copy with
+`cargo run -p aether-design-win-check` or `make design-win-check`.
 
 **QEMU demo** (also needs `qemu-system-x86_64`, GNU `as`/`ld` with `elf_i386`,
 `objcopy`, and `rustup target add x86_64-unknown-none`):
@@ -223,6 +226,7 @@ host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftN
 examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)
+examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
@@ -317,6 +321,8 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch; `make diligence-demo` / `make red-team`
+- [docs/DESIGN_WIN.md](docs/DESIGN_WIN.md) — call worksheet (opcode / SID / spaces / frozen `IreeHalCmd` offsets)
+- [docs/PARTNER.md](docs/PARTNER.md) — intended partner landing page (not on `main` yet)
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar

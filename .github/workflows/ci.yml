@@ -32,6 +32,9 @@ jobs:
       - name: Red-team diligence clip (host stdout)
         run: make red-team
 
+      - name: Design-win worksheet checker
+        run: make design-win-check
+
       - name: Soft SMMU bring-up kit (dump/replay scripts)
         run: |
           python3 scripts/smmu_replay.py --check

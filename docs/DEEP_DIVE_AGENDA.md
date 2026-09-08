@@ -23,7 +23,7 @@ performance slide.
 | 0:40–0:55 | Caps, spaces, cuts | Tenant isolation, `(place, local)`, SpectralCut + AffinityLaplacian, Hodge refuse. |
 | 0:55–1:10 | Compiler boundary | Why there is no in-kernel graph IR. PJRT/IREE-shaped nouns. Who owns fusion. |
 | 1:10–1:25 | Open questions | Their command ISA, SMMU, QoS, what we got wrong. |
-| 1:25–1:30 | Close | Concrete follow-up: a one-page opcode map, or a “no” with reasons. |
+| 1:25–1:30 | Close | Concrete follow-up: fill [DESIGN_WIN.md](DESIGN_WIN.md) (or a “no” with reasons). |
 
 For a 60-minute slot, drop the compiler block to five minutes and keep
 the open questions.
@@ -162,5 +162,8 @@ Questions to ask *them* while the board is up:
 - That SoftNPU predicts their silicon latency.
 - That seL4 proofs are “in progress.”
 
-If the session happens, the output is an opcode-map note or a written
-pass. Not a logo.
+If the session happens, the output is a filled
+[DESIGN_WIN.md](DESIGN_WIN.md) worksheet (or a written pass). Check it
+with `make design-win-check` (or `cargo test -p aether-design-win-check`).
+Not a logo. Intended partner landing page: [PARTNER.md](PARTNER.md)
+(not on `main` yet).
