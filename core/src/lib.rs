@@ -27,6 +27,7 @@ pub mod iommu;
 pub mod laplacian;
 pub mod mmap;
 pub mod observe;
+pub mod opinject;
 pub mod opkernel;
 pub mod partition;
 pub mod phase;
@@ -94,6 +95,11 @@ pub use mmap::{
     BOOT_RESERVE_FLOOR, FRAME_CAP_BYTES, MB1_BOOT_MAGIC, MB2_BOOT_MAGIC,
 };
 pub use observe::{EventKind, EventRing, KernelEvent};
+pub use opinject::{
+    run_opinject_demo, FlatOpMem, InjectError, InjectKind, OpCall, OpInjectReport, OpSlot, OpTable,
+    OperatorInject, ResidentWorker, DEMO_WORDS, MAX_OP_SLOTS, OPINJECT_BASE, OPINJECT_DST,
+    OPINJECT_SID, OPINJECT_SPAN, OP_CALL_SIZE, SLOT_MEMCPY, SLOT_SAXPY, SLOT_SCALE,
+};
 pub use opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
 pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 pub use phase::Phase;

@@ -87,7 +87,9 @@ The kernel self-check also prints `[blast] two-tenant blast radius sealed`
 race sealed` (Host1x copy-then-validate; command-stream integrity,
 not confidential GPU) and `[softsfi] two-tenant SFI+SID sandbox sealed`
 (GPU-AToLL-shaped toy ISA; not NVVM) and `[sva] mm↔ssid Soft-SMMU SVA sealed`
-(Linux SVA/PASID inspiration; not hardware SMMU, not CUDA UVA). Diligence clips, not a track.
+(Linux SVA/PASID inspiration; not hardware SMMU, not CUDA UVA) and
+`[opinject] resident worker + hot-add sealed` (GPUOS / Mirage MPK-shaped;
+not NVRTC). Diligence clips, not a track.
 See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):

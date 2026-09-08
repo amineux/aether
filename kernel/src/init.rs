@@ -4,10 +4,11 @@
 
 use aether_core::blast::run_blast_demo;
 use aether_core::chipsync::{run_chipsync_demo, run_softcct_demo};
-use aether_core::greenctx::run_greenctx_demo;
 use aether_core::cut::AffinityGraph;
 use aether_core::demo::run_boot_demo;
+use aether_core::greenctx::run_greenctx_demo;
 use aether_core::laplacian::AffinityLaplacian;
+use aether_core::opinject::run_opinject_demo;
 use aether_core::sid::run_sid_submit_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
@@ -308,6 +309,24 @@ pub fn run_kernel_selfcheck() {
         println!("[sva] FAIL -- PASID/SVA");
     }
 
+    let opinject = run_opinject_demo();
+    write_str("[opinject] resident memcpy+saxpy  hot-add scale no-relaunch  ");
+    write_str(flag(
+        opinject.memcpy_ok
+            && opinject.saxpy_ok
+            && opinject.hot_add_no_relaunch
+            && opinject.scale_ok,
+    ));
+    console::nl();
+    write_str("[opinject] SID-at-submit refuse + scale unpublished  ");
+    write_str(flag(opinject.sid_oob && opinject.scale_refused_before));
+    console::nl();
+    if opinject.all_ok() {
+        println!("[opinject] resident worker + hot-add sealed");
+    } else {
+        println!("[opinject] FAIL -- OperatorInject");
+    }
+
     unsafe {
         if let Some(w) = paging::walk(crate::arch::kernel_text_va()) {
             write_str("[mm] walk kernel _start: PA ");
@@ -329,6 +348,7 @@ pub fn run_kernel_selfcheck() {
         || !green_ok
         || !softsfi.all_ok()
         || !sva.all_ok()
+        || !opinject.all_ok()
     {
         println!("[kcheck] FAIL -- self-check");
         crate::arch::exit_qemu(false);

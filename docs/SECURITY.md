@@ -101,6 +101,13 @@ invalidate is a stale translate. Linux SVA / PASID inspiration. It
 is **not** ARM SVA, **not** PCIe PASID/PRI, **not** CUDA UVA, and
 **not** zero-copy SVA without invalidate. No new syscall.
 
+OperatorInject (`core/src/opinject.rs`) is a Soft-CP resident worker
+plus a versioned function table (`memcpy` / `saxpy`, hot-add `scale`).
+GPUOS / Mirage MPK are inspiration only. It is **not** NVRTC, CUDA, a
+vendor compiler, or a full LLM compiler. SID-at-submit and
+SoftCmdFirewall copy-then-validate still gate every call. Serial:
+`[opinject]`.
+
 ## CDT properties (host tests, not a proof)
 
 Aether stores a parent pointer (`CdtNode` = table owner + mint
