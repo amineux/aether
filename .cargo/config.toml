@@ -1,0 +1,3 @@
+# Host aliases. Kernel / user crates keep their own .cargo/config.toml.
+[alias]
+diligence-demo = "run -p aether-diligence-demo --quiet --bin diligence-demo"

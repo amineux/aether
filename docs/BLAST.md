@@ -24,7 +24,8 @@ Tenant A and B each mint Memory, Activity, and SpectralCut.
 ```
 
 CI greps those four lines. No new syscall. SoftNPU I32 is unchanged.
-No FLOP numbers. Soft SMMU is still software.
+No FLOP numbers. Soft SMMU is still software. The partner host clip
+`make diligence-demo` prints the same `[blast]` lines without QEMU.
 
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp

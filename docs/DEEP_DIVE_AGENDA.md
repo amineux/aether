@@ -9,15 +9,16 @@ Audience: kernel / firmware / runtime engineers who own the command
 processor, SMMU story, and the compiler’s submit path.
 
 Prep (10 minutes, async): clone this repo, skim
-[ARCHITECTURE.md](ARCHITECTURE.md) and [DILIGENCE.md](DILIGENCE.md).
-No NDA draft, no performance slide.
+[ARCHITECTURE.md](ARCHITECTURE.md) and [DILIGENCE.md](DILIGENCE.md),
+run `make diligence-demo` (host Path B; no QEMU). No NDA draft, no
+performance slide.
 
 ## Minute-by-minute
 
 | Time | Block | Owner-side goal |
 | --- | --- | --- |
 | 0:00–0:05 | Frame | Aether is a research prototype. No partnership claim. We want to know if the HAL contract is one they would implement. |
-| 0:05–0:20 | Live demo | Serial boot + fabric banner on x86_64, then RISC-V / aarch64. Host tests on the same `run_boot_demo()`. |
+| 0:05–0:20 | Live demo | `make diligence-demo` (host Path B thesis lines), then serial boot + fabric banner if QEMU is available. Same `run_blast_demo()` / firewall / greenctx clips. |
 | 0:20–0:40 | HAL walkthrough | `AccelDevice`, `AccelJobDesc`, SoftNPU vs a real doorbell. Where their driver would sit. |
 | 0:40–0:55 | Caps, spaces, cuts | Tenant isolation, `(place, local)`, SpectralCut + AffinityLaplacian, Hodge refuse. |
 | 0:55–1:10 | Compiler boundary | Why there is no in-kernel graph IR. PJRT/IREE-shaped nouns. Who owns fusion. |
@@ -36,6 +37,10 @@ RISC-V also needs `qemu-system-riscv64` and
 `qemu-system-aarch64` and `rustup target add aarch64-unknown-none`.
 
 ```bash
+# 0. Partner thesis on the host (no QEMU rebuild; Path B).
+make diligence-demo
+# cargo diligence-demo
+
 # 1. Same invariants on the host (no QEMU).
 cargo test --workspace
 
@@ -68,8 +73,11 @@ What to point at on the serial:
    `EL0 /init VIA SVC/ERET`.
 9. `FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE`.
 
-If QEMU is blocked, `cargo test -p aether-core laplacian -- --nocapture`
-still shows `L = D − A` and the Fiedler-ish chiplet split.
+If QEMU is blocked, **stop after `make diligence-demo`**. That is the
+leave-behind: `[blast]` CrossCut + wrong-SID, `[pjrt]` `IreeHalCmd`
+submit+wait, `[firewall]` mutation-during-validate, `[greenctx]` 70/30
+partition, then proves / does-not. `cargo test -p aether-core
+laplacian -- --nocapture` still shows `L = D − A` if someone asks.
 
 Do **not** show a benchmark. There isn’t one.
 

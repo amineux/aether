@@ -22,6 +22,9 @@ There is no fake vendor runtime and no `PartnerNpuStub` path.
 
 Kernel CI is unchanged: the crate is not linked into `aether-kernel`.
 `cargo test --workspace` runs its tests on the host.
+`make diligence-demo` is the partner Path B clip that submits one
+frozen `IreeHalCmd` through this crate and waits the fence (research
+opcodes, not FLOPs).
 
 ## Public vocabulary (cited, not claimed)
 
