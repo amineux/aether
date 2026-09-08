@@ -281,7 +281,7 @@ opcode/packet ADR below.
 | 0 | SoftNPU in-process / Dummy | Reference execute; no packet |
 | 1 | `SoftNpuDevice` | Virtqueue MMIO + SoftNPU (QEMU demo) |
 | 2 | `PartnerNpuStub` | No-op sketch; leave it alone |
-| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftGreenCtx SM/WQ + SoftChipletSync/SoftCCT + SoftCmdFirewall + Soft SMMU + IRQ/fence |
+| 3 | `SoftCommandProcessor` | Packed Aether-native `CpCmd` + SET_SID-at-submit + two XQueues + SoftGreenCtx SM/WQ + SoftChipletSync/SoftCCT + SoftNoI-IS admit + SoftCmdFirewall + PASID/SVA + OperatorInject + Soft SMMU + IRQ/fence |
 | 4 | `IreeShapedCp` | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU + IRQ/fence; not a vendor |
 
 ### `CpCmd` packet (64 bytes, little-endian)
@@ -670,6 +670,54 @@ Host tests: `memcpy_and_saxpy_on_resident_worker`,
 `memcpy_saxpy_then_hot_add_scale_without_relaunch`,
 `sid_at_submit_refuses_unbound_and_foreign_iova`,
 `firewall_copy_then_validate_on_inject`. Kernel serial `[opinject]`.
+
+## SoftNoI-IS (software; PARL / NoI-shaped admit)
+
+**Status:** **In-flight / landing this PR** (H2 2026 exploration on
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Do not mark calendar Done
+until merge. Not a Month 5 digest. SoftChipletSync advertises a
+per-tenant Interference Score on a **fake** shared
+Network-on-Interposer. Soft-CP XQueue admit refuses when the
+projected IS exceeds the budget (canonical **1.5×**). Two Soft-CP
+tenants.
+
+**Inspiration.** [PARL / NoI](https://arxiv.org/abs/2510.24113)
+(“Taming the Tail”) defines
+`IS = max_k T_solo(k) / T_con(k)` — worst-case concurrent/solo
+slowdown — and uses it as a **topology-synthesis** objective. SoftNoI-IS
+reuses the *metric* as **runtime admit control**.
+
+**This is not:**
+
+- PARL topology synthesis, UniCNet, or optimal NoI design.
+- A silicon interposer, UCIe PHY, or a multi-chiplet sim.
+- A FLOP / partner-bandwidth claim. Host tests measure integer
+  throughput units (`T_solo` / `T_con`) and admit/refuse counters.
+- A change to path-B SoftNPU, the virtqueue BAR, or `make qemu`.
+  `IreeShapedCp` stays a single mailbox (no XQueue admit).
+- A `CpCmd` layout change or a new syscall. Default
+  `submit_xqueue` is ungated; `submit_xqueue_noi` is the admit path.
+  SoftNoI is **off** by default (SID / XQueue / CCT unchanged).
+
+**Contract** (`aether_core::noi::SoftNoI` + SoftChipletSync + Soft-CP):
+
+```text
+SoftChipletSync.noi / enable_noi(true)
+project_is_milli(tenant, demand)     // max(1.0, sum/capacity)
+admit(tenant, demand)                // refuse if projected IS > 1.5
+advertised_is_milli(tenant)          // per-tenant estimate
+Soft-CP submit_xqueue_noi(queue, job, demand)
+```
+
+Canonical clip: fake capacity **1000**, budget **1500 milli**. Two light
+demands (400+400) stay under capacity (IS = 1.0) and **admit**. Two
+heavy demands (800+800) project IS = 1.6 and **refuse** the second
+tenant. Solo vs concurrent throughput is the same integer model.
+
+Host tests: `admit_light_two_tenants_refuse_heavy`,
+`heavy_concurrent_is_over_budget`,
+`softnoi_solo_vs_concurrent_then_xqueue_refuse`. Kernel serial
+`[softnoi]`.
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 

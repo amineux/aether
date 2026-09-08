@@ -54,7 +54,8 @@ Supporting rules (implemented in types, not just prose):
 What this document will not claim: a CUDA-style unified virtual address
 space; seL4-level formal proofs; wafer-scale marketing that hides SRAM-first
 placement; cache coherence across chiplets; that SoftChipletSync is a
-Vulkan timeline or UCIe product; or that `TypedWindow` is
+Vulkan timeline or UCIe product; that SoftNoI-IS synthesizes NoI topology
+or UniCNet; or that `TypedWindow` is
 CXL.mem silicon.
 
 ## Boot (x86_64 / QEMU)
@@ -165,7 +166,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/ramfs.rs` | Host-tested in-kernel ramfs (named files; seed from blk or blobs) |
 | `core/src/bootfs.rs` | Host-tested AETHFS01 pack/parse |
 | `kernel/src/world.rs` | Init cap table, fabric, arenas, virtqueue SoftNPU |
-| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall + SoftGreenCtx + SoftSFI + PASID/SVA + OperatorInject clips |
+| `kernel/src/init.rs` | Kernel-side `run_boot_demo` + blast-radius + SID-at-submit + firewall + SoftGreenCtx + SoftSFI + PASID/SVA + OperatorInject + SoftNoI-IS clips |
 | `core/src/elf.rs` | Host-tested ELF64 parser |
 | `core/src/aspace.rs` | Host-tested identity + HH alias clone + USER-local walk |
 | `core/src/preempt.rs` | Host-tested RR + block/wake queue |
@@ -177,11 +178,12 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/iommu.rs` | Soft SMMU STE→CD→S1/S2 walk + ATS invalidate + SET_SID latch + PASID/SVA mm↔SSID (not hardware) |
 | `core/src/sid.rs` | Host1x-shaped SID-at-submit clip (two tenants / two SIDs; not a Tegra driver) |
 | `core/src/window.rs` | TypedWindow stub (`Hbm`/`CxlMemStub`/`Dram` + SID); not CXL.mem silicon |
-| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftGreenCtx + SoftChipletSync + SoftCCT + SoftCmdFirewall + IRQ/`retire_into`) |
+| `drivers/src/fakecp.rs` | SoftCommandProcessor (`CpCmd` + SET_SID-at-submit + XQueue + SoftGreenCtx + SoftChipletSync + SoftCCT + SoftNoI-IS + SoftCmdFirewall + PASID/SVA + IRQ/`retire_into`) |
 | `drivers/src/firewall.rs` | SoftCmdFirewall copy-then-validate (Host1x lesson; cmd-stream integrity, not confidential GPU) |
 | `drivers/src/softsfi.rs` | Soft-CP host for the toy SoftSFI sandbox (keeps `fakecp.rs` thin) |
 | `drivers/src/sva.rs` | Soft-CP host for PASID/SVA (mm↔SSID bind; VA DMA; unmap→SSID TLB) |
 | `drivers/src/opinject.rs` | Soft-CP host for OperatorInject (resident worker + SID/firewall; keeps `fakecp.rs` thin) |
+| `drivers/src/noi.rs` | Soft-CP host for SoftNoI-IS XQueue admit (keeps `fakecp.rs` thin) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
 | `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
@@ -198,11 +200,12 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/activity.rs` | Fabric activity behind a uniform endpoint |
 | `core/src/partition.rs` | Spatial slice + QoS + blast radius |
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
-| `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + SoftCCT elision |
+| `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + SoftCCT elision + SoftNoI-IS advertisement |
 | `core/src/greenctx.rs` | SoftGreenCtx fake SM/WQ partitions (70/30) + memcpy interference + migrate-to-yield (not MIG) |
 | `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`) |
 | `core/src/sva.rs` | PASID/SVA clip (Linux SVA-shaped mm↔SSID; not ARM SVA / CUDA UVA) |
 | `core/src/opinject.rs` | OperatorInject resident worker + versioned op table (memcpy/saxpy + hot-add scale; GPUOS / Mirage MPK; not NVRTC) |
+| `core/src/noi.rs` | SoftNoI-IS fake NoI + Interference Score admit (PARL/NoI metric; not topology synth, not UniCNet) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |

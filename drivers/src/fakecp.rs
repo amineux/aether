@@ -43,6 +43,12 @@
 //! protocol, not a Vulkan / ROCm product. Latency wins need a
 //! multi-chiplet sim.
 //!
+//! SoftNoI-IS is the admit layer on that fabric: a fake shared NoI
+//! advertises a per-tenant Interference Score (`T_solo / T_con`).
+//! XQueue submit refuses when projected IS > budget (canonical 1.5×).
+//! PARL / NoI inspiration. **Admit control, not topology synthesis,
+//! not UniCNet.**
+//!
 //! SoftGreenCtx partitions a fake SM / WQ pool (canonical 70/30). XQueues
 //! bind to a context. CUDA Green Contexts / DetShare are **inspiration**
 //! only (DetShare has no public repo). Soft partition — **not** HW MIG,
@@ -70,6 +76,7 @@ use aether_core::greenctx::{
     GreenCtxError, GreenCtxId, MemcpyReport, SmWqBudget, SoftGreenPool, SOFT_SM_POOL, SOFT_WQ_POOL,
 };
 use aether_core::iommu::{IommuMap, MapError, MapRequest, MmId, StreamId};
+use aether_core::noi::NoiError;
 use aether_core::opinject::OperatorInject;
 use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::types::{ChipletId, PhysAddr, TileId};
@@ -205,6 +212,14 @@ fn map_green_error(e: GreenCtxError) -> HalError {
             HalError::Busy
         }
         GreenCtxError::Unbound => HalError::Fault,
+    }
+}
+
+pub(crate) fn map_noi_error(e: NoiError) -> HalError {
+    match e {
+        NoiError::BadArg => HalError::BadArg,
+        NoiError::OverBudget | NoiError::Exhausted => HalError::Busy,
+        NoiError::Unbound => HalError::Fault,
     }
 }
 
@@ -1156,6 +1171,18 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     fn migrate_queue_ctx(&mut self, queue: u16, dest_ctx: u16) -> Result<(), HalError> {
         self.migrate_to_yield(queue, GreenCtxId(dest_ctx))
             .map(|_| ())
+    }
+
+    fn noi_is_milli(&self, tenant: u32) -> Option<u32> {
+        self.chipsync
+            .advertised_is_milli(aether_core::types::TenantId(tenant))
+    }
+
+    fn admit_noi(&mut self, tenant: u32, demand: u32) -> Result<u32, HalError> {
+        self.chipsync
+            .admit_noi(aether_core::types::TenantId(tenant), demand)
+            .map(|e| e.worst_is_milli)
+            .map_err(map_noi_error)
     }
 
     fn poll(&mut self) -> Option<Completion> {

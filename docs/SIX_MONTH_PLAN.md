@@ -15,8 +15,9 @@ Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
 (SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
 The **next calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028; H2 2026 leftovers SoftNoI-IS / PASID/SVA /
-OperatorInject are explorations, not marked Done). SoftSFI is a toy
+(Sep 2026 → Sep 2028; SoftNoI-IS is in-flight / landing this PR as
+an H2 2026 exploration, not marked Done; PASID/SVA / OperatorInject
+stay explorations, not marked Done). SoftSFI is a toy
 Soft-CP bytecode sandbox. SpecForge OS-completeness theater is not
 the schedule. SpectraScout Soft-CP items are software models, not
 fork / POSIX / CXL.mem / ChipletFleet.
@@ -70,7 +71,7 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 elision are **landed**. SoftGreenCtx (Month 5 digest 1) is **landed**.
 SoftCmdFirewall (digest 2) is **landed**. Month 5 is **not** a
 second half-year of this file — see [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(remaining: SoftSFI). Optional / conditional work in *this* file is
+(four digests landed; SoftNoI-IS in-flight / landing this PR). Optional / conditional work in *this* file is
 leave-behind, not a pillar. Site-as-milestone stays killed (PR #46 /
 #50 / #52 were
 progress refreshes, not a marketing climax).
@@ -346,7 +347,8 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 Month 5 remaining (not leftovers): none of the four digests.
 SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI (**digest 4**;
 GPU-AToLL-shaped toy ISA; atomics / tensor / heap refused) are
-**landed**. SoftNoI-IS parked.
+**landed**. SoftNoI-IS is **in-flight / landing this PR** (H2 2026
+exploration; not a Month 5 digest; not marked Done).
 See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
@@ -369,7 +371,8 @@ a Y2 bring-up climax.
 [ROADMAP.md](ROADMAP.md) points at [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 for what to sequence next. This file remains the closed M1–M4
 record. SoftChipletSync, SoftCCT, SoftGreenCtx, and SoftCmdFirewall
-are landed. SoftSFI (digest 4) is **landed**. Suggested next cuts
+are landed. SoftSFI (digest 4) is **landed**. SoftNoI-IS is
+**in-flight / landing this PR**. Suggested next cuts
 in ROADMAP that are not parked leftovers remain **technical leftovers**.
 
 ## Kernel PR order (this calendar)
@@ -389,7 +392,8 @@ in ROADMAP that are not parked leftovers remain **technical leftovers**.
     be shown on path-A DMA (gated digest; see
     [MONTH5_PLAN.md](MONTH5_PLAN.md))
 11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
-    (SoftSFI digest 4 **landed**; PASID/SVA and OperatorInject parked)
+    (SoftSFI digest 4 **landed**; SoftNoI-IS in-flight / this PR;
+    PASID/SVA and OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -410,6 +414,7 @@ milestone.
 | SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP buffer labels, host tests — **landed** |
 | SoftSFI | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` `submit_sfi` / skip-verify, host tests — **landed** |
+| SoftNoI-IS | `core/src/noi.rs`, SoftChipletSync advertisement, Soft-CP `submit_xqueue_noi`, host tests — **in-flight / this PR** |
 | Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
@@ -437,6 +442,8 @@ target appears. No new syscall.
   HBM encryption, GPU-CC HMAC, or NVIDIA SEC2
 - That SoftCCT is a full coherence protocol, CPElide silicon, or a
   Vulkan / ROCm product
+- That SoftNoI-IS synthesizes NoI topology, is UniCNet, or is
+  already Done on this closed calendar
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
   + SoftGreenCtx + SoftCCT is the software-model track; that theater is not.

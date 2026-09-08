@@ -47,6 +47,7 @@ fn mem_cap() -> Capability {
 }
 
 /// Host-identical clip. Kernel prints `[sva] …`.
+#[inline(never)]
 pub fn run_sva_demo() -> SvaReport {
     let mut iommu = IommuMap::new();
     let cap = mem_cap();

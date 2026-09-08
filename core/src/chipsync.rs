@@ -3,6 +3,10 @@
 //! SpectraScout post-M2 leftover (after M3 SID-at-submit and M4 XQueue).
 //! SoftChipletSync (PR #51) is the scoped-timeline layer. **SoftCCT** is
 //! the elision layer on top: Soft-CP buffer labels + last-writer chiplet.
+//! **SoftNoI-IS** is the admit layer: a fake shared NoI advertises a
+//! per-tenant Interference Score; Soft-CP / XQueue refuse when projected
+//! IS > budget. PARL/NoI inspiration; **admit control, not topology
+//! synthesis** (see [`crate::noi`]).
 //!
 //! **Inspiration (not a port, not a product):**
 //! - Fleet hierarchical event counters (wave / CU / chiplet / package):
@@ -26,10 +30,11 @@
 //! partner proof.
 
 use crate::fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
+use crate::noi::{IsEstimate, NoiError, SoftNoI};
 use crate::partition::{
     BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
 };
-use crate::types::ChipletId;
+use crate::types::{ChipletId, TenantId};
 
 /// Fake-package width. Software cap, not a silicon XCD count.
 pub const MAX_SYNC_CHIPLETS: usize = 8;
@@ -282,6 +287,8 @@ pub struct SoftChipletSync {
     elided: u32,
     /// All-chiplet fence baseline: one package fence per labeled wait.
     broadcast_package: u32,
+    /// Fake NoI admit policy. Off by default (SID / XQueue / CCT unchanged).
+    noi: SoftNoI,
 }
 
 impl SoftChipletSync {
@@ -321,6 +328,7 @@ impl SoftChipletSync {
             package_fences: 0,
             elided: 0,
             broadcast_package: 0,
+            noi: SoftNoI::new(),
         }
     }
 
@@ -361,6 +369,33 @@ impl SoftChipletSync {
 
     pub fn softcct(&self) -> &SoftCct {
         &self.cct
+    }
+
+    pub fn noi(&self) -> &SoftNoI {
+        &self.noi
+    }
+
+    pub fn noi_mut(&mut self) -> &mut SoftNoI {
+        &mut self.noi
+    }
+
+    /// Enable SoftNoI-IS admit. Off by default (SID / XQueue path unchanged).
+    pub fn enable_noi(&mut self, on: bool) {
+        self.noi.enable(on);
+    }
+
+    /// Per-tenant IS estimate advertised by this fabric. `None` if empty.
+    pub fn advertised_is_milli(&self, tenant: TenantId) -> Option<u32> {
+        self.noi.tenant_is_milli(tenant)
+    }
+
+    /// Project + admit onto the fake NoI. Refuse when IS > budget.
+    pub fn admit_noi(&mut self, tenant: TenantId, demand: u32) -> Result<IsEstimate, NoiError> {
+        self.noi.admit(tenant, demand)
+    }
+
+    pub fn release_noi(&mut self, tenant: TenantId) -> Result<(), NoiError> {
+        self.noi.release(tenant).map(|_| ())
     }
 
     pub fn timeline(&self, scope: SyncScope) -> &Timeline {
@@ -969,5 +1004,7 @@ mod tests {
         assert_eq!(s.timeline(SyncScope::Package).id(), TimelineId(3));
         assert!(!s.cct_enabled());
         assert!(s.softcct().is_noop());
+        assert!(!s.noi().enabled());
+        assert_eq!(s.advertised_is_milli(crate::types::TenantId(1)), None);
     }
 }

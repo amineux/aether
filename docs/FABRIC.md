@@ -58,6 +58,16 @@ strictly below the threshold are dropped before `Fabric::send`
 is still refused — Drop does not skip Hodge policy. Integer
 fixed-point only; not an eigensolve. See [CUT.md](CUT.md).
 
+### SoftNoI-IS (admit, not topology)
+
+SoftChipletSync may advertise a per-tenant Interference Score on a
+**fake** shared Network-on-Interposer (`core/src/noi.rs`). Soft-CP
+XQueue admit refuses when projected `IS = max T_solo / T_con` exceeds
+the budget (canonical 1.5×). PARL / NoI inspiration
+([arXiv:2510.24113](https://arxiv.org/abs/2510.24113)). This is
+**runtime admit control**, not PARL topology synthesis and not UniCNet.
+See [ACCEL.md](ACCEL.md).
+
 ### Spectral cuts
 
 Placement is not only affinity hints. A `SpectralCut` cap binds a job to

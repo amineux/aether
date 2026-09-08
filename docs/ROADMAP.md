@@ -45,10 +45,11 @@ The **next Kernel calendar** is
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record.
 SoftGreenCtx (**landed**). SoftCmdFirewall (**landed**). SoftCCT
-(**landed**). SoftSFI (digest 4) is **landed**. PASID/SVA,
-OperatorInject, and SoftNoI-IS are H2 2026 explorations — **not**
-marked Done. The portability / partner slices below already landed;
-they are not Month 5.
+(**landed**). SoftSFI (digest 4) is **landed**. SoftNoI-IS is
+**in-flight / landing this PR** (H2 2026 exploration; do not mark
+Done until merge). PASID/SVA and OperatorInject stay H2 2026
+explorations — **not** marked Done. The portability / partner slices
+below already landed; they are not Month 5.
 
 Landed:
 
@@ -810,6 +811,7 @@ Search for `// STUB:` / `STUB` :
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
 | SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape). Not NVVM. Atomics / tensor / heap refused, not modeled |
+| SoftNoI-IS | `core/src/noi.rs` | **in-flight** (this PR). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`. PARL/NoI inspiration. Admit control, not topology synth. Do not mark Done until merge |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -860,6 +862,10 @@ opcode device (PR #38). **What to sequence next:**
   `dma`) with an SFI verifier (GPU-AToLL shape). Every memory op
   proves `base+bound` in the SID window. Not an NVVM pipeline. Not
   “safe multi-tenant kernels.” Atomics / tensor / heap stay refused.
+- **SoftNoI-IS in-flight (this PR):** fake shared NoI; solo vs
+  concurrent → IS; Soft-CP / XQueue refuse `IS > 1.5`. PARL/NoI
+  inspiration. Admit control, not topology synth, not UniCNet. Do
+  not mark Done until merge.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
@@ -872,17 +878,19 @@ The Kernel **calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 (Sep 2026 → Sep 2028; M1–M4 + SoftChipletSync + SoftCCT closed in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
 SoftCCT, and SoftSFI landed in [MONTH5_PLAN.md](MONTH5_PLAN.md)).
-PASID/SVA, OperatorInject, and SoftNoI-IS are H2 2026 explorations,
-not marked Done. The list below is leftover engineering, not a
-fifth digest.
+PASID/SVA and OperatorInject are H2 2026 explorations, not marked
+Done. SoftNoI-IS is **in-flight / landing this PR**. The list below
+is leftover engineering, not a fifth digest.
 
 1. **H2 2026 leftovers** (see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
    SoftSFI is **landed** (toy ISA bounds + SID; not a safe
    multi-tenant kernel). SoftGreenCtx is **landed** (not MIG).
    SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
    **landed** (last-writer elision; incorrect elision fails).
-   SoftNoI-IS, **PASID / SVA**, and OperatorInject are explorations
-   on the two-year plan — **not** marked Done (per-`AccelDevice`
+   SoftNoI-IS is **in-flight / landing this PR** (admit control, not
+   topology synth; do not mark Done until merge). **PASID / SVA** and
+   OperatorInject stay explorations on the two-year plan — **not**
+   marked Done (per-`AccelDevice`
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
    invalidate path.
@@ -1001,6 +1009,9 @@ non-claims
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
 - That the RISC-V or aarch64 port is a product-class second architecture
 - That `TypedWindow` / `CxlMemStub` is CXL.mem silicon (Exploration E is a stub)
+- That SoftNoI-IS is Done on main before this PR merges, synthesizes
+  NoI topology, is UniCNet, or is a partner interposer result. It is
+  runtime admit control on a fake shared NoI.
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
 `AccelJobDesc`, and either `SoftCommandProcessor` (`CpCmd`) or

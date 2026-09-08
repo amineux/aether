@@ -247,6 +247,8 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[sva\\] bind mm↔ssid DMA VA" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[softnoi\\] solo vs concurrent IS=" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-serial.log \
@@ -292,6 +294,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-pcid-serial.log; then \
 		if grep -q "\\[mm\\] pcid ok" $(BUILD)/qemu-pcid-serial.log; then \
 			echo "qemu-pcid-ci: tagged TLB + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -331,6 +334,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-nopcid-serial.log; then \
 		echo "qemu-nopcid-ci: full-flush fallback + SoftNPU /init ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -380,6 +384,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/smp-serial.log \
@@ -438,6 +443,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-blk-serial.log; then \
 		echo "qemu-blk-ci: virtio-blk → ramfs + SoftNPU /init ok (qemu exit $$ec)"; \
@@ -493,6 +499,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/riscv-serial.log \
@@ -561,6 +568,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[softnoi\\] two-tenant fake NoI admit/refuse sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sparsify\\] below-threshold DROP" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[fence\\] timeline seq#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] SoftNPU F32/F16 soft-float" $(BUILD)/aarch64-serial.log \
