@@ -301,7 +301,7 @@ Parked. Pull only when M3 (or the host shim) needs them.
 | `SYS_REVOKE` | Internal `revoke` / `revoke_in` exist; a user syscall is not the partner ask |
 | RISC-V virtio-mmio SoftNPU | PLIC software doorbell on path B is enough until a `-device` is required |
 | aarch64 GIC SoftNPU IRQ | EL0 `/init` drains on timer/kthread; GICv3 is not the shim |
-| MicroPerceptron interop | Secondary to PJRT/IREE; do not build a second compiler story |
+| MicroPerceptron interop | Secondary to PJRT/IREE; do not build a second compiler story. Doorbell sketch (`examples/accel-client`) is not this slice |
 
 ## Exploration digests (not milestones)
 

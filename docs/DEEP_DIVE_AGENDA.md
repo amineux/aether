@@ -107,6 +107,8 @@ Files, in this order:
 6. `drivers/src/ireecp.rs` — partner-shaped HAL spine: IREE HAL dispatch packet (`backend = 4`; not a vendor).
 7. `host/aether-pjrt` + `docs/HOST.md` — compiler-facing nouns; freeze packs `IreeHalCmd` → IreeShapedCp
    (SoftNPU stays `make qemu`; not a PJRT plugin / IREE driver / partnership).
+7b. `examples/accel-client` — second caller of the same 96-byte image (doorbell sketch;
+    not a plugin, not MicroPerceptron; MicroPerceptron remains later / optional).
 8. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
 9. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
 10. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` and

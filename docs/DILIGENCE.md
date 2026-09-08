@@ -180,7 +180,9 @@ Walkthrough: [ACCEL.md](ACCEL.md), [ABI.md](ABI.md), [HOST.md](HOST.md).
 Start from `IreeShapedCp` (partner-shaped HAL packet) or
 `SoftCommandProcessor` (Aether-native `CpCmd`). The host crate
 `aether-pjrt` is the compiler-facing nouns; it packs frozen `IreeHalCmd`
-and submits through `IreeShapedCp`. SoftNPU is the path-B qemu demo.
+and submits through `IreeShapedCp`. `examples/accel-client` is a second
+caller of that image (research-sketch doorbell; not MicroPerceptron).
+SoftNPU is the path-B qemu demo.
 `PartnerNpuStub` is a leftover no-op sketch, not a partnership and not
 this path.
 
