@@ -3,6 +3,16 @@
 version = 4
 
 [[package]]
+name = "aether-accel-client"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "aether-drivers",
+ "aether-hal",
+ "aether-pjrt",
+]
+
+[[package]]
 name = "aether-core"
 version = "0.1.0"
 

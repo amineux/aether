@@ -125,6 +125,13 @@ Secondary to the landed PJRT/IREE shim. Consume the frozen packet
 and/or path-A BAR. **Not** a second compiler story. **Not** a
 plugin. Skip if it would fork the opcode table.
 
+A thin doorbell client (`examples/accel-client`, crate
+`aether-accel-client`) already proves a **second caller** of the same
+96-byte image through `IreeShapedCp` (allocate, MatMul-shaped / Nop,
+wait; Soft SMMU map + SID stamp required). That is a **research sketch**,
+not this MicroPerceptron slice and not a new device model. MicroPerceptron
+remains later and optional.
+
 ### Gated — guest PCI path A
 
 A kernel `VirtioAccelMmio` that talks PCI BAR0 **only if** the
@@ -167,6 +174,8 @@ unless path B’s doorbell is no longer enough.
 
 - **MicroPerceptron / virtio-accel second consumer** on frozen
   `IreeHalCmd`. Same packet as M1/M2. Not a second compiler story.
+  The doorbell client (`examples/accel-client`) is a research sketch
+  of that shape; a full MicroPerceptron port stays later and optional.
 - **RISC-V virtio-mmio SoftNPU *or* aarch64 GIC SoftNPU IRQ** —
   pick **one** if the path B doorbell (PLIC UART-THRE on RISC-V;
   CNTV/kthread drain on aarch64) is no longer enough. Hard defer
@@ -260,7 +269,9 @@ calendar.
 2. H2 2026 explorations (do not mark Done until they land):
    SoftNoI-IS (this PR), PASID/SVA, OperatorInject
 3. Optional H2 2026: MicroPerceptron consumer; guest PCI path A
-   **only if** Soft-SMMU IOVA needs BAR
+   **only if** Soft-SMMU IOVA needs BAR. Doorbell sketch
+   (`examples/accel-client`) is a second `IreeHalCmd` caller, not
+   MicroPerceptron.
 4. 2027 H1 deepen (PJRT polish, SoftSFI widen, gated CapTable /
    `SYS_REVOKE`, blast-radius clips)
 5. 2027 H2 second consumer; **one** port if path B doorbell fails;
@@ -279,7 +290,7 @@ numbered.
 | SoftNoI-IS | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests |
 | PASID / SVA | `core/src/iommu.rs`, `drivers/src/fakecp.rs` |
 | OperatorInject | `drivers/src/fakecp.rs` resident worker |
-| MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
+| MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` (still later / optional; doorbell sketch is `examples/accel-client`) |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | PJRT polish | `host/aether-pjrt`, [HOST.md](HOST.md) |
 | SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; honest TODOs |

@@ -803,7 +803,8 @@ opcode ROM.
 
 `IreeHalCmd` offsets + field widths are **frozen**. Changing an
 offset/width is a dual `ireecp.rs` + this ADR + host pack/unpack test
-update. PJRT shim (#41) consumes this image only.
+update. PJRT shim (#41) and the doorbell client (`examples/accel-client`)
+consume this image; neither may fork the layout.
 
 ```text
 offset  type   field                 IREE HAL noun
@@ -866,6 +867,17 @@ The compiler-facing nouns on this path live in `host/aether-pjrt`
 lower onto `AccelJobDesc` + Soft SMMU. The host session submits through
 SoftNPU and `IreeShapedCp` (`backend = 4`), not Soft-CP. That crate is
 not a PJRT plugin, not an IREE HAL driver, and not a vendor runtime.
+
+A second host consumer, `examples/accel-client` (`aether-accel-client`),
+packs the same frozen 96-byte image and calls `IreeShapedCp::submit_hal`.
+It is a research-sketch doorbell — allocate, Nop or MatMul-shaped job,
+wait on event — not a new device model, not a PJRT plugin, not NVIDIA,
+and not a MicroPerceptron port. v1 still refuses `TRANSFER` alone
+(memcpy is an explicit host copy, not a HAL category). The same refuse
+rules apply: no Soft SMMU map, unbound / unstamped SID, or a foreign
+`isa_blob_id` is Fault / Unsupported. MicroPerceptron remains later
+and optional ([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Path B / `make qemu`
+is unchanged. `IreeHalCmd` offsets are unchanged.
 
 ## ADR: Host1x-shaped SET_SID at submit
 

@@ -143,7 +143,8 @@ aether-hal      AccelDevice / Console / Timer
 aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + IreeShapedCp + PartnerNpuStub
      ▲
      ├── aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
-     └── aether-pjrt     std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
+     ├── aether-pjrt     std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
+     └── aether-accel-client  doorbell: same frozen IreeHalCmd (not PJRT, not MicroPerceptron)
 user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
 user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
 ```
@@ -209,6 +210,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
+| `examples/accel-client` | Second consumer of the same 96-byte image (doorbell sketch; not a plugin) |
 
 ## Boot (RISC-V / QEMU virt)
 

@@ -26,6 +26,15 @@ Kernel CI is unchanged: the crate is not linked into `aether-kernel`.
 frozen `IreeHalCmd` through this crate and waits the fence (research
 opcodes, not FLOPs).
 
+A second tiny host client, `aether-accel-client` (`examples/accel-client`),
+packs the **same** 96-byte `IreeHalCmd` and submits through the same
+`IreeShapedCp`. It is a research-sketch doorbell (allocate, MatMul-shaped
+or Nop submit, wait on event) — not a PJRT plugin, not NVIDIA, and not a
+MicroPerceptron port. Host tests show both clients can submit, and that
+the doorbell cannot skip Soft SMMU map / SID stamp (same refuse rules:
+bad executable, unbound SID). MicroPerceptron remains later and optional.
+See [ACCEL.md](ACCEL.md) and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
+
 ## Public vocabulary (cited, not claimed)
 
 | Noun | Public source | Aether host object | Lowers to |
@@ -103,10 +112,14 @@ HBM or tile SRAM. `UNIFIED` stays off unless that cap bit is granted
 - That `make qemu` uses this crate. The guest still submits through
   syscalls onto path-B SoftNPU. This is the **host** contract tests
   exercise against the same `AccelDevice` implementations.
+- That `examples/accel-client` is a MicroPerceptron port, a PJRT plugin,
+  or a new device model. It is a research-sketch second consumer of the
+  frozen image. MicroPerceptron remains later and optional.
 
 Walkthrough for a silicon OS team: start at
 `aether_hal::AccelDevice` and `IreeShapedCp`, then this crate
-as the compiler-facing nouns on top. `SoftCommandProcessor` remains
+as the compiler-facing nouns on top. `examples/accel-client` is the
+second caller of the frozen image (doorbell sketch). `SoftCommandProcessor` remains
 the Aether-native packet example. `PartnerNpuStub` is a leftover
 no-op sketch, not this path. [ABI.md](ABI.md) is the kernel ABI;
 [DILIGENCE.md](DILIGENCE.md) is the leave-behind.

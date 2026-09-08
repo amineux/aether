@@ -217,6 +217,8 @@ After AccelDevice bites a real-shaped path — not before:
 17. aarch64 EL0 userspace (documented subset) — **this cut**
 18. Optional virtio-accel QEMU `-device` (path A) — **landed** as a
     host-tested device model; guest PCI bind + MicroPerceptron later
+    (doorbell sketch `examples/accel-client` is a second IreeHalCmd caller,
+    not that port)
 
 ### Active file touch map
 

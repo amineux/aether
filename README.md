@@ -203,7 +203,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd` + SoftGreenCtx SM/WQ); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd` + SoftGreenCtx SM/WQ); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); host consumers: `aether-pjrt` + doorbell `examples/accel-client`; Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit. `TypedWindow` is a CXL.mem-inspired pin stub (not silicon) |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
@@ -220,8 +220,9 @@ hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor + IreeShapedCp
 qemu/            optional path-A `aether-accel` device (host-tested; QEMU patch)
 host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
-examples/diligence-demo host Path B partner clip (`make diligence-demo`)
-examples/red-team host red-team clip (`make red-team`; named attacks refused)
+examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
+examples/red-team        host red-team clip (`make red-team`; named attacks refused)
+examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
@@ -309,7 +310,7 @@ admit control, not topology synth; not marked Done until merge).
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
-- [docs/HOST.md](docs/HOST.md) — partner compiler contract (`aether-pjrt`); not a plugin
+- [docs/HOST.md](docs/HOST.md) — partner compiler contract (`aether-pjrt`); doorbell second consumer; not a plugin
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + AffinityLaplacian + Hodge
 - [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)

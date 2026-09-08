@@ -1,0 +1,18 @@
+[package]
+name = "aether-accel-client"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Tiny host doorbell client: second consumer of frozen IreeHalCmd through IreeShapedCp"
+publish = false
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-hal = { path = "../../hal" }
+aether-drivers = { path = "../../drivers" }
+
+[dev-dependencies]
+aether-pjrt = { path = "../../host/aether-pjrt" }
+
+[lints]
+workspace = true

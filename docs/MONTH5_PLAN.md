@@ -271,7 +271,9 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 - PJRT shim: more ops / Event timeline polish (`host/aether-pjrt`).
   Still not `GetPjRtApi` / `iree_hal_driver_t`.
 - MicroPerceptron / virtio-accel consumer (same frozen `IreeHalCmd`
-  or path-A BAR; secondary to PJRT).
+  or path-A BAR; secondary to PJRT). Remains later / optional. The
+  doorbell sketch (`examples/accel-client`) is a second caller of the
+  packet, not this port.
 - Frozen opcode table **v2** — only with a dual update of
   [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs`. A one-sided
   bump is a break.

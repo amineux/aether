@@ -53,7 +53,11 @@ packs frozen `IreeHalCmd` and submits through IreeShapedCp. SoftNPU
 is an extra host backend; `make qemu` stays path B. Not Soft-CP, not
 a fake vendor runtime.
 
-That crate is the **partner compiler contract** sketched against public
+`examples/accel-client` is a second tiny host client of that same
+96-byte image (doorbell sketch). It is not a PJRT plugin and not a
+MicroPerceptron port; MicroPerceptron remains later and optional.
+
+That crate (`aether-pjrt`) is the **partner compiler contract** sketched against public
 PJRT / IREE HAL vocabulary. It is not a PJRT plugin, not an IREE HAL
 driver, and not a partnership claim. See [HOST.md](HOST.md).
 
