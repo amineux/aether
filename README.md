@@ -272,8 +272,9 @@ not a BAR firewall, not FLOPs).
 **SoftSFI is landed** (Month 5 digest 4; toy Soft-CP load/store/add/dma
 + SFI verifier; GPU-AToLL inspiration; not NVVM; atomics/tensor/heap
 refused). Optional Soft SMMU kit is PR #48 (software tables). Path-A
-guest bind stays gated. The Month 5 clock is
-[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md).
+guest bind stays gated. Closed Month 5 record:
+[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). The **next calendar** is
+[docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 
 ## Docs
 
@@ -289,7 +290,8 @@ guest bind stays gated. The Month 5 clock is
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar
-- [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — next calendar (four digests landed)
+- [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — closed Month 5 record (four digests landed)
+- [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) — Kernel calendar Sep 2026 → Sep 2028
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 

@@ -4,15 +4,18 @@ Leave-behind for Kernel tracking. Filed after M1–M4 + SoftChipletSync
 landed on main (PRs #38, #41, #47, #49, #51) plus the Soft SMMU
 bring-up kit (#48) and site progress through #52.
 
-**This is the next calendar.** [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
-closed M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
-OS-completeness theater is still not the schedule. Month 5 is
-**four SpectraScout exploration digests** — not one pillar, not a
-half-year of OS-completeness. SoftGreenCtx and SoftCmdFirewall are
-**landed**. SoftCCT (digest 3) is **landed**. SoftSFI (digest 4)
-is **landed**. PASID/SVA and OperatorInject stay **parked leftovers**.
-SoftNoI-IS stays parked. The exploration menu below is a direction
-list for later cuts.
+**This calendar is closed** (four digests landed). The **next
+calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
+2028). [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) closed M1–M4.
+SoftGreenCtx (digest 1) is **landed**. SpecForge OS-completeness
+theater is still not the schedule. Month 5 is **four SpectraScout
+exploration digests** — not one pillar, not a half-year of
+OS-completeness. SoftGreenCtx and SoftCmdFirewall are **landed**.
+SoftCCT (digest 3) is **landed**. SoftSFI (digest 4) is **landed**.
+PASID/SVA, OperatorInject, and SoftNoI-IS are H2 2026 explorations
+on the two-year plan — **not** marked Done here. The exploration
+menu below is a direction list; do not re-schedule the four landed
+digests.
 
 ## Reality (what already landed)
 
@@ -347,16 +350,17 @@ frozen. Path B canonical.
 ## Relationship to SIX_MONTH_PLAN / ROADMAP
 
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed M1–M4 calendar
-(plus SoftChipletSync). This file replaces its leftover list as the
-Kernel clock.
+(plus SoftChipletSync). This file is the closed Month 5 record.
 
-[YEAR2_PLAN.md](YEAR2_PLAN.md) still holds the 2026-09-06 Falsifier
-ACTIVE track (done through PR #37) and the SpecForge appendix
-(aspirational). Do not sequence Month 5 against either.
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the Kernel calendar
+(Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) still holds
+the 2026-09-06 Falsifier ACTIVE track (done through PR #37) and the
+SpecForge appendix (aspirational). Do not sequence new work against
+this file or YEAR2_PLAN.
 
-[ROADMAP.md](ROADMAP.md) points here for what to sequence next.
-Suggested next cuts in ROADMAP that are not these four digests
-remain **technical leftovers**.
+[ROADMAP.md](ROADMAP.md) points at [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+for what to sequence next. Suggested next cuts in ROADMAP that are
+not H2 2026 leftovers remain **technical leftovers**.
 
 ## What we will not claim
 
