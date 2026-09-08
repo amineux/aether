@@ -1625,6 +1625,57 @@ section.band + section.band {
   font-weight: 600;
 }
 
+/* ——— pitch ——— */
+.beats {
+  list-style: none;
+  margin: 0 0 28px;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.beat {
+  padding: 18px 18px 16px;
+}
+
+.beat h3 {
+  margin: 8px 0 6px;
+  color: var(--ink);
+  font-size: 1.15rem;
+}
+
+.beat p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.beat-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.beat-n {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: var(--faint);
+}
+
+.pitch-proof {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 16px;
+  align-items: stretch;
+}
+
+.pitch-proof .disclaimer {
+  margin: 0;
+  justify-content: center;
+}
+
 /* ——— footer ——— */
 footer {
   border-top: 1px solid var(--line);
@@ -1714,6 +1765,7 @@ footer {
   .explainer.reverse,
   .market-grid,
   .status-grid,
+  .pitch-proof,
   .fail-row,
   .horizon-card,
   .partner-cta {
@@ -1747,7 +1799,7 @@ footer {
   }
 }
 
-@media (max-width: 1040px) {
+@media (max-width: 1180px) {
   .nav-toggle {
     display: grid;
     place-items: center;

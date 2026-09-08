@@ -11,6 +11,8 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > This is **not** production silicon, not a tutorial toy, and not a claim of
 > partnership with any chip vendor. It is a bootable v0.1 whose *interfaces
 > and invariants* are what we would pitch to an AI-chip OS team.
+> Eight-minute call script: [`docs/PITCH.md`](docs/PITCH.md)
+> ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
@@ -320,6 +322,8 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
+- [docs/PITCH.md](docs/PITCH.md) — 8-minute founder call script (`make diligence-demo` / `make red-team`)
+- [docs/pitch/transcript.txt](docs/pitch/transcript.txt) — expected refuse-path serial (from in-tree prints / CI greps)
 - [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch; `make diligence-demo` / `make red-team`
 - [docs/DESIGN_WIN.md](docs/DESIGN_WIN.md) — call worksheet (opcode / SID / spaces / frozen `IreeHalCmd` offsets)
 - [docs/PARTNER.md](docs/PARTNER.md) — intended partner landing page (not on `main` yet)
@@ -337,7 +341,8 @@ The public site lives in [`site/`](site/) (HTML/CSS/JS, no build step) and
 deploys from `.github/workflows/pages.yml` on pushes to `main` that touch
 `site/`. After the first successful run, enable **Settings → Pages → Source:
 GitHub Actions** if it is not already on. The live URL is
-[https://amineux.github.io/aether/](https://amineux.github.io/aether/).
+[https://amineux.github.io/aether/](https://amineux.github.io/aether/)
+(8-minute script: [`#pitch`](https://amineux.github.io/aether/#pitch)).
 
 Open `site/index.html` locally, or `python3 -m http.server -d site`, to
 review offline.

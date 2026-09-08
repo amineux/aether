@@ -1,0 +1,88 @@
+# Pitch transcript — expected proof lines
+
+Copied from in-tree prints and CI greps. Not a recorded call.
+Do not invent extra banners.
+
+Makefile targets that exist (`make help`):
+
+```
+make diligence-demo
+make red-team
+make design-win-check
+make qemu
+make qemu-ci
+make test
+make smmu-bringup
+```
+
+There is no `make partner-hello`. `docs/PARTNER.md` is cited from
+README / DESIGN_WIN as intended and is **not in this tree**.
+
+Doorbell second consumer (not a Makefile target):
+
+```
+cargo run -p aether-accel-client
+```
+
+---
+
+## make diligence-demo
+
+Golden needles from `examples/diligence-demo/expected.txt`
+(Makefile greps `-F` the same file):
+
+```
+[diligence] host Path B
+[blast] tenant A=1 B=2 Memory/Activity/Cut refuse  ok
+[blast] SpectralCut CrossCut refuse  ok
+[blast] Soft SMMU wrong SID abort  ok
+[blast] two-tenant blast radius sealed
+[pjrt] IreeHalCmd submit + wait
+[pjrt] research opcode
+[firewall] mutation-during-validate fails  ok
+[firewall] copy-then-validate race sealed
+[greenctx] SM/WQ pool split 70/30
+[greenctx] two-queue SoftGreenCtx sealed
+[diligence] what this proves
+[diligence] what this does not prove
+[diligence] host Path B sealed
+```
+
+---
+
+## make red-team
+
+Makefile `red-team` greps (same strings in
+`examples/red-team/src/main.rs`):
+
+```
+[redteam] attack=wrong-sid-crosscut result=refused
+[redteam] attack=softcmdfirewall result=refused
+[redteam] attack=softsfi-oob result=refused
+[redteam] attack=softnoi-is result=refused
+[redteam] attack=pasid-stale result=refused
+[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
+[redteam] sealed
+```
+
+---
+
+## make design-win-check
+
+Host checker admits the filled sample in
+`examples/design-win-check`. It **refuses** an unknown executable id,
+SID 0, and a TRANSFER-only packet ([DESIGN_WIN.md](../DESIGN_WIN.md)).
+Not a signed vendor.
+
+---
+
+## make qemu / qemu-ci (optional guest serial)
+
+`Makefile` `qemu-ci` greps include:
+
+```
+[blast] two-tenant blast radius sealed
+[sid] two-SID Host1x-shaped submit sealed
+[firewall] copy-then-validate race sealed
+FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
+```

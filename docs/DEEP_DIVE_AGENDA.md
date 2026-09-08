@@ -3,7 +3,7 @@
 A concrete 60–90 minute technical session for an NVIDIA-class or custom
 ASIC operating-systems group. **This meeting has not happened.** The
 agenda exists so it could, with a demo script and open questions, not
-a press quote.
+a press quote. The 8-minute founder version is [PITCH.md](PITCH.md).
 
 Audience: kernel / firmware / runtime engineers who own the command
 processor, SMMU story, and the compiler’s submit path.
