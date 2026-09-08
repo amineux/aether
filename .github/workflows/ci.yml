@@ -29,6 +29,9 @@ jobs:
       - name: Diligence demo (host Path B; no QEMU rebuild)
         run: make diligence-demo
 
+      - name: Red-team diligence clip (host stdout)
+        run: make red-team
+
       - name: Soft SMMU bring-up kit (dump/replay scripts)
         run: |
           python3 scripts/smmu_replay.py --check

@@ -1,0 +1,18 @@
+[package]
+name = "aether-redteam"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host red-team diligence clip: named attacks the kernel already refuses"
+publish = false
+
+[[bin]]
+name = "aether-redteam"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-drivers = { path = "../../drivers" }
+
+[lints]
+workspace = true

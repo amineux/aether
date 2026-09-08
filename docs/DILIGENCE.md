@@ -39,13 +39,15 @@ guest does not run, and prints a scripted narrative. CI greps
 
 This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
 `make qemu-ci`). Path A is still `make accel-test` (host) /
-optional `QEMU_ACCEL`.
+optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
+`make red-team` (see [Red-team clip](#red-team-clip-host-stdout)).
 
 ## What ships in this tree
 
 | Surface | Status | Where |
 | --- | --- | --- |
 | Capability fabric + isolation demo | Implemented, host-tested | `core/src/{caps,fabric,demo,blast}.rs` |
+| Red-team diligence clip | Host stdout; greps named refuses | `examples/red-team/`, `make red-team` |
 | Tensor arenas, typed spaces, `(place, local)` | Implemented | `core/src/{arena,space}.rs` |
 | TypedWindow (honest pin stub) | Host-tested; CXL.mem window **not** a milestone | `core/src/window.rs`, [WINDOW.md](WINDOW.md) |
 | Bank color (Compute refuse / Exchange ok) | Implemented, host-tested | `core/src/color.rs` |
@@ -103,7 +105,14 @@ PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
 `run_opinject_demo()` is the resident-worker clip (serial `[opinject]`);
 GPUOS / Mirage MPK inspiration only — not NVRTC, not CUDA, not a full
-LLM compiler. The RISC-V
+LLM compiler. `make red-team` (`examples/red-team`) is the **buyer
+stdout**: it calls those same clips and prints
+`[redteam] attack=… result=refused` for wrong-SID/CrossCut DMA,
+SoftCmdFirewall mutate-during-validate, SoftSFI OOB load, SoftNoI-IS
+overload admit, and PASID stale translate after unmap. It ends with
+what this is **not** (confidential GPU, HW MIG, hardware SMMU — Soft
+SMMU is software). Not a new isolator. CI greps the proof lines.
+The RISC-V
 and aarch64 ports did not change `aether-hal` or the syscall /
 AccelDevice ABI.
 
@@ -212,8 +221,9 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo crate |
+| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team crates |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus the “what this is not” closer |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
@@ -225,6 +235,37 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 x86_64 is the supported path. RISC-V CI greps U-mode `/init`.
 aarch64 CI greps EL0 `/init`. Neither is a second-architecture
 product.
+
+## Red-team clip (host stdout)
+
+A silicon-OS buyer remembers **refused**, not a slide. `make red-team`
+runs `examples/red-team` on the host and prints grep-able lines. It
+**calls** the clips already in tree — it does not add a sixth isolator.
+
+| Attack | Mechanism already in tree | Result |
+| --- | --- | --- |
+| Wrong-SID / CrossCut DMA | `run_blast_demo` — SpectralCut `CrossCut` + Soft SMMU `WrongStream` / `StreamAbort` | refused |
+| Mutate command buffer during validate | `run_firewall_demo` — SoftCmdFirewall copy-then-validate (Host1x hole closed) | refused |
+| Out-of-bounds load/store | `run_softsfi_demo` — SoftSFI verifier `SfiError::Oob`; skip-verify still does not cross-read | refused |
+| Overload admit (`IS` over budget) | `run_softnoi_demo` — SoftNoI-IS refuse when projected `IS > 1.5` | refused |
+| PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
+
+Expected stdout (CI greps these):
+
+```
+[redteam] attack=wrong-sid-crosscut result=refused
+[redteam] attack=softcmdfirewall result=refused
+[redteam] attack=softsfi-oob result=refused
+[redteam] attack=softnoi-is result=refused
+[redteam] attack=pasid-stale result=refused
+[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
+[redteam] sealed
+```
+
+**What this is not.** Command-stream integrity is not confidential GPU.
+SoftGreenCtx (not in this clip) is not HW MIG; this clip does not claim
+MIG either. Soft SMMU is software — a real device can still DMA past it.
+No FLOPs, no fake NVIDIA, no tape-out.
 
 ## Non-claims
 
