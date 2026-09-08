@@ -58,7 +58,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-riscv-ci qemu-aarch64-ci qemu-smp qemu-smp-ci \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
-        smmu-bringup \
+        smmu-bringup partner-hello partner-hello-ci \
         diligence-demo red-team design-win-check \
         test test-host target target-riscv target-aarch64 clean help
 
@@ -66,7 +66,7 @@ all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check"
+	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check + partner-hello"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
@@ -85,6 +85,7 @@ help:
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
 	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
+	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make clean"
 
 target:
@@ -104,6 +105,7 @@ test-host:
 	python3 scripts/smmu_dump.py --check
 	$(MAKE) diligence-demo
 	$(MAKE) design-win-check
+	$(MAKE) partner-hello-ci
 
 # Partner one-command: host clips only. No QEMU rebuild. Soft SMMU is
 # software. Path B canonical. Golden needles in
@@ -157,6 +159,23 @@ red-team:
 # (POSIX /bin/sh on Ubuntu Make). Same as `cargo run -p aether-design-win-check`.
 design-win-check:
 	cargo run -p aether-design-win-check --quiet --bin design-win-check
+
+# Partner leave-behind: frozen IreeHalCmd on the host. No QEMU rebuild.
+# Path B stays the canonical guest demo (stock make qemu).
+partner-hello:
+	cargo run -p aether-partner-hello
+
+partner-hello-ci:
+	mkdir -p $(BUILD)
+	cargo run -p aether-partner-hello > $(BUILD)/partner-hello.log
+	cat $(BUILD)/partner-hello.log
+	grep -Fq "magic=0xAE7E1EE1 size=96 backend=4 executable=0x0001EE00 ssid=2" $(BUILD)/partner-hello.log
+	grep -Fq "golden matmul [19, 22, 43, 50] ok" $(BUILD)/partner-hello.log
+	grep -Fq "bad executable 0xDEAD refused" $(BUILD)/partner-hello.log
+	grep -Fq "path B remains canonical" $(BUILD)/partner-hello.log
+	grep -Fq "does not rebuild QEMU" $(BUILD)/partner-hello.log
+	grep -Fq "[partner-hello] ok" $(BUILD)/partner-hello.log
+	@echo "partner-hello-ci: frozen IreeHalCmd + bad-exec refuse ok"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:

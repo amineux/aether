@@ -43,6 +43,7 @@ make diligence-demo
 
 # 1. Same invariants on the host (no QEMU).
 cargo test --workspace
+make partner-hello   # frozen IreeHalCmd → IreeShapedCp; no QEMU rebuild
 
 # 1b. Buyer stdout: named attacks refused (same clips, grep-able lines).
 make red-team
@@ -107,6 +108,7 @@ Files, in this order:
 6. `drivers/src/ireecp.rs` — partner-shaped HAL spine: IREE HAL dispatch packet (`backend = 4`; not a vendor).
 7. `host/aether-pjrt` + `docs/HOST.md` — compiler-facing nouns; freeze packs `IreeHalCmd` → IreeShapedCp
    (SoftNPU stays `make qemu`; not a PJRT plugin / IREE driver / partnership).
+   Clone-and-run: `examples/partner-hello` / [PARTNER.md](PARTNER.md) (`make partner-hello`; no QEMU).
 7b. `examples/accel-client` — second caller of the same 96-byte image (doorbell sketch;
     not a plugin, not MicroPerceptron; MicroPerceptron remains later / optional).
 8. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
@@ -165,5 +167,4 @@ Questions to ask *them* while the board is up:
 If the session happens, the output is a filled
 [DESIGN_WIN.md](DESIGN_WIN.md) worksheet (or a written pass). Check it
 with `make design-win-check` (or `cargo test -p aether-design-win-check`).
-Not a logo. Intended partner landing page: [PARTNER.md](PARTNER.md)
-(not on `main` yet).
+Not a logo. Partner landing page: [PARTNER.md](PARTNER.md).

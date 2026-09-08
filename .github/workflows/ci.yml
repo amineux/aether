@@ -35,6 +35,10 @@ jobs:
       - name: Design-win worksheet checker
         run: make design-win-check
 
+      # Host leave-behind. Does not rebuild QEMU. Path B stays canonical.
+      - name: Partner hello (frozen IreeHalCmd; no QEMU)
+        run: make partner-hello-ci
+
       - name: Soft SMMU bring-up kit (dump/replay scripts)
         run: |
           python3 scripts/smmu_replay.py --check
