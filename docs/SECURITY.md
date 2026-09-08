@@ -108,6 +108,11 @@ vendor compiler, or a full LLM compiler. SID-at-submit and
 SoftCmdFirewall copy-then-validate still gate every call. Serial:
 `[opinject]`.
 
+The host sell-path `make red-team` (`examples/red-team`) prints one
+line per named attack (`[redteam] attack=… result=refused`) by calling
+those same clips. It does not add isolation. Closer: not confidential
+GPU, not HW MIG, Soft SMMU is software.
+
 ## CDT properties (host tests, not a proof)
 
 Aether stores a parent pointer (`CdtNode` = table owner + mint

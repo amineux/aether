@@ -44,6 +44,9 @@ make diligence-demo
 # 1. Same invariants on the host (no QEMU).
 cargo test --workspace
 
+# 1b. Buyer stdout: named attacks refused (same clips, grep-able lines).
+make red-team
+
 # 2. x86_64 vertical slice: kernel self-check, then ring-3 /init.
 make qemu
 
@@ -76,7 +79,8 @@ What to point at on the serial:
 If QEMU is blocked, **stop after `make diligence-demo`**. That is the
 leave-behind: `[blast]` CrossCut + wrong-SID, `[pjrt]` `IreeHalCmd`
 submit+wait, `[firewall]` mutation-during-validate, `[greenctx]` 70/30
-partition, then proves / does-not. `cargo test -p aether-core
+partition, then proves / does-not. `make red-team` is the named-attack
+stdout (`[redteam] attack=… result=refused`). `cargo test -p aether-core
 laplacian -- --nocapture` still shows `L = D − A` if someone asks.
 
 Do **not** show a benchmark. There isn’t one.

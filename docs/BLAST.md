@@ -27,6 +27,10 @@ CI greps those four lines. No new syscall. SoftNPU I32 is unchanged.
 No FLOP numbers. Soft SMMU is still software. The partner host clip
 `make diligence-demo` prints the same `[blast]` lines without QEMU.
 
+The combined buyer stdout is `make red-team` ([DILIGENCE.md](DILIGENCE.md)):
+wrong-SID/CrossCut plus SoftCmdFirewall, SoftSFI, SoftNoI-IS, and
+PASID/SVA, each as `[redteam] attack=… result=refused`.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).

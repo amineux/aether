@@ -1,5 +1,6 @@
 # Aether — accelerator-first fabric kernel
 # `make qemu` is the guest demo. `make diligence-demo` is the host Path B clip.
+# `make red-team` is the named-attack refuse clip.
 # `make test` is host-side logic (includes diligence-demo).
 
 TARGET      := x86_64-unknown-none
@@ -58,7 +59,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup \
-        diligence-demo \
+        diligence-demo red-team \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
@@ -82,6 +83,7 @@ help:
 	@echo "  make qemu-accel   - accel-test; if QEMU_ACCEL is set, boot with -device aether-accel"
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
+	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
 	@echo "  make clean"
 
 target:
@@ -129,6 +131,25 @@ diligence-demo:
 		exit 1; \
 	fi; \
 	echo "diligence-demo: host Path B golden lines ok"
+
+# Host sell-path: named attacks the kernel already refuses. Reuses
+# blast / SoftCmdFirewall / SoftSFI / SoftNoI-IS / PASID clips.
+# CI greps the [redteam] proof lines. Not a QEMU guest.
+REDTEAM_LOG := $(BUILD)/redteam.log
+
+red-team:
+	mkdir -p $(BUILD)
+	rm -f $(REDTEAM_LOG)
+	cargo run -p aether-redteam --release > $(REDTEAM_LOG)
+	cat $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=wrong-sid-crosscut result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softcmdfirewall result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softsfi-oob result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softnoi-is result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=pasid-stale result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] what this is not: confidential GPU; not HW MIG; Soft SMMU is software" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] sealed" $(REDTEAM_LOG)
+	@echo "red-team: named attacks refused (host clip)"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:
