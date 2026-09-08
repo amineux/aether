@@ -11,13 +11,15 @@ SoftCCT (Month 5 digest 3) **landed**. Site progress through PR #52.
 Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
-**This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).** The
-**next calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftGreenCtx,
-SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed; PASID/SVA and
-OperatorInject parked). SoftSFI is a toy Soft-CP bytecode sandbox.
-SpecForge OS-completeness theater is not the schedule. SpectraScout
-Soft-CP items are software models, not fork / POSIX / CXL.mem /
-ChipletFleet.
+**This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).**
+[MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
+(SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
+The **next calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028; H2 2026 leftovers SoftNoI-IS / PASID/SVA /
+OperatorInject are explorations, not marked Done). SoftSFI is a toy
+Soft-CP bytecode sandbox. SpecForge OS-completeness theater is not
+the schedule. SpectraScout Soft-CP items are software models, not
+fork / POSIX / CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -358,11 +360,13 @@ track (Soft SMMU, Soft-CP, SMP, PML4, CDT, three-ISA `/init`, path B/A,
 hardening) plus the SpecForge Y1H1–Y2H2 appendix.
 
 That ACTIVE track is **done as research slices through PR #37**. This
-file replaces it as the Kernel calendar. The SpecForge appendix stays
+file is the closed M1–M4 Kernel calendar (it replaced YEAR2_PLAN’s
+ACTIVE track). The **next calendar** is
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). The SpecForge appendix stays
 aspirational — including bank QoS EventRing theater, CXL objects, and
 a Y2 bring-up climax.
 
-[ROADMAP.md](ROADMAP.md) points at [MONTH5_PLAN.md](MONTH5_PLAN.md)
+[ROADMAP.md](ROADMAP.md) points at [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 for what to sequence next. This file remains the closed M1–M4
 record. SoftChipletSync, SoftCCT, SoftGreenCtx, and SoftCmdFirewall
 are landed. SoftSFI (digest 4) is **landed**. Suggested next cuts

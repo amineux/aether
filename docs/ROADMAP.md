@@ -41,12 +41,14 @@ product kernel.
 
 ## Month 5–6 (this cut): Portability & partners
 
-The **next Kernel calendar** after M1–M4 + SoftChipletSync is
-[MONTH5_PLAN.md](MONTH5_PLAN.md). SoftGreenCtx (**landed**).
-SoftCmdFirewall (**landed**). SoftCCT (**landed**). SoftSFI
-(digest 4) is **landed**. PASID/SVA and OperatorInject parked. The
-portability / partner slices below already landed; they are not
-Month 5.
+The **next Kernel calendar** is
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+[MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record.
+SoftGreenCtx (**landed**). SoftCmdFirewall (**landed**). SoftCCT
+(**landed**). SoftSFI (digest 4) is **landed**. PASID/SVA,
+OperatorInject, and SoftNoI-IS are H2 2026 explorations — **not**
+marked Done. The portability / partner slices below already landed;
+they are not Month 5.
 
 Landed:
 
@@ -822,6 +824,7 @@ kernel thread queue sleeps.
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed Falsifier
 M1–M4 calendar after Year-1 + hardening (through PR #37) and the M1
 opcode device (PR #38). **What to sequence next:**
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Closed Month 5 record:
 [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 - **M1 landed (PR #38):** `IreeShapedCp` (`backend = 4`) — frozen IREE
@@ -865,20 +868,21 @@ opcode device (PR #38). **What to sequence next:**
 
 ## Suggested next cuts (technical, not calendar)
 
-The Kernel **calendar** is [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(M1–M4 + SoftChipletSync + SoftCCT closed in
+The Kernel **calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028; M1–M4 + SoftChipletSync + SoftCCT closed in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
-SoftCCT, and SoftSFI landed). PASID/SVA and OperatorInject are
-parked leftovers. The list below is leftover engineering, not a
+SoftCCT, and SoftSFI landed in [MONTH5_PLAN.md](MONTH5_PLAN.md)).
+PASID/SVA, OperatorInject, and SoftNoI-IS are H2 2026 explorations,
+not marked Done. The list below is leftover engineering, not a
 fifth digest.
 
-1. **Month 5 remaining** (see [MONTH5_PLAN.md](MONTH5_PLAN.md)):
+1. **H2 2026 leftovers** (see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
    SoftSFI is **landed** (toy ISA bounds + SID; not a safe
    multi-tenant kernel). SoftGreenCtx is **landed** (not MIG).
    SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
    **landed** (last-writer elision; incorrect elision fails).
-   SoftNoI-IS parked.
-   **PASID / SVA** stays a parked leftover (per-`AccelDevice`
+   SoftNoI-IS, **PASID / SVA**, and OperatorInject are explorations
+   on the two-year plan — **not** marked Done (per-`AccelDevice`
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
    invalidate path.
@@ -919,11 +923,13 @@ fifth digest.
 
 ## Two-year plan
 
-[YEAR2_PLAN.md](YEAR2_PLAN.md) holds both tracks (2026-09-06). The
-Falsifier ACTIVE track through PR #37 is **complete as research
-slices**; do not sequence new work against it. Closed M1–M4 calendar:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the Kernel calendar
+(Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both
+historical tracks (2026-09-06). The Falsifier ACTIVE track through
+PR #37 is **complete as research slices**; do not sequence new work
+against it. Closed M1–M4 calendar:
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (SoftChipletSync + SoftCCT
-landed). **Next calendar:** [MONTH5_PLAN.md](MONTH5_PLAN.md)
+landed). Closed Month 5 record: [MONTH5_PLAN.md](MONTH5_PLAN.md)
 (SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
@@ -978,7 +984,8 @@ The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
 not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
 match the landed Year-1 track, [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md),
-[MONTH5_PLAN.md](MONTH5_PLAN.md), and [DILIGENCE.md](DILIGENCE.md)
+[MONTH5_PLAN.md](MONTH5_PLAN.md), [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md),
+and [DILIGENCE.md](DILIGENCE.md)
 non-claims
 — no partnership, no booked silicon bring-up, no manufacturing climax.
 

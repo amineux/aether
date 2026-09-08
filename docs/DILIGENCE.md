@@ -7,9 +7,10 @@ leave-behind — not a vendor pitch. See [ROADMAP.md](ROADMAP.md) for the
 active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
 landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
-SoftCmdFirewall landed). The **next calendar** is
-[MONTH5_PLAN.md](MONTH5_PLAN.md) (SoftSFI is Month 5 digest 4).
-Site-as-milestone stays killed.
+SoftCmdFirewall landed). [MONTH5_PLAN.md](MONTH5_PLAN.md) is the
+closed Month 5 record (SoftSFI digest 4 landed). The **next
+calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
+2028). Site-as-milestone stays killed.
 
 ## What ships in this tree
 
