@@ -1,0 +1,19 @@
+[package]
+name = "aether-design-win-check"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host fixture: filled design-win worksheet → IreeHalCmd checks (not a signed vendor)"
+publish = false
+
+[[bin]]
+name = "design-win-check"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-hal = { path = "../../hal" }
+aether-drivers = { path = "../../drivers" }
+
+[lints]
+workspace = true

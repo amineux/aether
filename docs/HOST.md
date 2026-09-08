@@ -121,5 +121,7 @@ Walkthrough for a silicon OS team: start at
 as the compiler-facing nouns on top. `examples/accel-client` is the
 second caller of the frozen image (doorbell sketch). `SoftCommandProcessor` remains
 the Aether-native packet example. `PartnerNpuStub` is a leftover
-no-op sketch, not this path. [ABI.md](ABI.md) is the kernel ABI;
-[DILIGENCE.md](DILIGENCE.md) is the leave-behind.
+no-op sketch, not this path. Fill-in on a call:
+[DESIGN_WIN.md](DESIGN_WIN.md). [ABI.md](ABI.md) is the kernel ABI;
+[DILIGENCE.md](DILIGENCE.md) is the leave-behind. Intended partner
+landing page: [PARTNER.md](PARTNER.md) (not on `main` yet).

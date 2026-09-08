@@ -59,14 +59,14 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup \
-        diligence-demo red-team \
+        diligence-demo red-team design-win-check \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo"
+	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
@@ -84,6 +84,7 @@ help:
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
+	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
 	@echo "  make clean"
 
 target:
@@ -102,6 +103,7 @@ test-host:
 	python3 scripts/smmu_replay.py --check
 	python3 scripts/smmu_dump.py --check
 	$(MAKE) diligence-demo
+	$(MAKE) design-win-check
 
 # Partner one-command: host clips only. No QEMU rebuild. Soft SMMU is
 # software. Path B canonical. Golden needles in
@@ -150,6 +152,11 @@ red-team:
 	grep -q "\\[redteam\\] what this is not: confidential GPU; not HW MIG; Soft SMMU is software" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] sealed" $(REDTEAM_LOG)
 	@echo "red-team: named attacks refused (host clip)"
+
+# Filled DESIGN_WIN worksheet. One cargo run, no pipes, no pipefail
+# (POSIX /bin/sh on Ubuntu Make). Same as `cargo run -p aether-design-win-check`.
+design-win-check:
+	cargo run -p aether-design-win-check --quiet --bin design-win-check
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:

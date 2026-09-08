@@ -1,0 +1,69 @@
+# Sample filled design-win worksheet.
+# Research mapping onto IreeHalCmd / AccelOp — not a signed vendor.
+
+[call]
+party = "research-runtime-example"
+date = "2026-09-08"
+
+[backend]
+# AccelInfo.backend. 4 = IreeShapedCp. Do not reuse 0–3.
+id = 4
+name = "iree-shaped-cp"
+
+# Their opcode names → IREE HAL command_categories / function → AccelOp.
+# command_categories: 0 = Nop doorbell; 2 = DISPATCH (1<<1).
+# TRANSFER (1<<0) alone is not a defined v1 packet.
+
+[[opcode]]
+their_name = "idle_doorbell"
+iree_command_categories = 0
+iree_function = 0
+accel_op = "Nop"
+dtype = "I32"
+iree_element_type = 0x10000020
+queue_affinity = 0
+
+[[opcode]]
+their_name = "gemm"
+iree_command_categories = 2
+iree_function = 0
+accel_op = "MatMul"
+dtype = "F32"
+iree_element_type = 0x21000020
+queue_affinity = 0
+
+[[opcode]]
+their_name = "fused_dispatch"
+iree_command_categories = 2
+iree_function = 1
+accel_op = "Wave"
+dtype = "F16"
+iree_element_type = 0x21000010
+queue_affinity = 0
+
+[executable]
+# iree_hal_executable_t / abi::Executable.isa_blob_id
+isa_blob_id = 0x0001EE00
+
+[sid]
+# SID_BUDGET_PER_TENANT = 4; IREE_SSID = 2; SID 0 is DEFAULT_STREAM (refused).
+pool_size = 4
+ssid = 2
+chiplet = 0
+tile = 0
+submit_sid = 0x00000002
+
+[memory]
+kinds = ["HOST", "DEVICE_HBM", "TILE_SRAM"]
+
+[queues]
+# IreeShapedCp v1 is a single mailbox.
+count = 1
+
+[event]
+scope = "partition-timeline"
+optional_chipsync_scopes = ["wave", "cu", "chiplet", "package"]
+
+[frozen]
+packet_size = 96
+magic = 0xAE7E1EE1

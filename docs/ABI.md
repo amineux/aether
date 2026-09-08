@@ -59,7 +59,8 @@ MicroPerceptron port; MicroPerceptron remains later and optional.
 
 That crate (`aether-pjrt`) is the **partner compiler contract** sketched against public
 PJRT / IREE HAL vocabulary. It is not a PJRT plugin, not an IREE HAL
-driver, and not a partnership claim. See [HOST.md](HOST.md).
+driver, and not a partnership claim. See [HOST.md](HOST.md). The
+call fill-in is [DESIGN_WIN.md](DESIGN_WIN.md).
 
 ## Syscall numbers (frozen 0–10; 11 additive)
 
