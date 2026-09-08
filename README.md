@@ -14,6 +14,7 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
+make diligence-demo  # partner host clip (Path B; no QEMU; greps golden lines)
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
 make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
@@ -48,6 +49,23 @@ transfer. There is no IPC except capability-checked messages.
 ```bash
 cargo test --workspace
 ```
+
+**Partner diligence clip** (host Path B, no QEMU rebuild; a few minutes
+including the first compile):
+
+```bash
+make diligence-demo
+# same binary: cargo diligence-demo
+```
+
+Stdout is the thesis: `[blast]` CrossCut + wrong-SID refuse,
+`[pjrt]` frozen `IreeHalCmd` submit + wait (research opcodes, not
+FLOPs), `[firewall]` mutation-during-validate fails, `[greenctx]`
+70/30 SM/WQ partition, then a short *what this proves / what it does
+not* block. CI greps
+[`examples/diligence-demo/expected.txt`](examples/diligence-demo/expected.txt).
+See [`docs/DILIGENCE.md`](docs/DILIGENCE.md). Soft SMMU is software.
+Path B is canonical. No fake NVIDIA, no tape-out.
 
 **QEMU demo** (also needs `qemu-system-x86_64`, GNU `as`/`ld` with `elf_i386`,
 `objcopy`, and `rustup target add x86_64-unknown-none`):
@@ -201,6 +219,7 @@ host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftN
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
+examples/        host Path B diligence-demo (`make diligence-demo`)
 docs/            architecture, fabric, accel, security, diligence, roadmap
 ```
 
@@ -291,7 +310,7 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
-- [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch
+- [docs/DILIGENCE.md](docs/DILIGENCE.md) — what ships, stubs, partner pitch; `make diligence-demo`
 - [docs/DEEP_DIVE_AGENDA.md](docs/DEEP_DIVE_AGENDA.md) — 60–90 min silicon agenda
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar

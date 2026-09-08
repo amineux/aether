@@ -13,6 +13,34 @@ calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
 2028). SoftNoI-IS is **in-flight / landing this PR** (H2 2026
 exploration; not marked Done). Site-as-milestone stays killed.
 
+## One-command host demo
+
+Partners who cannot boot QEMU still get the thesis in a few minutes
+on the host. **Path B canonical.** No QEMU rebuild. Soft SMMU is
+software. No fake NVIDIA, no FLOP numbers, no tape-out.
+
+```bash
+make diligence-demo
+# cargo alias: cargo diligence-demo
+```
+
+The runner (`examples/diligence-demo`) calls the same host clips the
+kernel self-check uses, plus the PJRT/`IreeHalCmd` submit+wait the
+guest does not run, and prints a scripted narrative. CI greps
+[`examples/diligence-demo/expected.txt`](../examples/diligence-demo/expected.txt).
+
+| Line | Thesis |
+| --- | --- |
+| `[blast] SpectralCut CrossCut refuse` / `wrong SID abort` | Two tenants. Cross-cut placement and the other SID are refused. |
+| `[pjrt] IreeHalCmd submit + wait` | Frozen 96-byte HAL image; fence wait. Research opcodes, not FLOPs. |
+| `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
+| `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
+| `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
+
+This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
+`make qemu-ci`). Path A is still `make accel-test` (host) /
+optional `QEMU_ACCEL`.
+
 ## What ships in this tree
 
 | Surface | Status | Where |
@@ -52,7 +80,10 @@ exploration; not marked Done). Site-as-milestone stays killed.
 
 The portable specification is `aether-core`. Host tests execute the same
 `run_boot_demo()` the kernels print (caps, fabric, map, color, cut), plus
-the Multiboot mmap parser. `run_blast_demo()` is a one-week diligence
+the Multiboot mmap parser. `make diligence-demo` is the partner host
+clip: it calls `run_blast_demo()` / `run_firewall_demo()` /
+`run_greenctx_demo()` and a PJRT `IreeHalCmd` submit+wait, then greps
+the golden needles. `run_blast_demo()` is a one-week diligence
 clip (two tenants, CrossCut + wrong-SID refuse, serial `[blast]`) — not
 a Year-2 isolation track. `run_sid_submit_demo()` is the Host1x-shaped
 SET_SID-at-submit clip (serial `[sid]`); not a Tegra driver. `run_chipsync_demo()`
@@ -181,7 +212,8 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify |
+| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo crate |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |

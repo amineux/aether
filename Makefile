@@ -1,5 +1,6 @@
 # Aether — accelerator-first fabric kernel
-# `make qemu` is the demo. `make test` is host-side logic.
+# `make qemu` is the guest demo. `make diligence-demo` is the host Path B clip.
+# `make test` is host-side logic (includes diligence-demo).
 
 TARGET      := x86_64-unknown-none
 KERNEL_DIR  := kernel
@@ -57,13 +58,14 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup \
+        diligence-demo \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
 
 help:
 	@echo "Aether targets:"
-	@echo "  make test         - host unit tests + Soft SMMU bring-up script check"
+	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
@@ -79,6 +81,7 @@ help:
 	@echo "  make accel-test   - path-A QEMU device model (host; no QEMU rebuild)"
 	@echo "  make qemu-accel   - accel-test; if QEMU_ACCEL is set, boot with -device aether-accel"
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
+	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make clean"
 
 target:
@@ -96,6 +99,36 @@ test-host:
 	cargo test --workspace
 	python3 scripts/smmu_replay.py --check
 	python3 scripts/smmu_dump.py --check
+	$(MAKE) diligence-demo
+
+# Partner one-command: host clips only. No QEMU rebuild. Soft SMMU is
+# software. Path B canonical. Golden needles in
+# examples/diligence-demo/expected.txt (CI greps the same file).
+# Alias: `cargo diligence-demo`.
+DILIGENCE_EXPECT := examples/diligence-demo/expected.txt
+DILIGENCE_LOG := $(BUILD)/diligence-demo.log
+
+diligence-demo:
+	mkdir -p $(BUILD)
+	rm -f $(DILIGENCE_LOG)
+	cargo run -p aether-diligence-demo --quiet --bin diligence-demo \
+		> $(DILIGENCE_LOG)
+	cat $(DILIGENCE_LOG)
+	@missing=0; \
+	while IFS= read -r needle || [ -n "$$needle" ]; do \
+		case "$$needle" in \
+			''|\#*) continue ;; \
+		esac; \
+		if ! grep -F -q -- "$$needle" $(DILIGENCE_LOG); then \
+			echo "diligence-demo: missing golden line: $$needle"; \
+			missing=1; \
+		fi; \
+	done < $(DILIGENCE_EXPECT); \
+	if [ $$missing -ne 0 ]; then \
+		echo "diligence-demo: golden grep failed"; \
+		exit 1; \
+	fi; \
+	echo "diligence-demo: host Path B golden lines ok"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:
