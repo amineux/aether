@@ -167,14 +167,15 @@ partner-hello:
 
 partner-hello-ci:
 	mkdir -p $(BUILD)
-	set -o pipefail; cargo run -p aether-partner-hello | tee $(BUILD)/partner-hello.log
-	@grep -q "magic=0xAE7E1EE1 size=96 backend=4 executable=0x0001EE00 ssid=2" $(BUILD)/partner-hello.log \
-	&& grep -q "golden matmul \\[19, 22, 43, 50\\] ok" $(BUILD)/partner-hello.log \
-	&& grep -q "bad executable 0xDEAD refused" $(BUILD)/partner-hello.log \
-	&& grep -q "path B remains canonical" $(BUILD)/partner-hello.log \
-	&& grep -q "does not rebuild QEMU" $(BUILD)/partner-hello.log \
-	&& grep -q "\\[partner-hello\\] ok" $(BUILD)/partner-hello.log \
-	&& echo "partner-hello-ci: frozen IreeHalCmd + bad-exec refuse ok"
+	cargo run -p aether-partner-hello > $(BUILD)/partner-hello.log
+	cat $(BUILD)/partner-hello.log
+	grep -Fq "magic=0xAE7E1EE1 size=96 backend=4 executable=0x0001EE00 ssid=2" $(BUILD)/partner-hello.log
+	grep -Fq "golden matmul [19, 22, 43, 50] ok" $(BUILD)/partner-hello.log
+	grep -Fq "bad executable 0xDEAD refused" $(BUILD)/partner-hello.log
+	grep -Fq "path B remains canonical" $(BUILD)/partner-hello.log
+	grep -Fq "does not rebuild QEMU" $(BUILD)/partner-hello.log
+	grep -Fq "[partner-hello] ok" $(BUILD)/partner-hello.log
+	@echo "partner-hello-ci: frozen IreeHalCmd + bad-exec refuse ok"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:
