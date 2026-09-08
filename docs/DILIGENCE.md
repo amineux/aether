@@ -28,13 +28,14 @@ calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftCmdFirewall copy-then-validate + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall}.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
 | SoftSFI | Toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape; not NVVM; atomics/tensor/heap refused) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
+| PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
@@ -63,6 +64,9 @@ Green Contexts / DetShare inspiration only — not HW MIG, not a BAR
 firewall, not FLOPs.
 `run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
 GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
+`run_sva_demo()` is the PASID/SVA clip (serial `[sva]`); Linux SVA /
+PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
+not zero-copy SVA without invalidate.
 The RISC-V
 and aarch64 ports did not change `aether-hal` or the syscall /
 AccelDevice ABI.
@@ -204,6 +208,8 @@ We will not claim:
 - That SoftCCT is a full coherence protocol, CPElide silicon, or a
   Vulkan / ROCm product
 - That `IommuMap` / Soft SMMU is a hardware SMMU
+- That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or CUDA UVA
+- Zero-copy / unified VA without the unmap → SSID TLB invalidate path
 - That `TypedWindow` / `CxlMemStub` is CXL.mem silicon or QEMU CXL
 - That `SoftCommandProcessor` is a silicon driver
 - That `IreeShapedCp` is an IREE runtime, a PJRT plugin, or a signed vendor

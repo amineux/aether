@@ -149,6 +149,33 @@ pub trait AccelDevice {
         let _ = iova;
         Ok(())
     }
+    /// Bind process mm ↔ this device's Soft-SMMU SSID (PASID space).
+    ///
+    /// Default: unsupported. Soft-CP implements it with Memory+MAP
+    /// (`bind_sva_with_cap`). Linux SVA inspiration; not ARM SVA / PCIe
+    /// PASID / CUDA UVA.
+    fn bind_sva(&mut self, mm: u16, stream_id: u32) -> Result<u8, HalError> {
+        let _ = (mm, stream_id);
+        Err(HalError::Unsupported)
+    }
+    /// Pin process VA → guest PA on a SVA-bound SSID. Returns the VA
+    /// (the DMA address). Default: unsupported.
+    fn map_va(
+        &mut self,
+        stream_id: u32,
+        va: PhysAddr,
+        guest_pa: PhysAddr,
+        len: u64,
+    ) -> Result<PhysAddr, HalError> {
+        let _ = (stream_id, va, guest_pa, len);
+        Err(HalError::Unsupported)
+    }
+    /// Unmap a process VA and invalidate that SSID's software TLB.
+    /// Default: unsupported.
+    fn unmap_va(&mut self, stream_id: u32, va: PhysAddr) -> Result<(), HalError> {
+        let _ = (stream_id, va);
+        Err(HalError::Unsupported)
+    }
     /// Translate a guest PA through the device's Soft-SMMU table (stream 0).
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
         let _ = guest_pa;
@@ -219,10 +246,7 @@ mod tests {
         assert_eq!(d.probe().unwrap().sm_count, 0);
         assert_eq!(d.probe().unwrap().wq_count, 0);
         assert_eq!(d.sm_wq_budget(), None);
-        assert_eq!(
-            d.create_green_ctx(7, 7).unwrap_err(),
-            HalError::Unsupported
-        );
+        assert_eq!(d.create_green_ctx(7, 7).unwrap_err(), HalError::Unsupported);
         assert_eq!(d.name(), "dummy");
         let iova = d
             .map(MapRequest::pin(
@@ -231,6 +255,12 @@ mod tests {
             ))
             .unwrap();
         assert_eq!(iova.0, 0x1000);
+        assert_eq!(d.bind_sva(0x100, 0).unwrap_err(), HalError::Unsupported);
+        assert_eq!(
+            d.map_va(0, PhysAddr(0x40_0000), PhysAddr(0x1000), 0x1000)
+                .unwrap_err(),
+            HalError::Unsupported
+        );
     }
 
     #[test]

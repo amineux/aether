@@ -51,6 +51,14 @@
 //! - **SID-at-submit (Host1x-shaped):** [`IommuMap::set_sid`] programs
 //!   the job-head StreamID. [`IommuMap::resolve_submit`] refuses DMA
 //!   until that SET_SID is armed for the submit. Not a Tegra driver.
+//! - **PASID / SVA (software):** [`IommuMap::bind_mm`] binds a process
+//!   [`MmId`] to this AccelDevice's SSID (the PASID). [`IommuMap::map_va`]
+//!   installs Stage-1 at the process VA so Soft-CP DMA uses that VA.
+//!   Host [`IommuMap::unmap_va`] drops S1 and invalidates the SSID ATC
+//!   (TLB). Skipping invalidate leaves a stale ATC hit — that is the
+//!   negative test, not a product UVA. Linux SVA / PASID inspiration
+//!   only. **Not** ARM SVA, **not** PCIe PASID/PRI, **not** CUDA UVA,
+//!   **not** hardware SMMU, **not** zero-copy SVA without invalidate.
 //! - Per-tenant SID budget ([`SID_BUDGET_PER_TENANT`]) — process/tenant
 //!   contexts, not a silicon SID allocator.
 //! - Typed windows ([`crate::window::TypedWindow`]) pin through
@@ -142,6 +150,30 @@ impl StreamId {
 
     pub const fn with_ssid(self, ssid: u8) -> Self {
         Self(self.stream_key() | (ssid as u32))
+    }
+}
+
+/// Software process aspace id bound to a Soft-SMMU SSID (PASID-shaped).
+///
+/// Linux SVA / `iommu_sva_bind_device` inspiration: one mm per
+/// AccelDevice [`IommuMap`] (that table *is* the PASID space). **Not** a
+/// Linux `mm_struct`, **not** a PCIe PASID, **not** ARM SVA, **not**
+/// CUDA UVA. `0` is reserved (PASID 0 analogue).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct MmId(pub u16);
+
+impl MmId {
+    pub const fn from_raw(raw: u16) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u16 {
+        self.0
+    }
+
+    /// PASID 0 analogue — never a bound mm.
+    pub const fn is_reserved(self) -> bool {
+        self.0 == 0
     }
 }
 
@@ -372,6 +404,8 @@ struct ContextDesc {
     ssid: u8,
     valid: bool,
     asid: u16,
+    /// Bound [`MmId`]. `0` = no SVA (IOVA pins only).
+    mm: u16,
     s1: [Option<SoftPte>; MAX_PTES],
 }
 
@@ -574,6 +608,155 @@ impl IommuMap {
         }
         self.ensure_cd(ste_i, sid.ssid())?;
         Ok(StreamState::Bound)
+    }
+
+    /// Bind process mm ↔ this SSID's CD. Per-[`IommuMap`] PASID space
+    /// (each AccelDevice owns one table). The software PASID is the SSID.
+    ///
+    /// Requires Memory+MAP. One mm per table; re-bind of the same pair
+    /// is idempotent. SID-at-submit is unchanged. Not ARM SVA / PCIe
+    /// PASID / CUDA UVA.
+    pub fn bind_mm(&mut self, cap: &Capability, sid: StreamId, mm: MmId) -> Result<u8, MapError> {
+        if mm.is_reserved() {
+            return Err(MapError::BadRange);
+        }
+        self.bind_stream(cap, sid)?;
+        if let Some(existing) = self.sid_for_mm(mm) {
+            if existing != sid {
+                return Err(MapError::Overlap);
+            }
+            return Ok(sid.ssid());
+        }
+        if let Some(bound) = self.mm_of(sid) {
+            if bound != mm {
+                return Err(MapError::Overlap);
+            }
+            return Ok(sid.ssid());
+        }
+        let ste_i = self.ste_index(sid).ok_or(MapError::StreamAbort)?;
+        let cd_i = self.cd_slot_of(sid).ok_or(MapError::StreamAbort)?;
+        {
+            let cd = self.stes[ste_i].as_mut().unwrap().cds[cd_i]
+                .as_mut()
+                .ok_or(MapError::StreamAbort)?;
+            cd.mm = mm.0;
+            cd.asid = mm.0;
+        }
+        Ok(sid.ssid())
+    }
+
+    /// Process mm bound on this SSID, if SVA is armed.
+    pub fn mm_of(&self, sid: StreamId) -> Option<MmId> {
+        let ste = self.ste(sid)?;
+        let cd_i = self.cd_slot_of(sid)?;
+        let cd = ste.cds[cd_i].as_ref()?;
+        if cd.mm == 0 {
+            None
+        } else {
+            Some(MmId(cd.mm))
+        }
+    }
+
+    /// Reverse lookup in this AccelDevice PASID space.
+    pub fn sid_for_mm(&self, mm: MmId) -> Option<StreamId> {
+        if mm.is_reserved() {
+            return None;
+        }
+        for ste in self.stes.iter().flatten() {
+            for cd in ste.cds.iter().flatten() {
+                if cd.valid && cd.mm == mm.0 {
+                    return Some(StreamId(ste.key | u32::from(cd.ssid)));
+                }
+            }
+        }
+        None
+    }
+
+    /// SVA pin: Stage-1 VA is the process VA (DMA address), not an
+    /// allocated IOVA above 4 GiB. Requires [`Self::bind_mm`] first.
+    pub fn map_va(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        va: PhysAddr,
+        guest_pa: PhysAddr,
+        len: u64,
+    ) -> Result<MappedRegion, MapError> {
+        Self::check_cap(cap)?;
+        if len == 0 {
+            return Err(MapError::BadRange);
+        }
+        if va.0.checked_add(len).is_none() || guest_pa.0.checked_add(len).is_none() {
+            return Err(MapError::BadRange);
+        }
+        self.require_bound(sid)?;
+        if self.mm_of(sid).is_none() {
+            return Err(MapError::StreamAbort);
+        }
+        if self.ste(sid).is_some_and(|s| s.tenant != cap.tenant) {
+            return Err(MapError::CrossTenant);
+        }
+        if let Some(err) = self.guest_overlap_error(guest_pa, len, sid.raw(), cap.tenant) {
+            return Err(err);
+        }
+        if let Some(err) = self.va_overlap_error(va, len, sid.raw(), cap.tenant) {
+            return Err(err);
+        }
+        let slot = self
+            .regions
+            .iter()
+            .position(|r| r.is_none())
+            .ok_or(MapError::TableFull)?;
+        let ipa = self.alloc_ipa(sid, guest_pa, len)?;
+        self.install_s1(sid, va.0, ipa, len, true)?;
+        if let Err(e) = self.install_s2(sid, ipa, guest_pa.0, len, true) {
+            self.remove_s1(sid, va.0);
+            return Err(e);
+        }
+        let region = MappedRegion {
+            guest_pa,
+            iova: va,
+            len,
+            tenant: cap.tenant,
+            object: cap.object,
+            stream_id: sid.raw(),
+            writable: true,
+        };
+        self.regions[slot] = Some(region);
+        self.invalidate_ats_range(sid, va, len);
+        Ok(region)
+    }
+
+    /// Drop the VA pin and invalidate this SSID's ATC (software TLB).
+    ///
+    /// That pairing is the product rule: unmap without invalidate is
+    /// stale SVA, not zero-copy UVA.
+    pub fn unmap_va(&mut self, sid: StreamId, va: PhysAddr) -> Result<MappedRegion, MapError> {
+        self.unmap_stream(sid.raw(), va)
+    }
+
+    /// Fault injection: drop S1 / the pin ledger and **leave** the SSID
+    /// ATC. `resolve_ats` then returns a stale PA until [`InvCmd::CfgCd`].
+    /// Not a public submit path.
+    pub fn unmap_va_keep_atc(
+        &mut self,
+        sid: StreamId,
+        va: PhysAddr,
+    ) -> Result<MappedRegion, MapError> {
+        let pos = match self.regions.iter().position(|r| {
+            r.as_ref()
+                .is_some_and(|x| Self::offset_in(x, va, true).is_some())
+        }) {
+            Some(p) => p,
+            None => return Err(MapError::NotMapped),
+        };
+        let mapped = self.regions[pos].as_ref().unwrap().stream_id;
+        if mapped != sid.raw() {
+            return Err(MapError::WrongStream);
+        }
+        let region = self.regions[pos].take().unwrap();
+        self.drop_pin_tables_keep_atc(&region);
+        Ok(region)
     }
 
     /// Bind for a nested walk whose Stage-1 IPA is **not** the guest PA.
@@ -786,6 +969,28 @@ impl IommuMap {
         self.resolve_result(stream_id, iova, tenant)
     }
 
+    /// Submit-path resolve through the software ATC (SSID TLB).
+    ///
+    /// SVA DMA uses this so a skipped SSID invalidate is a stale hit.
+    /// SET_SID still required. Tables stay the source of truth on miss.
+    pub fn resolve_submit_ats(
+        &mut self,
+        stream_id: u32,
+        iova: PhysAddr,
+        tenant: Option<TenantId>,
+    ) -> Result<PhysAddr, MapError> {
+        let armed = self.submit_sid.ok_or(MapError::SubmitSid)?;
+        if armed != stream_id {
+            return Err(MapError::WrongStream);
+        }
+        if let Some(t) = tenant {
+            if self.ste(StreamId(stream_id)).is_some_and(|s| s.tenant != t) {
+                return Err(MapError::CrossTenant);
+            }
+        }
+        self.resolve_ats(stream_id, iova)
+    }
+
     /// STE → CD → Stage-1 → Stage-2. Does not touch the ATC.
     pub fn walk(&self, sid: StreamId, addr: PhysAddr) -> Result<WalkResult, MapError> {
         self.require_bound(sid)?;
@@ -905,6 +1110,7 @@ impl IommuMap {
             ssid,
             valid: true,
             asid: ssid as u16,
+            mm: 0,
             s1: [None; MAX_PTES],
         });
         Ok(slot)
@@ -953,6 +1159,28 @@ impl IommuMap {
                 return None;
             }
             if !Self::ranges_overlap(pa.0, len, r.guest_pa.0, r.len) {
+                return None;
+            }
+            if r.tenant != tenant {
+                Some(MapError::CrossTenant)
+            } else {
+                Some(MapError::Overlap)
+            }
+        })
+    }
+
+    fn va_overlap_error(
+        &self,
+        va: PhysAddr,
+        len: u64,
+        stream_id: u32,
+        tenant: TenantId,
+    ) -> Option<MapError> {
+        self.regions.iter().flatten().find_map(|r| {
+            if r.stream_id != stream_id {
+                return None;
+            }
+            if !Self::ranges_overlap(va.0, len, r.iova.0, r.len) {
                 return None;
             }
             if r.tenant != tenant {
@@ -1464,6 +1692,17 @@ impl IommuMap {
 
     fn drop_pin_tables(&mut self, region: &MappedRegion) {
         let sid = StreamId(region.stream_id);
+        let sva = self.mm_of(sid).is_some();
+        self.drop_pin_tables_keep_atc(region);
+        if sva {
+            let _ = self.invalidate(InvCmd::CfgCd { sid });
+        } else {
+            self.invalidate_ats_range(sid, region.iova, region.len);
+        }
+    }
+
+    fn drop_pin_tables_keep_atc(&mut self, region: &MappedRegion) {
+        let sid = StreamId(region.stream_id);
         let pte = self.remove_s1(sid, region.iova.0);
         if let Some(ste_i) = self.ste_index(sid) {
             let (ipa, ilen) = pte
@@ -1471,7 +1710,6 @@ impl IommuMap {
                 .unwrap_or((region.guest_pa.0, region.len));
             self.remove_s2_if_unused(ste_i, ipa, ilen);
         }
-        self.invalidate_ats_range(sid, region.iova, region.len);
     }
 
     pub fn iter(&self) -> impl Iterator<Item = MappedRegion> + '_ {

@@ -164,6 +164,9 @@ invalidate(Ats|Tlbi|CfgSte|CfgCd)    // software ATC; tables stay
 unbind_cd(sid)                       // drop one SSID
 unbind_stage2(sid)                   // drop S2 only → Stage2Fault
 unbind_stream / flr(sid)             // STE-wide FLR analogue
+bind_mm(Memory+MAP, sid, MmId)       // PASID/SVA: mm ↔ SSID (this device)
+map_va(sid, va, guest_pa, len)       // S1 VA = process VA; DMA uses VA
+unmap_va(sid, va)                    // drop S1 + SSID ATC (TLB)
 ```
 
 Rules:
@@ -575,6 +578,54 @@ Host tests: `verifier_accepts_in_bounds_program`,
 `verifier_rejects_oob`, `verifier_rejects_atomics_and_tensor`,
 `softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
 `[softsfi]`.
+
+## PASID / SVA (software; Linux SVA-shaped)
+
+**Status:** Software bind + SSID TLB invalidate on Soft SMMU (Linux
+SVA-shaped). Not marked Done on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(H2 2026 exploration) until this PR merges. Per-`AccelDevice` PASID
+space. Bind process mm ↔ SSID; Soft-CP DMA uses that process VA;
+host unmap invalidates the SSID ATC (TLB); a skipped invalidate is
+a stale translate. Software only.
+
+**Inspiration.** Linux SVA (`iommu_sva_bind_device`) plus PASID-tagged
+DMA: a process address space is bound to a device context, DMA uses
+the CPU VA, and `unmap` / `mmu_notifier` must invalidate the IOMMU
+TLB for that PASID. Soft SMMU borrows that *shape* on a software CD
+(`MmId` on the SSID). The PASID *is* the software SSID on that
+AccelDevice's `IommuMap`.
+
+**This is not:**
+
+- ARM SVA, PCIe PASID/PRI, or a hardware ATS/PRI implementation.
+- CUDA unified virtual addressing / UVA, or a default unified VA.
+- Zero-copy SVA **without** the unmap → SSID TLB invalidate path.
+  That pairing is the product rule; the negative test is a stale ATC
+  hit when invalidate is skipped.
+- A hardware SMMU. SID-at-submit and XQueue are unchanged. No new
+  syscall (host / kernel-internal `bind_mm` / `map_va` / `unmap_va`).
+
+**Contract** (`aether_core::sva` + `IommuMap` + Soft-CP):
+
+```text
+IommuMap::bind_mm(Memory+MAP, sid, MmId)   // PASID = SSID on this device
+IommuMap::map_va(sid, va, guest_pa, len)   // S1 VA = process VA
+Soft-CP pack / service                     // DMA address is that VA
+IommuMap::unmap_va(sid, va)                // drop S1 + InvCmd::CfgCd
+IommuMap::unmap_va_keep_atc(...)           // fault injection; ATC stale
+```
+
+Each AccelDevice owns an `IommuMap`; that table *is* the PASID space
+(two Soft-CPs may bind the same `MmId` to different SSIDs). Path B
+SoftNPU / `make qemu` still uses allocated IOVAs. `CpCmd` layout
+unchanged (`iova_*` holds the VA when SVA is bound).
+
+Host tests: `sva_demo_bind_dma_unmap_stale`,
+`soft_cp_dma_uses_process_va`,
+`host_unmap_invalidates_ssid_tlb_then_stale_service_faults`,
+`skip_invalidate_queued_cmd_stale_translate`,
+`two_acceldevices_have_independent_pasid_spaces`. Kernel serial
+`[sva]`.
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 

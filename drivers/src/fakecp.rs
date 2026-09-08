@@ -49,6 +49,12 @@
 //! **not** a BAR firewall. Memcpy-like host tests measure BW interference
 //! vs an unpartitioned baseline; no FLOP partner claims. Migrate-to-yield
 //! rebinds a yielded queue to a larger partition; Soft-SMMU SID stays.
+//!
+//! PASID / SVA: `bind_sva_with_cap` binds process mm ↔ this CP's SSID;
+//! `map_va` pins process VA; DMA walks that VA; `unmap_va` invalidates
+//! the SSID ATC. Linux SVA inspiration. Not ARM SVA / PCIe PASID / CUDA
+//! UVA, and not zero-copy SVA without invalidate. SID-at-submit and
+//! XQueue stay intact.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DmaView, SoftNpu};
 use aether_core::caps::Capability;
@@ -57,7 +63,7 @@ use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::greenctx::{
     GreenCtxError, GreenCtxId, MemcpyReport, SmWqBudget, SoftGreenPool, SOFT_SM_POOL, SOFT_WQ_POOL,
 };
-use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
+use aether_core::iommu::{IommuMap, MapError, MapRequest, MmId, StreamId};
 use aether_core::partition::{PartitionError, PartitionId};
 use aether_core::types::{ChipletId, PhysAddr, TileId};
 use aether_core::window::{MappedWindow, TypedWindow};
@@ -504,6 +510,47 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         self.iommu.map_window(cap, win).map_err(map_hal_error)
     }
 
+    /// Bind process mm ↔ this Soft-CP SSID (per-device PASID space).
+    pub fn bind_sva_with_cap(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        mm: MmId,
+    ) -> Result<u8, HalError> {
+        self.iommu.bind_mm(cap, sid, mm).map_err(map_hal_error)
+    }
+
+    /// Pin process VA on a SVA-bound SSID. Returns the VA (DMA address).
+    pub fn map_va_with_cap(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        va: PhysAddr,
+        guest_pa: PhysAddr,
+        len: u64,
+    ) -> Result<PhysAddr, HalError> {
+        self.iommu
+            .map_va(cap, sid, va, guest_pa, len)
+            .map(|r| r.iova)
+            .map_err(map_hal_error)
+    }
+
+    /// Unmap process VA and invalidate this SSID's software TLB.
+    pub fn unmap_va(&mut self, sid: StreamId, va: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap_va(sid, va)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
+    /// Fault injection: drop S1, leave SSID ATC. Not a public submit path.
+    pub fn unmap_va_keep_atc(&mut self, sid: StreamId, va: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap_va_keep_atc(sid, va)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
     pub fn last_cmd(&self) -> Option<CpCmd> {
         self.last_cmd
     }
@@ -793,8 +840,12 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         if bytes == 0 {
             return Err(HalError::BadArg);
         }
-        let sid = self.xqueue(queue).and_then(|q| q.sid).ok_or(HalError::Fault)?;
-        let mut job = AccelJobDesc::matmul_i32(bytes, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+        let sid = self
+            .xqueue(queue)
+            .and_then(|q| q.sid)
+            .ok_or(HalError::Fault)?;
+        let mut job =
+            AccelJobDesc::matmul_i32(bytes, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
         job.op = AccelOp::Nop;
         job.m = bytes;
         let cmd = CpCmd::empty_from(&job, sid);
@@ -990,49 +1041,55 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         }
     }
 
-    /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
-    fn job_from_cmd(&self, cmd: &CpCmd, job: AccelJobDesc) -> Option<AccelJobDesc> {
-        if self.iommu.is_empty() || job.op == AccelOp::Nop {
+    /// IOVA or SVA VA → guest PA. SVA uses the SSID ATC so a skipped
+    /// invalidate is a stale hit. No identity shortcut.
+    fn job_from_cmd(&mut self, cmd: &CpCmd, job: AccelJobDesc) -> Option<AccelJobDesc> {
+        if job.op == AccelOp::Nop {
+            return Some(job);
+        }
+        let sid = StreamId::from_raw(cmd.stream_id);
+        let sva = self.iommu.mm_of(sid).is_some();
+        if self.iommu.is_empty() && !sva {
             return Some(job);
         }
         let mut pa = job;
-        pa.a = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_a))?;
-        pa.b = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_b))?;
-        pa.c = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_c))?;
+        pa.a = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_a))?;
+        pa.b = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_b))?;
+        pa.c = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_c))?;
         if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
-            pa.bias = self
-                .iommu
-                .resolve_stream(cmd.stream_id, PhysAddr(cmd.iova_bias))?;
+            pa.bias = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_bias))?;
         }
         Some(pa)
     }
 
-    fn smmu_walk(&self, cmd: &CpCmd) -> Result<(), HalError> {
-        let _ = self
-            .iommu
-            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_a), None)
-            .map_err(map_hal_error)?;
-        let _ = self
-            .iommu
-            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_b), None)
-            .map_err(map_hal_error)?;
-        let _ = self
-            .iommu
-            .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_c), None)
-            .map_err(map_hal_error)?;
+    fn smmu_walk(&mut self, cmd: &CpCmd) -> Result<(), HalError> {
+        let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_a))?;
+        let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_b))?;
+        let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_c))?;
         if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
-            let _ = self
-                .iommu
-                .resolve_submit(cmd.stream_id, PhysAddr(cmd.iova_bias), None)
-                .map_err(map_hal_error)?;
+            let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_bias))?;
         }
         Ok(())
+    }
+
+    fn resolve_dma_submit(&mut self, stream_id: u32, addr: PhysAddr) -> Result<PhysAddr, HalError> {
+        if self.iommu.mm_of(StreamId::from_raw(stream_id)).is_some() {
+            self.iommu
+                .resolve_submit_ats(stream_id, addr, None)
+                .map_err(map_hal_error)
+        } else {
+            self.iommu
+                .resolve_submit(stream_id, addr, None)
+                .map_err(map_hal_error)
+        }
+    }
+
+    fn resolve_dma(&mut self, stream_id: u32, addr: PhysAddr) -> Option<PhysAddr> {
+        if self.iommu.mm_of(StreamId::from_raw(stream_id)).is_some() {
+            self.iommu.resolve_ats(stream_id, addr).ok()
+        } else {
+            self.iommu.resolve_stream(stream_id, addr)
+        }
     }
 
     fn complete(&mut self, fence_id: u64, cpl: Completion) -> Completion {
@@ -1087,7 +1144,8 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     }
 
     fn migrate_queue_ctx(&mut self, queue: u16, dest_ctx: u16) -> Result<(), HalError> {
-        self.migrate_to_yield(queue, GreenCtxId(dest_ctx)).map(|_| ())
+        self.migrate_to_yield(queue, GreenCtxId(dest_ctx))
+            .map(|_| ())
     }
 
     fn poll(&mut self) -> Option<Completion> {
@@ -1105,6 +1163,27 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
         self.iommu.unmap(iova).map(|_| ()).map_err(map_hal_error)
+    }
+
+    fn bind_sva(&mut self, _mm: u16, _stream_id: u32) -> Result<u8, HalError> {
+        Err(HalError::NoMemoryCap)
+    }
+
+    fn map_va(
+        &mut self,
+        _stream_id: u32,
+        _va: PhysAddr,
+        _guest_pa: PhysAddr,
+        _len: u64,
+    ) -> Result<PhysAddr, HalError> {
+        Err(HalError::NoMemoryCap)
+    }
+
+    fn unmap_va(&mut self, stream_id: u32, va: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap_va(StreamId::from_raw(stream_id), va)
+            .map(|_| ())
+            .map_err(map_hal_error)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
@@ -2118,10 +2197,7 @@ mod tests {
         assert_eq!(out, sid_a);
         assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_a));
         assert_eq!(d.xqueue(0).unwrap().green_ctx, Some(hi));
-        assert_eq!(
-            AccelDevice::migrate_queue_ctx(&mut d, 0, hi.0).unwrap(),
-            ()
-        );
+        assert_eq!(AccelDevice::migrate_queue_ctx(&mut d, 0, hi.0).unwrap(), ());
         d.resume_xqueue(0).unwrap();
         d.submit_memcpy(0, DEMO_MEMCPY_BYTES).unwrap();
         assert_eq!(d.service().unwrap().status, 0);
