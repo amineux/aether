@@ -52,6 +52,7 @@ Do **not** re-schedule any of the following as new milestones. Do
 | **SoftCmdFirewall (PR #55)** | Copy-then-validate Soft-CP submit. Not confidential GPU |
 | **SoftSFI (PR #56)** | Toy Soft-CP load/store/add/dma + SFI verifier. Not NVVM. Atomics / tensor / heap refused |
 | **SoftCCT (PR #57)** | Last-writer chiplet elision on SoftChipletSync. Not a coherence protocol |
+| **PASID / SVA (PR #62)** | Software bind mm↔SSID + VA DMA + unmap→SSID TLB invalidate. Not ARM SVA / PCIe PASID / CUDA UVA |
 | Explorations A–E | A merged into M2; B blast-radius clip; C `ChipletTaskScope` stub; D CDT props; E `TypedWindow` stub |
 | Site through PR #52 / #58 | Research leave-behind / progress refresh. **Not** a calendar item |
 
@@ -61,11 +62,11 @@ SoftNPU path-B opcodes stay Aether-native. `PartnerNpuStub`
 **In flight / about to land as exploration — do not mark Done:**
 
 - SoftNoI-IS admit
-- PASID/SVA software bind + invalidate
 - OperatorInject hot-add
 
-Those three sit in H2 2026 below. They are not Month 5 digests and
-they are not landed on this tip.
+PASID/SVA software bind + invalidate **landed** (PR #62). SoftNoI-IS
+and OperatorInject sit in H2 2026 below. They are not Month 5
+digests.
 
 ## H2 2026 (now → Dec 2026) — finish partner-HAL leftovers
 
@@ -74,7 +75,7 @@ M5–M8 numbers and not as a second half-year of
 [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 ```text
-SoftNoI-IS (exploration)  →  PASID/SVA bind + invalidate  →  OperatorInject hot-add
+SoftNoI-IS (exploration)  →  PASID/SVA bind + invalidate (**landed**, PR #62)  →  OperatorInject hot-add
 optional: MicroPerceptron consumer of frozen IreeHalCmd (secondary to PJRT)
 gated: Guest PCI path A  — only if Soft-SMMU IOVA demo needs BAR
 site progress refreshes — not milestones
@@ -93,16 +94,16 @@ Do not mark Done until it lands. Not a Month 5 digest.
 `IS > budget`; docs name PARL / NoI as inspiration only. No new
 syscall. Path B / `make qemu` unchanged.
 
-### PASID / SVA software bind + invalidate
+### PASID / SVA software bind + invalidate (**landed**, PR #62)
 
 Per-`AccelDevice` PASID space. Bind process VA ↔ Soft-SMMU SSID;
 Soft-CP DMA uses VA; host unmap → SSID TLB invalidate; stale
-translate faults. Software only.
+translate faults. Software only. Not a Month 5 digest.
 
 **Overclaim watch:** no “zero-copy SVA” / “unified VA” without the
-unmap → invalidate path in the same PR.
+unmap → invalidate path in the same PR. That path is in PR #62.
 
-**Done when:** bind mm↔ssid; Soft-CP DMA via VA; unmap→SSID TLB
+**Done when (met):** bind mm↔ssid; Soft-CP DMA via VA; unmap→SSID TLB
 invalidate; stale translate faults; docs non-claims (not ARM SVA,
 not PCIe PASID/PRI, not CUDA UVA). No new syscall.
 
@@ -255,8 +256,9 @@ calendar.
 1. This file + pointers from [ROADMAP.md](ROADMAP.md),
    [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md), and
    [YEAR2_PLAN.md](YEAR2_PLAN.md) — **this cut**
-2. H2 2026 explorations (do not mark Done until they land):
-   SoftNoI-IS, PASID/SVA, OperatorInject
+2. H2 2026 explorations: PASID/SVA bind + invalidate — **landed**
+   (PR #62). SoftNoI-IS and OperatorInject — do not mark Done until
+   they land.
 3. Optional H2 2026: MicroPerceptron consumer; guest PCI path A
    **only if** Soft-SMMU IOVA needs BAR
 4. 2027 H1 deepen (PJRT polish, SoftSFI widen, gated CapTable /
@@ -275,7 +277,7 @@ numbered.
 | Slice | Primary touches |
 | --- | --- |
 | SoftNoI-IS | `core/src/chipsync.rs` / fabric admit, host tests |
-| PASID / SVA | `core/src/iommu.rs`, `drivers/src/fakecp.rs` |
+| PASID / SVA (**landed**, PR #62) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | `drivers/src/fakecp.rs` resident worker |
 | MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
@@ -293,8 +295,7 @@ status pointers. CI only if a new host-test target appears. ABI
 
 ## What we will not claim
 
-- That SoftNoI-IS, PASID/SVA, or OperatorInject are Done on this
-  tip
+- That SoftNoI-IS or OperatorInject are Done on this tip
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or a
   CUDA unified virtual address space
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate

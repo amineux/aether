@@ -581,12 +581,11 @@ Host tests: `verifier_accepts_in_bounds_program`,
 
 ## PASID / SVA (software; Linux SVA-shaped)
 
-**Status:** Software bind + SSID TLB invalidate on Soft SMMU (Linux
-SVA-shaped). Not marked Done on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(H2 2026 exploration) until this PR merges. Per-`AccelDevice` PASID
-space. Bind process mm ↔ SSID; Soft-CP DMA uses that process VA;
-host unmap invalidates the SSID ATC (TLB); a skipped invalidate is
-a stale translate. Software only.
+**Status:** **Landed** (PR #62; H2 2026 exploration on
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Per-`AccelDevice` PASID space
+on Soft SMMU. Bind process mm ↔ SSID; Soft-CP DMA uses that process
+VA; host unmap invalidates the SSID ATC (TLB); a skipped invalidate
+is a stale translate. Software only.
 
 **Inspiration.** Linux SVA (`iommu_sva_bind_device`) plus PASID-tagged
 DMA: a process address space is bound to a device context, DMA uses

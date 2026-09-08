@@ -45,10 +45,11 @@ The **next Kernel calendar** is
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record.
 SoftGreenCtx (**landed**). SoftCmdFirewall (**landed**). SoftCCT
-(**landed**). SoftSFI (digest 4) is **landed**. PASID/SVA,
-OperatorInject, and SoftNoI-IS are H2 2026 explorations — **not**
-marked Done. The portability / partner slices below already landed;
-they are not Month 5.
+(**landed**). SoftSFI (digest 4) is **landed**. PASID/SVA bind +
+invalidate is **landed** (PR #62; H2 2026 exploration). OperatorInject
+and SoftNoI-IS remain H2 2026 explorations — **not** marked Done.
+The portability / partner slices below already landed; they are not
+Month 5.
 
 Landed:
 
@@ -810,6 +811,7 @@ Search for `// STUB:` / `STUB` :
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
 | SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape). Not NVVM. Atomics / tensor / heap refused, not modeled |
+| PASID / SVA | `core/src/{iommu,sva}.rs` | **done** as software mm↔SSID bind + VA DMA + unmap→SSID TLB invalidate (PR #62). Linux SVA/PASID inspiration. Not ARM SVA, not PCIe PASID/PRI, not CUDA UVA |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -860,6 +862,12 @@ opcode device (PR #38). **What to sequence next:**
   `dma`) with an SFI verifier (GPU-AToLL shape). Every memory op
   proves `base+bound` in the SID window. Not an NVVM pipeline. Not
   “safe multi-tenant kernels.” Atomics / tensor / heap stay refused.
+- **PASID / SVA landed (PR #62):** per-`AccelDevice` PASID space; bind
+  process mm ↔ Soft-SMMU SSID; Soft-CP DMA uses that VA; host unmap
+  invalidates the SSID TLB; stale translate faults without
+  invalidate. Linux SVA / PASID inspiration. Not ARM SVA, not PCIe
+  PASID/PRI, not CUDA UVA, not zero-copy SVA without invalidate.
+  H2 2026 exploration — not a Month 5 digest.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
@@ -872,20 +880,20 @@ The Kernel **calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 (Sep 2026 → Sep 2028; M1–M4 + SoftChipletSync + SoftCCT closed in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
 SoftCCT, and SoftSFI landed in [MONTH5_PLAN.md](MONTH5_PLAN.md)).
-PASID/SVA, OperatorInject, and SoftNoI-IS are H2 2026 explorations,
-not marked Done. The list below is leftover engineering, not a
-fifth digest.
+PASID/SVA bind + invalidate **landed** (PR #62). OperatorInject and
+SoftNoI-IS remain H2 2026 explorations, not marked Done. The list
+below is leftover engineering, not a fifth digest.
 
 1. **H2 2026 leftovers** (see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
    SoftSFI is **landed** (toy ISA bounds + SID; not a safe
    multi-tenant kernel). SoftGreenCtx is **landed** (not MIG).
    SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
    **landed** (last-writer elision; incorrect elision fails).
-   SoftNoI-IS, **PASID / SVA**, and OperatorInject are explorations
-   on the two-year plan — **not** marked Done (per-`AccelDevice`
+   **PASID / SVA** bind + invalidate **landed** (PR #62; per-`AccelDevice`
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
-   invalidate path.
+   invalidate path. SoftNoI-IS and OperatorInject are explorations
+   on the two-year plan — **not** marked Done.
 2. **Guest driver for path A.** The QEMU `aether-accel` device and
    host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
    stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0

@@ -15,8 +15,9 @@ Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
 (SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
 The **next calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028; H2 2026 leftovers SoftNoI-IS / PASID/SVA /
-OperatorInject are explorations, not marked Done). SoftSFI is a toy
+(Sep 2026 → Sep 2028; PASID/SVA bind + invalidate **landed** PR #62;
+H2 leftovers SoftNoI-IS / OperatorInject are still explorations).
+SoftSFI is a toy
 Soft-CP bytecode sandbox. SpecForge OS-completeness theater is not
 the schedule. SpectraScout Soft-CP items are software models, not
 fork / POSIX / CXL.mem / ChipletFleet.
@@ -334,9 +335,9 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 3. **SoftGreenCtx SM/WQ partitions** (**landed**, Month 5 digest 1).
    Fake 70/30 SM/WQ pool; XQueue bind; memcpy interference vs
    unpartitioned; migrate-to-yield without SID change. Not HW MIG.
-4. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
-   bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
-   Software only. Not zero-copy SVA without the invalidate path.
+4. **PASID / SVA** — **landed** on the two-year plan (PR #62;
+   per-AccelDevice PASID; bind process VA ↔ Soft-SMMU SSID; unmap →
+   SSID TLB invalidate). Software only. Not a Month 5 digest.
 5. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
    only if the shim injects fabric class headers; else theater.
 6. **OperatorInject deepen** — **parked leftover** (Soft-CP)
@@ -389,7 +390,8 @@ in ROADMAP that are not parked leftovers remain **technical leftovers**.
     be shown on path-A DMA (gated digest; see
     [MONTH5_PLAN.md](MONTH5_PLAN.md))
 11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
-    (SoftSFI digest 4 **landed**; PASID/SVA and OperatorInject parked)
+    (SoftSFI digest 4 **landed**; PASID/SVA bind+invalidate **landed**
+    on TWO_YEAR_PLAN PR #62; OperatorInject parked)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
