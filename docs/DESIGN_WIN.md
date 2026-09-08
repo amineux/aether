@@ -10,9 +10,13 @@ labeled no-op. The filled sample in
 [`examples/design-win-check`](../examples/design-win-check) is a host
 fixture that **refuses** an unknown executable id, SID 0, and a
 TRANSFER-only packet. That is the proof the worksheet is executable,
-not a PDF.
+not a PDF. A filled **research stand-in** (public IREE HAL nouns
+already frozen on `IreeHalCmd`, **not a partner**) is
+[`docs/design-win/iree-hal-standin.md`](design-win/iree-hal-standin.md)
+(`make design-win-standin`).
 
 Partner landing page: [`docs/PARTNER.md`](PARTNER.md) (`make partner-hello`).
+Week 1 call pack: [`docs/WEEK1_CALL.md`](WEEK1_CALL.md).
 
 Public vocabulary is cited from IREE HAL headers on
 [iree-org/iree](https://github.com/iree-org/iree)
@@ -35,6 +39,12 @@ make design-win-check
 
 `make design-win-check` is sequential cargo (no pipe, POSIX `/bin/sh`
 safe). Same binary as `cargo run -p aether-design-win-check`.
+The IREE HAL research stand-in (not a partner):
+
+```bash
+make design-win-standin
+cargo run -p aether-design-win-check -- docs/design-win/iree-hal-standin.toml
+```
 
 ---
 
@@ -63,6 +73,8 @@ as if they were.
 
 Sample filled rows (research mapping, not a vendor ISA): see
 [`examples/design-win-check/sample.toml`](../examples/design-win-check/sample.toml).
+IREE HAL public-noun stand-in (not a partner):
+[`docs/design-win/iree-hal-standin.md`](design-win/iree-hal-standin.md).
 
 ---
 

@@ -13,17 +13,18 @@ do not appear as claims below.
 Longer technical session: [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md)
 (60–90 min script; that meeting has not happened). Diligence pack:
 [DILIGENCE.md](DILIGENCE.md). Call worksheet:
-[DESIGN_WIN.md](DESIGN_WIN.md). Calendar:
+[DESIGN_WIN.md](DESIGN_WIN.md). Week 1 20-minute pack:
+[WEEK1_CALL.md](WEEK1_CALL.md). Calendar:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
 [pitch/transcript.txt](pitch/transcript.txt) (copied from in-tree
-prints / golden greps).
+prints / golden greps). Captured host runs:
+[pitch/diligence-demo.log](pitch/diligence-demo.log),
+[pitch/red-team.log](pitch/red-team.log).
 
 **Proof commands that exist** (`Makefile` `help`):
 `make diligence-demo`, `make red-team`, `make design-win-check`,
-`make qemu`. There is **no** `make partner-hello`.
-[`docs/PARTNER.md`](PARTNER.md) is the intended partner landing page;
-it is **not on `main` yet**. Until it exists, point at this script,
-[DILIGENCE.md](DILIGENCE.md), and [DESIGN_WIN.md](DESIGN_WIN.md).
+`make design-win-standin`, `make partner-hello`, `make qemu`.
+[`docs/PARTNER.md`](PARTNER.md) is the partner landing page.
 
 ---
 
@@ -113,8 +114,8 @@ One more sentence if they ask “is it a kernel?”:
 
 ## 3:00–5:00 — Live proof
 
-**On a call, run the named Makefile targets.** Do not invent
-`partner-hello`.
+**On a call, run the named Makefile targets.** Host clips first
+(no QEMU). Captured stdout lives next to this script if cargo is cold.
 
 ### Host Path B (default — no QEMU)
 
@@ -124,7 +125,8 @@ make diligence-demo
 
 Partner clip: host Path B, no QEMU rebuild. CI greps
 [`examples/diligence-demo/expected.txt`](../examples/diligence-demo/expected.txt).
-Same binary: `cargo diligence-demo`.
+Same binary: `cargo diligence-demo`. Captured run:
+[pitch/diligence-demo.log](pitch/diligence-demo.log).
 
 What to say while it prints:
 
@@ -140,7 +142,8 @@ Then the buyer stdout:
 make red-team
 ```
 
-Named attacks refused. Makefile greps:
+Captured run: [pitch/red-team.log](pitch/red-team.log). Named attacks
+refused. Makefile greps:
 
 ```
 [redteam] attack=wrong-sid-crosscut result=refused
@@ -162,7 +165,14 @@ make design-win-check
 
 Admits the filled [DESIGN_WIN.md](DESIGN_WIN.md) sample (unknown
 executable id, SID 0, and TRANSFER-only are **refused**). Same as
-`cargo run -p aether-design-win-check`.
+`cargo run -p aether-design-win-check`. IREE HAL research stand-in
+(not a partner): `make design-win-standin`.
+
+```bash
+make partner-hello
+```
+
+Host `IreeHalCmd` leave-behind. No QEMU rebuild. See [PARTNER.md](PARTNER.md).
 
 ```bash
 make qemu
@@ -238,8 +248,8 @@ non-claims and stop. Do not paper over it.
 > with reasons is a good outcome.
 
 Follow-up that is honest: a filled worksheet, or a pass. Not a logo.
-Not an NDA draft in this meeting. Not `PARTNER.md` until that page
-exists on `main`.
+Not an NDA draft in this meeting. A research mapping (not a partner)
+is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 
 ---
 
@@ -248,14 +258,16 @@ exists on `main`.
 | They asked | Point at |
 | --- | --- |
 | Run it without QEMU | `make diligence-demo` then `make red-team` |
+| 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
+| IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) driver steps + `aether_hal::AccelDevice` |
 | Compiler boundary | [HOST.md](HOST.md), [ABI.md](ABI.md) |
 | Isolation invariants | [SECURITY.md](SECURITY.md), [BLAST.md](BLAST.md) |
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md), [ROADMAP.md](ROADMAP.md) |
 | Next two years | [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) |
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |
-| Partner landing page | [PARTNER.md](PARTNER.md) — **not on `main` yet** |
+| Partner landing page | [PARTNER.md](PARTNER.md) / `make partner-hello` |
 
 Site section (same five beats):
 [https://amineux.github.io/aether/#pitch](https://amineux.github.io/aether/#pitch).

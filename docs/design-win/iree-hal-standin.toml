@@ -1,0 +1,72 @@
+# IREE HAL research stand-in — filled DESIGN_WIN worksheet.
+# Public IREE HAL nouns already frozen on IreeHalCmd / cited in ACCEL.md.
+# RESEARCH STAND-IN, NOT A PARTNER. Not a signed vendor. Not NVIDIA.
+
+[call]
+party = "iree-hal-research-standin"
+date = "2026-09-08"
+label = "research stand-in, not a partner"
+
+[backend]
+# AccelInfo.backend. 4 = IreeShapedCp. Do not reuse 0–3.
+id = 4
+name = "iree-shaped-cp"
+
+# Public IREE HAL nouns → command_categories / function → AccelOp.
+# command_categories: 0 = Nop doorbell; 2 = DISPATCH (1<<1).
+# TRANSFER (1<<0) alone is reserved / not a defined v1 packet (omitted).
+
+[[opcode]]
+their_name = "iree_hal_command_buffer"
+iree_command_categories = 0
+iree_function = 0
+accel_op = "Nop"
+dtype = "I32"
+iree_element_type = 0x10000020
+queue_affinity = 0
+
+[[opcode]]
+their_name = "iree_hal_command_buffer_dispatch"
+iree_command_categories = 2
+iree_function = 0
+accel_op = "MatMul"
+dtype = "F32"
+iree_element_type = 0x21000020
+queue_affinity = 0
+
+[[opcode]]
+their_name = "iree_hal_device_queue_dispatch"
+iree_command_categories = 2
+iree_function = 1
+accel_op = "Wave"
+dtype = "F16"
+iree_element_type = 0x21000010
+queue_affinity = 0
+
+[executable]
+# iree_hal_executable_t / abi::Executable.isa_blob_id
+isa_blob_id = 0x0001EE00
+
+[sid]
+# Software pool: SID_BUDGET_PER_TENANT = 4. Not a silicon SID allocator.
+# IREE_SSID = 2; SID 0 is DEFAULT_STREAM (refused).
+pool_size = 4
+ssid = 2
+chiplet = 0
+tile = 0
+submit_sid = 0x00000002
+
+[memory]
+kinds = ["HOST", "DEVICE_HBM", "TILE_SRAM"]
+
+[queues]
+# IreeShapedCp v1 is a single mailbox.
+count = 1
+
+[event]
+scope = "partition-timeline"
+optional_chipsync_scopes = ["wave", "cu", "chiplet", "package"]
+
+[frozen]
+packet_size = 96
+magic = 0xAE7E1EE1

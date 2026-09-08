@@ -34,6 +34,10 @@ pub use parse::parse_worksheet;
 /// Bundled sample filled on the research mapping (not a vendor ISA).
 pub const SAMPLE_TOML: &str = include_str!("../sample.toml");
 
+/// IREE HAL research stand-in (public nouns already frozen on IreeHalCmd).
+/// Not a partner. Path: `docs/design-win/iree-hal-standin.toml`.
+pub const STANDIN_TOML: &str = include_str!("../../../docs/design-win/iree-hal-standin.toml");
+
 /// Frozen `IreeHalCmd` v1 field offsets from `docs/ACCEL.md`. Do not change.
 pub const FROZEN_OFFSETS: &[(usize, &'static str)] = &[
     (0x00, "magic"),
@@ -489,6 +493,31 @@ mod tests {
         assert_eq!(w.opcodes[1].accel_op, "MatMul");
         assert_eq!(w.opcodes[2].accel_op, "Wave");
         assert_ne!(w.submit_sid, DEFAULT_STREAM);
+    }
+
+    #[test]
+    fn iree_hal_standin_worksheet_is_admitted() {
+        let w = Worksheet::from_toml(STANDIN_TOML).expect("stand-in TOML is well-formed");
+        check_worksheet(&w).unwrap();
+        probe_iree_shaped_backend().unwrap();
+        assert_eq!(w.party, "iree-hal-research-standin");
+        assert_eq!(w.frozen_magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(w.isa_blob_id, IREE_REF_EXECUTABLE);
+        assert_eq!(w.opcodes[0].their_name, "iree_hal_command_buffer");
+        assert_eq!(w.opcodes[0].command_categories, 0);
+        assert_eq!(w.opcodes[1].their_name, "iree_hal_command_buffer_dispatch");
+        assert_eq!(
+            w.opcodes[1].command_categories,
+            IREE_HAL_COMMAND_CATEGORY_DISPATCH
+        );
+        assert_eq!(w.opcodes[2].their_name, "iree_hal_device_queue_dispatch");
+        assert_eq!(w.ssid, IREE_SSID);
+        assert_eq!(w.sid_pool_size, SID_BUDGET_PER_TENANT);
+        assert_ne!(w.submit_sid, DEFAULT_STREAM);
+        assert!(w
+            .opcodes
+            .iter()
+            .all(|op| op.command_categories != IREE_HAL_COMMAND_CATEGORY_TRANSFER));
     }
 
     #[test]

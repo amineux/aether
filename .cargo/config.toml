@@ -2,3 +2,4 @@
 [alias]
 diligence-demo = "run -p aether-diligence-demo --quiet --bin diligence-demo"
 design-win-check = "run -p aether-design-win-check --quiet --bin design-win-check"
+design-win-standin = "run -p aether-design-win-check --quiet --bin design-win-check -- docs/design-win/iree-hal-standin.toml"
