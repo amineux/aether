@@ -79,8 +79,8 @@ help:
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
 	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + aspace + fabric"
-	@echo "  make accel-test   - path-A QEMU device model (host; no QEMU rebuild)"
-	@echo "  make qemu-accel   - accel-test; if QEMU_ACCEL is set, boot with -device aether-accel"
+	@echo "  make accel-test   - path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)"
+	@echo "  make qemu-accel   - accel-test + path_a tests; if QEMU_ACCEL is set, boot with -device aether-accel"
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
@@ -193,7 +193,7 @@ smmu-bringup:
 	cargo test -p aether-core --lib smmu_bringup
 	cargo test -p aether-drivers --lib fakecp -- bringup
 
-# Path A: portable BAR + SoftNPU I32 model. No QEMU headers.
+# Path A: portable BAR + SoftNPU I32 model + Soft-SMMU IOVA proof. No QEMU headers.
 ACCEL_TEST := $(BUILD)/aether-accel-test
 ACCEL_CC   := $(CC)
 
@@ -207,11 +207,14 @@ accel-test: $(ACCEL_TEST)
 
 # Stock make qemu stays path B. Path A attaches only when a patched
 # qemu-system-x86_64 is named in QEMU_ACCEL (see qemu/README.md).
+# Host IOVA proof (C + Rust) always runs; CI does not rebuild QEMU.
 qemu-accel: accel-test
+	cargo test -p aether-drivers --lib path_a
 	@if [ -z "$(QEMU_ACCEL)" ]; then \
-		echo "qemu-accel: path-A device model ok (host). Stock make qemu stays path B."; \
+		echo "qemu-accel: path-A Soft-SMMU IOVA proof ok (host). Stock make qemu stays path B."; \
 		echo "qemu-accel: set QEMU_ACCEL=/path/to/patched/qemu-system-x86_64 to attach -device aether-accel."; \
 		echo "qemu-accel: build steps are in qemu/README.md (optional; not a CI QEMU rebuild)."; \
+		echo "qemu-accel: guest PCI bind is not required for this IOVA proof."; \
 	else \
 		$(MAKE) qemu-accel-run QEMU_ACCEL=$(QEMU_ACCEL); \
 	fi

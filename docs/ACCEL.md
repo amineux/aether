@@ -95,18 +95,23 @@ AccelDevice::poll    → read used[i], ack IRQ
 never calls `SoftNpu::execute` in-process on the submit path. `make qemu`
 still needs only stock QEMU.
 
-Path A (`qemu/aether_accel.c`) implements the same offsets, DMA-reads
-tensor GPAs from the job wire, runs SoftNPU I32, and raises a used-ring
-IRQ. A guest driver can swap `SoftNpuDevice` for `VirtioAccelMmio`
-without touching fabric or caps. The stock kernel still uses path B so
+Path A (`qemu/aether_accel.c`) implements the same offsets. The
+device DMA-reads tensor addresses from the job wire. The host
+contract (`make accel-test`, `aether_drivers::path_a`) proves those
+addresses are Soft-SMMU IOVAs (not identity GPAs), DMA walks a
+path-A `stream_id` (ssid 4, not SoftNPU ssid 0), and a wrong SID
+aborts. A guest driver can swap `SoftNpuDevice` for that BAR without
+touching fabric or caps. The stock kernel still uses path B so
 Soft SMMU / identity islands / mmap / KPTI stay on the code `make qemu`
-already boots.
+already boots. A kernel PCI bind to BAR0 is not required for this
+proof and is not landed.
 
 The older `VirtioAccelQueue` helper remains as a host-tested ring model.
 
 ## ADR: SpecForge Y1H1 virtio path (A vs B)
 
-**Status:** Accepted 2026-09-06; path A addendum 2026-09-06.
+**Status:** Accepted 2026-09-06; path A addendum 2026-09-06; path A
+Soft-SMMU IOVA host proof 2026-09-09.
 
 **Context.** SpecForge Y1H1 asked for a real virtio-accel path: either
 **(A)** a QEMU `-device` / virtio-mmio that DMA-reads the BAR above with
@@ -123,9 +128,10 @@ first (golden MMIO trace, stock QEMU).
 softmmu device model (PCI wrapper in `qemu/aether_accel_pci.c`) that
 implements **these** offsets, DMA-reads the job wire, executes SoftNPU
 I32, and raises a used-ring IRQ. `make accel-test` is the host/unit
-test CI runs. `make qemu-accel` uses `-device aether-accel` when
-`QEMU_ACCEL` points at a QEMU built with the device (see
-`qemu/README.md`). CI does **not** rebuild QEMU.
+test CI runs (BAR + Soft-SMMU IOVA + wrong-SID abort). `make qemu-accel`
+runs that plus `cargo test -p aether-drivers --lib path_a`, then uses
+`-device aether-accel` when `QEMU_ACCEL` points at a QEMU built with
+the device (see `qemu/README.md`). CI does **not** rebuild QEMU.
 
 - The BAR layout in the previous section is **frozen**: `magic` (0x00),
   `version` (0x04), `status` (0x08), `qsize` (0x0C), `doorbell` (0x10),
@@ -136,17 +142,28 @@ test CI runs. `make qemu-accel` uses `-device aether-accel` when
   one SoftNPU submit/complete (`golden_mmio_softnpu_submit_complete` in
   `drivers/src/mmio.rs`, and the SoftNPU twin in
   `drivers/src/softnpu.rs`). Path A’s C test checks the same published
-  cfg values after one I32 submit/complete.
-- Do not invent a second BAR. Path A DMA uses guest physical addresses
-  from the job wire. Soft SMMU stays a kernel table on path B; this
-  device is not a QEMU IOMMU.
+  cfg values after one I32 submit/complete, then a Soft-SMMU IOVA /
+  wrong-SID clip (`test_iova_not_identity_and_wrong_sid`).
+- Do not invent a second BAR. The frozen job wire’s `a`/`b`/`c`/`bias`
+  fields are DMA addresses. Path B SoftNPU writes Soft-SMMU IOVAs there
+  and the kernel CPU resolves them on ssid 0. **Path A is the BAR
+  device as DMA initiator**, not that in-kernel array: the host
+  contract (`drivers/src/path_a.rs`, `qemu/aether_accel_test.c`)
+  writes IOVAs (not identity GPAs) into the same 88-byte wire, stamps
+  `flags` with path-A `stream_id` (ssid 4), and translates under DMA.
+  Bind / capture-until-bound abort / wrong-SID abort use the same
+  software `IommuMap` as path B. The QEMU `-device` still
+  `pci_dma`s whatever address is in the wire — it is **not** a QEMU
+  IOMMU. Soft SMMU stays software. Stock `make qemu` stays path B.
+  A guest `VirtioAccelMmio` PCI bind is not required for this proof.
 - F16 / F32 software IEEE stay path-B SoftNPU. Path A completes those
   dtypes with status `-1`.
 
 **Not claimed.** This is not an upstream virtio device, not a silicon
 BAR, not a vendor integration, and not a kernel driver that has swapped
 off `SoftNpuDevice`. The stock guest still retires jobs on the
-in-kernel BAR.
+in-kernel BAR. Path-A IOVA is a **host** proof (and an optional
+`make qemu-accel` attach). It is not a hardware SMMU.
 
 ## Map API (Soft SMMU; not hardware)
 

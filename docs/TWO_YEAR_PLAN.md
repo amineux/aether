@@ -77,7 +77,7 @@ M5–M8 numbers and not as a second half-year of
 ```text
 SoftNoI-IS (exploration)  →  PASID/SVA bind + invalidate  →  OperatorInject hot-add
 optional: MicroPerceptron consumer of frozen IreeHalCmd (secondary to PJRT)
-gated: Guest PCI path A  — only if Soft-SMMU IOVA demo needs BAR
+gated: Guest PCI path A  — Soft-SMMU IOVA host proof landed; kernel BAR0 bind still optional
 site progress refreshes — not milestones
 ```
 
@@ -140,10 +140,12 @@ remains later and optional.
 
 ### Gated — guest PCI path A
 
-A kernel `VirtioAccelMmio` that talks PCI BAR0 **only if** the
-Soft-SMMU IOVA demo needs BAR DMA. Path B remains canonical. Do
-not rebuild QEMU in CI. The QEMU device model already landed
-(`qemu/aether_accel.c`).
+**Host IOVA proof landed** (`drivers/src/path_a.rs`, `make accel-test` /
+`make qemu-accel`). The path-A job wire carries Soft-SMMU IOVAs; DMA
+walks ssid 4; wrong SID aborts. A kernel `VirtioAccelMmio` that talks
+PCI BAR0 is **not** required for that digest. Path B remains
+canonical. Do not rebuild QEMU in CI. The QEMU device model already
+landed (`qemu/aether_accel.c`).
 
 ### Site progress refreshes
 
@@ -301,7 +303,7 @@ numbered.
 | PASID / SVA | `core/src/iommu.rs`, `drivers/src/fakecp.rs` |
 | OperatorInject | `drivers/src/fakecp.rs` resident worker |
 | MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` (still later / optional; doorbell sketch is `examples/accel-client`) |
-| Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
+| Path-A guest bind | host `PathABar` IOVA / wrong-SID **landed**; kernel PCI bind still optional. CI still does not rebuild QEMU |
 | PJRT polish | `host/aether-pjrt`, [HOST.md](HOST.md) |
 | SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `atomic_add` modeled; tensor/heap `Unmodeled` |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |

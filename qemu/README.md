@@ -2,7 +2,8 @@
 
 Optional custom QEMU device that exposes the **frozen** virtqueue BAR
 from [docs/ACCEL.md](../docs/ACCEL.md). SoftNPU (I32 Nop / MatMul / Wave)
-sits behind the doorbell and DMA-reads tensor GPAs from `AccelJobWire`.
+sits behind the doorbell and DMA-reads tensor addresses from
+`AccelJobWire`.
 
 **Path B is still the canonical demo.** `make qemu` uses stock QEMU and
 the in-kernel `AccelMmio` BAR. Soft SMMU, identity islands, mmap, and
@@ -10,12 +11,23 @@ KPTI are unchanged. Do not invent a second BAR.
 
 This is **not** an upstream virtio device.
 
+## Why this is path A, not path B
+
+Path B (`SoftNpuDevice`) is the in-kernel BAR array: the kernel CPU
+takes the avail ring and SoftNPU loads guest PA on SoftNPU ssid 0.
+Path A is this PCI BAR device as the **DMA initiator**. The host
+contract proves the job wire carries Soft-SMMU IOVAs (not identity
+GPAs), DMA walks path-A `stream_id` (ssid 4), and a wrong SID aborts.
+A kernel PCI bind to BAR0 is **not** required for that proof and is
+not landed. Soft SMMU stays software. This device is not a QEMU IOMMU.
+
 ## What CI covers
 
 | Command | What it proves |
 | --- | --- |
-| `make accel-test` | Host unit test of the device model (BAR offsets, doorbell, I32 DMA, used-ring IRQ). **This is what CI runs.** |
-| `make qemu-accel` | Same test. If `QEMU_ACCEL` is unset, it stops there and prints how to build QEMU. |
+| `make accel-test` | Host unit test of the device model (BAR offsets, doorbell, I32 DMA, used-ring IRQ, Soft-SMMU IOVA + wrong-SID abort). **This is what CI runs.** |
+| `cargo test -p aether-drivers --lib path_a` | Same IOVA / bind / wrong-SID contract on the real `IommuMap` (`PathABar`). Workspace `cargo test` covers it. |
+| `make qemu-accel` | `accel-test` + `path_a` tests. If `QEMU_ACCEL` is unset, it stops there and prints how to build QEMU. |
 | `make qemu-accel` with `QEMU_ACCEL` | Attaches `-device aether-accel` to the stock guest. Guest SoftNPU stays path B. Fails if the binary does not know the device. |
 
 CI does **not** rebuild QEMU. A full softmmu build is optional and heavy.
@@ -24,11 +36,15 @@ CI does **not** rebuild QEMU. A full softmmu build is optional and heavy.
 
 ```bash
 make accel-test
+make qemu-accel   # same, plus the Rust PathABar contract
 ```
 
-Uses only `gcc`. No QEMU headers. The test owns a fake guest RAM, writes
-an `AccelJobWire` into the BAR, kicks the doorbell, and checks
-`C = A @ B` for the same 2×2 I32 the path-B golden uses.
+Uses only `gcc` for `accel-test`. No QEMU headers. The test owns a fake
+guest RAM, writes an `AccelJobWire` into the BAR, kicks the doorbell,
+and checks `C = A @ B` for the same 2×2 I32 the path-B golden uses.
+A second clip pins through a software IOVA window (`0x1_0000_0000`,
+ssid 4), proves the wire is not identity, and refuses DMA on SoftNPU
+ssid 0.
 
 ## Build the softmmu device (optional)
 
@@ -61,13 +77,14 @@ QEMU flags added when `QEMU_ACCEL` is set:
 ```
 
 PCI vendor `0xAE7E`, device `0xACC1`, 1 KiB memory BAR0. The guest
-does not yet bind a kernel driver to that BAR — SoftNPU submit still
+does not bind a kernel driver to that BAR — SoftNPU submit still
 goes through the in-kernel window so identity teardown / Soft SMMU /
 KPTI stay on the path-B code you already boot. The device is present
-and the model is what a guest driver would DMA.
+and the model is what a guest driver would DMA. IOVA / wrong-SID is
+the host contract above, not a QEMU rebuild.
 
 A later kernel cut can `pci_dma` the same offsets without changing
-fabric or caps (`VirtioAccelMmio` swap in [ACCEL.md](../docs/ACCEL.md)).
+fabric or caps.
 
 ## BAR (frozen; same as path B)
 
@@ -86,6 +103,6 @@ fabric or caps (`VirtioAccelMmio` swap in [ACCEL.md](../docs/ACCEL.md)).
 ```
 
 F16 / F32 jobs complete with status `-1` on this device. Software IEEE
-stays the in-kernel SoftNPU (path B). Path A DMA uses **guest physical**
-addresses from the job wire — Soft SMMU is a kernel table, not a QEMU
-IOMMU.
+stays the in-kernel SoftNPU (path B). Host tests put Soft-SMMU IOVAs
+in the job wire and translate under DMA. The QEMU `-device` still
+`pci_dma`s the published address — not a QEMU IOMMU.

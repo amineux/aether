@@ -901,14 +901,13 @@ is leftover engineering, not a fifth digest.
    PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
    invalidate). Software only. Not zero-copy SVA without the
    invalidate path.
-2. **Guest driver for path A.** The QEMU `aether-accel` device and
-   host model landed (`qemu/`, `make accel-test`). Stock `make qemu`
-   stays path B. A kernel `VirtioAccelMmio` that talks PCI BAR0
-   (GPA in the job wire; Soft SMMU stays the cap table) is still
-   open. Soft-CP (`backend = 3`) and `IreeShapedCp` (`backend = 4`)
-   already cover extra AccelDevice paths on the host.
-   SIX_MONTH_PLAN pulls this **only if** path-A DMA must prove Soft-SMMU
-   IOVA.
+2. **Guest driver for path A.** The QEMU `aether-accel` device, host
+   model, and Soft-SMMU IOVA / wrong-SID **host proof** landed
+   (`qemu/`, `drivers/src/path_a.rs`, `make accel-test` /
+   `make qemu-accel`). Stock `make qemu` stays path B. A kernel
+   `VirtioAccelMmio` that talks PCI BAR0 is **not** required for that
+   proof and is still open. Soft-CP (`backend = 3`) and `IreeShapedCp`
+   (`backend = 4`) already cover extra AccelDevice paths on the host.
 3. **Hardware SMMU.** Soft SMMU now walks STE→CD→Stage-1/2 and has an
    ATS-shaped invalidate in software. The bring-up kit dumps those
    tables. Program a real SMMU context / PT walk. Do not claim the
