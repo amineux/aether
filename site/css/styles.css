@@ -1209,7 +1209,7 @@ section.band + section.band {
 .meter-row em {
   font-style: normal;
   color: var(--ink-soft);
-  min-width: 9ch;
+  min-width: 11ch;
   text-align: right;
 }
 
@@ -1733,6 +1733,12 @@ footer {
 }
 .reveal[data-d="4"] {
   animation-delay: 0.32s;
+}
+.reveal[data-d="5"] {
+  animation-delay: 0.4s;
+}
+.reveal[data-d="6"] {
+  animation-delay: 0.48s;
 }
 
 @keyframes rise {
