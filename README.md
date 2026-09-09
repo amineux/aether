@@ -14,6 +14,10 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > Week 1 call pack (20 min): [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
 > Eight-minute script: [`docs/PITCH.md`](docs/PITCH.md)
 > ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
+> What to show next: isolation (`make red-team`) → packet
+> (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
+> (Event in `make diligence-demo`) → admit class (fabric-class in
+> `make red-team`) → sandbox hole (`ATOMIC_ADD` in `make red-team`).
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
@@ -68,9 +72,9 @@ make diligence-demo
 
 Stdout is the thesis: `[blast]` CrossCut + wrong-SID refuse,
 `[pjrt]` frozen `IreeHalCmd` submit + wait (research opcodes, not
-FLOPs), `[firewall]` mutation-during-validate fails, `[greenctx]`
-70/30 SM/WQ partition, then a short *what this proves / what it does
-not* block. CI greps
+FLOPs), `[event]` SoftChipletSync create/record/wait, `[firewall]`
+mutation-during-validate fails, `[greenctx]` 70/30 SM/WQ partition,
+then a short *what this proves / what it does not* block. CI greps
 [`examples/diligence-demo/expected.txt`](examples/diligence-demo/expected.txt).
 See [`docs/DILIGENCE.md`](docs/DILIGENCE.md). Soft SMMU is software.
 Path B is canonical. No fake NVIDIA, no tape-out. The call fill-in is
@@ -124,8 +128,10 @@ not confidential GPU) and `[softsfi] two-tenant SFI+SID sandbox sealed`
 not NVRTC). Diligence clips, not a track.
 See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 The host sell-path is `make red-team`: same refuse paths, stdout
-`[redteam] attack=… result=refused`, plus an explicit “what this is
-not” closer (not confidential GPU, not HW MIG, Soft SMMU is software).
+`[redteam] attack=… result=refused`, plus fabric-class admit/refuse
+and `ATOMIC_ADD` accept/reject on the same SoftNoI / SoftSFI clips,
+and an explicit “what this is not” closer (not confidential GPU, not
+HW MIG, Soft SMMU is software).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
 

@@ -16,7 +16,7 @@ use aether_core::{run_blast_demo, run_greenctx_demo, BlastReport, GreenCtxReport
 use aether_drivers::ireecp::{IreeHalCmd, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
 use aether_drivers::{run_firewall_demo, FirewallReport};
 use aether_hal::ACCEL_BACKEND_IREE_SHAPED;
-use aether_pjrt::{Client, Dispatch};
+use aether_pjrt::{Client, Dispatch, EventScope};
 
 /// Needles CI / `make diligence-demo` greps. Kept in
 /// [`expected.txt`](../expected.txt); tests include that file.
@@ -115,9 +115,32 @@ fn op_name(op: AccelOp) -> &'static str {
     }
 }
 
+/// Event create / record / wait on existing SoftChipletSync fences.
+/// Same host API as `aether-pjrt` tests. Does not pack `IreeHalCmd`.
+fn run_event_clip() -> Result<bool, DemoError> {
+    let mut c = Client::iree_shaped().map_err(|_| DemoError {
+        clip: "event Client::iree_shaped",
+    })?;
+    let mut ok = true;
+    for scope in [EventScope::Chiplet, EventScope::Package] {
+        let ev = c.create_event(scope).map_err(|_| DemoError {
+            clip: "event create",
+        })?;
+        if c.fence_ready(ev) || c.wait(ev).is_ok() {
+            ok = false;
+        }
+        let ev = c.record(ev).map_err(|_| DemoError {
+            clip: "event record",
+        })?;
+        let cpl = c.wait(ev).map_err(|_| DemoError { clip: "event wait" })?;
+        ok = ok && cpl.status == 0 && c.fence_ready(ev);
+    }
+    Ok(ok)
+}
+
 /// Scripted host narrative. Same clips as kernel serial `[blast]` /
 /// `[firewall]` / `[greenctx]`, plus the PJRT `IreeHalCmd` submit+wait
-/// the guest does not run.
+/// and Event create/record/wait the guest does not run.
 pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     writeln!(
         out,
@@ -176,6 +199,14 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     )
     .map_err(|_| DemoError { clip: "write" })?;
 
+    let event_ok = run_event_clip()?;
+    writeln!(
+        out,
+        "[event] SoftChipletSync create/record/wait  {}",
+        flag(event_ok)
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+
     let firewall: FirewallReport = run_firewall_demo();
     writeln!(
         out,
@@ -229,6 +260,11 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  Event create/record/wait on existing SoftChipletSync fences (not GetPjRtApi)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue"
     )
     .map_err(|_| DemoError { clip: "write" })?;
@@ -260,7 +296,8 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     )
     .map_err(|_| DemoError { clip: "write" })?;
 
-    let all_ok = blast.all_ok() && pjrt.submit_wait && firewall.all_ok() && green.all_ok();
+    let all_ok =
+        blast.all_ok() && pjrt.submit_wait && event_ok && firewall.all_ok() && green.all_ok();
     if all_ok {
         writeln!(out, "[diligence] host Path B sealed").map_err(|_| DemoError { clip: "write" })?;
         Ok(())
@@ -317,6 +354,7 @@ mod tests {
         assert!(needles.contains("[blast] SpectralCut CrossCut refuse"));
         assert!(needles.contains("[blast] Soft SMMU wrong SID abort"));
         assert!(needles.contains("[pjrt] IreeHalCmd submit + wait"));
+        assert!(needles.contains("[event] SoftChipletSync create/record/wait"));
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[diligence] what this proves"));

@@ -153,6 +153,8 @@ red-team:
 	grep -q "\\[redteam\\] attack=softsfi-oob result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softnoi-is result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=pasid-stale result=refused" $(REDTEAM_LOG)
+	grep -F -x -q "[redteam] fabric-class admit/refuse" $(REDTEAM_LOG)
+	grep -F -x -q "[redteam] ATOMIC_ADD accept/reject" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] what this is not: confidential GPU; not HW MIG; Soft SMMU is software" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] sealed" $(REDTEAM_LOG)
 	@echo "red-team: named attacks refused (host clip)"

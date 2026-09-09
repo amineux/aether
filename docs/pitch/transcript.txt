@@ -42,6 +42,7 @@ Golden needles from `examples/diligence-demo/expected.txt`
 [blast] two-tenant blast radius sealed
 [pjrt] IreeHalCmd submit + wait
 [pjrt] research opcode
+[event] SoftChipletSync create/record/wait
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30
@@ -64,6 +65,8 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=softsfi-oob result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```

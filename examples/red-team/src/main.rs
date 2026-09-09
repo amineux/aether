@@ -5,9 +5,10 @@
 //! `run_softnoi_demo`, `run_sva_demo`). This crate does not invent a
 //! sixth isolation mechanism.
 //!
-//! Each case prints `[redteam] attack=… result=refused`. The closer
-//! names what this is **not**: confidential GPU, HW MIG, hardware
-//! SMMU (Soft SMMU is software).
+//! Each case prints `[redteam] attack=… result=refused`. SoftNoI
+//! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
+//! each from the same clips. The closer names what this is **not**:
+//! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
@@ -23,6 +24,8 @@ const LINE_FIREWALL: &str = "[redteam] attack=softcmdfirewall result=refused";
 const LINE_SFI: &str = "[redteam] attack=softsfi-oob result=refused";
 const LINE_NOI: &str = "[redteam] attack=softnoi-is result=refused";
 const LINE_PASID: &str = "[redteam] attack=pasid-stale result=refused";
+const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
+const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_NOT: &str =
     "[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software";
 const LINE_SEALED: &str = "[redteam] sealed";
@@ -34,11 +37,19 @@ struct RedTeamReport {
     sfi: bool,
     noi: bool,
     pasid: bool,
+    class: bool,
+    atomic: bool,
 }
 
 impl RedTeamReport {
     fn all_ok(&self) -> bool {
-        self.crosscut && self.firewall && self.sfi && self.noi && self.pasid
+        self.crosscut
+            && self.firewall
+            && self.sfi
+            && self.noi
+            && self.pasid
+            && self.class
+            && self.atomic
     }
 }
 
@@ -64,6 +75,10 @@ fn run_redteam() -> RedTeamReport {
         // Honest unmap drops the SSID TLB; skipped invalidate is a stale
         // hit until the ATC is flushed (then the walk faults).
         pasid: sva.unmap_inv && sva.stale_fault,
+        // Fabric-class tag: Gradient admits; second Curl refuses (ring).
+        class: noi.class_grad_admit && noi.class_curl_refuse,
+        // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
+        atomic: sfi.atomic_ok,
     }
 }
 
@@ -72,6 +87,14 @@ fn emit(ok: bool, line: &str) {
         println!("{line}");
     } else {
         println!("{}", line.replace("result=refused", "result=LEAKED"));
+    }
+}
+
+fn emit_tagged(ok: bool, line: &str) {
+    if ok {
+        println!("{line}");
+    } else {
+        println!("{line} FAIL");
     }
 }
 
@@ -84,6 +107,8 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.sfi, LINE_SFI);
     emit(r.noi, LINE_NOI);
     emit(r.pasid, LINE_PASID);
+    emit_tagged(r.class, LINE_CLASS);
+    emit_tagged(r.atomic, LINE_ATOMIC);
     println!();
     println!("{LINE_NOT}");
     if r.all_ok() {
@@ -113,6 +138,8 @@ mod tests {
         assert!(r.sfi, "SoftSFI OOB load");
         assert!(r.noi, "SoftNoI-IS overload admit");
         assert!(r.pasid, "PASID stale translate after unmap");
+        assert!(r.class, "fabric-class Gradient admit / Curl refuse");
+        assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.all_ok());
     }
 
@@ -123,6 +150,8 @@ mod tests {
         assert!(LINE_SFI.contains("attack=softsfi-oob"));
         assert!(LINE_NOI.contains("attack=softnoi-is"));
         assert!(LINE_PASID.contains("attack=pasid-stale"));
+        assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
+        assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         for line in [LINE_CROSSCUT, LINE_FIREWALL, LINE_SFI, LINE_NOI, LINE_PASID] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

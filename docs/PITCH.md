@@ -25,6 +25,14 @@ prints / golden greps). Captured host runs:
 `make diligence-demo`, `make red-team`, `make design-win-check`,
 `make design-win-standin`, `make partner-hello`, `make qemu`.
 [`docs/PARTNER.md`](PARTNER.md) is the partner landing page.
+Doorbell second consumer (not a Makefile target):
+`cargo run -p aether-accel-client`.
+
+**What to show next** (same tree): isolation (`make red-team`) →
+packet (`make partner-hello` / doorbell) → wait (Event line in
+`make diligence-demo`) → admit class (fabric-class line in
+`make red-team`) → sandbox hole (`ATOMIC_ADD` line in
+`make red-team`).
 
 ---
 
@@ -134,7 +142,9 @@ What to say while it prints:
 > `IreeHalCmd` submit + wait — research opcodes, not FLOPs.
 > Mutation-during-validate fails: command-stream integrity, not
 > confidential GPU. SoftGreenCtx is a 70/30 software partition, not
-> HW MIG. Then the proves / does-not block. Soft SMMU is software.
+> HW MIG. Event create/record/wait sits on SoftChipletSync fences
+> already in the tree (`[event] SoftChipletSync create/record/wait`).
+> Then the proves / does-not block. Soft SMMU is software.
 
 Then the buyer stdout:
 
@@ -151,6 +161,8 @@ refused. Makefile greps:
 [redteam] attack=softsfi-oob result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```
@@ -259,7 +271,10 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | They asked | Point at |
 | --- | --- |
 | Run it without QEMU | `make diligence-demo` then `make red-team` |
+| What to show next | isolation → packet → wait → admit class → sandbox hole |
 | 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
+| Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
+| Event / fabric-class / ATOMIC_ADD | Event line in `make diligence-demo`; other two in `make red-team` |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) driver steps + `aether_hal::AccelDevice` |
