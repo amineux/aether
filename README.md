@@ -28,8 +28,8 @@ make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
 make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
 make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
-make accel-test   # path-A QEMU device model (host; no QEMU rebuild)
-make qemu-accel   # accel-test; attach -device aether-accel if QEMU_ACCEL is set
+make accel-test   # path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)
+make qemu-accel   # accel-test + path_a tests; attach -device aether-accel if QEMU_ACCEL is set
 make red-team     # host diligence clip: named attacks refused (scripted stdout)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 make design-win-standin # admit the IREE HAL research stand-in (not a partner)
@@ -269,7 +269,8 @@ The kernel and `/init` are **separate Cargo projects** so
   depend on a custom qemu. DMA uses Soft-SMMU IOVAs (not identity);
   QEMU does not emulate a hardware SMMU. Path A is an optional
   in-tree QEMU device (`qemu/aether_accel.c`, same frozen offsets)
-  with a host unit test (`make accel-test`). `make qemu-accel` attaches
+  with a host unit test (`make accel-test`) that also proves Soft-SMMU
+  IOVA on the path-A job wire and a wrong-SID abort. `make qemu-accel` attaches
   `-device aether-accel` only when `QEMU_ACCEL` names a patched
   binary; CI does not rebuild QEMU. See [qemu/README.md](qemu/README.md).
 - **`/init` is a static non-PIE ELF64** linked at `0x0200_0000`. Boot

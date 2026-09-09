@@ -62,7 +62,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
-| Path-A QEMU `aether-accel` | Optional device model + host test; stock QEMU stays B | `qemu/`, `make accel-test` / `make qemu-accel` |
+| Path-A QEMU `aether-accel` | Optional device + host Soft-SMMU IOVA / wrong-SID proof; stock QEMU stays B | `qemu/`, `drivers/src/path_a.rs`, `make accel-test` / `make qemu-accel` |
 | SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftNoI-IS admit (in-flight / this PR) + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + OperatorInject resident worker + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva,opinject,noi}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |

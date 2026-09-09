@@ -187,7 +187,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `drivers/src/opinject.rs` | Soft-CP host for OperatorInject (resident worker + SID/firewall; keeps `fakecp.rs` thin) |
 | `drivers/src/noi.rs` | Soft-CP host for SoftNoI-IS XQueue admit (keeps `fakecp.rs` thin) |
 | `drivers/src/ireecp.rs` | IreeShapedCp (`IreeHalCmd` + SET_SID-at-submit + IRQ/`retire_into`; `backend = 4`) |
-| `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32) |
+| `qemu/` | Optional path-A `aether-accel` device (frozen BAR + SoftNPU I32 + host Soft-SMMU IOVA proof) |
 | `core/src/sched.rs` | Tile scheduler + color gate + laplacian cut bind |
 | `core/src/accel.rs` | Job desc + reference matmul |
 | `core/src/observe.rs` | Event ring |

@@ -25,7 +25,8 @@ We will **not** claim:
 - **Tape-out** — 2028 is an opcode list or an ABI freeze, not a foundry date.
 - **Hardware SMMU** — Soft SMMU is software. A real device can DMA past it.
 - **Path A as the demo** — Path B (stock `make qemu`, in-kernel SoftNPU
-  BAR) is canonical. This call runs host clips only.
+  BAR) is canonical. This call runs host clips only. Path A is optional
+  (`make accel-test` / `make qemu-accel`); see [ACCEL.md](ACCEL.md).
 
 Also not claimed: a PJRT plugin, an IREE driver, MIG-class isolation,
 confidential GPU, or that [DESIGN_WIN.md](DESIGN_WIN.md) is a contract.
@@ -204,6 +205,7 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | Example mapping | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) + `aether_hal::AccelDevice` |
+| Path A IOVA (optional BAR) | [ACCEL.md](ACCEL.md) path-A ADR + `make accel-test` / [qemu/README.md](../qemu/README.md). Stock `make qemu` stays B. Do not rebuild QEMU. |
 | Isolation invariants | [SECURITY.md](SECURITY.md), [BLAST.md](BLAST.md) |
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md) |
 | 8-minute script | [PITCH.md](PITCH.md) |

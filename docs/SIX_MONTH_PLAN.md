@@ -267,11 +267,12 @@ a single mailbox. No new syscall.
 
 ### Conditional only — guest PCI path-A bind
 
-A kernel `VirtioAccelMmio` that talks PCI BAR0 **only if** it is needed
-to prove Soft-SMMU IOVA on **path-A** DMA. Path B remains canonical.
-The QEMU device model already landed (`qemu/aether_accel.c`).
+**Host IOVA proof landed** (`drivers/src/path_a.rs`, `make accel-test`).
+A kernel `VirtioAccelMmio` that talks PCI BAR0 is **not** required
+for that proof. Path B remains canonical. The QEMU device model
+already landed (`qemu/aether_accel.c`).
 
-Do not schedule this as M3. Do not rebuild QEMU in CI.
+Do not schedule a guest PCI bind as M3. Do not rebuild QEMU in CI.
 
 ## Kill / hard defer
 
@@ -390,9 +391,10 @@ in ROADMAP that are not parked leftovers remain **technical leftovers**.
 7. SoftChipletSync scoped timelines — **landed**
 8. SoftGreenCtx (Month 5 digest 1) — **landed** (PR #54)
 9. SoftCCT elision on SoftChipletSync — **landed** (PR #57)
-10. Conditional path-A guest PCI bind — **only if** Soft-SMMU IOVA must
-    be shown on path-A DMA (gated digest; see
-    [MONTH5_PLAN.md](MONTH5_PLAN.md))
+10. Conditional path-A guest PCI bind — Soft-SMMU IOVA on path-A DMA
+    **landed as a host proof** (`PathABar` / `make accel-test`). Kernel
+    PCI BAR0 bind still not required. See
+    [MONTH5_PLAN.md](MONTH5_PLAN.md) / [ACCEL.md](ACCEL.md).
 11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
     (SoftSFI digest 4 **landed**; SoftNoI-IS in-flight / this PR;
     PASID/SVA and OperatorInject parked)
@@ -417,7 +419,7 @@ milestone.
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP buffer labels, host tests — **landed** |
 | SoftSFI | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` `submit_sfi` / skip-verify, host tests — **landed** |
 | SoftNoI-IS | `core/src/noi.rs`, SoftChipletSync advertisement, Soft-CP `submit_xqueue_noi`, host tests — **in-flight / this PR** |
-| Conditional path A | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
+| Conditional path A | host `PathABar` IOVA / wrong-SID proof; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
 Cross-cutting: this file, ROADMAP status pointer, YEAR2_PLAN status

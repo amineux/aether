@@ -1,4 +1,7 @@
 //! In-tree drivers. SoftNPU services the virtqueue MMIO window.
+//! Path A (`path_a`) is a host Soft-SMMU IOVA contract on the same frozen
+//! BAR the optional QEMU `-device aether-accel` exposes. Stock `make qemu`
+//! stays path B.
 //! [`SoftCommandProcessor`] is the host-tested Aether-native CP path
 //! (packed `CpCmd` + SET_SID-at-submit + two software XQueues +
 //! SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines +
@@ -23,6 +26,7 @@ pub mod mmio;
 pub mod noi;
 pub mod opinject;
 pub mod partner;
+pub mod path_a;
 pub mod softnpu;
 pub mod softsfi;
 pub mod sva;
@@ -41,5 +45,6 @@ pub use mmio::{
     REG_MAGIC, REG_QSIZE, REG_STATUS, REG_USED_IDX, REG_VERSION,
 };
 pub use partner::{PartnerCmd, PartnerNpuStub};
+pub use path_a::{path_a_sid, PathABar, PATH_A_PCI_DEVICE, PATH_A_SSID};
 pub use softnpu::{IdentityDma, KernelDma, SoftNpuDevice};
 pub use virtio_accel::{VirtioAccelQueue, VIRTIO_ACCEL_MAGIC, VIRTIO_ACCEL_VERSION};

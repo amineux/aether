@@ -240,7 +240,7 @@ killed.
 | --- | --- | --- |
 | **FlowHodgeQuota deepen** | Shim injects fabric **class headers** on Soft-CP DMA | **Stays killed as theater.** Already-landed Hodge quota without DMA headers. The interesting path is a thin software tag on `AccelJobDesc.flow` feeding SoftNoI admit (Curl ring reserve + admit/refuse counters) — not this digest, not a vendor header |
 | **MicroPerceptron interop** | Secondary to PJRT; consume frozen `IreeHalCmd` and/or path-A BAR | Not a second compiler story. Not a plugin |
-| **Guest PCI path A bind** | Soft-SMMU IOVA demo **needs** BAR DMA | Kernel `VirtioAccelMmio` talks PCI BAR0. Path B stays canonical. Do not rebuild QEMU in CI |
+| **Guest PCI path A bind** | Soft-SMMU IOVA demo **needs** BAR DMA | **Host proof landed** (`PathABar` + `make accel-test`). Kernel `VirtioAccelMmio` PCI BAR0 still not required. Path B stays canonical. Do not rebuild QEMU in CI |
 | **Per-task CapTable** | Two shim tenants **alias slots** on the shared World table | Isolate those tenants. Additive `SYS_REVOKE` only if the same PR demos revoke → `unbind_stream` / FLR |
 | **Blast-radius deepen** | XQueue freeze + SID-at-submit already cover the clip | One more two-tenant refuse (wrong SoftSFI / SoftGreenCtx) if it earns a new line. Not a second ring-3 World |
 
@@ -290,7 +290,9 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 ### Isolation / Soft SMMU
 
 - PASID / SVA (parked leftover; see above).
-- Guest PCI path-A IOVA proof (gated digest; BAR DMA only).
+- Guest PCI path-A IOVA proof (**landed** as host contract; BAR DMA
+  initiator + Soft SMMU ssid 4 + wrong-SID abort). Kernel PCI bind
+  still optional / not required.
 - Per-task CapTable + additive `SYS_REVOKE` **only if**
   revoke → `unbind_stream` / FLR is the demo. Internal `revoke` /
   `revoke_in` already exist.
@@ -370,7 +372,7 @@ site progress refresh is not a milestone.
 | OperatorInject (parked) | `core/src/opinject.rs` + `drivers/src/opinject.rs` resident worker — H2 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md); **not** marked Done |
 | FlowHodgeQuota digest | stays killed (no DMA class headers). SoftNoI tag: `AccelJobDesc.flow` |
 | MicroPerceptron digest | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
-| Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
+| Path-A guest bind | host `PathABar` IOVA / wrong-SID **landed**; kernel PCI bind still optional. CI still does not rebuild QEMU |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
 | Blast-radius digest | `core/src/blast.rs` / host tests; extend, do not rebuild |
 

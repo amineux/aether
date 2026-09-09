@@ -4,7 +4,8 @@
 //! (doorbell + used-ring IRQ). SpecForge Y1H1 path B: that in-kernel BAR
 //! is the canonical demo for stock QEMU; this module keeps the same
 //! frozen ABI in Rust structs so unit tests do not need a byte BAR.
-//! Path A is the optional QEMU device in `qemu/` (`make qemu-accel`).
+//! Path A is the optional QEMU device in `qemu/` (`make qemu-accel`) plus
+//! the host Soft-SMMU IOVA contract in [`crate::path_a`].
 //!
 //! ```text
 //! MMIO cfg @ BAR0 (frozen)

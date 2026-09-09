@@ -170,7 +170,8 @@ Kernel calendar items:
 After AccelDevice bites a real-shaped path — not before:
 
 - Guest kernel driver for path A (PCI BAR0 / `VirtioAccelMmio`).
-  The QEMU device model landed (`qemu/aether_accel.c`; `make
+  The QEMU device model and Soft-SMMU IOVA **host proof** landed
+  (`qemu/aether_accel.c`, `drivers/src/path_a.rs`; `make
   accel-test` / `make qemu-accel`). Path B remains the canonical
   stock-QEMU demo + golden MMIO trace. RISC-V PLIC + software
   doorbell (UART THRE → SoftNPU AccelMmio) landed; a virtio-mmio

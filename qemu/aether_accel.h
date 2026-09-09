@@ -4,8 +4,11 @@
  *
  * Same frozen offsets as docs/ACCEL.md / aether_drivers::mmio::AccelMmio.
  * SoftNPU (I32 Nop/MatMul/Wave) sits behind the doorbell. Tensor DMA uses
- * guest physical addresses from AccelJobWire — this is not Soft SMMU
- * (that table stays in-kernel on path B).
+ * addresses from AccelJobWire. Host tests (`aether_accel_test.c` and
+ * `aether_drivers::path_a`) supply Soft-SMMU IOVA-translating DMA ops so
+ * the wire carries non-identity IOVA and a wrong SID aborts. This device
+ * is not a QEMU IOMMU; Soft SMMU stays software. Stock `make qemu` is
+ * path B (in-kernel BAR).
  *
  * Compiles standalone (host unit test) or as a QEMU softmmu PCI device.
  */
@@ -101,7 +104,9 @@ typedef struct AetherUsedWire {
 
 /*
  * Guest DMA callbacks. Return 0 on success, non-zero on fault.
- * Addresses are guest physical (the IOVAs a real device would DMA).
+ * Addresses are whatever the job wire published (GPA or Soft-SMMU IOVA).
+ * A real IOMMU would sit under pci_dma_*; the host IOVA proof installs
+ * that translate in these callbacks. Not a QEMU IOMMU.
  */
 typedef int (*AetherDmaRead)(void *ctx, uint64_t gpa, void *buf, size_t len);
 typedef int (*AetherDmaWrite)(void *ctx, uint64_t gpa, const void *buf, size_t len);

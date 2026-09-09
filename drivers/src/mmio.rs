@@ -471,6 +471,12 @@ impl AccelMmio {
         Some(cpl)
     }
 
+    /// Peek a packed avail-ring job. Path-A IOVA proofs read `a`/`b`/`c`/`flags`
+    /// off this wire (same 88-byte image `qemu/aether_accel.c` DMA-reads).
+    pub fn peek_job_wire(&self, slot: usize) -> AccelJobWire {
+        self.read_job(slot)
+    }
+
     fn write_job(&mut self, slot: usize, job: &AccelJobWire) {
         let off = AVAIL_BASE + slot * JOB_WIRE_SIZE;
         let bytes = unsafe {
