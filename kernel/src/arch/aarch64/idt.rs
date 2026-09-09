@@ -8,6 +8,9 @@
 //! does not UNDEF. IRQ/sync therefore save q0–q31 + FPSR/FPCR. Without
 //! that, a 100 Hz CNTV tick clobbers in-flight NEON (OperatorInject
 //! hot-add and SoftNPU F16/F32 clips have failed that way on virt).
+//! EL1 return must also restore `x16`/`x17` (AAPCS64 IP0/IP1): rustc
+//! uses them as scratch across instruction sequences with no call, so
+//! a CNTV tick that skipped them made SoftNoI admit/refuse flake.
 
 use core::arch::global_asm;
 
@@ -306,7 +309,9 @@ trap_return:
     eret
 
 trap_return_el1:
-    ldr     x16, [sp, #272]
+    /* Restore GPRs except x16/x17. Resume SP is frame.sp at +272
+     * (= pre-trap SP). After switching SP, the frame sits 288 bytes
+     * below; saved x16/x17 are at frame+128 = resume_SP-160. */
     ldp     x0,  x1,  [sp, #0]
     ldp     x2,  x3,  [sp, #16]
     ldp     x4,  x5,  [sp, #32]
@@ -315,7 +320,6 @@ trap_return_el1:
     ldp     x10, x11, [sp, #80]
     ldp     x12, x13, [sp, #96]
     ldp     x14, x15, [sp, #112]
-    /* keep x16 = resume SP */
     ldp     x18, x19, [sp, #144]
     ldp     x20, x21, [sp, #160]
     ldp     x22, x23, [sp, #176]
@@ -323,8 +327,9 @@ trap_return_el1:
     ldp     x26, x27, [sp, #208]
     ldp     x28, x29, [sp, #224]
     ldr     x30,      [sp, #240]
-    ldp     x14, x15, [sp, #112]
+    ldr     x16,      [sp, #272]
     mov     sp, x16
+    ldp     x16, x17, [sp, #-160]
     eret
     "#
 );
