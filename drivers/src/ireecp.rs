@@ -161,10 +161,7 @@ impl IreeHalNouns {
                 activity: ActivityId(job.completion_ep),
                 isa_blob_id: IREE_REF_EXECUTABLE,
             },
-            event: Event {
-                fence: FenceId(job.fence_id),
-                partition: job.partition,
-            },
+            event: Event::on_timeline(FenceId(job.fence_id), job.partition),
             buffers: [
                 mk(job.a.0, job.bytes_a()),
                 mk(job.b.0, job.bytes_b()),

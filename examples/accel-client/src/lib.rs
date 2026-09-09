@@ -304,10 +304,7 @@ impl Doorbell {
         job.partition = self.profile.id;
         let fence = self.timeline.submit(&self.profile, None)?;
         job.fence_id = fence.id.0;
-        let event = AbiEvent {
-            fence: fence.id,
-            partition: self.profile.id,
-        };
+        let event = AbiEvent::on_timeline(fence.id, self.profile.id);
         match IreeHalCmd::pack(&job, &self.cp.iommu) {
             Ok(cmd) => self.enqueue(cmd, &job, event),
             Err(e) => {
@@ -323,10 +320,7 @@ impl Doorbell {
         job.partition = self.profile.id;
         let fence = self.timeline.submit(&self.profile, None)?;
         job.fence_id = fence.id.0;
-        let event = AbiEvent {
-            fence: fence.id,
-            partition: self.profile.id,
-        };
+        let event = AbiEvent::on_timeline(fence.id, self.profile.id);
         self.enqueue(cmd, &job, event)
     }
 

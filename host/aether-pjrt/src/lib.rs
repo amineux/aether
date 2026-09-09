@@ -6,11 +6,14 @@
 //! (`iree_hal_device_t`, `iree_hal_buffer_t`, `iree_hal_executable_t`,
 //! `iree_hal_event_t`, `iree_hal_fence_t`). See [`docs/HOST.md`].
 //!
-//! This crate is **not** a PJRT plugin, **not** an IREE HAL driver, and
-//! **not** a vendor runtime. It maps `abi::{Device,Buffer,Executable,Event}`
-//! onto a frozen [`IreeHalCmd`] image and submits into [`IreeShapedCp`].
-//! SoftNPU remains a host backend for virtqueue tests; `make qemu` still
-//! demos path-B SoftNPU. `PartnerNpuStub` is not used.
+//! This crate is **not** a PJRT plugin, **not** `GetPjRtApi`, **not** XLA,
+//! **not** an IREE HAL driver, and **not** a vendor runtime. It maps
+//! `abi::{Device,Buffer,Executable,Event}` onto a frozen [`IreeHalCmd`]
+//! image and submits into [`IreeShapedCp`]. Event create / record / wait
+//! lower onto the existing CP-shaped [`Timeline`] and SoftChipletSync
+//! chiplet/package fences — not a new IR. SoftNPU remains a host backend
+//! for virtqueue tests; `make qemu` still demos path-B SoftNPU.
+//! `PartnerNpuStub` is not used.
 //!
 //! [`docs/HOST.md`]: https://github.com/amineux/aether/blob/main/docs/HOST.md
 
@@ -22,7 +25,8 @@ use aether_core::abi::{
 use aether_core::accel::{AccelError, AccelJobDesc, AccelOp, Completion, DType, DmaView};
 use aether_core::activity::{Activity, ActivityId, ActivityKind};
 use aether_core::caps::{CapKind, CapRights, Capability};
-use aether_core::fence::Timeline;
+use aether_core::chipsync::{SoftChipletSync, SyncScope};
+use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::iommu::{MapRequest, StreamId, DEFAULT_STREAM};
 use aether_core::partition::{
     BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
@@ -81,6 +85,29 @@ pub enum Error {
     Unsupported,
     /// Packed `IreeHalCmd` did not match the SpecForge freeze.
     FrozenImage,
+}
+
+/// Visibility for Event create / record / wait.
+///
+/// Lowers onto SoftChipletSync fences that already exist (chiplet-local
+/// or package-scope). Not a new IR, not Vulkan, not UCIe, not a CUDA
+/// stream, not `GetPjRtApi`, and not XLA. Partition job Events still
+/// come from [`Client::execute`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum EventScope {
+    /// SoftChipletSync chiplet-local. No package fence.
+    Chiplet,
+    /// SoftChipletSync package-scope. Last worker on the chiplet pays.
+    Package,
+}
+
+impl EventScope {
+    pub const fn sync(self) -> SyncScope {
+        match self {
+            Self::Chiplet => SyncScope::Chiplet,
+            Self::Package => SyncScope::Package,
+        }
+    }
 }
 
 impl From<HalError> for Error {
@@ -230,13 +257,27 @@ impl Engine {
         }
     }
 
-    fn retire_into(
-        &self,
-        timeline: &mut Timeline,
-    ) -> Result<Option<aether_core::fence::Fence>, PartitionError> {
+    fn retire_into(&self, timeline: &mut Timeline) -> Result<Option<Fence>, PartitionError> {
         match self {
             Self::SoftNpu(d) => d.retire_into(timeline),
             Self::IreeShaped(d) => d.retire_into(timeline),
+        }
+    }
+
+    fn submit_hal_cmd(&mut self, cmd: IreeHalCmd, job: &AccelJobDesc) -> Result<u32, HalError> {
+        match self {
+            Self::IreeShaped(d) => d.submit_hal(cmd, job),
+            Self::SoftNpu(_) => Err(HalError::Unsupported),
+        }
+    }
+
+    fn inject_wrong_sid(&mut self, sid: StreamId) -> Result<(), HalError> {
+        match self {
+            Self::IreeShaped(d) => {
+                d.inject_wrong_sid(sid);
+                Ok(())
+            }
+            Self::SoftNpu(_) => Err(HalError::Unsupported),
         }
     }
 
@@ -297,6 +338,7 @@ pub struct Client {
     device: AbiDevice,
     profile: PartitionProfile,
     timeline: Timeline,
+    chipsync: SoftChipletSync,
     cap: Capability,
     bump: u64,
     bufs: Vec<Alloc>,
@@ -345,6 +387,7 @@ impl Client {
                 },
             ),
             timeline: Timeline::new(PartitionId(1)),
+            chipsync: SoftChipletSync::new(PartitionId(1)),
             cap: Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
                 .with_generation(1),
             bump: HEAP_BASE,
@@ -626,10 +669,7 @@ impl Client {
             return Err(Error::Hal(HalError::Fault));
         }
 
-        let event = AbiEvent {
-            fence: fence.id,
-            partition: self.profile.id,
-        };
+        let event = AbiEvent::on_timeline(fence.id, self.profile.id);
         let submit = if self.kind == BackendKind::IreeShaped {
             let nouns = IreeHalNouns {
                 device: self.device,
@@ -696,13 +736,109 @@ impl Client {
         self.engine.last_iree_cmd()
     }
 
+    /// `iree_hal_event_create` analogue. Does **not** submit work and does
+    /// **not** pack [`IreeHalCmd`] (magic `0xAE7E1EE1`, 96-byte, executable
+    /// `0x0001EE00` stay frozen). TRANSFER stays reserved.
+    ///
+    /// Chiplet / package lower onto [`SoftChipletSync`] fences. Partition
+    /// job Events still come from [`Self::execute`].
+    pub fn create_event(&self, scope: EventScope) -> Result<AbiEvent, Error> {
+        Ok(AbiEvent::on_timeline(FenceId(0), self.profile.id).with_scope(scope.sync()))
+    }
+
+    /// `iree_hal_command_buffer_signal_event` analogue: record onto the
+    /// existing SoftChipletSync chiplet or package timeline.
+    ///
+    /// Software `arrive` pulse. Not a new packet, not CUDA EventRecord.
+    pub fn record(&mut self, event: AbiEvent) -> Result<AbiEvent, Error> {
+        if event.partition.0 != self.profile.id.0 {
+            return Err(Error::Partition(PartitionError::Unbound));
+        }
+        let scope = event.scope.ok_or(Error::Unsupported)?;
+        if !matches!(scope, SyncScope::Chiplet | SyncScope::Package) {
+            return Err(Error::Unsupported);
+        }
+        self.chipsync.open(scope);
+        let pulse = self.chipsync.arrive(ChipletId(0), None)?;
+        Ok(AbiEvent::on_timeline(pulse.fence.id, self.profile.id).with_scope(scope))
+    }
+
+    /// Submit a caller-packed frozen image (host tests: SID skip, TRANSFER).
+    /// Does not relocate `IreeHalCmd` fields.
+    pub fn submit_image(&mut self, cmd: IreeHalCmd, job: &AccelJobDesc) -> Result<AbiEvent, Error> {
+        if self.kind != BackendKind::IreeShaped {
+            return Err(Error::Unsupported);
+        }
+        let mut job = *job;
+        job.partition = self.profile.id;
+        let fence = self.timeline.submit(&self.profile, None)?;
+        job.fence_id = fence.id.0;
+        let event = AbiEvent::on_timeline(fence.id, self.profile.id);
+        match self.engine.submit_hal_cmd(cmd, &job) {
+            Ok(_) => {
+                if let Some(packed) = self.engine.last_iree_cmd() {
+                    if let Err(e) = Self::check_frozen(&packed, &job) {
+                        let _ = self.timeline.timeout(fence.id);
+                        return Err(e);
+                    }
+                }
+                Ok(event)
+            }
+            Err(e) => {
+                let _ = self.timeline.timeout(fence.id);
+                Err(Error::Hal(e))
+            }
+        }
+    }
+
+    /// Fault injection: overwrite mailbox StreamID after SET_SID.
+    pub fn inject_wrong_sid(&mut self, sid: StreamId) -> Result<(), Error> {
+        self.engine.inject_wrong_sid(sid).map_err(Error::Hal)
+    }
+
+    pub fn chipsync(&self) -> &SoftChipletSync {
+        &self.chipsync
+    }
+
+    /// Poll the Event without pumping the device.
+    ///
+    /// Job Events stay [`Error::NotReady`] until IRQ retire. Scoped
+    /// Events stay `NotReady` until [`Self::record`].
+    pub fn try_wait(&self, event: AbiEvent) -> Result<Fence, Error> {
+        if event.partition.0 != self.profile.id.0 {
+            return Err(Error::Partition(PartitionError::Unbound));
+        }
+        if event.fence.0 == 0 {
+            return Err(Error::NotReady);
+        }
+        let r = if let Some(scope) = event.scope {
+            self.chipsync.wait_seq(scope, event.fence)
+        } else {
+            self.timeline.wait(event.fence)
+        };
+        match r {
+            Ok(f) => Ok(f),
+            Err(PartitionError::FenceNotReady) => Err(Error::NotReady),
+            Err(e) => Err(Error::Partition(e)),
+        }
+    }
+
     /// `PJRT_Event_Await` / `iree_hal_fence_wait`.
     ///
-    /// Host tests have no device IRQ thread, so this pumps `service()`
-    /// (SoftNPU used-ring or IreeShapedCp mailbox) then retires the timeline.
+    /// Job Events: host tests have no device IRQ thread, so this pumps
+    /// `service()` then retires the partition timeline.
+    /// Scoped Events: [`SoftChipletSync::wait_seq`] on the recorded seq.
     pub fn wait(&mut self, event: AbiEvent) -> Result<Completion, Error> {
         if event.partition.0 != self.profile.id.0 {
             return Err(Error::Partition(PartitionError::Unbound));
+        }
+        if event.scope.is_some() {
+            let _ = self.try_wait(event)?;
+            return Ok(Completion {
+                job_seq: event.fence.0 as u32,
+                status: 0,
+                cycles: 0,
+            });
         }
         if self.timeline.wait(event.fence).is_ok() {
             return self.last_cpl.ok_or(Error::NotReady);
@@ -718,10 +854,11 @@ impl Client {
         Ok(cpl)
     }
 
-    /// Fence watermark without pumping the device (must be `FenceNotReady`
-    /// until [`Self::wait`] retires the seq).
+    /// Fence watermark without pumping the device (must be `NotReady`
+    /// until [`Self::wait`] retires a job seq, or [`Self::record`] pulses
+    /// a scoped Event).
     pub fn fence_ready(&self, event: AbiEvent) -> bool {
-        self.timeline.wait(event.fence).is_ok()
+        self.try_wait(event).is_ok()
     }
 
     pub fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
@@ -793,9 +930,12 @@ impl Dispatch {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aether_core::iommu::SOFT_SMMU_IOVA_BASE;
+    use aether_core::accel::AccelJobDesc;
+    use aether_core::iommu::{StreamId, SOFT_SMMU_IOVA_BASE};
+    use aether_core::types::{ChipletId, PhysAddr, TileId};
+    use aether_drivers::ireecp::IREE_HAL_COMMAND_CATEGORY_TRANSFER;
     use aether_hal::{
-        ACCEL_BACKEND_IREE_SHAPED, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
+        HalError, ACCEL_BACKEND_IREE_SHAPED, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
         ACCEL_BACKEND_SOFT_CP, ACCEL_BACKEND_VIRTIO_SOFTNPU,
     };
 
@@ -1031,5 +1171,155 @@ mod tests {
         assert_eq!(cmd.binding0_length, 60);
         assert_eq!(cmd.binding1_length, 80);
         assert_eq!(cmd.binding2_length, 48);
+    }
+
+    #[test]
+    fn event_create_record_wait_on_chipsync_fences() {
+        for kind in each_backend() {
+            for scope in [EventScope::Chiplet, EventScope::Package] {
+                let mut c = Client::new(kind).unwrap();
+                let ev = c.create_event(scope).unwrap();
+                assert_eq!(ev.partition, PartitionId(1));
+                assert_eq!(ev.scope, Some(scope.sync()));
+                assert_eq!(ev.fence, FenceId(0), "create does not submit");
+                assert!(!c.fence_ready(ev), "wait-before-record blocks");
+                assert_eq!(c.try_wait(ev).unwrap_err(), Error::NotReady);
+                assert_eq!(c.wait(ev).unwrap_err(), Error::NotReady);
+
+                let ev = c.record(ev).unwrap();
+                assert_ne!(ev.fence.0, 0);
+                assert!(c.fence_ready(ev));
+                let cpl = c.wait(ev).unwrap();
+                assert_eq!(cpl.status, 0);
+                assert_eq!(c.last_iree_cmd(), None, "record does not pack IreeHalCmd");
+            }
+        }
+    }
+
+    #[test]
+    fn package_event_record_uses_existing_chipsync_scope() {
+        let mut c = Client::iree_shaped().unwrap();
+        let ev = c.create_event(EventScope::Package).unwrap();
+        let ev = c.record(ev).unwrap();
+        c.wait(ev).unwrap();
+        assert_eq!(c.chipsync().scope(), SyncScope::Package);
+        assert!(
+            c.chipsync().package_fences() >= 1,
+            "package-scope record issues the existing SoftChipletSync fence"
+        );
+    }
+
+    #[test]
+    fn submit_then_wait() {
+        for kind in each_backend() {
+            let mut c = Client::new(kind).unwrap();
+            let got = matmul_2x2(&mut c, MemorySpace::Host);
+            assert_eq!(got, [19, 22, 43, 50], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn wait_before_complete_blocks() {
+        for kind in each_backend() {
+            let mut c = Client::new(kind).unwrap();
+            let a = c.allocate(MemorySpace::Host, 16).unwrap();
+            let b = c.allocate(MemorySpace::Host, 16).unwrap();
+            let out = c.allocate(MemorySpace::Host, 16).unwrap();
+            c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+            c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+            let exec = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+            let ev = c
+                .execute(Dispatch::matmul(exec, 2, 2, 2, a, b, out))
+                .unwrap();
+            assert!(
+                ev.scope.is_none(),
+                "job Events stay on the partition timeline"
+            );
+            assert!(!c.fence_ready(ev), "submit does not execute");
+            assert_eq!(c.try_wait(ev).unwrap_err(), Error::NotReady);
+            let cpl = c.wait(ev).unwrap();
+            assert_eq!(cpl.status, 0);
+            assert!(c.fence_ready(ev));
+        }
+    }
+
+    #[test]
+    fn wrong_sid_still_refuses() {
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+        c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+        let exec = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+        let ev = c
+            .execute(Dispatch::matmul(exec, 2, 2, 2, a, b, out))
+            .unwrap();
+        c.inject_wrong_sid(StreamId::accel(ChipletId(0), TileId(0), 7))
+            .unwrap();
+        assert_eq!(c.wait(ev).unwrap_err(), Error::JobFault(-2));
+    }
+
+    #[test]
+    fn skipped_iree_ssid_is_refused() {
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+        c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+        let exec = c.load_executable(AccelOp::MatMul, DType::I32).unwrap();
+        let ev = c
+            .execute(Dispatch::matmul(exec, 2, 2, 2, a, b, out))
+            .unwrap();
+        let mut cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(StreamId::from_raw(cmd.stream_id).ssid(), IREE_SSID);
+        c.wait(ev).unwrap();
+
+        let pa_a = PhysAddr(c.buffer(a).unwrap().addr.local);
+        let pa_b = PhysAddr(c.buffer(b).unwrap().addr.local);
+        let pa_c = PhysAddr(c.buffer(out).unwrap().addr.local);
+        let mut job = AccelJobDesc::matmul_i32(2, 2, 2, pa_a, pa_b, pa_c, 1);
+        job.place = job.place.with_tile(0);
+        cmd.stream_id = 0;
+        assert_eq!(
+            c.submit_image(cmd, &job).unwrap_err(),
+            Error::Hal(HalError::Fault)
+        );
+    }
+
+    #[test]
+    fn transfer_stays_reserved() {
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        let exec = c.load_executable(AccelOp::Nop, DType::I32).unwrap();
+        let ev = c
+            .execute(Dispatch::matmul(exec, 0, 0, 0, a, b, out))
+            .unwrap();
+        let mut cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+        c.wait(ev).unwrap();
+
+        cmd.command_categories = IREE_HAL_COMMAND_CATEGORY_TRANSFER;
+        assert_eq!(cmd.check_v1().unwrap_err(), HalError::Fault);
+        let job = AccelJobDesc::matmul_i32(0, 0, 0, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+        assert_eq!(
+            c.submit_image(cmd, &job).unwrap_err(),
+            Error::Hal(HalError::Fault)
+        );
+        let wire = cmd.to_le_bytes();
+        assert_eq!(wire.len(), 96);
+        assert_eq!(
+            u32::from_le_bytes(wire[0..4].try_into().unwrap()),
+            0xAE7E1EE1
+        );
+        assert_eq!(
+            u32::from_le_bytes(wire[0x08..0x0C].try_into().unwrap()),
+            IREE_REF_EXECUTABLE
+        );
     }
 }

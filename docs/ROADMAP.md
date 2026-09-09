@@ -32,7 +32,7 @@ product kernel.
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + SET_SID-at-submit + XQueue + Soft SMMU SID + IRQ/fence; host tests) |
 | Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2` + SET_SID-at-submit; not a signed vendor) |
 | Soft-CP SID-at-submit (Host1x-shaped) | **done** (job-head SET_SID; Soft SMMU submit latch + SID budget; two-SID host tests + `[sid]` serial). Not a Tegra driver. |
-| PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; not a PJRT plugin) |
+| PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; Event create/record/wait on existing fences; not a PJRT plugin, not `GetPjRtApi`, not XLA) |
 | Second `IreeHalCmd` consumer (doorbell) | **done** (`examples/accel-client`; same 96-byte image + refuse rules; research sketch, not MicroPerceptron) |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 | SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package; Fleet inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
@@ -930,7 +930,9 @@ is leftover engineering, not a fifth digest.
    open. SoftNPU path B stays the in-kernel BAR.
 10. **A real PJRT plugin / IREE HAL driver.** `host/aether-pjrt` is
    the host contract (Device / MemorySpace / Buffer / Executable /
-   Event → frozen `IreeHalCmd` on IreeShapedCp). `GetPjRtApi` and
+   Event → frozen `IreeHalCmd` on IreeShapedCp). Event create / record /
+   wait lower onto existing fences (SoftChipletSync chiplet/package
+   where those already exist). `GetPjRtApi`, XLA, and
    `iree_hal_driver_t` are still out of tree. Not a vendor integration.
 
 ## Two-year plan

@@ -232,7 +232,7 @@ core/            aether-core — alloc-free logic, `cargo test`
 hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor + IreeShapedCp
 qemu/            optional path-A `aether-accel` device (host-tested; QEMU patch)
-host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
+host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp; Event wait on existing fences (not GetPjRtApi, not XLA)
 examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)

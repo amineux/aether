@@ -268,8 +268,10 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 
 ### Partner / HAL
 
-- PJRT shim: more ops / Event timeline polish (`host/aether-pjrt`).
-  Still not `GetPjRtApi` / `iree_hal_driver_t`.
+- PJRT Event timeline polish (**landed**): `host/aether-pjrt` Event
+  create / record / wait on existing fences / SoftChipletSync. Still
+  not `GetPjRtApi` / XLA / `iree_hal_driver_t`. TRANSFER stays reserved.
+- PJRT shim more ops — still open (Nop / MatMul / Wave only).
 - MicroPerceptron / virtio-accel consumer (same frozen `IreeHalCmd`
   or path-A BAR; secondary to PJRT). Remains later / optional. The
   doorbell sketch (`examples/accel-client`) is a second caller of the

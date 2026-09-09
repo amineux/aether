@@ -149,9 +149,13 @@ OK as leave-behinds. **Not** milestones. PR #37 / #46 / #50 / #52
 Deepen what already shipped. Do not open a new ISA. Do not port
 the kernel.
 
-- **PJRT shim more ops / Event timeline polish**
-  (`host/aether-pjrt`). Still not a PJRT plugin. Still not
-  `GetPjRtApi` / `iree_hal_driver_t`. Still not in-kernel graph IR.
+- **PJRT Event timeline polish** (**landed, this PR**)
+  (`host/aether-pjrt` Event create / record / wait on the existing
+  CP-shaped `Timeline` and SoftChipletSync chiplet/package scopes).
+  Still not a PJRT plugin. Still not `GetPjRtApi` / XLA /
+  `iree_hal_driver_t`. Still not in-kernel graph IR. `IreeHalCmd`
+  offsets frozen; TRANSFER stays reserved.
+- **PJRT shim more ops** — still open (Nop / MatMul / Wave only).
 - **SoftSFI widen** — more memory side-effects on the toy ISA,
   still honest TODOs. Atomics / tensor / heap stay refused until
   they are modeled. Still not NVVM. Still not “safe multi-tenant

@@ -117,12 +117,15 @@ does not relocate packet fields.
 
 | Noun | Research ABI | This stand-in |
 | --- | --- | --- |
-| Event | `abi::Event` = `FenceId` on a `PartitionId` timeline | `partition-timeline` |
+| Event | `abi::Event` = `FenceId` on a `PartitionId` timeline; host create/record/wait may name SoftChipletSync chiplet/package | `partition-timeline` |
 | Semaphore payload | `IreeHalCmd.signal_payload` (`iree_hal_semaphore_t`); offset `0x58` | same frozen field |
 | Wait / complete | software CP-shaped seq; timeout is software | software |
 | Optional SoftChipletSync | `{wave, CU, chiplet, package}` visibility; **not** Vulkan, not UCIe | all four named, software only |
 
-Not a CUDA stream. Not a silicon fence unit.
+Not a CUDA stream. Not a silicon fence unit. Not `GetPjRtApi`, not XLA.
+Host `aether-pjrt` Event create / record / wait lower onto these
+fences (chiplet or package where SoftChipletSync already exists).
+`IreeHalCmd` offsets stay frozen; TRANSFER stays reserved.
 
 ---
 
