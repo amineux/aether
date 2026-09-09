@@ -8,6 +8,7 @@
 //! Offsets below are frozen — see `docs/ACCEL.md`.
 
 use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType};
+use aether_core::hodge::FlowClass;
 use aether_core::partition::PartitionId;
 use aether_core::phase::Phase;
 use aether_core::space::{MemorySpace, Place};
@@ -228,6 +229,8 @@ impl AccelJobWire {
             },
             partition: PartitionId(self.partition),
             fence_id: self.fence_id,
+            // Path B wire has no class header. SoftNoI tags live on AccelJobDesc.
+            flow: FlowClass::Gradient,
         }
     }
 }

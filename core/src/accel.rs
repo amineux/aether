@@ -7,6 +7,7 @@
 //!
 //! This is a dispatch record, not a graph IR. Compilers own fusion and ISA.
 
+use crate::hodge::FlowClass;
 use crate::partition::PartitionId;
 use crate::phase::Phase;
 use crate::softfloat::{add_f16, add_f32, mul_f16, mul_f32};
@@ -89,6 +90,9 @@ pub struct AccelJobDesc {
     pub phase: Phase,
     pub partition: PartitionId,
     pub fence_id: u64,
+    /// Fabric class tag at submit (Gradient/tree, Curl/ring, Harmonic/persistent).
+    /// Software enum on the descriptor, not a vendor `CpCmd` / path-B header.
+    pub flow: FlowClass,
 }
 
 impl AccelJobDesc {
@@ -122,7 +126,14 @@ impl AccelJobDesc {
             phase: Phase::Compute,
             partition: PartitionId(0),
             fence_id: 0,
+            flow: FlowClass::Gradient,
         }
+    }
+
+    /// Tag DMA / collective submit with a fabric class. Software enum only.
+    pub fn with_flow(mut self, flow: FlowClass) -> Self {
+        self.flow = flow;
+        self
     }
 
     pub fn matmul_f32(
@@ -316,9 +327,7 @@ impl SoftNpu {
     }
 
     fn elem_addr(base: PhysAddr, elem_bytes: u64, index: u64) -> Result<PhysAddr, AccelError> {
-        let off = elem_bytes
-            .checked_mul(index)
-            .ok_or(AccelError::Overflow)?;
+        let off = elem_bytes.checked_mul(index).ok_or(AccelError::Overflow)?;
         Ok(PhysAddr(
             base.0.checked_add(off).ok_or(AccelError::Overflow)?,
         ))

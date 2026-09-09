@@ -98,7 +98,7 @@ pub use mmap::{
 pub use noi::{
     fabric_is_milli, is_milli, run_softnoi_demo, tput_con, tput_solo, IsEstimate, NoiError,
     NoiOccupant, NoiTput, SoftNoI, SoftNoiReport, DEMO_HEAVY_DEMAND, DEMO_LIGHT_DEMAND,
-    IS_BUDGET_MILLI, IS_SOLO_MILLI, MAX_NOI_TENANTS, NOI_CAPACITY,
+    IS_BUDGET_MILLI, IS_SOLO_MILLI, MAX_NOI_TENANTS, NOI_CAPACITY, NOI_RING_CAPACITY,
 };
 pub use observe::{EventKind, EventRing, KernelEvent};
 pub use opinject::{

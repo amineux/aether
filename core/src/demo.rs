@@ -443,6 +443,7 @@ pub fn run_boot_demo() -> DemoReport {
         phase: Phase::Compute,
         partition: part.id,
         fence_id: fence.id.0,
+        flow: FlowClass::Gradient,
     };
     let qcap = caps_a
         .mint(Capability::new(

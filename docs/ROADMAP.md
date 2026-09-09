@@ -812,7 +812,7 @@ Search for `// STUB:` / `STUB` :
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
 | SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape). Not NVVM. Atomics / tensor / heap refused, not modeled |
-| SoftNoI-IS | `core/src/noi.rs` | **in-flight** (this PR). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`. PARL/NoI inspiration. Admit control, not topology synth. Do not mark Done until merge |
+| SoftNoI-IS | `core/src/noi.rs` | IS admit **landed** (PR #60). This PR: software `FlowClass` tag at submit (Curl ring reserve). PARL/NoI inspiration. Admit control, not topology synth, not a vendor header |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |

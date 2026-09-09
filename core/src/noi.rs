@@ -5,6 +5,12 @@
 //! XQueue refuse when the **projected** IS exceeds the budget
 //! (canonical 1.5×).
 //!
+//! DMA / collective descriptors may carry a software [`FlowClass`] tag
+//! at submit (Gradient/tree allreduce, Curl/ring-exchange,
+//! Harmonic/persistent). SoftNoI uses the tag as an **admit input**:
+//! Curl must fit reserved ring capacity. Same demand, different class,
+//! can change admit/refuse. Not a renamed IS. Not a spectral fabric OS.
+//!
 //! **Inspiration (not a port, not a product):**
 //! [PARL / NoI](https://arxiv.org/abs/2510.24113) (“Taming the Tail”)
 //! defines an Interference Score
@@ -14,16 +20,22 @@
 //! as **runtime admit control** on a shared fake NoI.
 //!
 //! **Not claimed.** This is not PARL topology synthesis, not UniCNet,
-//! not optimal NoI design, not a silicon interposer, not UCIe.
-//! Host tests measure integer throughput units and admit/refuse —
-//! not FLOPs, not partner NoI latency, not a multi-chiplet sim.
+//! not optimal NoI design, not a silicon interposer, not UCIe,
+//! not an eigen-solve on the hot path. Host tests measure integer
+//! throughput units and admit/refuse — not FLOPs, not partner NoI
+//! latency, not a multi-chiplet sim.
 
+use crate::hodge::FlowClass;
+use crate::opkernel::CollectiveKind;
 use crate::types::TenantId;
 
 /// Two Soft-CP tenants on one fake NoI. Software cap, not a die count.
 pub const MAX_NOI_TENANTS: usize = 2;
 /// Fake shared-NoI capacity (integer BW units). Not GB/s, not FLOPs.
 pub const NOI_CAPACITY: u32 = 1000;
+/// Reserved ring capacity for Curl (ring-exchange). Software units.
+/// One light Curl fills it; a second light Curl refuses (IS would still admit).
+pub const NOI_RING_CAPACITY: u32 = 400;
 /// Canonical admit budget: refuse when projected IS > 1.5.
 pub const IS_BUDGET_MILLI: u32 = 1500;
 /// Light demand: two tenants fit under capacity (IS = 1.0).
@@ -38,6 +50,8 @@ pub enum NoiError {
     BadArg,
     /// Projected IS exceeds the budget.
     OverBudget,
+    /// Curl projected ring demand exceeds [`NOI_RING_CAPACITY`].
+    RingExhausted,
     /// Fake NoI already holds [`MAX_NOI_TENANTS`].
     Exhausted,
     Unbound,
@@ -48,6 +62,7 @@ pub enum NoiError {
 pub struct NoiOccupant {
     pub tenant: TenantId,
     pub demand: u32,
+    pub class: FlowClass,
 }
 
 /// Throughput clip used to compute IS. Integer units, not FLOPs.
@@ -78,6 +93,7 @@ impl NoiTput {
 pub struct IsEstimate {
     pub tenant: TenantId,
     pub demand: u32,
+    pub class: FlowClass,
     pub is_milli: u32,
     pub worst_is_milli: u32,
 }
@@ -86,27 +102,37 @@ pub struct IsEstimate {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SoftNoI {
     capacity: u32,
+    ring_capacity: u32,
     budget_milli: u32,
     enabled: bool,
     slots: [Option<NoiOccupant>; MAX_NOI_TENANTS],
     admitted: u32,
     refused: u32,
+    admitted_class: [u32; 3],
+    refused_class: [u32; 3],
 }
 
 impl SoftNoI {
     pub const fn new() -> Self {
         Self {
             capacity: NOI_CAPACITY,
+            ring_capacity: NOI_RING_CAPACITY,
             budget_milli: IS_BUDGET_MILLI,
             enabled: false,
             slots: [None; MAX_NOI_TENANTS],
             admitted: 0,
             refused: 0,
+            admitted_class: [0; 3],
+            refused_class: [0; 3],
         }
     }
 
     pub const fn capacity(&self) -> u32 {
         self.capacity
+    }
+
+    pub const fn ring_capacity(&self) -> u32 {
+        self.ring_capacity
     }
 
     pub const fn budget_milli(&self) -> u32 {
@@ -123,6 +149,14 @@ impl SoftNoI {
 
     pub const fn refused(&self) -> u32 {
         self.refused
+    }
+
+    pub const fn admitted_class(&self, class: FlowClass) -> u32 {
+        self.admitted_class[class as usize]
+    }
+
+    pub const fn refused_class(&self, class: FlowClass) -> u32 {
+        self.refused_class[class as usize]
     }
 
     pub fn enable(&mut self, on: bool) {
@@ -154,6 +188,17 @@ impl SoftNoI {
             .fold(0u32, |a, d| a.saturating_add(d))
     }
 
+    /// Curl occupancy against the reserved ring. Gradient / Harmonic do not count.
+    pub fn ring_demand(&self) -> u32 {
+        self.slots
+            .iter()
+            .copied()
+            .flatten()
+            .filter(|o| o.class == FlowClass::Curl)
+            .map(|o| o.demand)
+            .fold(0u32, |a, d| a.saturating_add(d))
+    }
+
     /// Current worst-case IS on the occupied mix (1000 if empty).
     pub fn worst_is_milli(&self) -> u32 {
         fabric_is_milli(self.demand_sum(), self.capacity)
@@ -175,6 +220,19 @@ impl SoftNoI {
         }
         let sum = projected_sum(self, tenant, demand)?;
         Ok(fabric_is_milli(sum, self.capacity))
+    }
+
+    /// Projected Curl ring occupancy if `tenant` injects `demand` as `class`.
+    pub fn project_ring_demand(
+        &self,
+        tenant: TenantId,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<u32, NoiError> {
+        if demand == 0 {
+            return Err(NoiError::BadArg);
+        }
+        projected_ring(self, tenant, demand, class)
     }
 
     /// Solo vs concurrent throughput for a demand vector (no occupancy change).
@@ -203,14 +261,25 @@ impl SoftNoI {
         Ok((worst, first))
     }
 
-    /// Admit `tenant` with `demand`. Refuse when projected IS > budget.
+    /// Admit `tenant` with `demand` as Gradient (tree / allreduce).
     ///
     /// Disabled NoI is a bypass (no occupancy). Not topology synthesis.
     pub fn admit(&mut self, tenant: TenantId, demand: u32) -> Result<IsEstimate, NoiError> {
+        self.admit_class(tenant, demand, FlowClass::Gradient)
+    }
+
+    /// Admit with a fabric class tag. Curl also needs reserved ring capacity.
+    pub fn admit_class(
+        &mut self,
+        tenant: TenantId,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<IsEstimate, NoiError> {
         if !self.enabled {
             return Ok(IsEstimate {
                 tenant,
                 demand,
+                class,
                 is_milli: IS_SOLO_MILLI,
                 worst_is_milli: IS_SOLO_MILLI,
             });
@@ -221,20 +290,34 @@ impl SoftNoI {
         let projected = match self.project_is_milli(tenant, demand) {
             Ok(p) => p,
             Err(e) => {
-                self.refused = self.refused.saturating_add(1);
+                self.bump_refuse(class);
                 return Err(e);
             }
         };
         if projected > self.budget_milli {
-            self.refused = self.refused.saturating_add(1);
+            self.bump_refuse(class);
             return Err(NoiError::OverBudget);
         }
-        self.place(tenant, demand)?;
-        self.admitted = self.admitted.saturating_add(1);
+        if class == FlowClass::Curl {
+            let ring = match self.project_ring_demand(tenant, demand, class) {
+                Ok(r) => r,
+                Err(e) => {
+                    self.bump_refuse(class);
+                    return Err(e);
+                }
+            };
+            if ring > self.ring_capacity {
+                self.bump_refuse(class);
+                return Err(NoiError::RingExhausted);
+            }
+        }
+        self.place(tenant, demand, class)?;
+        self.bump_admit(class);
         let is_milli = self.tenant_is_milli(tenant).unwrap_or(IS_SOLO_MILLI);
         Ok(IsEstimate {
             tenant,
             demand,
+            class,
             is_milli,
             worst_is_milli: self.worst_is_milli(),
         })
@@ -257,18 +340,35 @@ impl SoftNoI {
         self.slots = [None; MAX_NOI_TENANTS];
     }
 
-    fn place(&mut self, tenant: TenantId, demand: u32) -> Result<(), NoiError> {
+    fn bump_admit(&mut self, class: FlowClass) {
+        self.admitted = self.admitted.saturating_add(1);
+        let i = class as usize;
+        self.admitted_class[i] = self.admitted_class[i].saturating_add(1);
+    }
+
+    fn bump_refuse(&mut self, class: FlowClass) {
+        self.refused = self.refused.saturating_add(1);
+        let i = class as usize;
+        self.refused_class[i] = self.refused_class[i].saturating_add(1);
+    }
+
+    fn place(&mut self, tenant: TenantId, demand: u32, class: FlowClass) -> Result<(), NoiError> {
         for slot in &mut self.slots {
             if let Some(occ) = slot {
                 if occ.tenant == tenant {
                     occ.demand = demand;
+                    occ.class = class;
                     return Ok(());
                 }
             }
         }
         for slot in &mut self.slots {
             if slot.is_none() {
-                *slot = Some(NoiOccupant { tenant, demand });
+                *slot = Some(NoiOccupant {
+                    tenant,
+                    demand,
+                    class,
+                });
                 return Ok(());
             }
         }
@@ -346,6 +446,39 @@ fn projected_sum(noi: &SoftNoI, tenant: TenantId, demand: u32) -> Result<u32, No
     Ok(sum)
 }
 
+fn projected_ring(
+    noi: &SoftNoI,
+    tenant: TenantId,
+    demand: u32,
+    class: FlowClass,
+) -> Result<u32, NoiError> {
+    let mut sum = 0u32;
+    let mut found = false;
+    let mut used = 0u32;
+    for slot in &noi.slots {
+        if let Some(occ) = slot {
+            used += 1;
+            if occ.tenant == tenant {
+                found = true;
+                if class == FlowClass::Curl {
+                    sum = sum.saturating_add(demand);
+                }
+            } else if occ.class == FlowClass::Curl {
+                sum = sum.saturating_add(occ.demand);
+            }
+        }
+    }
+    if !found {
+        if used as usize >= MAX_NOI_TENANTS {
+            return Err(NoiError::Exhausted);
+        }
+        if class == FlowClass::Curl {
+            sum = sum.saturating_add(demand);
+        }
+    }
+    Ok(sum)
+}
+
 /// Host-identical clip. Kernel prints `[softnoi] …`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SoftNoiReport {
@@ -355,10 +488,16 @@ pub struct SoftNoiReport {
     pub heavy_refuse: bool,
     pub advertised: bool,
     pub not_synth: bool,
+    pub class_grad_admit: bool,
+    pub class_curl_refuse: bool,
+    pub class_harm_admit: bool,
+    pub class_not_renamed_is: bool,
     pub light_is_milli: u32,
     pub heavy_is_milli: u32,
     pub admitted: u32,
     pub refused: u32,
+    pub curl_admitted: u32,
+    pub curl_refused: u32,
 }
 
 impl SoftNoiReport {
@@ -369,10 +508,16 @@ impl SoftNoiReport {
             && self.heavy_refuse
             && self.advertised
             && self.not_synth
+            && self.class_grad_admit
+            && self.class_curl_refuse
+            && self.class_harm_admit
+            && self.class_not_renamed_is
     }
 }
 
 /// Solo vs concurrent IS, then admit light / refuse heavy over 1.5.
+/// Class tags: same light demand admits as Gradient/Harmonic and
+/// refuses the second Curl (ring reserve), so class is not a renamed IS.
 #[inline(never)]
 pub fn run_softnoi_demo() -> SoftNoiReport {
     let cap = NOI_CAPACITY;
@@ -422,8 +567,55 @@ pub fn run_softnoi_demo() -> SoftNoiReport {
         && noi.refused() == 1
         && noi.admitted() == 3;
 
+    let admitted = noi.admitted();
+    let refused = noi.refused();
+
     // Honesty latch: budget is an admit threshold, not PARL's 1.2× synth target.
-    let not_synth = noi.budget_milli() == IS_BUDGET_MILLI && noi.capacity() == NOI_CAPACITY;
+    let not_synth = noi.budget_milli() == IS_BUDGET_MILLI
+        && noi.capacity() == NOI_CAPACITY
+        && noi.ring_capacity() == NOI_RING_CAPACITY;
+
+    let mut tagged = SoftNoI::new();
+    tagged.enable(true);
+    let tree = CollectiveKind::Tree.fabric_class();
+    let ring = CollectiveKind::Ring.fabric_class();
+    let persist = CollectiveKind::Torus.fabric_class();
+    let tagged_ok =
+        tree == FlowClass::Gradient && ring == FlowClass::Curl && persist == FlowClass::Harmonic;
+
+    let ga = tagged.admit_class(a, DEMO_LIGHT_DEMAND, tree);
+    let gb = tagged.admit_class(b, DEMO_LIGHT_DEMAND, tree);
+    let class_grad_admit = ga.is_ok()
+        && gb.is_ok()
+        && tagged.occupancy() == 2
+        && tagged.worst_is_milli() == IS_SOLO_MILLI
+        && tagged.ring_demand() == 0;
+
+    tagged.clear();
+    let ca = tagged.admit_class(a, DEMO_LIGHT_DEMAND, ring);
+    let cb = tagged.admit_class(b, DEMO_LIGHT_DEMAND, ring);
+    let class_curl_refuse = ca.is_ok()
+        && cb == Err(NoiError::RingExhausted)
+        && tagged.occupancy() == 1
+        && tagged.ring_demand() == DEMO_LIGHT_DEMAND
+        && tagged.project_is_milli(b, DEMO_LIGHT_DEMAND) == Ok(IS_SOLO_MILLI)
+        && tagged.admitted_class(FlowClass::Curl) == 1
+        && tagged.refused_class(FlowClass::Curl) == 1;
+
+    tagged.clear();
+    let pa = tagged.admit_class(a, DEMO_LIGHT_DEMAND, persist);
+    let pb = tagged.admit_class(b, DEMO_LIGHT_DEMAND, persist);
+    let class_harm_admit = pa.is_ok()
+        && pb.is_ok()
+        && tagged.occupancy() == 2
+        && tagged.ring_demand() == 0
+        && tagged.admitted_class(FlowClass::Harmonic) == 2;
+
+    let class_not_renamed_is = tagged_ok
+        && class_grad_admit
+        && class_curl_refuse
+        && class_harm_admit
+        && DEMO_LIGHT_DEMAND == NOI_RING_CAPACITY;
 
     SoftNoiReport {
         light_is_ok,
@@ -432,10 +624,16 @@ pub fn run_softnoi_demo() -> SoftNoiReport {
         heavy_refuse,
         advertised,
         not_synth,
+        class_grad_admit,
+        class_curl_refuse,
+        class_harm_admit,
+        class_not_renamed_is,
         light_is_milli: light_is,
         heavy_is_milli: heavy_is,
-        admitted: noi.admitted(),
-        refused: noi.refused(),
+        admitted,
+        refused,
+        curl_admitted: tagged.admitted_class(FlowClass::Curl),
+        curl_refused: tagged.refused_class(FlowClass::Curl),
     }
 }
 
@@ -487,10 +685,19 @@ mod tests {
         assert!(r.heavy_refuse, "heavy B refused");
         assert!(r.advertised, "per-tenant IS estimate");
         assert!(r.not_synth, "admit control, not topology synth");
+        assert!(r.class_grad_admit, "allreduce/tree Gradient admits");
+        assert!(r.class_curl_refuse, "ring-exchange Curl needs ring reserve");
+        assert!(r.class_harm_admit, "persistent Harmonic uses IS, not ring");
+        assert!(
+            r.class_not_renamed_is,
+            "class changes admit, not a renamed IS"
+        );
         assert_eq!(r.light_is_milli, 1000);
         assert_eq!(r.heavy_is_milli, 1600);
         assert_eq!(r.admitted, 3);
         assert_eq!(r.refused, 1);
+        assert_eq!(r.curl_admitted, 1);
+        assert_eq!(r.curl_refused, 1);
         assert!(r.all_ok());
     }
 
@@ -551,7 +758,96 @@ mod tests {
         let n = SoftNoI::new();
         assert_eq!(n.budget_milli(), 1500);
         assert_eq!(n.capacity(), 1000);
+        assert_eq!(n.ring_capacity(), NOI_RING_CAPACITY);
         assert_eq!(MAX_NOI_TENANTS, 2);
         assert!(!n.enabled());
+    }
+
+    #[test]
+    fn class_from_collective_is_software_enum() {
+        assert_eq!(CollectiveKind::Tree.fabric_class(), FlowClass::Gradient);
+        assert_eq!(CollectiveKind::Ring.fabric_class(), FlowClass::Curl);
+        assert_eq!(CollectiveKind::Torus.fabric_class(), FlowClass::Harmonic);
+    }
+
+    #[test]
+    fn curl_ring_reserve_refuses_when_gradient_admits() {
+        let a = TenantId(1);
+        let b = TenantId(2);
+        let mut n = SoftNoI::new();
+        n.enable(true);
+
+        n.admit_class(a, DEMO_LIGHT_DEMAND, FlowClass::Gradient)
+            .unwrap();
+        n.admit_class(b, DEMO_LIGHT_DEMAND, FlowClass::Gradient)
+            .unwrap();
+        assert_eq!(n.worst_is_milli(), IS_SOLO_MILLI);
+        assert_eq!(n.admitted_class(FlowClass::Gradient), 2);
+        assert_eq!(n.refused(), 0);
+
+        n.clear();
+        n.admit_class(a, DEMO_LIGHT_DEMAND, FlowClass::Curl)
+            .unwrap();
+        assert_eq!(
+            n.admit_class(b, DEMO_LIGHT_DEMAND, FlowClass::Curl)
+                .unwrap_err(),
+            NoiError::RingExhausted
+        );
+        assert_eq!(n.occupancy(), 1);
+        assert_eq!(n.ring_demand(), DEMO_LIGHT_DEMAND);
+        // Same demand still has IS = 1.0 — refuse is the ring, not a renamed IS.
+        assert_eq!(n.project_is_milli(b, DEMO_LIGHT_DEMAND), Ok(IS_SOLO_MILLI));
+        assert_eq!(n.admitted_class(FlowClass::Curl), 1);
+        assert_eq!(n.refused_class(FlowClass::Curl), 1);
+        assert_eq!(n.refused(), 1);
+    }
+
+    #[test]
+    fn harmonic_persistent_uses_is_not_ring() {
+        let mut n = SoftNoI::new();
+        n.enable(true);
+        let class = CollectiveKind::Torus.fabric_class();
+        n.admit_class(TenantId(1), DEMO_LIGHT_DEMAND, class)
+            .unwrap();
+        n.admit_class(TenantId(2), DEMO_LIGHT_DEMAND, class)
+            .unwrap();
+        assert_eq!(class, FlowClass::Harmonic);
+        assert_eq!(n.occupancy(), 2);
+        assert_eq!(n.ring_demand(), 0);
+        assert_eq!(n.admitted_class(FlowClass::Harmonic), 2);
+        assert_eq!(n.refused_class(FlowClass::Harmonic), 0);
+    }
+
+    #[test]
+    fn curl_still_refuses_on_is_overload() {
+        let mut n = SoftNoI::new();
+        n.enable(true);
+        n.admit(TenantId(1), DEMO_HEAVY_DEMAND).unwrap();
+        assert_eq!(
+            n.admit_class(TenantId(2), DEMO_HEAVY_DEMAND, FlowClass::Curl)
+                .unwrap_err(),
+            NoiError::OverBudget
+        );
+        assert_eq!(n.refused_class(FlowClass::Curl), 1);
+        assert_eq!(n.ring_demand(), 0);
+    }
+
+    #[test]
+    fn curl_alone_over_ring_is_still_one() {
+        let mut n = SoftNoI::new();
+        n.enable(true);
+        assert_eq!(
+            n.project_is_milli(TenantId(1), DEMO_HEAVY_DEMAND),
+            Ok(IS_SOLO_MILLI)
+        );
+        assert_eq!(
+            n.admit_class(TenantId(1), DEMO_HEAVY_DEMAND, FlowClass::Curl)
+                .unwrap_err(),
+            NoiError::RingExhausted
+        );
+        n.admit(TenantId(1), DEMO_HEAVY_DEMAND).unwrap();
+        assert_eq!(n.occupancy(), 1);
+        assert_eq!(n.admitted_class(FlowClass::Gradient), 1);
+        assert_eq!(n.refused_class(FlowClass::Curl), 1);
     }
 }

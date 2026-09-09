@@ -11,6 +11,7 @@
 
 use aether_core::accel::{AccelJobDesc, Completion};
 use aether_core::greenctx::SmWqBudget;
+use aether_core::hodge::FlowClass;
 use aether_core::iommu::MapRequest;
 use aether_core::space::{map_place, FabricAddr, Place, SpaceError};
 use aether_core::types::PhysAddr;
@@ -121,6 +122,19 @@ pub trait AccelDevice {
     fn admit_noi(&mut self, tenant: u32, demand: u32) -> Result<u32, HalError> {
         let _ = (tenant, demand);
         Err(HalError::Unsupported)
+    }
+    /// Admit with a fabric class tag. Default: ignore class, call [`Self::admit_noi`].
+    ///
+    /// Curl (ring-exchange) needs reserved ring capacity on SoftNoI.
+    /// Software enum, not a vendor header.
+    fn admit_noi_class(
+        &mut self,
+        tenant: u32,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<u32, HalError> {
+        let _ = class;
+        self.admit_noi(tenant, demand)
     }
     /// Create a SoftGreenCtx with an exclusive SM/WQ slice.
     ///

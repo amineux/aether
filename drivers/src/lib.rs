@@ -8,7 +8,8 @@
 //! PASID/SVA (`sva`) binds process VA ↔ Soft-SMMU SSID on this CP.
 //! OperatorInject (`opinject`) is the resident worker + versioned op table
 //! (memcpy / saxpy + hot-add scale; GPUOS / Mirage MPK inspiration).
-//! SoftNoI-IS (`noi`) is Interference Score admit on a fake shared NoI.
+//! SoftNoI-IS (`noi`) is Interference Score admit on a fake shared NoI
+//! plus a software fabric-class tag (Curl reserved ring).
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
 //! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped
 //! timelines). [`PartnerNpuStub`] remains a documented no-op sketch.

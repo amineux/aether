@@ -25,6 +25,9 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 - Account Hodge flow class and SpectralCut placement.
 - Bind an `OperatorKernelHandle` (collective topology × Hodge class)
   as a cap. No new syscall; host / kernel-internal API only.
+- Tag Soft-CP DMA / collective submit with that class
+  (`AccelJobDesc.flow`, software enum). SoftNoI may refuse Curl when
+  reserved ring capacity is gone. Not a vendor header.
 - Sparsify that handle (or a FlowClass header) by dropping harmonic
   energy strictly below an integer milli threshold before inject.
   Hodge refuse is unchanged. No new syscall.

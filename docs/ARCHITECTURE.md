@@ -207,7 +207,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`) |
 | `core/src/sva.rs` | PASID/SVA clip (Linux SVA-shaped mm↔SSID; not ARM SVA / CUDA UVA) |
 | `core/src/opinject.rs` | OperatorInject resident worker + versioned op table (memcpy/saxpy + hot-add scale; GPUOS / Mirage MPK; not NVRTC) |
-| `core/src/noi.rs` | SoftNoI-IS fake NoI + Interference Score admit (PARL/NoI metric; not topology synth, not UniCNet) |
+| `core/src/noi.rs` | SoftNoI-IS fake NoI + Interference Score admit + software fabric-class tag (PARL/NoI metric; not topology synth, not UniCNet, not a vendor header) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
