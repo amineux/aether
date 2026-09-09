@@ -3,16 +3,18 @@
 //! SpectraScout leftover (M5 digest). [GPU-AToLL][atoll] hardens NVVM-IR
 //! so every memory side-effect proves a location + PTX state space before
 //! a tenant kernel may run. SoftSFI borrows that *shape* on a **toy**
-//! Soft-CP ISA (`load` / `store` / `add` / `dma`): every load, store, and
-//! DMA proves `base+bound` sits in the SID-allowed range. CUDA-tied in
-//! the source paper; the pattern is the proof, not the pipeline.
+//! Soft-CP ISA (`load` / `store` / `add` / `dma` / `atomic_add`): every
+//! load, store, DMA, and word fetch-add proves `base+bound` sits in the
+//! SID-allowed range. CUDA-tied in the source paper; the pattern is the
+//! proof, not the pipeline.
 //!
 //! **Not claimed.** This is not an NVVM / LLVM pass, not CUDA, not PTX,
 //! and **not** “safe multi-tenant kernels” covering all side-effects.
 //! GPU-AToLL itself says validation only checks memory isolation.
+//! `atomic_add` is a sequential toy RMW (SID-proved), not a coherent
+//! hardware atomic.
 //!
-//! Honest TODOs (same holes GPU-AToLL leaves open):
-//! - Atomics (`ATOMIC_ADD`) are **refused**, not modeled.
+//! Honest remaining holes (named [`SfiError::Unmodeled`], not “safe”):
 //! - Tensor copies / SoftNPU `MatMul` / `Wave` are **refused**, not modeled.
 //! - Heap / dynamic allocation is not a sandbox (no heap in this ISA).
 //!
@@ -41,7 +43,7 @@ pub const SFI_SPAN: u64 = 0x40;
 /// Tenant B secret the OOB / skip-verify path must not observe.
 pub const SFI_SECRET_B: u32 = 0xDEAD_BEEF;
 
-/// Toy Soft-CP opcodes. Only the modeled four plus `Nop` verify.
+/// Toy Soft-CP opcodes. Modeled memory ops plus `Nop` / `Add` / `AddImm` verify.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum SoftOp {
@@ -56,9 +58,11 @@ pub enum SoftOp {
     AddImm = 4,
     /// Copy `[rs, rs+imm)` → `[rd, rd+imm)` (both spans SID-proved).
     Dma = 5,
-    /// Unmodeled. GPU-AToLL leaves atomics open; we refuse.
-    AtomicAdd = 0x80,
-    /// Unmodeled tensor / TMA-shaped copy. Refuse.
+    /// Word fetch-add: `rd = mem[rs+imm]; mem[rs+imm] += rt` (wrapping u32).
+    /// Must prove the word writable in the SID window. Sequential toy RMW,
+    /// not a coherent hardware atomic.
+    AtomicAdd = 6,
+    /// Unmodeled tensor / TMA-shaped copy. Refuse (`Unmodeled`).
     Tensor = 0x81,
 }
 
@@ -71,7 +75,7 @@ impl SoftOp {
             3 => Some(Self::Add),
             4 => Some(Self::AddImm),
             5 => Some(Self::Dma),
-            0x80 => Some(Self::AtomicAdd),
+            6 => Some(Self::AtomicAdd),
             0x81 => Some(Self::Tensor),
             _ => None,
         }
@@ -80,12 +84,18 @@ impl SoftOp {
     pub const fn is_modeled(self) -> bool {
         matches!(
             self,
-            Self::Nop | Self::Load | Self::Store | Self::Add | Self::AddImm | Self::Dma
+            Self::Nop
+                | Self::Load
+                | Self::Store
+                | Self::Add
+                | Self::AddImm
+                | Self::Dma
+                | Self::AtomicAdd
         )
     }
 
     pub const fn touches_memory(self) -> bool {
-        matches!(self, Self::Load | Self::Store | Self::Dma)
+        matches!(self, Self::Load | Self::Store | Self::Dma | Self::AtomicAdd)
     }
 }
 
@@ -135,8 +145,8 @@ impl Insn {
         Self::encode(SoftOp::Dma, rd_dst, rs_src, 0, len as u64)
     }
 
-    pub const fn atomic_add(rd: u8, rs: u8, imm: u64) -> Self {
-        Self::encode(SoftOp::AtomicAdd, rd, rs, 0, imm)
+    pub const fn atomic_add(rd: u8, rs: u8, rt: u8, off: u64) -> Self {
+        Self::encode(SoftOp::AtomicAdd, rd, rs, rt, off)
     }
 
     pub const fn tensor(rd: u8, rs: u8, imm: u64) -> Self {
@@ -290,7 +300,7 @@ impl SidSandbox {
 pub enum SfiError {
     /// `base+off+size` is outside every SID-allowed range (or overflow).
     Oob,
-    /// Atomic / tensor / heap / other unmodeled side-effect.
+    /// Tensor / heap / other unmodeled side-effect (named refuse).
     Unmodeled,
     /// Unknown opcode, bad register, empty program, or illegal size.
     BadInsn,
@@ -382,12 +392,13 @@ fn check_reg(r: u8) -> Result<usize, SfiError> {
     }
 }
 
-/// Static verifier: every load/store/dma proves `base+bound` in the SID window.
+/// Static verifier: every load/store/dma/atomic_add proves `base+bound`
+/// in the SID window.
 ///
 /// Registers start unknown except `r0 = 0`. `Add` / `AddImm` of constants
 /// refine the abstract file. A memory op whose base is not a constant is
-/// [`SfiError::UnknownBase`] (no distinct location). Atomics / tensor
-/// / unknown ops are [`SfiError::Unmodeled`].
+/// [`SfiError::UnknownBase`] (no distinct location). Tensor / unknown
+/// ops are [`SfiError::Unmodeled`]. Heap is not an opcode.
 pub fn verify(prog: &Program, sandbox: &SidSandbox) -> Result<(), SfiError> {
     if prog.is_empty() {
         return Err(SfiError::BadInsn);
@@ -458,7 +469,13 @@ fn step_verify(
             sandbox.prove(dst, 0, insn.imm as u32, true)?;
             Ok(())
         }
-        SoftOp::AtomicAdd | SoftOp::Tensor => Err(SfiError::Unmodeled),
+        SoftOp::AtomicAdd => {
+            let base = abs[rs].ok_or(SfiError::UnknownBase)?;
+            sandbox.prove(base, insn.imm, WORD, true)?;
+            write_abs(abs, rd, None);
+            Ok(())
+        }
+        SoftOp::Tensor => Err(SfiError::Unmodeled),
     }
 }
 
@@ -580,7 +597,16 @@ fn step_exec<M: SfiMem>(
             }
             Ok(())
         }
-        SoftOp::AtomicAdd | SoftOp::Tensor => Err(SfiError::Unmodeled),
+        SoftOp::AtomicAdd => {
+            let base = read_reg(regs, rs);
+            let (start, _) = sandbox.prove(base, insn.imm, WORD, true)?;
+            let old = mem.load_u32(start)?;
+            let addend = read_reg(regs, rt) as u32;
+            mem.store_u32(start, old.wrapping_add(addend))?;
+            write_reg(regs, rd, old as u64);
+            Ok(())
+        }
+        SoftOp::Tensor => Err(SfiError::Unmodeled),
     }
 }
 
@@ -589,13 +615,18 @@ fn step_exec<M: SfiMem>(
 pub struct SoftSfiReport {
     pub in_bounds: bool,
     pub oob_reject: bool,
+    pub atomic_ok: bool,
     pub unmodeled_reject: bool,
     pub no_cross_read: bool,
 }
 
 impl SoftSfiReport {
     pub fn all_ok(&self) -> bool {
-        self.in_bounds && self.oob_reject && self.unmodeled_reject && self.no_cross_read
+        self.in_bounds
+            && self.oob_reject
+            && self.atomic_ok
+            && self.unmodeled_reject
+            && self.no_cross_read
     }
 }
 
@@ -629,8 +660,27 @@ pub fn oob_load_prog(foreign_base: u64) -> Program {
     p
 }
 
-/// Two tenants, same toy Soft-CP ISA: accept in-bounds, reject OOB and
-/// unmodeled ops, skip-verify fault injection does not cross-read B.
+/// In-bounds word fetch-add: `r2 = mem[base]; mem[base] += addend`.
+pub fn in_bounds_atomic_prog(base: u64, addend: u64) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::add_imm(1, 0, base));
+    let _ = p.push(Insn::add_imm(3, 0, addend));
+    let _ = p.push(Insn::atomic_add(2, 1, 3, 0));
+    p
+}
+
+/// Fetch-add at a foreign SID base (must `Oob`, not execute).
+pub fn oob_atomic_prog(foreign_base: u64) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::add_imm(1, 0, foreign_base));
+    let _ = p.push(Insn::add_imm(3, 0, 1));
+    let _ = p.push(Insn::atomic_add(2, 1, 3, 0));
+    p
+}
+
+/// Two tenants, same toy Soft-CP ISA: accept in-bounds load/store and
+/// SID-proved `atomic_add`, reject OOB and tensor, skip-verify fault
+/// injection does not cross-read B.
 #[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
     let mut bytes = [0u8; 128];
@@ -655,14 +705,30 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
 
     let oob_reject = verify(&oob, &a) == Err(SfiError::Oob);
 
-    let mut atom = Program::new();
-    let _ = atom.push(Insn::add_imm(1, 0, SFI_BASE_A));
-    let _ = atom.push(Insn::atomic_add(2, 1, 0));
+    // After in-bounds store, A's word is 2. Fetch-add 4 → old=2, mem=6.
+    let atom = in_bounds_atomic_prog(SFI_BASE_A, 4);
+    let atom_oob = oob_atomic_prog(SFI_BASE_B);
+    let mut mem = FlatMem {
+        base: 0,
+        bytes: &mut bytes,
+    };
+    let atom_ran = run(&atom, &a, &mut mem);
+    let secret_after_atom = u32::from_le_bytes(
+        bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
+            .try_into()
+            .unwrap_or([0; 4]),
+    );
+    let atomic_ok = verify(&atom, &a).is_ok()
+        && verify(&atom, &b) == Err(SfiError::Oob)
+        && verify(&atom_oob, &a) == Err(SfiError::Oob)
+        && atom_ran.as_ref().map(|e| e.regs[2] == 2).unwrap_or(false)
+        && u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4])) == 6
+        && secret_after_atom == SFI_SECRET_B;
+
     let mut tens = Program::new();
     let _ = tens.push(Insn::add_imm(1, 0, SFI_BASE_A));
     let _ = tens.push(Insn::tensor(2, 1, 4));
-    let unmodeled_reject = verify(&atom, &a) == Err(SfiError::Unmodeled)
-        && verify(&tens, &a) == Err(SfiError::Unmodeled);
+    let unmodeled_reject = verify(&tens, &a) == Err(SfiError::Unmodeled);
 
     // Fault inject: skip verifier. Runtime SID trap; B's secret unread.
     let mut mem = FlatMem {
@@ -670,16 +736,20 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         bytes: &mut bytes,
     };
     let injected = execute_unverified(&oob, &a, &mut mem);
+    let injected_atom = execute_unverified(&atom_oob, &a, &mut mem);
     let secret = u32::from_le_bytes(
         bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
             .try_into()
             .unwrap_or([0; 4]),
     );
-    let no_cross_read = injected == Err(SfiError::Oob) && secret == SFI_SECRET_B;
+    let no_cross_read = injected == Err(SfiError::Oob)
+        && injected_atom == Err(SfiError::Oob)
+        && secret == SFI_SECRET_B;
 
     SoftSfiReport {
         in_bounds,
         oob_reject,
+        atomic_ok,
         unmodeled_reject,
         no_cross_read,
     }
@@ -716,13 +786,10 @@ mod tests {
     }
 
     #[test]
-    fn verifier_rejects_atomics_and_tensor() {
+    fn verifier_rejects_tensor_and_unknown() {
         let a = box_a();
-        let mut atom = Program::new();
-        let _ = atom.push(Insn::atomic_add(1, 0, 0));
         let mut tens = Program::new();
         let _ = tens.push(Insn::tensor(1, 0, 16));
-        assert_eq!(verify(&atom, &a), Err(SfiError::Unmodeled));
         assert_eq!(verify(&tens, &a), Err(SfiError::Unmodeled));
         let mut unk = Program::new();
         let _ = unk.push(Insn {
@@ -733,6 +800,84 @@ mod tests {
             imm: 0,
         });
         assert_eq!(verify(&unk, &a), Err(SfiError::Unmodeled));
+        // Heap is not an opcode; leftover 0x80 encoding is unknown, not modeled.
+        let mut heapish = Program::new();
+        let _ = heapish.push(Insn {
+            op: 0x80,
+            rd: 0,
+            rs: 0,
+            rt: 0,
+            imm: 0,
+        });
+        assert_eq!(verify(&heapish, &a), Err(SfiError::Unmodeled));
+        assert_eq!(SoftOp::from_u8(0x80), None);
+    }
+
+    #[test]
+    fn atomic_add_in_bounds_accepted() {
+        let (mut bytes, a, b) = mem_with_secret();
+        let p = in_bounds_atomic_prog(SFI_BASE_A, 5);
+        assert_eq!(verify(&p, &a), Ok(()));
+        assert_eq!(verify(&p, &b), Err(SfiError::Oob));
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut bytes,
+        };
+        let exec = run(&p, &a, &mut mem).unwrap();
+        assert_eq!(exec.regs[2], 7);
+        let stored = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        assert_eq!(stored, 12);
+        let secret = u32::from_le_bytes(
+            bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(secret, SFI_SECRET_B);
+    }
+
+    #[test]
+    fn atomic_add_cross_tenant_rejected() {
+        let (mut bytes, a, _) = mem_with_secret();
+        let p = oob_atomic_prog(SFI_BASE_B);
+        assert_eq!(verify(&p, &a), Err(SfiError::Oob));
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut bytes,
+        };
+        assert_eq!(run(&p, &a, &mut mem), Err(SfiError::Oob));
+        let secret = u32::from_le_bytes(
+            bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(secret, SFI_SECRET_B);
+        let a_word = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+        assert_eq!(a_word, 7);
+    }
+
+    #[test]
+    fn skip_verify_atomic_oob_does_not_cross_write() {
+        let (mut bytes, a, _) = mem_with_secret();
+        let p = oob_atomic_prog(SFI_BASE_B);
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut bytes,
+        };
+        assert_eq!(execute_unverified(&p, &a, &mut mem), Err(SfiError::Oob));
+        let secret = u32::from_le_bytes(
+            bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
+                .try_into()
+                .unwrap(),
+        );
+        assert_eq!(secret, SFI_SECRET_B);
+    }
+
+    #[test]
+    fn atomic_add_unknown_base_refused() {
+        let a = box_a();
+        let mut p = Program::new();
+        let _ = p.push(Insn::atomic_add(2, 3, 1, 0));
+        assert_eq!(verify(&p, &a), Err(SfiError::UnknownBase));
     }
 
     #[test]
@@ -806,17 +951,19 @@ mod tests {
         let r = run_softsfi_demo();
         assert!(r.in_bounds, "in-bounds accept");
         assert!(r.oob_reject, "OOB reject");
-        assert!(r.unmodeled_reject, "atomic/tensor refuse");
+        assert!(r.atomic_ok, "atomic SID-range / cross-tenant Oob");
+        assert!(r.unmodeled_reject, "tensor refuse");
         assert!(r.no_cross_read, "skip-verify does not leak B");
         assert!(r.all_ok());
     }
 
     #[test]
     fn not_nvvm_and_not_safe_multitenant_kernels() {
-        // Honest bound: heap is unmodeled; we do not invent malloc.
+        // Honest bound: one modeled RMW (atomic_add); heap is not an ISA.
         let a = box_a();
         assert_eq!(a.len(), 1);
-        assert!(!SoftOp::AtomicAdd.is_modeled());
+        assert!(SoftOp::AtomicAdd.is_modeled());
+        assert!(SoftOp::AtomicAdd.touches_memory());
         assert!(!SoftOp::Tensor.is_modeled());
         assert!(SoftOp::Load.touches_memory());
         assert!(!SoftOp::Add.touches_memory());

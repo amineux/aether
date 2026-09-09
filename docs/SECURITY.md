@@ -87,12 +87,13 @@ is **not** HW MIG, not a BAR firewall, and not silicon SM isolation.
 Host tests measure memcpy-like interference; they are not FLOPs.
 
 SoftSFI (`core/src/softsfi.rs`) is a toy Soft-CP bytecode sandbox
-(GPU-AToLL-shaped SFI). Every modeled load/store/dma proves
-`base+bound` in the SID-allowed range. It is **not** an NVVM pipeline
-and **not** “safe multi-tenant kernels” covering atomics, tensor
-copies, heap, or other unmodeled side-effects — those ops are
-refused. Skip-verify fault injection still traps on the SID window
-and does not cross-read. Software only.
+(GPU-AToLL-shaped SFI). Every modeled load/store/dma/`atomic_add`
+proves `base+bound` in the SID-allowed range. `atomic_add` is a
+sequential toy RMW, not a coherent hardware atomic. It is **not** an
+NVVM pipeline and **not** “safe multi-tenant kernels.” Tensor copies
+and heap are **not** in the modeled ISA — those ops are refused
+(`SfiError::Unmodeled`). Skip-verify fault injection still traps on
+the SID window and does not cross-read. Software only.
 
 PASID / SVA (`core/src/sva.rs`, `IommuMap::bind_mm` / `map_va` /
 `unmap_va`) binds a process mm to a Soft-SMMU SSID so Soft-CP DMA
@@ -146,7 +147,7 @@ These are marked so a security review does not assume them:
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
 | `SYS_MMAP` is a 64 KiB anon window | First-fit 4 KiB USER pages at `0x02C0_0000` (after virtio-blk); no file / no `MAP_SHARED` / no `munmap` | POSIX `mmap` / file-backed / `MAP_SHARED` |
-| SoftSFI atomics / tensor / heap | A kernel that used those ops would bypass the toy sandbox | Unmodeled ops stay **refused**. Not a GPU-AToLL port. Hardware SMMU / real SFI still need partner silicon |
+| SoftSFI tensor / heap | A kernel that used those ops would bypass the toy sandbox | Named refuse: `SfiError::Unmodeled`. `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`) but is a sequential toy RMW, not full SFI. Not a GPU-AToLL port. Hardware SMMU / real SFI still need partner silicon |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
 ## Multi-tenant weights / KV

@@ -331,7 +331,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[firewall\\] copy-then-validate race sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[greenctx\\] SM/WQ pool split 70/30" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[greenctx\\] two-queue SoftGreenCtx sealed" $(BUILD)/qemu-serial.log \
-	   && grep -q "\\[softsfi\\] in-bounds accept / OOB+unmodeled reject" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[softsfi\\] in-bounds+atomic accept / OOB+tensor reject" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sva\\] bind mm↔ssid DMA VA" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-serial.log \

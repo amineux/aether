@@ -2,8 +2,10 @@
 //!
 //! Lives **beside** [`crate::fakecp`] so SoftGreenCtx / SoftCmdFirewall
 //! can keep editing the CP without merging this ISA. GPU-AToLL-shaped
-//! SFI: every load/store/dma proves `base+bound` in the SID IOVA
-//! window. Not NVVM, not “safe multi-tenant kernels.”
+//! SFI: every load/store/dma/`atomic_add` proves `base+bound` in the
+//! SID IOVA window. Not NVVM, not “safe multi-tenant kernels.”
+//! Tensor / heap stay `Unmodeled`. `atomic_add` is a sequential toy
+//! RMW, not a coherent hardware atomic.
 
 use aether_core::accel::DmaView;
 use aether_core::iommu::{IommuMap, StreamId};
@@ -99,7 +101,10 @@ mod tests {
     use aether_core::accel::SliceMem;
     use aether_core::caps::{CapKind, CapRights, Capability};
     use aether_core::iommu::MapRequest;
-    use aether_core::softsfi::{in_bounds_prog, oob_load_prog, Insn, Program, SFI_SECRET_B};
+    use aether_core::softsfi::{
+        in_bounds_atomic_prog, in_bounds_prog, oob_atomic_prog, oob_load_prog, Insn, Program,
+        SFI_SECRET_B,
+    };
     use aether_core::types::{ChipletId, TenantId, TileId};
 
     fn two_tenant_cp(
@@ -136,7 +141,7 @@ mod tests {
         let mut backing = [0u8; 512];
         backing[0..4].copy_from_slice(&3u32.to_le_bytes());
         backing[256..260].copy_from_slice(&SFI_SECRET_B.to_le_bytes());
-        let (mut d, sid_a, _sid_b, iova_a, iova_b) = two_tenant_cp(&mut backing);
+        let (mut d, sid_a, _sid_b, iova_a, _iova_b) = two_tenant_cp(&mut backing);
 
         let ok = in_bounds_prog(iova_a.0);
         assert!(d.verify_sfi(sid_a, &ok).is_ok());
@@ -154,13 +159,41 @@ mod tests {
         assert_eq!(d.verify_sfi(sid_a, &oob), Err(SfiError::Oob));
         assert_eq!(d.submit_sfi(sid_a, &oob).unwrap_err(), HalError::Fault);
 
-        let mut atom = Program::new();
-        let _ = atom.push(Insn::atomic_add(1, 0, 0));
-        assert_eq!(d.verify_sfi(sid_a, &atom), Err(SfiError::Unmodeled));
         let mut tens = Program::new();
         let _ = tens.push(Insn::tensor(1, 0, 16));
         assert_eq!(d.verify_sfi(sid_a, &tens), Err(SfiError::Unmodeled));
         let _ = iova_b;
+    }
+
+    #[test]
+    fn softsfi_atomic_in_range_accept_cross_tenant_reject() {
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        backing[256..260].copy_from_slice(&SFI_SECRET_B.to_le_bytes());
+        let (mut d, sid_a, _sid_b, iova_a, _iova_b) = two_tenant_cp(&mut backing);
+
+        let ok = in_bounds_atomic_prog(iova_a.0, 5);
+        assert!(d.verify_sfi(sid_a, &ok).is_ok());
+        let exec = d.submit_sfi(sid_a, &ok).unwrap();
+        assert_eq!(exec.regs[2], 3);
+        drop(d);
+        let stored = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(stored, 8);
+        let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
+        assert_eq!(secret, SFI_SECRET_B);
+
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        backing[256..260].copy_from_slice(&SFI_SECRET_B.to_le_bytes());
+        let (mut d, sid_a, _sid_b, _iova_a, iova_b) = two_tenant_cp(&mut backing);
+        let steal = oob_atomic_prog(iova_b.0);
+        assert_eq!(d.verify_sfi(sid_a, &steal), Err(SfiError::Oob));
+        assert_eq!(d.submit_sfi(sid_a, &steal).unwrap_err(), HalError::Fault);
+        drop(d);
+        let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
+        assert_eq!(secret, SFI_SECRET_B);
+        let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(a_word, 3);
     }
 
     #[test]
