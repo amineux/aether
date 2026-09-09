@@ -149,12 +149,12 @@ Soft-CP.
 
 | Noun | Research ABI | Their fill |
 | --- | --- | --- |
-| Event | `abi::Event` = `FenceId` on a `PartitionId` timeline | |
+| Event | `abi::Event` = `FenceId` on a `PartitionId` timeline; host create/record/wait may use SoftChipletSync chiplet/package | |
 | Semaphore payload | `IreeHalCmd.signal_payload` (`iree_hal_semaphore_t`); offset `0x58` | |
 | Wait / complete | software CP-shaped seq; timeout is software | |
 | Optional SoftChipletSync | `{wave, CU, chiplet, package}` visibility; **not** Vulkan, not UCIe | which scopes, if any |
 
-Not a CUDA stream. Not a silicon fence unit.
+Not a CUDA stream. Not a silicon fence unit. Not `GetPjRtApi`, not XLA.
 
 ---
 

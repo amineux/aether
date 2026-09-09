@@ -10,7 +10,10 @@ graph IR.
 The working crate is `aether-pjrt` (`host/aether-pjrt`). It is a `std`
 workspace member. Host tests create a device, allocate typed buffer
 places, pin through Soft SMMU, submit `MatMul` / `Wave`, and wait on
-an event/fence. The **IREE/PJRT contract** consumes a frozen 96-byte
+an event/fence. Event create / record / wait lower onto the existing
+CP-shaped timeline and SoftChipletSync chiplet/package fences — Event
+is a research noun over those fences, not a new IR, not `GetPjRtApi`,
+and not XLA. The **IREE/PJRT contract** consumes a frozen 96-byte
 little-endian `IreeHalCmd` (magic `0xAE7E1EE1`, `backend = 4`,
 `ssid = 2`) and submits through `IreeShapedCp`. SoftNPU is an extra
 host backend for virtqueue tests; `make qemu` remains the path-B
@@ -44,7 +47,7 @@ See [ACCEL.md](ACCEL.md) and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
 | Memory / MemorySpace | PJRT `PJRT_Memory`; IREE `iree_hal_memory_type_t` (`HOST_LOCAL`, `DEVICE_LOCAL`, …) | `space::MemorySpace` | `HOST`, `DEVICE_HBM`, `TILE_SRAM`, `CXL_REGION`, … — typed places, not a unified VAS |
 | Buffer | PJRT `PJRT_Buffer`; IREE [`iree_hal_buffer_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/buffer.h) | `abi::Buffer` | `(place, local)` + Soft-SMMU IOVA |
 | Executable | PJRT `PJRT_Executable` / `PJRT_LoadedExecutable`; IREE [`iree_hal_executable_t`](https://github.com/iree-org/iree/blob/main/runtime/src/iree/hal/executable.h) | `abi::Executable` | opaque `isa_blob_id`; IreeShaped frozen id is `0x0001EE00` (`IREE_REF_EXECUTABLE`); refuse any other |
-| Event / Fence | PJRT `PJRT_Event`; IREE `iree_hal_event_t` / `iree_hal_fence_t` | `abi::Event` | `FenceId` on a CP-shaped `Timeline` |
+| Event / Fence | PJRT `PJRT_Event`; IREE `iree_hal_event_t` / `iree_hal_fence_t` | `abi::Event` | Research noun over existing fences: job Events are a `FenceId` on a CP-shaped `Timeline`; create / record / wait at chiplet or package scope lower onto SoftChipletSync. Not `GetPjRtApi`, not XLA. |
 
 IREE's HAL device is the handle that allocates buffers, prepares
 executables, dispatches work, and synchronizes with the host
@@ -55,8 +58,9 @@ the same kind of object: a **submission shim + resource solver**.
 Compilers own the ISA, graph IR, and fusion.
 
 This crate does **not** export `GetPjRtApi`, does **not** implement
-`iree_hal_driver_t`, and does **not** load HSACO / PTX / a vendor
+`iree_hal_driver_t`, is **not** XLA, and does **not** load HSACO / PTX / a vendor
 ISA blob. Those bytes stay compiler-owned (`isa_blob_id` is a handle).
+Event is a research noun over existing fences — not a new IR.
 
 ## Lowering
 
@@ -81,12 +85,19 @@ Client::create(SoftNpu | IreeShaped)
             IreeShapedCp::submit_hal
         SoftNpu:
             AccelJobDesc → virtqueue submit   // path-B qemu demo
-        → Event { fence, partition }
+        → Event { fence, partition }       // scope=None; partition timeline
+    create_event(Chiplet | Package)
+        → Event { fence: 0, partition, scope }  // no IreeHalCmd; not a new IR
+    record(event)
+        SoftChipletSync::arrive            // chiplet-local or package fence
+        → Event { fence: seq, scope }
     wait(event)
-        service()                          // host IRQ pump (SoftNPU used-ring / IreeShapedCp mailbox)
-        AccelDevice::poll
-        Timeline::complete / retire_into
-        Timeline::wait                     // watermark; not a CUDA stream
+        scoped: SoftChipletSync::wait_seq  // NotReady until record
+        job: service()                     // host IRQ pump (SoftNPU used-ring / IreeShapedCp mailbox)
+             AccelDevice::poll
+             Timeline::complete / retire_into
+             Timeline::wait                // watermark; not a CUDA stream
+                                           // try_wait / fence_ready stay NotReady until complete
 ```
 
 `AccelJobDesc` is the architectural dispatch record (see
@@ -99,12 +110,14 @@ AccelDevice, not this crate's submit path. There is no graph IR.
 Host copies (`copy_from_host` / `copy_to_host`) are explicit transfers
 in the sense of PJRT `BufferFromHostBuffer` / `ToHostBuffer` and IREE
 `iree_hal_device_transfer_*`. They are not a coherent CPU load of
-HBM or tile SRAM. `UNIFIED` stays off unless that cap bit is granted
+HBM or tile SRAM, and they are not a v1 `TRANSFER` packet (`TRANSFER`
+alone stays `HalError::Fault`). `UNIFIED` stays off unless that cap bit is granted
 (it is not granted here).
 
 ## What this cut will not claim
 
 - An OpenXLA PJRT plugin (`GetPjRtApi`) or an in-tree IREE HAL driver.
+  This is not XLA. Event wait is not a CUDA stream and not a silicon fence.
 - A vendor compiler integration or a signed silicon partnership.
 - In-kernel ML graph IR / fusion (`Wave` is a stand-in dispatch).
 - A CUDA stream, a default unified virtual address space, or CXL.mem.

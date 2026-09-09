@@ -210,7 +210,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/noi.rs` | SoftNoI-IS fake NoI + Interference Score admit (PARL/NoI metric; not topology synth, not UniCNet) |
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
-| `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp |
+| `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp; Event create/record/wait on existing fences (not `GetPjRtApi`, not XLA) |
 | `examples/accel-client` | Second consumer of the same 96-byte image (doorbell sketch; not a plugin) |
 | `examples/partner-hello` | Host clone-and-run of that packet; [PARTNER.md](PARTNER.md). No QEMU |
 

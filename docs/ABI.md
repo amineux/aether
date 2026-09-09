@@ -13,7 +13,7 @@ The host-facing nouns match a PJRT / IREE HAL sketch:
 | TypedWindow | `window::TypedWindow` | `{ base, len, kind: Hbm\|CxlMemStub\|Dram, sid }` — Soft SMMU pin stub; not CXL.mem silicon |
 | Buffer | `abi::Buffer` | Bound to one space + a `(place, local)` address |
 | Executable | `abi::Executable` | Opaque `isa_blob_id`; kernel does not parse it |
-| Event | `abi::Event` | A `FenceId` on a partition timeline |
+| Event | `abi::Event` | Research noun over existing fences: a `FenceId` on a partition timeline, or SoftChipletSync chiplet/package scope. Not `GetPjRtApi`, not XLA. |
 
 ## What the kernel will do
 
@@ -48,10 +48,12 @@ fusion pass.
 `core/src/abi.rs` names the nouns. The working host session is
 `host/aether-pjrt`: a `std` workspace crate that creates a device,
 allocates typed buffer places, pins them through Soft SMMU, submits
-matmul/wave, and waits on an event/fence. The IREE/PJRT contract
+matmul/wave, and waits on an event/fence. Event create / record / wait
+on the host shim lower onto that same timeline (chiplet or package
+scope where SoftChipletSync already exists). The IREE/PJRT contract
 packs frozen `IreeHalCmd` and submits through IreeShapedCp. SoftNPU
 is an extra host backend; `make qemu` stays path B. Not Soft-CP, not
-a fake vendor runtime.
+a fake vendor runtime. Not `GetPjRtApi`, not XLA.
 
 `examples/accel-client` is a second tiny host client of that same
 96-byte image (doorbell sketch). It is not a PJRT plugin and not a
