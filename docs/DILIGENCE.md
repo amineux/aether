@@ -27,14 +27,16 @@ make diligence-demo
 ```
 
 The runner (`examples/diligence-demo`) calls the same host clips the
-kernel self-check uses, plus the PJRT/`IreeHalCmd` submit+wait the
-guest does not run, and prints a scripted narrative. CI greps
+kernel self-check uses, plus the PJRT/`IreeHalCmd` submit+wait and
+Event create/record/wait the guest does not run, and prints a
+scripted narrative. CI greps
 [`examples/diligence-demo/expected.txt`](../examples/diligence-demo/expected.txt).
 
 | Line | Thesis |
 | --- | --- |
 | `[blast] SpectralCut CrossCut refuse` / `wrong SID abort` | Two tenants. Cross-cut placement and the other SID are refused. |
 | `[pjrt] IreeHalCmd submit + wait` | Frozen 96-byte HAL image; fence wait. Research opcodes, not FLOPs. |
+| `[event] SoftChipletSync create/record/wait` | Event create/record/wait on existing SoftChipletSync fences. Not `GetPjRtApi`. |
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
 | `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
@@ -232,8 +234,8 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + design-win-check crates, partner-hello |
-| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus the “what this is not” closer |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
@@ -261,6 +263,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Out-of-bounds load/store | `run_softsfi_demo` — SoftSFI verifier `SfiError::Oob`; skip-verify still does not cross-read | refused |
 | Cross-tenant `atomic_add` | `run_softsfi_demo` — SID-proved toy fetch-add; foreign span is `Oob` (not a hardware atomic) | refused |
 | Overload admit (`IS` over budget) | `run_softnoi_demo` — SoftNoI-IS refuse when projected `IS > 1.5` | refused |
+| Fabric-class tag at admit | `run_softnoi_demo` — Gradient admits; second Curl refuses the reserved ring | admit / refuse |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
 
 Expected stdout (CI greps these):
@@ -271,6 +274,8 @@ Expected stdout (CI greps these):
 [redteam] attack=softsfi-oob result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```

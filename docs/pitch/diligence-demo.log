@@ -6,6 +6,7 @@
 [blast] two-tenant blast radius sealed
 [pjrt] IreeHalCmd submit + wait  magic=0xAE7E1EE1 backend=4 ssid=2 opcode=MatMul  ok
 [pjrt] research opcode MatMul; not FLOPs  ok
+[event] SoftChipletSync create/record/wait  ok
 [firewall] copy-then-validate Host1x race  sneak=ok hold=ok  (cmd-stream integrity; not confidential GPU)  ok
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
@@ -14,6 +15,7 @@
 [diligence] what this proves
   two tenants: CrossCut + wrong-SID refuse (Soft SMMU software tables)
   PJRT-shaped Client packs frozen IreeHalCmd and waits a fence (research opcodes)
+  Event create/record/wait on existing SoftChipletSync fences (not GetPjRtApi)
   SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue
   SoftGreenCtx 70/30 SM/WQ partition is measurable on a software pool
 [diligence] what this does not prove

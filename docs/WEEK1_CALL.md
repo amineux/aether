@@ -46,7 +46,14 @@ If cargo is cold on the laptop, walk the captured logs instead of
 waiting on the first compile. Same golden lines CI greps.
 
 Optional, not this slot: `make partner-hello`, `make design-win-standin`,
-`make qemu`.
+`make qemu`. Doorbell second consumer (not a Makefile target):
+`cargo run -p aether-accel-client`.
+
+**What to show next** (same tree; commands that exist): isolation
+(`make red-team`) → packet (`make partner-hello` / doorbell) → wait
+(Event line in `make diligence-demo`) → admit class (fabric-class
+line in `make red-team`) → sandbox hole (`ATOMIC_ADD` line in
+`make red-team`). Map below.
 
 ---
 
@@ -63,6 +70,26 @@ Optional, not this slot: `make partner-hello`, `make design-win-standin`,
 If the slot is twelve minutes, keep the non-claims, run only
 `make diligence-demo` (or the captured log), and close on the ask.
 The 8-minute script in [PITCH.md](PITCH.md) is the same thesis.
+
+---
+
+## What to show next
+
+If they want the rest of the stack after the clock, walk this order.
+Host clips only. No new kernel feature. No FLOPs. No invented
+Makefile targets.
+
+| Beat | Point at | Command that exists |
+| --- | --- | --- |
+| Isolation | named attacks refused | `make red-team` |
+| Packet | frozen `IreeHalCmd`; second consumer | `make partner-hello` then `cargo run -p aether-accel-client` |
+| Wait | Event create/record/wait on SoftChipletSync | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
+| Admit class | fabric-class tag into SoftNoI | `make red-team` — grep `[redteam] fabric-class admit/refuse` |
+| Sandbox hole | SoftSFI `ATOMIC_ADD` accept/reject | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` |
+
+Worksheet still: `make design-win-check` / `make design-win-standin`.
+Blank: [DESIGN_WIN.md](DESIGN_WIN.md). Filled IREE stand-in (not a
+partner): [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 
 ---
 
@@ -96,7 +123,9 @@ While it prints:
 > `IreeHalCmd` submit + wait — research opcodes, not FLOPs.
 > Mutation-during-validate fails: command-stream integrity, not
 > confidential GPU. SoftGreenCtx is a 70/30 software partition, not
-> HW MIG. Soft SMMU is software. Path B.
+> HW MIG. Event create/record/wait sits on SoftChipletSync fences
+> already in the tree — grep `[event] SoftChipletSync`. Soft SMMU
+> is software. Path B.
 
 Do **not** show a FLOP number. Do **not** attach `-device aether-accel`.
 
@@ -116,11 +145,15 @@ Captured stdout: [pitch/red-team.log](pitch/red-team.log). Makefile greps:
 [redteam] attack=softsfi-oob result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```
 
 Same refuse paths the kernel already has. Not a new isolator.
+`fabric-class` and `ATOMIC_ADD` are the same SoftNoI / SoftSFI clips
+— admit/refuse and accept/reject on code that already exists.
 
 ---
 
@@ -162,7 +195,12 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | They asked | Point at |
 | --- | --- |
 | Run it without QEMU | `make diligence-demo` then `make red-team` (logs above) |
+| What to show next | isolation → packet → wait → admit class → sandbox hole (table above) |
 | Clone-and-run packet | [PARTNER.md](PARTNER.md) / `make partner-hello` |
+| Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
+| Event wait | `make diligence-demo` — `[event] SoftChipletSync create/record/wait` |
+| Fabric-class admit | `make red-team` — `[redteam] fabric-class admit/refuse` |
+| ATOMIC_ADD hole | `make red-team` — `[redteam] ATOMIC_ADD accept/reject` |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | Example mapping | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) + `aether_hal::AccelDevice` |

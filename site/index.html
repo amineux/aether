@@ -953,7 +953,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
           <li class="beat glass" data-reveal data-d="2">
             <div class="beat-meta"><span class="chip on">3:00–5:00</span><span class="beat-n">03</span></div>
             <h3>Live proof</h3>
-            <p>On a call, run <code>make diligence-demo</code> (host Path B; greps <code>examples/diligence-demo/expected.txt</code>) then <code>make red-team</code> (<code>[redteam] attack=… result=refused</code>). Optional: <code>make qemu</code>, <code>make design-win-check</code>. Doorbell second consumer is <code>cargo run -p aether-accel-client</code> — not a Makefile target.</p>
+            <p>On a call, run <code>make diligence-demo</code> (host Path B; greps <code>examples/diligence-demo/expected.txt</code>) then <code>make red-team</code> (<code>[redteam] attack=… result=refused</code>). Optional: <code>make qemu</code>, <code>make design-win-check</code>. Doorbell second consumer is <code>cargo run -p aether-accel-client</code> — not a Makefile target. What to show next: isolation (<code>make red-team</code>) → packet (<code>make partner-hello</code> / doorbell) → wait (Event) → admit class (fabric-class) → sandbox hole (<code>ATOMIC_ADD</code>).</p>
           </li>
           <li class="beat glass" data-reveal data-d="3">
             <div class="beat-meta"><span class="chip wait">5:00–6:30</span><span class="beat-n">04</span></div>

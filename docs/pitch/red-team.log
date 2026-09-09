@@ -6,6 +6,8 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [redteam] attack=softsfi-oob result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
 
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed

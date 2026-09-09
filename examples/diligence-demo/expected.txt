@@ -8,6 +8,7 @@
 [blast] two-tenant blast radius sealed
 [pjrt] IreeHalCmd submit + wait
 [pjrt] research opcode
+[event] SoftChipletSync create/record/wait
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30
