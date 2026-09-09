@@ -311,7 +311,7 @@
           <article class="explainer" data-reveal>
             <div class="copy">
               <h3>Fence-ordered jobs</h3>
-              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
+              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Host Event create / record / wait is a research noun over those existing SoftChipletSync fences — not a new packet, not a PJRT plugin, not a CUDA stream. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
             </div>
             <div class="fence" aria-label="Submit, fence, complete">
               <div class="fence-step">
@@ -335,7 +335,7 @@
           <article class="explainer reverse" data-reveal>
             <div class="copy">
               <h3>SpectralCut + Hodge</h3>
-              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks.</p>
+              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks. SoftNoI admit now reads a software fabric-class tag at submit (tree / ring / persistent). Curl still needs reserved ring capacity even when IS is 1.0. Not a DMA header, not topology synth.</p>
               <div class="cut-legend">
                 <span><i class="swatch" style="background:#3DDC97"></i>Strong on-die</span>
                 <span><i class="swatch" style="background:#6AA8FF"></i>Weak EMIB</span>
@@ -445,9 +445,10 @@
             <div class="icon-dot blue">◎</div>
             <small>Host contract</small>
             <h3>PJRT-shaped shim</h3>
-            <p><code>host/aether-pjrt</code> packs that frozen packet onto <code>IreeShapedCp</code>. Device, MemorySpace, Buffer, Executable, Event — compiler nouns on purpose. Not <code>GetPjRtApi</code>, not an IREE HAL driver, not a plugin.</p>
+            <p><code>host/aether-pjrt</code> packs that frozen packet onto <code>IreeShapedCp</code>. Device, MemorySpace, Buffer, Executable, Event — compiler nouns on purpose. Event create / record / wait lowers onto existing SoftChipletSync chiplet or package fences. Not a new packet. Not <code>GetPjRtApi</code>, not an IREE HAL driver, not a plugin.</p>
             <div class="chip-row">
               <span class="chip on">aether-pjrt</span>
+              <span class="chip on">Event on fences</span>
               <span class="chip">SoftNPU = qemu demo</span>
             </div>
           </article>
@@ -514,15 +515,34 @@
               <span class="proof-serial">[softnoi]</span>
               <span class="badge done">IS gate</span>
             </div>
-            <h3>Admit / refuse on IS</h3>
-            <p>Fake shared NoI. Projected <code>IS = max T_solo / T_con</code>. Budget 1.5. Light 400+400 admits (IS = 1.0). Heavy 800+800 refuses the second tenant (IS = 1.6). Integer throughput units — not FLOPs, not topology synth.</p>
-            <div class="meter" aria-label="SoftNoI-IS light admit versus heavy refuse">
+            <h3>Admit / refuse on IS + class</h3>
+            <p>Fake shared NoI. Projected <code>IS = max T_solo / T_con</code>. Budget 1.5. Light 400+400 admits (IS = 1.0). Heavy 800+800 refuses the second tenant (IS = 1.6). A software fabric-class tag (tree → Gradient, ring → Curl, persistent → Harmonic) feeds the same admit: second light Curl refuses <code>RingExhausted</code> even at IS = 1.0. Integer throughput units — not FLOPs, not topology synth, not a DMA header.</p>
+            <div class="meter" aria-label="SoftNoI-IS light admit, heavy refuse, and Curl ring-reserve refuse">
               <div class="meter-row"><span>light</span><i style="--w:62%"><b></b></i><em>1.0 admit</em></div>
               <div class="meter-row refuse"><span>heavy</span><i style="--w:100%"><b></b></i><em>1.6 refuse</em></div>
+              <div class="meter-row refuse"><span>curl</span><i style="--w:50%"><b></b></i><em>ring refuse</em></div>
             </div>
-            <p class="proof-src">run_softnoi_demo() · serial <code>[softnoi] two-tenant fake NoI admit/refuse sealed</code></p>
+            <p class="proof-src">run_softnoi_demo() · serial <code>[softnoi] class tag curl ring-reserve refuse</code></p>
           </article>
-          <article class="proof-card proof-wide" data-reveal data-d="4">
+          <article class="proof-card" data-reveal data-d="4">
+            <div class="proof-head">
+              <span class="proof-serial">[pjrt]</span>
+              <span class="badge done">wait</span>
+            </div>
+            <h3>Event on existing fences</h3>
+            <p><code>create_event(Chiplet | Package)</code> / record / wait lower onto SoftChipletSync. Job Events from <code>execute</code> stay on the partition CP-shaped timeline. Wait-before-record is <code>NotReady</code>. Not a new packet, not <code>GetPjRtApi</code>, not a CUDA stream.</p>
+            <p class="proof-src">host/aether-pjrt · <code>IreeHalCmd</code> offsets unchanged · not a plugin</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="5">
+            <div class="proof-head">
+              <span class="proof-serial">[softsfi]</span>
+              <span class="badge done">RMW</span>
+            </div>
+            <h3>One honest <code>atomic_add</code></h3>
+            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor / heap stay <code>Unmodeled</code>. Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
+            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] in-bounds+atomic accept / OOB+tensor reject</code></p>
+          </article>
+          <article class="proof-card proof-wide" data-reveal data-d="6">
             <div class="proof-head">
               <span class="proof-serial">[sva]</span>
               <span class="badge done">fault</span>
@@ -549,7 +569,7 @@
             <div class="horizon-phase mid">
               <small>2027</small>
               <b>Deepen</b>
-              <p>PJRT polish · one port if needed</p>
+              <p>Event · atomic · class · more ops open</p>
               <span class="fill" aria-hidden="true"><i></i></span>
             </div>
             <div class="horizon-phase end">
@@ -591,10 +611,10 @@
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">06 — Two-year roadmap</p>
-            <h2>Year-1, hardening, Months 1–5, and H2 2026 explorations landed. 2028 is a partner handoff or an ABI freeze.</h2>
-            <p class="lede">Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028). Historical Falsifier track in <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; M1–M4 closed in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>; Month 5 four digests closed in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 opcodes, M2 PJRT, M4 XQueue, M3 SID-at-submit, the Soft SMMU kit, and SoftChipletSync stay done. SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI are done. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5 digests. Path-A guest bind stays gated. Path B is canonical. Soft SMMU stays software. We do not tape out chips. Manufacturing support is not a milestone.</p>
+            <h2>Year-1, hardening, Months 1–5, H2 2026 explorations, and three 2027 H1 deepen slices landed. 2028 is a partner handoff or an ABI freeze.</h2>
+            <p class="lede">Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028). Historical Falsifier track in <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; M1–M4 closed in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>; Month 5 four digests closed in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 opcodes, M2 PJRT, M4 XQueue, M3 SID-at-submit, the Soft SMMU kit, and SoftChipletSync stay done. SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI are done. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5 digests. Event create/record/wait, fabric-class SoftNoI, and SID-proved <code>atomic_add</code> landed as 2027 H1 deepen slices — not a new calendar. Path-A guest bind stays gated. Path B is canonical. Soft SMMU stays software. We do not tape out chips. Manufacturing support is not a milestone.</p>
           </div>
-          <div class="honest-pill" data-reveal>H2 2026 landed · 2028 handoff or freeze · not a foundry calendar</div>
+          <div class="honest-pill" data-reveal>H2 2026 + three 2027 slices landed · 2028 handoff or freeze · not a foundry calendar</div>
         </div>
         <div class="timeline">
           <article class="tl now" data-reveal>
@@ -729,10 +749,28 @@
                 <span class="chip wait">path A gated</span>
               </div>
               <ul>
-                <li>SoftNoI-IS (PR #60) — Interference Score admit on a fake shared NoI. SoftChipletSync advertises per-tenant IS; Soft-CP <code>submit_xqueue_noi</code> refuses when projected <code>IS &gt; 1.5</code>. Light 400+400 admits (IS = 1.0); heavy 800+800 refuses the second tenant (IS = 1.6). PARL / NoI inspiration. Admit control, not topology synthesis, not UniCNet. Integer throughput units, not FLOPs. Default <code>submit_xqueue</code> stays ungated. Path B SoftNPU / <code>make qemu</code> unchanged</li>
+                <li>SoftNoI-IS (PR #60) — Interference Score admit on a fake shared NoI. SoftChipletSync advertises per-tenant IS; Soft-CP <code>submit_xqueue_noi</code> refuses when projected <code>IS &gt; 1.5</code>. Light 400+400 admits (IS = 1.0); heavy 800+800 refuses the second tenant (IS = 1.6). PARL / NoI inspiration. Admit control, not topology synthesis, not UniCNet. Integer throughput units, not FLOPs. Default <code>submit_xqueue</code> stays ungated. Path B SoftNPU / <code>make qemu</code> unchanged. Fabric-class tags (PR #75) deepen this same admit — see the 2027 H1 slices card</li>
                 <li>PASID/SVA (PR #62) — bind process mm ↔ Soft-SMMU SSID (the PASID <em>is</em> that software SSID); Soft-CP DMA uses the process VA; host unmap → SSID TLB invalidate; a skipped invalidate is a stale translate. Linux SVA shape. Software only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA, not hardware SMMU. No zero-copy SVA without the unmap → invalidate path. Path B still uses allocated IOVAs</li>
                 <li>OperatorInject (PR #61) — Soft-CP resident worker + versioned <code>memcpy</code> / <code>saxpy</code>; <code>scale</code> hot-adds without restart (<code>epoch</code> / <code>launches</code> unchanged). SID-at-submit + SoftCmdFirewall copy-then-validate still gate the packed image. Own IR only. GPUOS / Mirage MPK inspiration — not NVRTC / CUDA, not a full LLM compiler. Distinct from landed <code>OperatorKernelHandle</code></li>
                 <li>Conditional guest PCI bind for path A stays gated — only if Soft-SMMU IOVA must be shown on path-A DMA; <code>-device aether-accel</code> model landed; stock QEMU stays path B; CI does not rebuild QEMU</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · 2027 H1 slices</div>
+              <h3>Three deepenings — not a new calendar</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">Event wait</span>
+                <span class="chip on">fabric-class</span>
+                <span class="chip on">ATOMIC_ADD</span>
+                <span class="chip wait">path A gated</span>
+              </div>
+              <ul>
+                <li>PJRT Event (PR #74) — <code>host/aether-pjrt</code> Event create / record / wait on existing SoftChipletSync chiplet-local or package-scope fences. Job Events from <code>execute</code> stay on the partition CP-shaped <code>Timeline</code>. Wait-before-record / wait-before-complete is <code>NotReady</code>. Wrong-SID still refuses. TRANSFER-only images still <code>Fault</code>. <code>IreeHalCmd</code> offsets unchanged. Not a new packet, not a PJRT plugin, not <code>GetPjRtApi</code> / XLA / <code>iree_hal_driver_t</code>, not a CUDA stream, not a silicon fence. Path B / <code>make qemu</code> unchanged</li>
+                <li>Fabric-class SoftNoI (PR #75) — software tag on <code>AccelJobDesc.flow</code> from collective type (tree → Gradient, ring → Curl, persistent → Harmonic). SoftNoI <code>admit_class</code>: Curl needs reserved ring capacity (400). Same light demand admits as Gradient/Harmonic and refuses the second Curl (<code>RingExhausted</code>) even when projected IS is still 1.0. Not a <code>CpCmd</code> / vendor header, not FlowHodgeQuota DMA-header theater, not topology synth, not UniCNet. Default <code>submit_xqueue</code> stays ungated. Integer counters only, not FLOPs</li>
+                <li>SoftSFI <code>atomic_add</code> (PR #73) — one honest side-effect: SID-proved toy word fetch-add (<code>rd = mem[rs+imm]; mem[rs+imm] += rt</code>, wrapping u32). In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>; heap is not an opcode. Sequential software RMW — not a coherent hardware atomic, not NVVM, not “safe kernels.” Path B SoftNPU / <code>make qemu</code> unchanged</li>
               </ul>
             </div>
           </article>
@@ -743,7 +781,8 @@
               <h3>Next two years — deepen, then stop or partner</h3>
               <div class="chip-row" style="margin:0 0 12px">
                 <span class="chip on">H2 2026 done</span>
-                <span class="chip wait">2027 deepen</span>
+                <span class="chip on">2027 slices landed</span>
+                <span class="chip wait">2027 more ops open</span>
                 <span class="chip wait">2028 handoff or freeze</span>
                 <span class="chip wait">not tape-out</span>
               </div>
@@ -757,7 +796,7 @@
                 <div class="horizon-phase mid">
                   <small>2027 H1</small>
                   <b>Deepen</b>
-                  <p>PJRT polish · SoftSFI widen</p>
+                  <p>Event · atomic · class landed</p>
                   <span class="fill" aria-hidden="true"><i></i></span>
                 </div>
                 <div class="horizon-phase mid">
@@ -774,7 +813,7 @@
                 </div>
               </div>
               <ul>
-                <li>Calendar in <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. 2027 deepens what already shipped: PJRT / Event polish (still not a plugin), SoftSFI widen with honest TODOs (<code>atomic_add</code> is SID-proved; tensor / heap stay <code>Unmodeled</code>), gated per-task <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots. Second consumer of frozen <code>IreeHalCmd</code>; <strong>one</strong> port (RISC-V virtio-mmio <em>or</em> aarch64 GIC) only if path B’s doorbell fails. Opcode v2 only with a dual update of ACCEL.md + <code>ireecp</code> + host pack/unpack</li>
+                <li>Calendar in <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. 2027 deepens what already shipped. Landed slices: Event create/record/wait on existing fences (still not a plugin), fabric-class tags into SoftNoI admit, SID-proved SoftSFI <code>atomic_add</code> (tensor / heap stay <code>Unmodeled</code>). Still open: PJRT shim more ops (Nop / MatMul / Wave only), gated per-task <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots. Second consumer of frozen <code>IreeHalCmd</code>; <strong>one</strong> port (RISC-V virtio-mmio <em>or</em> aarch64 GIC) only if path B’s doorbell fails. Opcode v2 only with a dual update of ACCEL.md + <code>ireecp</code> + host pack/unpack</li>
                 <li>2028 maintains the Soft SMMU bring-up kit as the silicon handoff. Hardware SMMU is partner silicon, not a software milestone. Year-end is a <strong>signed opcode list</strong> from a real partner CP, or a <strong>research ABI freeze</strong> — not a manufacturing climax, not tape-out. <code>PartnerNpuStub</code> stays a labeled no-op until a signed list retires it</li>
                 <li>Path B stays canonical. Soft SMMU stays software. ABI 0–11 frozen. No FLOPs. MicroPerceptron is optional and secondary to PJRT. Guest PCI path A stays gated</li>
               </ul>
@@ -839,7 +878,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">07 — Status / proof</p>
           <h2>What you can boot. What is still open.</h2>
-          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, the Month 5 exploration digests, and the H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) have landed. Path-A guest bind stays gated. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
+          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, the Month 5 exploration digests, the H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS), and three 2027 H1 deepen slices (Event wait, fabric-class SoftNoI, SoftSFI <code>atomic_add</code>) have landed. Path-A guest bind stays gated. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
         <div class="status-grid">
           <div class="term" data-reveal>
@@ -860,7 +899,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions + SoftCmdFirewall copy-then-validate + SoftSFI toy bytecode sandbox + OperatorInject resident worker + SoftNoI-IS admit + PASID/SVA mm↔SSID), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (scoped wave / CU / chiplet / package timelines; not UCIe), SoftCCT (last-writer chiplet elision; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), SoftCmdFirewall (copy-then-validate; not confidential GPU), SoftSFI (toy ISA bounds + SID; not a verified multi-tenant GPU), OperatorInject (resident worker + hot-add scale; not NVRTC), SoftNoI-IS (fake NoI IS admit; refuse IS &gt; 1.5; not topology synth), PASID/SVA (mm↔SSID bind; Soft-CP DMA via process VA; unmap→SSID TLB; not ARM SVA / CUDA UVA / hardware SMMU), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model, Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions + SoftCmdFirewall copy-then-validate + SoftSFI toy bytecode sandbox + OperatorInject resident worker + SoftNoI-IS admit + PASID/SVA mm↔SSID), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; Event create/record/wait on existing SoftChipletSync fences; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (scoped wave / CU / chiplet / package timelines; not UCIe), SoftCCT (last-writer chiplet elision; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), SoftCmdFirewall (copy-then-validate; not confidential GPU), SoftSFI (toy ISA bounds + SID-proved <code>atomic_add</code>; tensor/heap <code>Unmodeled</code>; not a verified multi-tenant GPU), OperatorInject (resident worker + hot-add scale; not NVRTC), SoftNoI-IS (fake NoI IS admit; fabric-class tree/ring/persistent tag; refuse IS &gt; 1.5 or Curl ring-exhaust; not topology synth), PASID/SVA (mm↔SSID bind; Soft-CP DMA via process VA; unmap→SSID TLB; not ARM SVA / CUDA UVA / hardware SMMU), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
               </div>
             </div>
             <div class="proof">
@@ -874,14 +913,14 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
               <span class="badge stub">Stub</span>
               <div>
                 <strong>Honest limits</strong>
-                <p>No hardware SMMU (Soft SMMU is a deepened software STE→CD→S1/S2 walk + ATS invalidate + dump/replay kit, not silicon; partner silicon still required). Soft-CP is a software model, not a silicon driver: XQueue is two software queues with queue-boundary suspend/resume, not a silicon queuing unit and not an XSched LD_PRELOAD shim; SET_SID-at-submit is Host1x-shaped, not a Tegra driver; SoftGreenCtx is a fake SM/WQ partition, not HW MIG, not a BAR firewall, not a CUDA driver, and not a DetShare port; SoftCmdFirewall is copy-then-validate, not confidential GPU and not SEC2; SoftSFI is a toy bytecode sandbox, not a verified multi-tenant GPU and not NVRTC. OperatorInject is a resident worker + versioned op table, not NVRTC, not CUDA, not a full LLM compiler, and not NVIDIA. SoftNoI-IS is runtime admit on a fake shared NoI (PARL/NoI Interference Score), not topology synthesis and not UniCNet. PASID/SVA is software bind + SSID TLB invalidate, not ARM SVA, not PCIe PASID/PRI, not CUDA UVA, and not hardware SMMU. IreeShapedCp is an IREE HAL-shaped software packet, not an IREE runtime and not a signed vendor. <code>aether-pjrt</code> is a host contract that packs frozen <code>IreeHalCmd</code> onto IreeShapedCp, not a PJRT plugin / IREE HAL driver / vendor runtime. SoftChipletSync is chiplet-local fence domains on the existing seq / wait / complete model, not UCIe sync, not a Vulkan timeline, not ChipletFleet, and not a multi-chiplet latency claim. SoftCCT is last-writer-chiplet elision on that object (CPElide inspiration), not a full coherence protocol and not a Vulkan / ROCm product. The four Month 5 digests are not one product isolation spine. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5, not hardware. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree; the guest does not yet bind PCI BAR0. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+                <p>No hardware SMMU (Soft SMMU is a deepened software STE→CD→S1/S2 walk + ATS invalidate + dump/replay kit, not silicon; partner silicon still required). Soft-CP is a software model, not a silicon driver: XQueue is two software queues with queue-boundary suspend/resume, not a silicon queuing unit and not an XSched LD_PRELOAD shim; SET_SID-at-submit is Host1x-shaped, not a Tegra driver; SoftGreenCtx is a fake SM/WQ partition, not HW MIG, not a BAR firewall, not a CUDA driver, and not a DetShare port; SoftCmdFirewall is copy-then-validate, not confidential GPU and not SEC2; SoftSFI is a toy bytecode sandbox, not a verified multi-tenant GPU and not NVRTC — <code>atomic_add</code> is a sequential SID-proved toy RMW, not a hardware atomic and not “safe kernels.” OperatorInject is a resident worker + versioned op table, not NVRTC, not CUDA, not a full LLM compiler, and not NVIDIA. SoftNoI-IS is runtime admit on a fake shared NoI (PARL/NoI Interference Score) plus a software fabric-class tag, not topology synthesis and not UniCNet. PASID/SVA is software bind + SSID TLB invalidate, not ARM SVA, not PCIe PASID/PRI, not CUDA UVA, and not hardware SMMU. IreeShapedCp is an IREE HAL-shaped software packet, not an IREE runtime and not a signed vendor. <code>aether-pjrt</code> is a host contract that packs frozen <code>IreeHalCmd</code> onto IreeShapedCp; Event create/record/wait is a research noun over existing SoftChipletSync fences, not a PJRT plugin / IREE HAL driver / vendor runtime / CUDA stream. SoftChipletSync is chiplet-local fence domains on the existing seq / wait / complete model, not UCIe sync, not a Vulkan timeline, not ChipletFleet, and not a multi-chiplet latency claim. SoftCCT is last-writer-chiplet elision on that object (CPElide inspiration), not a full coherence protocol and not a Vulkan / ROCm product. The four Month 5 digests are not one product isolation spine. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5, not hardware. Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices — not a new calendar, not tape-out. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree; the guest does not yet bind PCI BAR0. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
               </div>
             </div>
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
-                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · PITCH · DESIGN_WIN · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
-                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; the Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · PITCH · WEEK1_CALL · DESIGN_WIN · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). Week 1 20-minute pack is <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a>. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices. The Kernel calendar is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A guest bind stays gated. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
           </div>
@@ -895,7 +934,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
           <div class="sec-head" style="margin:0" data-reveal>
             <p class="kicker">08 — 8-minute pitch</p>
             <h2>A call script. Isolation is the product, not FLOPs.</h2>
-            <p class="lede">Read this on a live call. Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Proof commands that exist: <code>make diligence-demo</code> and <code>make red-team</code>. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>. <code>docs/PARTNER.md</code> is intended, not on <code>main</code> yet. There is no <code>make partner-hello</code>.</p>
+            <p class="lede">Read this on a live call. Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>. Proof commands that exist: <code>make diligence-demo</code>, <code>make red-team</code>, <code>make partner-hello</code>. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>.</p>
           </div>
           <div class="honest-pill" data-reveal>8 min · refuse paths · not a vendor pitch</div>
         </div>
@@ -909,7 +948,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
           <li class="beat glass" data-reveal data-d="1">
             <div class="beat-meta"><span class="chip on">1:30–3:00</span><span class="beat-n">02</span></div>
             <h3>What ships</h3>
-            <p>Three frozen surfaces: <code>IreeHalCmd</code> (96-byte LE, magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>), PJRT-shaped host nouns in <code>aether-pjrt</code> (not <code>GetPjRtApi</code>, not a plugin), Soft SMMU SID-at-submit (Host1x-shaped SET_SID at the job head). Research opcodes, public IREE HAL nouns — <strong>not a signed vendor</strong>. Soft SMMU is software. <code>PartnerNpuStub</code> is a leftover no-op.</p>
+            <p>Three frozen surfaces: <code>IreeHalCmd</code> (96-byte LE, magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>), PJRT-shaped host nouns in <code>aether-pjrt</code> (Event create/record/wait on existing SoftChipletSync fences; not <code>GetPjRtApi</code>, not a plugin), Soft SMMU SID-at-submit (Host1x-shaped SET_SID at the job head). Research opcodes, public IREE HAL nouns — <strong>not a signed vendor</strong>. Soft SMMU is software. <code>PartnerNpuStub</code> is a leftover no-op.</p>
           </li>
           <li class="beat glass" data-reveal data-d="2">
             <div class="beat-meta"><span class="chip on">3:00–5:00</span><span class="beat-n">03</span></div>
@@ -933,6 +972,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
             <div class="term-bar"><i></i><i></i><i></i><span>Makefile targets that exist</span></div>
             <pre><span class="cmd">$ make diligence-demo</span>  <span class="ok"># host Path B; greps expected.txt</span>
 <span class="cmd">$ make red-team</span>          <span class="ok"># named attacks refused</span>
+<span class="cmd">$ make partner-hello</span>     <span class="ok"># frozen IreeHalCmd; no QEMU</span>
 <span class="cmd">$ make design-win-check</span>  <span class="ok"># filled DESIGN_WIN worksheet</span>
 <span class="cmd">$ make qemu</span>              <span class="ok"># path-B guest serial (optional on a call)</span>
 
@@ -942,7 +982,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
           </div>
           <div class="disclaimer" style="margin:0">
             <strong>No partnership. No FLOPs. No tape-out.</strong>
-            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. <code>PARTNER.md</code> is not on main yet.</span>
+            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. Week 1 pack stays: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>.</span>
           </div>
         </div>
       </div>
