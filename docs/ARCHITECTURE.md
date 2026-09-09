@@ -204,7 +204,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/fence.rs` | CP-shaped timeline (seq / wait / complete; credit limit; timeout is software) |
 | `core/src/chipsync.rs` | SoftChipletSync scoped timelines (wave/CU/chiplet/package) + hierarchical counters + SoftCCT elision + SoftNoI-IS advertisement |
 | `core/src/greenctx.rs` | SoftGreenCtx fake SM/WQ partitions (70/30) + memcpy interference + migrate-to-yield (not MIG) |
-| `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`) |
+| `core/src/softsfi.rs` | SoftSFI toy Soft-CP ISA + SFI verifier (GPU-AToLL shape; SID `base+bound`; SID-proved `atomic_add`) |
 | `core/src/sva.rs` | PASID/SVA clip (Linux SVA-shaped mm↔SSID; not ARM SVA / CUDA UVA) |
 | `core/src/opinject.rs` | OperatorInject resident worker + versioned op table (memcpy/saxpy + hot-add scale; GPUOS / Mirage MPK; not NVRTC) |
 | `core/src/noi.rs` | SoftNoI-IS fake NoI + Interference Score admit + software fabric-class tag (PARL/NoI metric; not topology synth, not UniCNet, not a vendor header) |

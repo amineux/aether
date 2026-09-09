@@ -313,9 +313,10 @@ inspiration; not a coherence protocol, not Vulkan / ROCm).
 XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield
 without SID change; Green Contexts / DetShare inspiration; not HW MIG,
 not a BAR firewall, not FLOPs).
-**SoftSFI is landed** (Month 5 digest 4; toy Soft-CP load/store/add/dma
-+ SFI verifier; GPU-AToLL inspiration; not NVVM; atomics/tensor/heap
-refused). Optional Soft SMMU kit is PR #48 (software tables). Path-A
+**SoftSFI is landed** (Month 5 digest 4; toy Soft-CP
+load/store/add/dma/`atomic_add` + SFI verifier; GPU-AToLL inspiration;
+not NVVM; tensor/heap `Unmodeled`; `atomic_add` is a sequential toy
+RMW, not a hardware atomic). Optional Soft SMMU kit is PR #48 (software tables). Path-A
 guest bind stays gated. Closed Month 5 record:
 [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). The **next calendar** is
 [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).

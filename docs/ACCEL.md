@@ -529,10 +529,11 @@ Host tests: `memcpy_interference_partitioned_beats_unpartitioned`,
 
 ## SoftSFI (software; GPU-AToLL-shaped)
 
-**Status:** **Landed** (SpectraScout M5 leftover). Toy Soft-CP ISA
-(`load` / `store` / `add` / `dma`) with an SFI verifier. Every
-load/store/dma proves `base+bound` sits in the SID-allowed IOVA
-range. Not an NVVM pipeline. Not CUDA.
+**Status:** **Landed** (SpectraScout M5 leftover; `atomic_add` later
+modeled). Toy Soft-CP ISA (`load` / `store` / `add` / `dma` /
+`atomic_add`) with an SFI verifier. Every load/store/dma/fetch-add
+proves `base+bound` sits in the SID-allowed IOVA range. Not an NVVM
+pipeline. Not CUDA. Not a coherent hardware atomic.
 
 **Inspiration.** [GPU-AToLL](https://github.com/AERO-Project-EU/gpu-atoll)
 hardens NVVM-IR so each memory side-effect proves a distinct location
@@ -552,32 +553,39 @@ escapes the SID window (`Oob`).
   execute. Fault injection skips the static verifier; the SID
   sandbox still traps and does not cross-read.
 
-**Honest TODOs (stay open):**
+**Honest remaining holes (named `SfiError::Unmodeled`, not “safe”):**
 
-- Atomics (`ATOMIC_ADD`) are **refused**, not modeled.
 - Tensor copies / SoftNPU `MatMul` / `Wave` / TMA-shaped ops are
   **refused**, not modeled.
 - Heap / dynamic allocation is not a sandbox (no heap in this ISA).
+
+**Modeled side-effect:** `atomic_add` is a sequential word fetch-add
+(`rd = mem[rs+imm]; mem[rs+imm] += rt`). The verifier must prove the
+word writable in the SID window. In-range accepts; cross-tenant is
+`Oob`. Skip-verify still traps and does not write tenant B. This is
+**not** a coherent hardware atomic and **not** full SFI.
 
 **Contract** (`aether_core::softsfi` + `drivers/src/softsfi.rs` on Soft-CP):
 
 ```text
 verify(program, SidSandbox::from_iommu(sid))
-  Load/Store: prove [rs+imm, +4) ⊆ SID IOVA window
-  Dma:        prove src and dst spans ⊆ window
-  Add/AddImm: no memory; refine constants
-  Atomic/Tensor/unknown: Unmodeled
+  Load/Store:   prove [rs+imm, +4) ⊆ SID IOVA window
+  AtomicAdd:    prove [rs+imm, +4) writable ⊆ window (toy RMW)
+  Dma:          prove src and dst spans ⊆ window
+  Add/AddImm:   no memory; refine constants
+  Tensor/unknown/no-heap: Unmodeled
 Soft-CP submit_sfi(sid, program)     // verify then execute
 Soft-CP inject_sfi_skip_verify(...)  // runtime SID trap only
 ```
 
 `CpCmd` / XQueue / SET_SID / SoftChipletSync stay unchanged. Path B
 SoftNPU / `make qemu` unchanged. Two tenants on the same Soft-CP use
-distinct SIDs; host tests accept in-bounds, reject OOB, and show
-skip-verify does not leak tenant B.
+distinct SIDs; host tests accept in-bounds load/store/`atomic_add`,
+reject OOB / cross-tenant, and show skip-verify does not leak tenant B.
 
 Host tests: `verifier_accepts_in_bounds_program`,
-`verifier_rejects_oob`, `verifier_rejects_atomics_and_tensor`,
+`verifier_rejects_oob`, `atomic_add_in_bounds_accepted`,
+`atomic_add_cross_tenant_rejected`, `verifier_rejects_tensor_and_unknown`,
 `softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
 `[softsfi]`.
 

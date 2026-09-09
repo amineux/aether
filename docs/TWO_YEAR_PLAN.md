@@ -50,7 +50,7 @@ Do **not** re-schedule any of the following as new milestones. Do
 | MONTH5_PLAN (PR #53) | Closed Month 5 calendar. Four exploration digests, not one pillar |
 | **SoftGreenCtx (PR #54)** | Fake 70/30 SM/WQ partitions. Not HW MIG |
 | **SoftCmdFirewall (PR #55)** | Copy-then-validate Soft-CP submit. Not confidential GPU |
-| **SoftSFI (PR #56)** | Toy Soft-CP load/store/add/dma + SFI verifier. Not NVVM. Atomics / tensor / heap refused |
+| **SoftSFI (PR #56)** | Toy Soft-CP load/store/add/dma + SFI verifier. Later: SID-proved `atomic_add`. Not NVVM. Tensor / heap `Unmodeled` |
 | **SoftCCT (PR #57)** | Last-writer chiplet elision on SoftChipletSync. Not a coherence protocol |
 | Explorations A–E | A merged into M2; B blast-radius clip; C `ChipletTaskScope` stub; D CDT props; E `TypedWindow` stub |
 | Site through PR #52 / #58 | Research leave-behind / progress refresh. **Not** a calendar item |
@@ -162,10 +162,10 @@ the kernel.
   `iree_hal_driver_t`. Still not in-kernel graph IR. `IreeHalCmd`
   offsets frozen; TRANSFER stays reserved.
 - **PJRT shim more ops** — still open (Nop / MatMul / Wave only).
-- **SoftSFI widen** — more memory side-effects on the toy ISA,
-  still honest TODOs. Atomics / tensor / heap stay refused until
-  they are modeled. Still not NVVM. Still not “safe multi-tenant
-  kernels.”
+- **SoftSFI widen** — `atomic_add` is modeled (SID `base+bound`;
+  in-range accept, cross-tenant `Oob`). Sequential toy RMW, not a
+  hardware atomic. Tensor / heap stay `Unmodeled`. Still not NVVM.
+  Still not “safe multi-tenant kernels.”
 - **Per-task `CapTable`** — **only if** two shim tenants alias
   slots on the shared World table. World still shares one table
   today. Isolate those tenants; do not invent a CNode.
@@ -303,7 +303,7 @@ numbered.
 | MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` (still later / optional; doorbell sketch is `examples/accel-client`) |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | PJRT polish | `host/aether-pjrt`, [HOST.md](HOST.md) |
-| SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; honest TODOs |
+| SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `atomic_add` modeled; tensor/heap `Unmodeled` |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
 | Blast-radius clip | `core/src/blast.rs` / host tests; extend, do not rebuild |
 | Opcode table v2 | [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host pack/unpack |

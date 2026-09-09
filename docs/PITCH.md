@@ -228,7 +228,8 @@ non-claims and stop. Do not paper over it.
 **Say:**
 
 > 2027 deepens what already shipped: PJRT polish, SoftSFI widen with
-> honest TODOs, a second consumer of the **frozen** packet. Opcode v2
+> honest TODOs (`atomic_add` SID-proved; tensor / heap still
+> `Unmodeled`), a second consumer of the **frozen** packet. Opcode v2
 > only with a dual update of ACCEL.md, `ireecp`, and host pack/unpack.
 > Hardware SMMU is not a software milestone.
 

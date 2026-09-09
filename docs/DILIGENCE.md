@@ -67,7 +67,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
-| SoftSFI | Toy Soft-CP load/store/add/dma + SFI verifier (GPU-AToLL shape; not NVVM; atomics/tensor/heap refused) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
+| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor/heap `Unmodeled`) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
 | SoftNoI-IS | **In-flight / this PR.** Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5` (PARL/NoI inspiration; admit control, not topology synth, not UniCNet). Do not mark Done until merge | `core/src/noi.rs`, `drivers/src/noi.rs` |
@@ -104,6 +104,8 @@ Green Contexts / DetShare inspiration only — not HW MIG, not a BAR
 firewall, not FLOPs.
 `run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
 GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
+`atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`); tensor
+and heap stay `Unmodeled`.
 `run_sva_demo()` is the PASID/SVA clip (serial `[sva]`); Linux SVA /
 PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
@@ -257,6 +259,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Wrong-SID / CrossCut DMA | `run_blast_demo` — SpectralCut `CrossCut` + Soft SMMU `WrongStream` / `StreamAbort` | refused |
 | Mutate command buffer during validate | `run_firewall_demo` — SoftCmdFirewall copy-then-validate (Host1x hole closed) | refused |
 | Out-of-bounds load/store | `run_softsfi_demo` — SoftSFI verifier `SfiError::Oob`; skip-verify still does not cross-read | refused |
+| Cross-tenant `atomic_add` | `run_softsfi_demo` — SID-proved toy fetch-add; foreign span is `Oob` (not a hardware atomic) | refused |
 | Overload admit (`IS` over budget) | `run_softnoi_demo` — SoftNoI-IS refuse when projected `IS > 1.5` | refused |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
 
