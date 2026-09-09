@@ -46,8 +46,10 @@
 //! SoftNoI-IS is the admit layer on that fabric: a fake shared NoI
 //! advertises a per-tenant Interference Score (`T_solo / T_con`).
 //! XQueue submit refuses when projected IS > budget (canonical 1.5×).
-//! PARL / NoI inspiration. **Admit control, not topology synthesis,
-//! not UniCNet.**
+//! DMA / collective descriptors may carry a software FlowClass tag
+//! (Gradient/tree, Curl/ring, Harmonic/persistent); Curl also needs
+//! reserved ring capacity. PARL / NoI inspiration. **Admit control,
+//! not topology synthesis, not UniCNet, not a vendor class header.**
 //!
 //! SoftGreenCtx partitions a fake SM / WQ pool (canonical 70/30). XQueues
 //! bind to a context. CUDA Green Contexts / DetShare are **inspiration**
@@ -75,6 +77,7 @@ use aether_core::fence::{Fence, FenceId, Timeline};
 use aether_core::greenctx::{
     GreenCtxError, GreenCtxId, MemcpyReport, SmWqBudget, SoftGreenPool, SOFT_SM_POOL, SOFT_WQ_POOL,
 };
+use aether_core::hodge::FlowClass;
 use aether_core::iommu::{IommuMap, MapError, MapRequest, MmId, StreamId};
 use aether_core::noi::NoiError;
 use aether_core::opinject::OperatorInject;
@@ -218,7 +221,7 @@ fn map_green_error(e: GreenCtxError) -> HalError {
 pub(crate) fn map_noi_error(e: NoiError) -> HalError {
     match e {
         NoiError::BadArg => HalError::BadArg,
-        NoiError::OverBudget | NoiError::Exhausted => HalError::Busy,
+        NoiError::OverBudget | NoiError::RingExhausted | NoiError::Exhausted => HalError::Busy,
         NoiError::Unbound => HalError::Fault,
     }
 }
@@ -1181,6 +1184,18 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     fn admit_noi(&mut self, tenant: u32, demand: u32) -> Result<u32, HalError> {
         self.chipsync
             .admit_noi(aether_core::types::TenantId(tenant), demand)
+            .map(|e| e.worst_is_milli)
+            .map_err(map_noi_error)
+    }
+
+    fn admit_noi_class(
+        &mut self,
+        tenant: u32,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<u32, HalError> {
+        self.chipsync
+            .admit_noi_class(aether_core::types::TenantId(tenant), demand, class)
             .map(|e| e.worst_is_milli)
             .map_err(map_noi_error)
     }

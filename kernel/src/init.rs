@@ -144,6 +144,11 @@ fn run_and_print_softnoi() -> bool {
         softnoi.light_admit && softnoi.heavy_refuse && softnoi.advertised,
     ));
     console::nl();
+    write_str("[softnoi] class tag curl ring-reserve refuse  ");
+    write_str(flag(
+        softnoi.class_grad_admit && softnoi.class_curl_refuse && softnoi.class_not_renamed_is,
+    ));
+    console::nl();
     if softnoi.all_ok() {
         println!("[softnoi] two-tenant fake NoI admit/refuse sealed");
     } else {

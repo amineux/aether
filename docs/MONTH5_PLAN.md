@@ -231,7 +231,7 @@ killed.
 
 | Digest | Gate | Honest bound |
 | --- | --- | --- |
-| **FlowHodgeQuota deepen** | Shim injects fabric **class headers** (Gradient / Curl / Harmonic) on Soft-CP DMA | Admit/refuse counters under overload. Already-landed quota without class headers stays killed as theater |
+| **FlowHodgeQuota deepen** | Shim injects fabric **class headers** on Soft-CP DMA | **Stays killed as theater.** Already-landed Hodge quota without DMA headers. The interesting path is a thin software tag on `AccelJobDesc.flow` feeding SoftNoI admit (Curl ring reserve + admit/refuse counters) — not this digest, not a vendor header |
 | **MicroPerceptron interop** | Secondary to PJRT; consume frozen `IreeHalCmd` and/or path-A BAR | Not a second compiler story. Not a plugin |
 | **Guest PCI path A bind** | Soft-SMMU IOVA demo **needs** BAR DMA | Kernel `VirtioAccelMmio` talks PCI BAR0. Path B stays canonical. Do not rebuild QEMU in CI |
 | **Per-task CapTable** | Two shim tenants **alias slots** on the shared World table | Isolate those tenants. Additive `SYS_REVOKE` only if the same PR demos revoke → `unbind_stream` / FLR |
@@ -264,7 +264,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | **SoftNoI-IS** | **In-flight** (this PR; H2 2026) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth.** Not UniCNet. Not a Month 5 digest |
 | PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
 | OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add scale; no Soft-CP restart | Own IR. **Not NVRTC/CUDA**. Not a full LLM compiler |
-| FlowHodgeQuota | Gated digest | Class headers on Soft-CP DMA + admit/refuse counters | Headers required or stay killed as theater |
+| FlowHodgeQuota | Gated digest | **Killed as theater** (no DMA class headers). SoftNoI consumes a software `FlowClass` tag instead |
 
 ### Partner / HAL
 
@@ -301,7 +301,8 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 
 ### Fabric / spectral
 
-- FlowHodgeQuota class tags on Soft-CP DMA (gated; headers required).
+- FlowHodgeQuota class tags on Soft-CP DMA (gated; headers required —
+  **killed**). SoftNoI uses a software enum on `AccelJobDesc.flow`.
 - SoftNoI-IS (**in-flight / this PR**; admit control, not topology synth).
 - AffinityLaplacian / SpectralCut diligence clips. Not GiFt-Placer.
   ChipletFleet stays killed as calendar.
@@ -360,7 +361,7 @@ site progress refresh is not a milestone.
 | SoftNoI-IS (in-flight / this PR) | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests — not a Month 5 digest |
 | PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
 | OperatorInject (parked) | `core/src/opinject.rs` + `drivers/src/opinject.rs` resident worker — H2 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md); **not** marked Done |
-| FlowHodgeQuota digest | `core/src/hodge.rs`, Soft-CP DMA header inject; only with class headers |
+| FlowHodgeQuota digest | stays killed (no DMA class headers). SoftNoI tag: `AccelJobDesc.flow` |
 | MicroPerceptron digest | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
 | Path-A guest bind | guest `VirtioAccelMmio` only; CI still does not rebuild QEMU |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |

@@ -338,8 +338,9 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 4. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
    bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
    Software only. Not zero-copy SVA without the invalidate path.
-5. **FlowHodgeQuota.** Already landed as admit/refuse. Gated digest
-   only if the shim injects fabric class headers; else theater.
+5. **FlowHodgeQuota.** Already landed as admit/refuse. DMA class
+   headers stay killed as theater. SoftNoI consumes a software
+   `FlowClass` tag on `AccelJobDesc` instead.
 6. **OperatorInject deepen** — **parked leftover** (Soft-CP)
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.

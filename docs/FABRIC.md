@@ -63,10 +63,15 @@ fixed-point only; not an eigensolve. See [CUT.md](CUT.md).
 SoftChipletSync may advertise a per-tenant Interference Score on a
 **fake** shared Network-on-Interposer (`core/src/noi.rs`). Soft-CP
 XQueue admit refuses when projected `IS = max T_solo / T_con` exceeds
-the budget (canonical 1.5×). PARL / NoI inspiration
-([arXiv:2510.24113](https://arxiv.org/abs/2510.24113)). This is
-**runtime admit control**, not PARL topology synthesis and not UniCNet.
-See [ACCEL.md](ACCEL.md).
+the budget (canonical 1.5×). DMA / collective descriptors may carry a
+software `FlowClass` tag at submit (`CollectiveKind::fabric_class`:
+allreduce/tree → Gradient, ring-exchange → Curl, persistent →
+Harmonic). Curl also needs reserved ring capacity. Same demand can
+admit as Gradient and refuse as Curl — class is an admit input, not a
+renamed IS. Not a `CpCmd` / path-B vendor header. PARL / NoI
+inspiration ([arXiv:2510.24113](https://arxiv.org/abs/2510.24113)).
+This is **runtime admit control**, not PARL topology synthesis, not
+UniCNet, not optimal NoI design, not FLOPs. See [ACCEL.md](ACCEL.md).
 
 ### Spectral cuts
 

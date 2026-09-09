@@ -4,10 +4,15 @@
 //! editing the CP. PARL / NoI inspiration: Interference Score
 //! `IS = max T_solo / T_con`. SoftChipletSync advertises the per-tenant
 //! estimate; XQueue submit refuses when projected IS > budget.
-//! **Admit control, not topology synthesis, not UniCNet.**
+//! Descriptors may carry a software [`FlowClass`] tag at submit
+//! (allreduce/tree → Gradient, ring-exchange → Curl, persistent →
+//! Harmonic). Curl needs reserved ring capacity. **Admit control, not
+//! topology synthesis, not UniCNet, not a vendor header.**
 
 use aether_core::accel::{AccelJobDesc, AccelOp, DmaView};
+use aether_core::hodge::FlowClass;
 use aether_core::noi::{IsEstimate, SoftNoI};
+use aether_core::opkernel::CollectiveKind;
 use aether_core::types::{ChipletId, PhysAddr, TenantId};
 use aether_hal::HalError;
 
@@ -35,14 +40,27 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             .map_err(map_noi_error)
     }
 
+    /// Admit with a fabric class tag. Curl also needs reserved ring capacity.
+    pub fn admit_noi_class(
+        &mut self,
+        tenant: TenantId,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<IsEstimate, HalError> {
+        self.chipsync
+            .admit_noi_class(tenant, demand, class)
+            .map_err(map_noi_error)
+    }
+
     pub fn release_noi(&mut self, tenant: TenantId) -> Result<(), HalError> {
         self.chipsync.release_noi(tenant).map_err(map_noi_error)
     }
 
     /// XQueue submit gated by SoftNoI-IS. Refuses when projected IS > budget.
     ///
-    /// [`SoftCommandProcessor::submit_xqueue`] stays ungated (SID / XQueue
-    /// path unchanged when NoI is off).
+    /// Class is taken from [`AccelJobDesc::flow`] (tagged at submit from
+    /// collective type). [`SoftCommandProcessor::submit_xqueue`] stays
+    /// ungated (SID / XQueue path unchanged when NoI is off).
     pub fn submit_xqueue_noi(
         &mut self,
         queue: u16,
@@ -51,7 +69,7 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     ) -> Result<u32, HalError> {
         let tenant = TenantId(job.tenant);
         self.chipsync
-            .admit_noi(tenant, demand)
+            .admit_noi_class(tenant, demand, job.flow)
             .map_err(map_noi_error)?;
         match self.submit_xqueue(queue, job) {
             Ok(seq) => Ok(seq),
@@ -70,6 +88,11 @@ pub fn two_tenant_nop(tenant: u32, chiplet: u8, tile: u16) -> AccelJobDesc {
     job.place.chiplet = ChipletId(chiplet);
     job.place = job.place.with_tile(tile);
     job
+}
+
+/// Tag a Nop from collective type at submit. Software enum, not a vendor header.
+pub fn tagged_nop(tenant: u32, chiplet: u8, tile: u16, kind: CollectiveKind) -> AccelJobDesc {
+    two_tenant_nop(tenant, chiplet, tile).with_flow(kind.fabric_class())
 }
 
 #[cfg(test)]
@@ -179,5 +202,72 @@ mod tests {
         d.submit_xqueue(1, &two_tenant_nop(2, 1, 3)).unwrap();
         assert_eq!(d.noi().occupancy(), 0);
         assert!(!d.noi().enabled());
+    }
+
+    #[test]
+    fn class_tag_at_submit_changes_admit() {
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        two_queues(&mut d);
+        d.enable_noi(true);
+
+        let tree_a = tagged_nop(1, 0, 2, CollectiveKind::Tree);
+        let tree_b = tagged_nop(2, 1, 3, CollectiveKind::Tree);
+        assert_eq!(tree_a.flow, FlowClass::Gradient);
+        d.submit_xqueue_noi(0, &tree_a, DEMO_LIGHT_DEMAND).unwrap();
+        d.submit_xqueue_noi(1, &tree_b, DEMO_LIGHT_DEMAND).unwrap();
+        assert_eq!(d.noi().occupancy(), 2);
+        assert_eq!(d.noi().admitted_class(FlowClass::Gradient), 2);
+        assert_eq!(d.noi().refused(), 0);
+        d.release_noi(TenantId(1)).unwrap();
+        d.release_noi(TenantId(2)).unwrap();
+
+        let ring_a = tagged_nop(1, 0, 2, CollectiveKind::Ring);
+        let ring_b = tagged_nop(2, 1, 3, CollectiveKind::Ring);
+        assert_eq!(ring_a.flow, FlowClass::Curl);
+        d.submit_xqueue_noi(0, &ring_a, DEMO_LIGHT_DEMAND).unwrap();
+        assert_eq!(
+            d.submit_xqueue_noi(1, &ring_b, DEMO_LIGHT_DEMAND)
+                .unwrap_err(),
+            HalError::Busy
+        );
+        assert_eq!(d.noi().occupancy(), 1);
+        assert_eq!(d.noi().ring_demand(), DEMO_LIGHT_DEMAND);
+        assert_eq!(d.noi().admitted_class(FlowClass::Curl), 1);
+        assert_eq!(d.noi().refused_class(FlowClass::Curl), 1);
+        // Same demand as the Gradient pair; IS would still be 1.0.
+        assert_eq!(
+            d.noi().project_is_milli(TenantId(2), DEMO_LIGHT_DEMAND),
+            Ok(IS_SOLO_MILLI)
+        );
+        d.release_noi(TenantId(1)).unwrap();
+
+        let persist_a = tagged_nop(1, 0, 2, CollectiveKind::Torus);
+        let persist_b = tagged_nop(2, 1, 3, CollectiveKind::Torus);
+        assert_eq!(persist_a.flow, FlowClass::Harmonic);
+        d.submit_xqueue_noi(0, &persist_a, DEMO_LIGHT_DEMAND)
+            .unwrap();
+        d.submit_xqueue_noi(1, &persist_b, DEMO_LIGHT_DEMAND)
+            .unwrap();
+        assert_eq!(d.noi().occupancy(), 2);
+        assert_eq!(d.noi().ring_demand(), 0);
+        assert_eq!(d.noi().admitted_class(FlowClass::Harmonic), 2);
+        d.release_noi(TenantId(1)).unwrap();
+        d.release_noi(TenantId(2)).unwrap();
+
+        assert_eq!(
+            AccelDevice::admit_noi_class(&mut d, 1, DEMO_LIGHT_DEMAND, FlowClass::Curl).unwrap(),
+            IS_SOLO_MILLI
+        );
+        assert_eq!(
+            AccelDevice::admit_noi_class(&mut d, 2, DEMO_LIGHT_DEMAND, FlowClass::Curl)
+                .unwrap_err(),
+            HalError::Busy
+        );
+        assert_eq!(d.noi().refused_class(FlowClass::Curl), 2);
     }
 }

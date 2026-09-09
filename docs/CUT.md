@@ -111,6 +111,12 @@ descendants (`revoke` / `revoke_in`). Host tests in
 `core/src/opkernel.rs` lock the matrix. There is no new syscall and
 no QEMU collective engine — `Fabric::send` is still the admit path.
 
+Soft-CP DMA / collective descriptors may copy that class into
+`AccelJobDesc.flow` at submit (`CollectiveKind::fabric_class`). SoftNoI
+uses the tag as an admit input (Curl reserved ring). That is **not**
+the gated FlowHodgeQuota DMA-header digest — no vendor `CpCmd` class
+field. See [ACCEL.md](ACCEL.md).
+
 ## SparsifiedCollective
 
 A transform over a Hodge-bound collective (`OperatorKernelHandle` or a

@@ -5,8 +5,9 @@
 //! the elision layer on top: Soft-CP buffer labels + last-writer chiplet.
 //! **SoftNoI-IS** is the admit layer: a fake shared NoI advertises a
 //! per-tenant Interference Score; Soft-CP / XQueue refuse when projected
-//! IS > budget. PARL/NoI inspiration; **admit control, not topology
-//! synthesis** (see [`crate::noi`]).
+//! IS > budget. Descriptors may carry a software [`crate::hodge::FlowClass`]
+//! tag; Curl also needs reserved ring capacity. PARL/NoI inspiration;
+//! **admit control, not topology synthesis** (see [`crate::noi`]).
 //!
 //! **Inspiration (not a port, not a product):**
 //! - Fleet hierarchical event counters (wave / CU / chiplet / package):
@@ -30,6 +31,7 @@
 //! partner proof.
 
 use crate::fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
+use crate::hodge::FlowClass;
 use crate::noi::{IsEstimate, NoiError, SoftNoI};
 use crate::partition::{
     BlastRadius, PartitionError, PartitionId, PartitionProfile, QosBudget, SpatialSlice,
@@ -392,6 +394,16 @@ impl SoftChipletSync {
     /// Project + admit onto the fake NoI. Refuse when IS > budget.
     pub fn admit_noi(&mut self, tenant: TenantId, demand: u32) -> Result<IsEstimate, NoiError> {
         self.noi.admit(tenant, demand)
+    }
+
+    /// Admit with a fabric class tag (Curl also needs reserved ring capacity).
+    pub fn admit_noi_class(
+        &mut self,
+        tenant: TenantId,
+        demand: u32,
+        class: FlowClass,
+    ) -> Result<IsEstimate, NoiError> {
+        self.noi.admit_class(tenant, demand, class)
     }
 
     pub fn release_noi(&mut self, tenant: TenantId) -> Result<(), NoiError> {

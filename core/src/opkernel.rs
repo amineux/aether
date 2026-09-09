@@ -57,6 +57,18 @@ impl CollectiveKind {
     pub const fn ring_reserve(self) -> bool {
         matches!(self, Self::Ring)
     }
+
+    /// SoftNoI / DMA tag at submit. Software enum, not a vendor header.
+    ///
+    /// Tree (allreduce) → Gradient; Ring (ring-exchange) → Curl;
+    /// Torus (persistent) → Harmonic.
+    pub const fn fabric_class(self) -> FlowClass {
+        match self {
+            Self::Tree => FlowClass::Gradient,
+            Self::Ring => FlowClass::Curl,
+            Self::Torus => FlowClass::Harmonic,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -232,6 +244,13 @@ mod tests {
 
     fn tab() -> CapTable {
         CapTable::new(TenantId(1))
+    }
+
+    #[test]
+    fn fabric_class_from_collective_type() {
+        assert_eq!(CollectiveKind::Tree.fabric_class(), FlowClass::Gradient);
+        assert_eq!(CollectiveKind::Ring.fabric_class(), FlowClass::Curl);
+        assert_eq!(CollectiveKind::Torus.fabric_class(), FlowClass::Harmonic);
     }
 
     #[test]

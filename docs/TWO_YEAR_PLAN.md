@@ -86,13 +86,19 @@ site progress refreshes — not milestones
 Interference Score admit policy (PARL / NoI inspiration).
 SoftChipletSync fabric IS estimate; refuse when `IS > budget`.
 Slice: solo vs concurrent → IS; refuse `IS > 1.5` (or the named
-budget). **Admit control, not topology synthesis.**
+budget). **Admit control, not topology synthesis.** IS path landed
+in PR #60.
 
-This PR lands the slice. Do not mark Done until it merges. Not a
-Month 5 digest. Not in the Reality-on-main table above.
+This PR adds a thin software fabric-class tag
+(`AccelJobDesc.flow`, from collective type: allreduce/tree,
+ring-exchange/curl, persistent/harmonic). SoftNoI uses the tag as
+an admit input: Curl needs reserved ring capacity; host tests show
+class changes admit/refuse, not a renamed IS. Not a vendor header.
+Not FlowHodgeQuota DMA-header theater.
 
 **Done when:** host tests show solo vs concurrent IS; refuse
-`IS > budget`; docs name PARL / NoI as inspiration only. No new
+`IS > budget`; class tag changes admit (Curl ring); docs name PARL /
+NoI as inspiration only. No FLOPs. No “optimal NoI.” No new
 syscall. Path B / `make qemu` unchanged.
 
 ### PASID / SVA software bind + invalidate
@@ -291,7 +297,7 @@ numbered.
 
 | Slice | Primary touches |
 | --- | --- |
-| SoftNoI-IS | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests |
+| SoftNoI-IS | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit + class tag, host tests |
 | PASID / SVA | `core/src/iommu.rs`, `drivers/src/fakecp.rs` |
 | OperatorInject | `drivers/src/fakecp.rs` resident worker |
 | MicroPerceptron | host crate or virtio-accel consumer of frozen `IreeHalCmd` (still later / optional; doorbell sketch is `examples/accel-client`) |

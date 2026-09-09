@@ -491,6 +491,8 @@ pub fn job_template_from_cmd(cmd: &CpCmd) -> Result<AccelJobDesc, HalError> {
         phase,
         partition: aether_core::partition::PartitionId(0),
         fence_id: cmd.fence_id,
+        // CpCmd is not a class header. Tag stays on AccelJobDesc at submit.
+        flow: aether_core::hodge::FlowClass::Gradient,
     })
 }
 

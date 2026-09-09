@@ -26,7 +26,9 @@ The job descriptor is the architectural contract (see
 `aether_core::accel::AccelJobDesc`): opcode, MxNxK, physical bases
 (`PhysAddr` is the *local* field of a fabric address), typed
 `MemorySpace`, `Place`, `Phase`, partition, fence, strides, dtype,
-tenant, completion endpoint.
+tenant, completion endpoint. `flow` is a **software** fabric-class tag
+(`Gradient` / `Curl` / `Harmonic`) used by SoftNoI admit — not a
+`CpCmd` field, not `AccelJobWire`, not a vendor header.
 
 Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
 refuses a silent coherent load across places. `UNIFIED_MEMORY` is a
@@ -673,49 +675,60 @@ Host tests: `memcpy_and_saxpy_on_resident_worker`,
 
 ## SoftNoI-IS (software; PARL / NoI-shaped admit)
 
-**Status:** **In-flight / landing this PR** (H2 2026 exploration on
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Do not mark calendar Done
-until merge. Not a Month 5 digest. SoftChipletSync advertises a
-per-tenant Interference Score on a **fake** shared
+**Status:** IS admit landed (PR #60). This cut adds a thin fabric-class
+tag as an admit input. H2 2026 exploration on
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Not a Month 5 digest. Not
+FlowHodgeQuota DMA headers (that digest stays killed). SoftChipletSync
+advertises a per-tenant Interference Score on a **fake** shared
 Network-on-Interposer. Soft-CP XQueue admit refuses when the
 projected IS exceeds the budget (canonical **1.5×**). Two Soft-CP
-tenants.
+tenants. Curl (ring-exchange) also needs reserved ring capacity.
 
 **Inspiration.** [PARL / NoI](https://arxiv.org/abs/2510.24113)
 (“Taming the Tail”) defines
 `IS = max_k T_solo(k) / T_con(k)` — worst-case concurrent/solo
 slowdown — and uses it as a **topology-synthesis** objective. SoftNoI-IS
-reuses the *metric* as **runtime admit control**.
+reuses the *metric* as **runtime admit control**. Hodge Gradient / Curl /
+Harmonic is inspiration for the class tag only.
 
 **This is not:**
 
 - PARL topology synthesis, UniCNet, or optimal NoI design.
 - A silicon interposer, UCIe PHY, or a multi-chiplet sim.
+- A spectral fabric OS or an eigen-solve on the hot path.
 - A FLOP / partner-bandwidth claim. Host tests measure integer
   throughput units (`T_solo` / `T_con`) and admit/refuse counters.
 - A change to path-B SoftNPU, the virtqueue BAR, or `make qemu`.
   `IreeShapedCp` stays a single mailbox (no XQueue admit).
-- A `CpCmd` layout change or a new syscall. Default
-  `submit_xqueue` is ungated; `submit_xqueue_noi` is the admit path.
-  SoftNoI is **off** by default (SID / XQueue / CCT unchanged).
+- A `CpCmd` layout change, `AccelJobWire` class header, or a new
+  syscall. Default `submit_xqueue` is ungated; `submit_xqueue_noi`
+  is the admit path. SoftNoI is **off** by default (SID / XQueue /
+  CCT unchanged).
 
 **Contract** (`aether_core::noi::SoftNoI` + SoftChipletSync + Soft-CP):
 
 ```text
 SoftChipletSync.noi / enable_noi(true)
 project_is_milli(tenant, demand)     // max(1.0, sum/capacity)
-admit(tenant, demand)                // refuse if projected IS > 1.5
-advertised_is_milli(tenant)          // per-tenant estimate
-Soft-CP submit_xqueue_noi(queue, job, demand)
+admit(tenant, demand)                // Gradient; refuse if projected IS > 1.5
+admit_class(tenant, demand, class)   // Curl also needs ring ≤ 400
+CollectiveKind::fabric_class()       // Tree→Gradient, Ring→Curl, Torus→Harmonic
+AccelJobDesc.flow                    // software tag at submit
+Soft-CP submit_xqueue_noi(queue, job, demand)  // uses job.flow
 ```
 
-Canonical clip: fake capacity **1000**, budget **1500 milli**. Two light
-demands (400+400) stay under capacity (IS = 1.0) and **admit**. Two
-heavy demands (800+800) project IS = 1.6 and **refuse** the second
-tenant. Solo vs concurrent throughput is the same integer model.
+Canonical clip: fake capacity **1000**, budget **1500 milli**, reserved
+ring **400**. Two light demands (400+400) stay under capacity (IS = 1.0)
+and **admit** as Gradient (allreduce/tree) or Harmonic (persistent).
+Two heavy demands (800+800) project IS = 1.6 and **refuse** the second
+tenant. Two light **Curl** (ring-exchange) demands: first admits, second
+**refuses** (`RingExhausted`) even though projected IS is still 1.0 —
+class changes admit, not a renamed IS. Per-class admit/refuse counters
+are host-tested. Solo vs concurrent throughput is the same integer model.
 
 Host tests: `admit_light_two_tenants_refuse_heavy`,
-`heavy_concurrent_is_over_budget`,
+`curl_ring_reserve_refuses_when_gradient_admits`,
+`class_tag_at_submit_changes_admit`,
 `softnoi_solo_vs_concurrent_then_xqueue_refuse`. Kernel serial
 `[softnoi]`.
 
