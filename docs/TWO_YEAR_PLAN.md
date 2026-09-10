@@ -168,7 +168,12 @@ the kernel.
   Still not a PJRT plugin. Still not `GetPjRtApi` / XLA /
   `iree_hal_driver_t`. Still not in-kernel graph IR. `IreeHalCmd`
   offsets frozen; TRANSFER stays reserved.
-- **PJRT shim more ops** — still open (Nop / MatMul / Wave only).
+- **PJRT shim more ops** (**landed, this PR**) — `Add` / `Relu`
+  pack into the same frozen `IreeHalCmd` (`function` 2 / 3). SoftNPU
+  AccelOp table is additive (`Add=3`, `Relu=4`). Not a second IR.
+  Offsets / magic `0xAE7E1EE1` / executable `0x0001EE00` / TRANSFER
+  reserved / `workgroup_count` as shape (not tiles) stay. Still not
+  `GetPjRtApi`. Path B unchanged.
 - **SoftSFI widen** — `atomic_add` is modeled (SID `base+bound`;
   in-range accept, cross-tenant `Oob`). Sequential toy RMW, not a
   hardware atomic. Tensor stays `Unmodeled`. Heap/alloc is a named
@@ -314,6 +319,7 @@ numbered.
 | MicroPerceptron | thin sketch `host/aether-mp-shim` (inspiration name only; secondary to PJRT). Full virtio-accel port still later / optional. Doorbell sketch is `examples/accel-client` |
 | Path-A guest bind | host `PathABar` IOVA / wrong-SID **landed**; kernel PCI bind still optional. CI still does not rebuild QEMU |
 | PJRT polish | `host/aether-pjrt`, [HOST.md](HOST.md) |
+| PJRT more ops | SoftNPU `AccelOp` + `ireecp` function map + `host/aether-pjrt`; dual [ACCEL.md](ACCEL.md) / [HOST.md](HOST.md). Offsets frozen |
 | SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `atomic_add` modeled; tensor `Unmodeled`; heap named refuse |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
 | Blast-radius clip | `core/src/blast.rs` / host tests; extend, do not rebuild |

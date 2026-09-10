@@ -1,9 +1,10 @@
-//! Accelerator job descriptors and a software NPU (matmul / wave) model.
+//! Accelerator job descriptors and a software NPU (matmul / wave / ew) model.
 //!
 //! The descriptor is the contract silicon partners implement. SoftNpu is the
-//! reference model: I32 matmul and a "wave" that is a batched matmul plus
-//! a bias add, plus software IEEE-754 F16/F32 of the same ops. Enough to
-//! show ownership + completion, not a BLAS and not a tensor ISA.
+//! reference model: I32 matmul, a "wave" that is a batched matmul plus a
+//! bias add, elementwise `Add` / `Relu`, plus software IEEE-754 F16/F32 of
+//! the same ops. Enough to show ownership + completion, not a BLAS and not
+//! a tensor ISA.
 //!
 //! This is a dispatch record, not a graph IR. Compilers own fusion and ISA.
 
@@ -20,6 +21,10 @@ pub enum AccelOp {
     Nop = 0,
     MatMul = 1,
     Wave = 2,
+    /// Elementwise `C = A + B` (m×n; `k` unused / typically 1).
+    Add = 3,
+    /// Elementwise `C = max(A, 0)` (m×n; `k` unused / typically 1). `B` unused.
+    Relu = 4,
 }
 
 impl AccelOp {
@@ -28,8 +33,15 @@ impl AccelOp {
             0 => Some(Self::Nop),
             1 => Some(Self::MatMul),
             2 => Some(Self::Wave),
+            3 => Some(Self::Add),
+            4 => Some(Self::Relu),
             _ => None,
         }
+    }
+
+    /// `Add` / `Relu` use m×n spans on A/B/C. Not a second IR.
+    pub const fn is_elementwise(self) -> bool {
+        matches!(self, Self::Add | Self::Relu)
     }
 }
 
@@ -165,13 +177,38 @@ impl AccelJobDesc {
     }
 
     pub fn elems_a(&self) -> usize {
-        self.m as usize * self.k as usize
+        if self.op.is_elementwise() {
+            self.m as usize * self.n as usize
+        } else {
+            self.m as usize * self.k as usize
+        }
     }
     pub fn elems_b(&self) -> usize {
-        self.k as usize * self.n as usize
+        if self.op.is_elementwise() {
+            self.m as usize * self.n as usize
+        } else {
+            self.k as usize * self.n as usize
+        }
     }
     pub fn elems_c(&self) -> usize {
         self.m as usize * self.n as usize
+    }
+
+    /// Elementwise `C = A + B`. `k` is a workgroup stand-in (typically 1).
+    pub fn add_i32(m: u32, n: u32, a: PhysAddr, b: PhysAddr, c: PhysAddr, tenant: u32) -> Self {
+        let mut j = Self::matmul_i32(m, n, 1, a, b, c, tenant);
+        j.op = AccelOp::Add;
+        j.a_stride = n;
+        j.b_stride = n;
+        j.c_stride = n;
+        j
+    }
+
+    /// Elementwise `C = max(A, 0)`. `B` is unused (pin may alias `A`).
+    pub fn relu_i32(m: u32, n: u32, a: PhysAddr, c: PhysAddr, tenant: u32) -> Self {
+        let mut j = Self::add_i32(m, n, a, a, c, tenant);
+        j.op = AccelOp::Relu;
+        j
     }
 
     pub fn elem_bytes(&self) -> u64 {
@@ -306,6 +343,11 @@ impl SoftNpu {
                 DType::F32 => self.matmul_f32(job, mem, job.op == AccelOp::Wave)?,
                 DType::F16 => self.matmul_f16(job, mem, job.op == AccelOp::Wave)?,
             },
+            AccelOp::Add | AccelOp::Relu => match job.dtype {
+                DType::I32 => self.elementwise_i32(job, mem)?,
+                DType::F32 => self.elementwise_f32(job, mem)?,
+                DType::F16 => self.elementwise_f16(job, mem)?,
+            },
         }
         let seq = self.seq;
         self.seq += 1;
@@ -320,6 +362,14 @@ impl SoftNpu {
 
     fn check_shape(job: &AccelJobDesc) -> Result<(), AccelError> {
         if job.m == 0 || job.n == 0 || job.k == 0 || job.m > 64 || job.n > 64 || job.k > 64 {
+            Err(AccelError::BadShape)
+        } else {
+            Ok(())
+        }
+    }
+
+    fn check_ew_shape(job: &AccelJobDesc) -> Result<(), AccelError> {
+        if job.m == 0 || job.n == 0 || job.m > 64 || job.n > 64 {
             Err(AccelError::BadShape)
         } else {
             Ok(())
@@ -417,6 +467,98 @@ impl SoftNpu {
                 }
                 let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
                 mem.store_u16(c_addr, acc)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn elementwise_i32<M: DmaView>(
+        &self,
+        job: &AccelJobDesc,
+        mem: &mut M,
+    ) -> Result<(), AccelError> {
+        Self::check_ew_shape(job)?;
+        let es = job.elem_bytes();
+        for i in 0..job.m {
+            for j in 0..job.n {
+                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let av = mem.load_i32(a_addr)?;
+                let cv = match job.op {
+                    AccelOp::Add => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        av.checked_add(mem.load_i32(b_addr)?)
+                            .ok_or(AccelError::Overflow)?
+                    }
+                    AccelOp::Relu => av.max(0),
+                    _ => return Err(AccelError::BadOp),
+                };
+                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                mem.store_i32(c_addr, cv)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn elementwise_f32<M: DmaView>(
+        &self,
+        job: &AccelJobDesc,
+        mem: &mut M,
+    ) -> Result<(), AccelError> {
+        Self::check_ew_shape(job)?;
+        let es = job.elem_bytes();
+        for i in 0..job.m {
+            for j in 0..job.n {
+                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let av = mem.load_i32(a_addr)? as u32;
+                let cv = match job.op {
+                    AccelOp::Add => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        add_f32(av, mem.load_i32(b_addr)? as u32)
+                    }
+                    // Sign bit → +0. Research FTZ; not a vendor FLOP.
+                    AccelOp::Relu => {
+                        if av & 0x8000_0000 != 0 {
+                            0
+                        } else {
+                            av
+                        }
+                    }
+                    _ => return Err(AccelError::BadOp),
+                };
+                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                mem.store_i32(c_addr, cv as i32)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn elementwise_f16<M: DmaView>(
+        &self,
+        job: &AccelJobDesc,
+        mem: &mut M,
+    ) -> Result<(), AccelError> {
+        Self::check_ew_shape(job)?;
+        let es = job.elem_bytes();
+        for i in 0..job.m {
+            for j in 0..job.n {
+                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let av = mem.load_u16(a_addr)?;
+                let cv = match job.op {
+                    AccelOp::Add => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        add_f16(av, mem.load_u16(b_addr)?)
+                    }
+                    AccelOp::Relu => {
+                        if av & 0x8000 != 0 {
+                            0
+                        } else {
+                            av
+                        }
+                    }
+                    _ => return Err(AccelError::BadOp),
+                };
+                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                mem.store_u16(c_addr, cv)?;
             }
         }
         Ok(())
@@ -712,5 +854,68 @@ mod tests {
         let mut nop = job;
         nop.op = AccelOp::Nop;
         assert!(SoftNpu::new().execute(&nop, &mut No16).is_ok());
+    }
+
+    #[test]
+    fn opcode_values_are_additive() {
+        assert_eq!(AccelOp::Nop as u32, 0);
+        assert_eq!(AccelOp::MatMul as u32, 1);
+        assert_eq!(AccelOp::Wave as u32, 2);
+        assert_eq!(AccelOp::Add as u32, 3);
+        assert_eq!(AccelOp::Relu as u32, 4);
+        assert_eq!(AccelOp::from_u32(3), Some(AccelOp::Add));
+        assert_eq!(AccelOp::from_u32(4), Some(AccelOp::Relu));
+        assert_eq!(AccelOp::from_u32(5), None);
+        assert!(AccelOp::Add.is_elementwise());
+        assert!(AccelOp::Relu.is_elementwise());
+        assert!(!AccelOp::MatMul.is_elementwise());
+    }
+
+    #[test]
+    fn softnpu_add_via_dma() {
+        let mut buf = [0u8; 256];
+        let a = [1i32, 2, 3, 4];
+        let b = [5i32, 6, 7, 8];
+        for (i, v) in a.iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in b.iter().enumerate() {
+            buf[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut buf,
+        };
+        let job = AccelJobDesc::add_i32(2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        assert_eq!(job.bytes_a(), 16);
+        assert_eq!(job.bytes_b(), 16);
+        assert_eq!(job.bytes_c(), 16);
+        SoftNpu::new().execute(&job, &mut mem).unwrap();
+        let mut out = [0i32; 4];
+        for i in 0..4 {
+            let off = 32 + i * 4;
+            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        }
+        assert_eq!(out, [6, 8, 10, 12]);
+    }
+
+    #[test]
+    fn softnpu_relu_via_dma() {
+        let mut buf = [0u8; 64];
+        for (i, v) in [-1i32, 2, -3, 4].iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut buf,
+        };
+        let job = AccelJobDesc::relu_i32(2, 2, PhysAddr(0), PhysAddr(16), 1);
+        SoftNpu::new().execute(&job, &mut mem).unwrap();
+        let mut out = [0i32; 4];
+        for i in 0..4 {
+            let off = 16 + i * 4;
+            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        }
+        assert_eq!(out, [0, 2, 0, 4]);
     }
 }

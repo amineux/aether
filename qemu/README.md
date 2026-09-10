@@ -1,8 +1,9 @@
 # Path A: QEMU `aether-accel` device
 
 Optional custom QEMU device that exposes the **frozen** virtqueue BAR
-from [docs/ACCEL.md](../docs/ACCEL.md). SoftNPU (I32 Nop / MatMul / Wave)
-sits behind the doorbell and DMA-reads tensor addresses from
+from [docs/ACCEL.md](../docs/ACCEL.md). SoftNPU (I32 Nop / MatMul / Wave;
+Add / Relu additive on the same engine) sits behind the doorbell and
+DMA-reads tensor addresses from
 `AccelJobWire`.
 
 **Path B is still the canonical demo.** `make qemu` uses stock QEMU and

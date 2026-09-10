@@ -9,8 +9,10 @@ graph IR.
 
 The working crate is `aether-pjrt` (`host/aether-pjrt`). It is a `std`
 workspace member. Host tests create a device, allocate typed buffer
-places, pin through Soft SMMU, submit `MatMul` / `Wave`, and wait on
-an event/fence. Event create / record / wait lower onto the existing
+places, pin through Soft SMMU, submit `MatMul` / `Wave` / `Add` /
+`Relu`, and wait on an event/fence. `Add` / `Relu` pack into the same
+frozen `IreeHalCmd` (`function` 2 / 3); offsets stay frozen. Event
+create / record / wait lower onto the existing
 CP-shaped timeline and SoftChipletSync chiplet/package fences — Event
 is a research noun over those fences, not a new IR, not `GetPjRtApi`,
 and not XLA. The **IREE/PJRT contract** consumes a frozen 96-byte
@@ -82,7 +84,8 @@ Client::create(SoftNpu | IreeShaped)
     load_executable(op, dtype)
         → Executable { isa_blob_id }       // no graph parse
                                            // IreeShaped: 0x0001EE00 only
-    execute(executable, A, B, C [, bias])
+                                           // op: Nop | MatMul | Wave | Add | Relu
+    execute(executable, A, B, C [, bias])  // Add/Relu: k=1 shape stand-in; Relu B aliases A
         Timeline::submit → FenceId
         map abi::{Device,Buffer,Executable,Event}
         IreeShaped:
