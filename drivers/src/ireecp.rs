@@ -1217,25 +1217,27 @@ mod tests {
         }
         let mut job = AccelJobDesc::add_i32(2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
         job.place = job.place.with_tile(2);
-        let mem = SliceMem {
-            base: PhysAddr(0),
-            bytes: &mut backing,
-        };
-        let mut d = IreeShapedCp::new(mem);
-        pin_job(&mut d, &job);
-        d.submit(&job).unwrap();
-        let cmd = d.last_cmd().unwrap();
-        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
-        assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
-        assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
-        assert_eq!(cmd.function, HAL_FN_ADD);
-        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
-        assert_eq!(cmd.workgroup_count_x, 2);
-        assert_eq!(cmd.workgroup_count_y, 2);
-        assert_eq!(cmd.workgroup_count_z, 1, "k is shape, not tiles");
-        assert_eq!(cmd.binding0_length, 16);
-        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Add);
-        assert_eq!(d.service().unwrap().status, 0);
+        {
+            let mem = SliceMem {
+                base: PhysAddr(0),
+                bytes: &mut backing,
+            };
+            let mut d = IreeShapedCp::new(mem);
+            pin_job(&mut d, &job);
+            d.submit(&job).unwrap();
+            let cmd = d.last_cmd().unwrap();
+            assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+            assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+            assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
+            assert_eq!(cmd.function, HAL_FN_ADD);
+            assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+            assert_eq!(cmd.workgroup_count_x, 2);
+            assert_eq!(cmd.workgroup_count_y, 2);
+            assert_eq!(cmd.workgroup_count_z, 1, "k is shape, not tiles");
+            assert_eq!(cmd.binding0_length, 16);
+            assert_eq!(cmd.decode_op().unwrap(), AccelOp::Add);
+            assert_eq!(d.service().unwrap().status, 0);
+        }
         let add0 = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         assert_eq!(add0, 6);
 
@@ -1244,12 +1246,20 @@ mod tests {
         }
         let mut relu = AccelJobDesc::relu_i32(2, 2, PhysAddr(64), PhysAddr(80), 1);
         relu.place = relu.place.with_tile(2);
-        d.submit(&relu).unwrap();
-        let cmd = d.last_cmd().unwrap();
-        assert_eq!(cmd.function, HAL_FN_RELU);
-        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Relu);
-        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
-        assert_eq!(d.service().unwrap().status, 0);
+        {
+            let mem = SliceMem {
+                base: PhysAddr(0),
+                bytes: &mut backing,
+            };
+            let mut d = IreeShapedCp::new(mem);
+            pin_job(&mut d, &relu);
+            d.submit(&relu).unwrap();
+            let cmd = d.last_cmd().unwrap();
+            assert_eq!(cmd.function, HAL_FN_RELU);
+            assert_eq!(cmd.decode_op().unwrap(), AccelOp::Relu);
+            assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+            assert_eq!(d.service().unwrap().status, 0);
+        }
         let relu0 = i32::from_le_bytes(backing[80..84].try_into().unwrap());
         assert_eq!(relu0, 0);
     }
