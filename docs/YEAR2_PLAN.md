@@ -217,9 +217,10 @@ After AccelDevice bites a real-shaped path — not before:
 16. RISC-V PLIC + SoftNPU software doorbell (path B BAR)
 17. aarch64 EL0 userspace (documented subset) — **this cut**
 18. Optional virtio-accel QEMU `-device` (path A) — **landed** as a
-    host-tested device model; guest PCI bind + MicroPerceptron later
-    (doorbell sketch `examples/accel-client` is a second IreeHalCmd caller,
-    not that port)
+    host-tested device model; guest PCI bind later. Thin MP-shaped
+    `IreeHalCmd` consumer landed as `host/aether-mp-shim` (inspiration
+    name only; not a port). Doorbell sketch `examples/accel-client` is
+    another caller of that image
 
 ### Active file touch map
 

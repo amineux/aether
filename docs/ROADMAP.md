@@ -33,7 +33,8 @@ product kernel.
 | Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2` + SET_SID-at-submit; not a signed vendor) |
 | Soft-CP SID-at-submit (Host1x-shaped) | **done** (job-head SET_SID; Soft SMMU submit latch + SID budget; two-SID host tests + `[sid]` serial). Not a Tegra driver. |
 | PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; Event create/record/wait on existing fences; not a PJRT plugin, not `GetPjRtApi`, not XLA) |
-| Second `IreeHalCmd` consumer (doorbell) | **done** (`examples/accel-client`; same 96-byte image + refuse rules; research sketch, not MicroPerceptron) |
+| Second `IreeHalCmd` consumer (doorbell) | **done** (`examples/accel-client`; same 96-byte image + refuse rules; research sketch, not a MicroPerceptron port) |
+| MicroPerceptron-shaped thin consumer | **done** as research sketch (`host/aether-mp-shim`; memcpy / matmul / wave on frozen `IreeHalCmd`; doorbell or Soft-CP; SoftCmdFirewall on Soft-CP). Inspiration name only. Secondary to PJRT. Not a port, not a vendor. Full virtio-accel interop stays later. |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 | SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package; Fleet inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
 | SoftCCT elision | **done** (last-writer chiplet per buffer label; package fence only on cross-chiplet hazard; CCT ≪ broadcast; single-chiplet no-op; incorrect elision fails; CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) |
@@ -836,8 +837,12 @@ opcode device (PR #38). **What to sequence next:**
   packs frozen `IreeHalCmd` and submits through `IreeShapedCp`.
   SoftNPU stays the `make qemu` path-B demo.
 - **Second consumer (doorbell):** `examples/accel-client` packs the same
-  96-byte image. Research sketch, not a plugin, not MicroPerceptron
-  (that remains later / optional).
+  96-byte image. Research sketch, not a plugin, not a MicroPerceptron
+  port.
+- **MicroPerceptron-shaped thin consumer:** `host/aether-mp-shim`
+  (inspiration name only; secondary to PJRT). Same frozen image;
+  doorbell or Soft-CP; SoftCmdFirewall on Soft-CP. Not a port. Full
+  virtio-accel interop stays later / optional.
 - **M4 landed (PR #47):** Soft-CP XQueue (two software queues;
   queue-boundary suspend/resume; SID sticks to the queue). Not a
   silicon queueing unit. Not an XSched LD_PRELOAD shim.

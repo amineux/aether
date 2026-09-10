@@ -11,7 +11,9 @@
 //! v1 `IreeHalCmd` does not define TRANSFER-only memcpy (`TRANSFER` alone is
 //! Fault). Host copies fill buffers; the doorbell itself is `Nop`; compute is
 //! a MatMul-shaped `DISPATCH`. Path B / `make qemu` is unchanged.
-//! MicroPerceptron remains later and optional.
+//! A separate MicroPerceptron-shaped sketch lives in `host/aether-mp-shim`
+//! (inspiration name only; secondary to PJRT). This doorbell is not that
+//! crate and not a full port.
 
 #![deny(unsafe_code)]
 

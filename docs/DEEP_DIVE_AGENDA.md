@@ -110,7 +110,9 @@ Files, in this order:
    (SoftNPU stays `make qemu`; not a PJRT plugin / IREE driver / partnership).
    Clone-and-run: `examples/partner-hello` / [PARTNER.md](PARTNER.md) (`make partner-hello`; no QEMU).
 7b. `examples/accel-client` — second caller of the same 96-byte image (doorbell sketch;
-    not a plugin, not MicroPerceptron; MicroPerceptron remains later / optional).
+    not a plugin, not a MicroPerceptron port).
+7c. `host/aether-mp-shim` — MicroPerceptron-shaped thin consumer of the same image
+    (inspiration name only; secondary to PJRT; doorbell or Soft-CP). Not a port.
 8. `core/src/iommu.rs` + `core/src/color.rs` — map refuse + bank color + SID.
 9. `drivers/src/partner.rs` — leftover no-op sketch (not a partner, not this path).
 10. `boot/riscv64/trampoline.S` + `kernel/src/arch/riscv64/` and

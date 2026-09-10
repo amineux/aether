@@ -35,8 +35,16 @@ packs the **same** 96-byte `IreeHalCmd` and submits through the same
 or Nop submit, wait on event) — not a PJRT plugin, not NVIDIA, and not a
 MicroPerceptron port. Host tests show both clients can submit, and that
 the doorbell cannot skip Soft SMMU map / SID stamp (same refuse rules:
-bad executable, unbound SID). MicroPerceptron remains later and optional.
-See [ACCEL.md](ACCEL.md) and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
+bad executable, unbound SID).
+
+A third, MicroPerceptron-**shaped** thin consumer lives in
+`host/aether-mp-shim` (`aether-mp-shim`). MicroPerceptron is an
+inspiration name only. The crate is secondary to this PJRT shim, not a
+port, and not a vendor. Opcode surface is memcpy (host copy; v1
+`TRANSFER` reserved) / matmul / wave. Submit is doorbell
+(`IreeShapedCp`) or Soft-CP (SoftCmdFirewall still applies). Same
+refuse rules. A full MicroPerceptron / virtio-accel port stays later
+and optional. See [ACCEL.md](ACCEL.md) and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
 
 ## Public vocabulary (cited, not claimed)
 
@@ -127,13 +135,17 @@ alone stays `HalError::Fault`). `UNIFIED` stays off unless that cap bit is grant
   exercise against the same `AccelDevice` implementations.
 - That `examples/accel-client` is a MicroPerceptron port, a PJRT plugin,
   or a new device model. It is a research-sketch second consumer of the
-  frozen image. MicroPerceptron remains later and optional.
+  frozen image.
+- That `host/aether-mp-shim` is a MicroPerceptron port, a vendor, or a
+  second compiler. It is a thin research sketch (inspiration name
+  only), secondary to this crate. Full virtio-accel interop stays later.
 
 Walkthrough for a silicon OS team: start at
 `aether_hal::AccelDevice` and `IreeShapedCp`, then this crate
 as the compiler-facing nouns on top. Clone-and-run without QEMU:
-[PARTNER.md](PARTNER.md) / `make partner-hello`. `examples/accel-client` is the
-second caller of the frozen image (doorbell sketch). `SoftCommandProcessor` remains
+[PARTNER.md](PARTNER.md) / `make partner-hello`. `examples/accel-client` is a
+second caller of the frozen image (doorbell sketch). `host/aether-mp-shim`
+is the MicroPerceptron-shaped thin consumer (`make mp-shim`). `SoftCommandProcessor` remains
 the Aether-native packet example. `PartnerNpuStub` is a leftover
 no-op sketch, not this path. Fill-in on a call:
 [DESIGN_WIN.md](DESIGN_WIN.md). [ABI.md](ABI.md) is the kernel ABI;

@@ -60,6 +60,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup partner-hello partner-hello-ci \
         diligence-demo red-team design-win-check design-win-standin \
+        mp-shim mp-shim-ci \
         test test-host target target-riscv target-aarch64 clean help
 
 all: $(LOADER_ELF)
@@ -87,6 +88,7 @@ help:
 	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
+	@echo "  make mp-shim       - MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch; no QEMU)"
 	@echo "  make clean"
 
 target:
@@ -108,6 +110,7 @@ test-host:
 	$(MAKE) design-win-check
 	$(MAKE) design-win-standin
 	$(MAKE) partner-hello-ci
+	$(MAKE) mp-shim-ci
 
 # Partner one-command: host clips only. No QEMU rebuild. Soft SMMU is
 # software. Path B canonical. Golden needles in
@@ -188,6 +191,28 @@ partner-hello-ci:
 	grep -Fq "does not rebuild QEMU" $(BUILD)/partner-hello.log
 	grep -Fq "[partner-hello] ok" $(BUILD)/partner-hello.log
 	@echo "partner-hello-ci: frozen IreeHalCmd + bad-exec refuse ok"
+
+# MicroPerceptron-shaped thin consumer. Inspiration name only.
+# Secondary to aether-pjrt. Not a full port. No QEMU rebuild.
+# POSIX /bin/sh — no pipefail, no pipes.
+MP_SHIM_LOG := $(BUILD)/mp-shim.log
+
+mp-shim:
+	cargo run -p aether-mp-shim
+
+mp-shim-ci:
+	mkdir -p $(BUILD)
+	cargo run -p aether-mp-shim > $(MP_SHIM_LOG)
+	cat $(MP_SHIM_LOG)
+	grep -Fq "magic=0xAE7E1EE1 size=96 backend=4 executable=0x0001EE00 ssid=2" $(MP_SHIM_LOG)
+	grep -Fq "matmul 2x2 -> [19, 22, 43, 50]" $(MP_SHIM_LOG)
+	grep -Fq "wave 2x2+bias -> [11, 22, 13, 24]" $(MP_SHIM_LOG)
+	grep -Fq "memcpy host-copy [9, 8, 7, 6] (not a v1 TRANSFER packet)" $(MP_SHIM_LOG)
+	grep -Fq "bad executable 0xDEAD refused" $(MP_SHIM_LOG)
+	grep -Fq "soft-cp path firewall" $(MP_SHIM_LOG)
+	grep -Fq "path B remains canonical" $(MP_SHIM_LOG)
+	grep -Fq "[mp-shim] ok" $(MP_SHIM_LOG)
+	@echo "mp-shim-ci: thin MP-shaped IreeHalCmd consumer + firewall ok"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:

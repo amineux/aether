@@ -97,7 +97,9 @@ Three surfaces, in this order:
    Research opcodes until 2028 says otherwise. Not an IREE runtime.
    Not a signed vendor ISA. A second host consumer of the same packet
    is `examples/accel-client` (`cargo run -p aether-accel-client`) —
-   a doorbell sketch, not a Makefile target, not MicroPerceptron.
+   a doorbell sketch, not a Makefile target. A MicroPerceptron-shaped
+   thin consumer (`make mp-shim` / `host/aether-mp-shim`) is a research
+   sketch — inspiration name only, secondary to PJRT, not a port.
 2. **PJRT-shaped host nouns.** `host/aether-pjrt` speaks Device,
    MemorySpace, Buffer, Executable, Event — public PJRT / IREE HAL
    vocabulary, cited, not claimed. The crate packs frozen `IreeHalCmd`
@@ -275,6 +277,7 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | What to show next | isolation → packet → wait → admit class → sandbox hole |
 | 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
+| MP-shaped thin consumer | `make mp-shim` (`host/aether-mp-shim`; inspiration name only) |
 | Event / fabric-class / ATOMIC_ADD / heap | Event line in `make diligence-demo`; the rest in `make red-team` (`[softsfi] heap=refused`) |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
