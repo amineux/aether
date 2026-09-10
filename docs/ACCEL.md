@@ -844,8 +844,9 @@ opcode ROM.
 
 `IreeHalCmd` offsets + field widths are **frozen**. Changing an
 offset/width is a dual `ireecp.rs` + this ADR + host pack/unpack test
-update. PJRT shim (#41) and the doorbell client (`examples/accel-client`)
-consume this image; neither may fork the layout.
+update. PJRT shim (#41), the doorbell client (`examples/accel-client`),
+and the MP-shaped sketch (`host/aether-mp-shim`) consume this image;
+none may fork the layout.
 
 ```text
 offset  type   field                 IREE HAL noun
@@ -918,9 +919,16 @@ wait on event — not a new device model, not a PJRT plugin, not NVIDIA,
 and not a MicroPerceptron port. v1 still refuses `TRANSFER` alone
 (memcpy is an explicit host copy, not a HAL category). The same refuse
 rules apply: no Soft SMMU map, unbound / unstamped SID, or a foreign
-`isa_blob_id` is Fault / Unsupported. MicroPerceptron remains later
-and optional ([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Path B / `make qemu`
-is unchanged. `IreeHalCmd` offsets are unchanged.
+`isa_blob_id` is Fault / Unsupported.
+
+A third consumer, `host/aether-mp-shim` (`aether-mp-shim`), is a
+MicroPerceptron-**shaped** thin host session: memcpy / matmul / wave
+on that same frozen image. MicroPerceptron is an inspiration name
+only. Secondary to `aether-pjrt`. Doorbell (`IreeShapedCp`) or Soft-CP
+submit (SoftCmdFirewall still applies). Not a port, not a vendor. A
+full MicroPerceptron / virtio-accel interop stays later and optional
+([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)). Path B / `make qemu` is
+unchanged. `IreeHalCmd` offsets are unchanged.
 
 ## ADR: Host1x-shaped SET_SID at submit
 

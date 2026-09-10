@@ -144,7 +144,8 @@ aether-drivers  AccelMmio virtqueue + SoftNpuDevice + SoftCommandProcessor + Ire
      ▲
      ├── aether-kernel   arch, mm, syscall/sysret + ecall/sret, ELF loader, tasks
      ├── aether-pjrt     std host shim: abi nouns → IreeHalCmd → IreeShapedCp (SoftNPU = qemu demo)
-     └── aether-accel-client  doorbell: same frozen IreeHalCmd (not PJRT, not MicroPerceptron)
+     ├── aether-mp-shim  MicroPerceptron-shaped thin consumer of frozen IreeHalCmd (inspiration name only; secondary to PJRT)
+     └── aether-accel-client  doorbell: same frozen IreeHalCmd (not PJRT, not a MicroPerceptron port)
 examples/partner-hello  host clone-and-run of that packet (no QEMU rebuild)
 user/init       static non-PIE ELF64 `/init` (x86 @ 0x2000000, RISC-V @ 0x82000000)
 user/probe      optional second static ELF64 (own PML4 @ 0x2400000)
@@ -211,6 +212,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/phase.rs` | Compute / Exchange / Barrier tags |
 | `core/src/abi.rs` | PJRT/IREE-shaped host objects (no graph IR) |
 | `host/aether-pjrt` | std host session: abi nouns → frozen `IreeHalCmd` → IreeShapedCp; Event create/record/wait on existing fences (not `GetPjRtApi`, not XLA) |
+| `host/aether-mp-shim` | MicroPerceptron-shaped thin consumer of the same image (inspiration name only; secondary to PJRT; doorbell or Soft-CP) |
 | `examples/accel-client` | Second consumer of the same 96-byte image (doorbell sketch; not a plugin) |
 | `examples/partner-hello` | Host clone-and-run of that packet; [PARTNER.md](PARTNER.md). No QEMU |
 

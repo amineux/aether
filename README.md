@@ -24,6 +24,7 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
 make diligence-demo  # partner host clip (Path B; no QEMU; greps golden lines)
 make partner-hello # host IreeHalCmd leave-behind (no QEMU rebuild)
+make mp-shim      # MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch)
 make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
 make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
 make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
@@ -223,7 +224,7 @@ flowchart TB
 | **Fabric IPC** | seL4-inspired caps; sync/async endpoints; cap grants; chiplet route tags; `FlowClass` + Hodge quotas |
 | **Tile scheduler** | CPU `Thread` and NPU `AccelWave` jobs; priority + deadline boost; bank affinity; work-steal; **SpectralCut** placement refusal |
 | **Tensor arenas** | NUMA/bank first-fit; 4K / 2M align; pinned DMA; explicit owner tile/tenant |
-| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd` + SoftGreenCtx SM/WQ); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); host consumers: `aether-pjrt` + doorbell `examples/accel-client`; Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
+| **Accel HAL** | `probe / submit / poll / map`; virtqueue MMIO + SoftNPU (I32 + software F16/F32); SoftCommandProcessor (`CpCmd` + SoftGreenCtx SM/WQ); IreeShapedCp (`IreeHalCmd`, IREE HAL nouns, `backend = 4`); host consumers: `aether-pjrt` + doorbell `examples/accel-client` + MP-shaped `host/aether-mp-shim`; Soft SMMU IOVAs; `(place, local)` map refuses silent remote load |
 | **Typed spaces** | `HOST \| DEVICE_HBM \| TILE_SRAM \| CXL_REGION \| SCRATCH \| STREAMING`; UNIFIED is a cap bit. `TypedWindow` is a CXL.mem-inspired pin stub (not silicon) |
 | **Activity / partition / fence** | Uniform endpoint; spatial slice + QoS + blast radius; submit → wait → complete (CP-shaped seq; timeout is software) |
 | **Caps** | Unforgeable `CPtr` slots; monotonic derive; cross-tenant mint rejected; revoke empties descendants |
@@ -240,9 +241,10 @@ hal/             AccelDevice / Console / Timer traits
 drivers/         VirtIO-Accel queue + SoftNPU + SoftCommandProcessor + IreeShapedCp
 qemu/            optional path-A `aether-accel` device (host-tested; QEMU patch)
 host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp; Event wait on existing fences (not GetPjRtApi, not XLA)
+host/aether-mp-shim  MicroPerceptron-shaped thin IreeHalCmd consumer (inspiration name only; secondary to PJRT; `make mp-shim`)
 examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
-examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not MicroPerceptron)
+examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not a MicroPerceptron port)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
@@ -336,7 +338,7 @@ admit control, not topology synth; not marked Done until merge).
 
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — thesis, boot, modules
 - [docs/ABI.md](docs/ABI.md) — PJRT/IREE-shaped host objects; no in-kernel graph IR
-- [docs/HOST.md](docs/HOST.md) — partner compiler contract (`aether-pjrt`); doorbell second consumer; not a plugin
+- [docs/HOST.md](docs/HOST.md) — partner compiler contract (`aether-pjrt`); doorbell + MP-shaped thin consumer; not a plugin
 - [docs/PARTNER.md](docs/PARTNER.md) — clone-and-run `IreeHalCmd` leave-behind (no QEMU)
 - [docs/FABRIC.md](docs/FABRIC.md) — messages, endpoints, route tags, Hodge class
 - [docs/CUT.md](docs/CUT.md) — SpectralCut + AffinityLaplacian + Hodge

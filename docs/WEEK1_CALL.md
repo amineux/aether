@@ -83,7 +83,7 @@ Makefile targets.
 | Beat | Point at | Command that exists |
 | --- | --- | --- |
 | Isolation | named attacks refused | `make red-team` |
-| Packet | frozen `IreeHalCmd`; second consumer | `make partner-hello` then `cargo run -p aether-accel-client` |
+| Packet | frozen `IreeHalCmd`; second consumer | `make partner-hello` then `cargo run -p aether-accel-client` / `make mp-shim` |
 | Wait | Event create/record/wait on SoftChipletSync | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
 | Admit class | fabric-class tag into SoftNoI | `make red-team` — grep `[redteam] fabric-class admit/refuse` |
 | Sandbox hole | SoftSFI `ATOMIC_ADD` accept/reject; heap named refuse | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` and `[softsfi] heap=refused` |
@@ -201,6 +201,7 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | What to show next | isolation → packet → wait → admit class → sandbox hole (table above) |
 | Clone-and-run packet | [PARTNER.md](PARTNER.md) / `make partner-hello` |
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
+| MP-shaped thin consumer | `make mp-shim` (inspiration name only; secondary to PJRT) |
 | Event wait | `make diligence-demo` — `[event] SoftChipletSync create/record/wait` |
 | Fabric-class admit | `make red-team` — `[redteam] fabric-class admit/refuse` |
 | ATOMIC_ADD hole | `make red-team` — `[redteam] ATOMIC_ADD accept/reject` |

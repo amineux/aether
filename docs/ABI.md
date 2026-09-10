@@ -60,7 +60,9 @@ a fake vendor runtime. Not `GetPjRtApi`, not XLA.
 
 `examples/accel-client` is a second tiny host client of that same
 96-byte image (doorbell sketch). It is not a PJRT plugin and not a
-MicroPerceptron port; MicroPerceptron remains later and optional.
+MicroPerceptron port. `host/aether-mp-shim` is a MicroPerceptron-shaped
+thin consumer of the same image (inspiration name only; secondary to
+`aether-pjrt`; research sketch). A full port stays later and optional.
 
 That crate (`aether-pjrt`) is the **partner compiler contract** sketched against public
 PJRT / IREE HAL vocabulary. It is not a PJRT plugin, not an IREE HAL

@@ -75,6 +75,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SoftNoI-IS | **In-flight / this PR.** Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5` (PARL/NoI inspiration; admit control, not topology synth, not UniCNet). Do not mark Done until merge | `core/src/noi.rs`, `drivers/src/noi.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
+| MP-shaped thin `IreeHalCmd` consumer | Research sketch; memcpy / matmul / wave; doorbell or Soft-CP; inspiration name only | `host/aether-mp-shim` |
 | Design-win worksheet | Fill-in call artifact + host checker (not a signed vendor) | `docs/DESIGN_WIN.md`, `examples/design-win-check` |
 | Partner hello leave-behind | Host clone-and-run frozen `IreeHalCmd` → IreeShapedCp; no QEMU | `examples/partner-hello`, [PARTNER.md](PARTNER.md) |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
@@ -192,7 +193,9 @@ Start from `IreeShapedCp` (partner-shaped HAL packet) or
 `SoftCommandProcessor` (Aether-native `CpCmd`). The host crate
 `aether-pjrt` is the compiler-facing nouns; it packs frozen `IreeHalCmd`
 and submits through `IreeShapedCp`. `examples/accel-client` is a second
-caller of that image (research-sketch doorbell; not MicroPerceptron).
+caller of that image (research-sketch doorbell). `host/aether-mp-shim`
+is a MicroPerceptron-shaped thin consumer of the same image
+(inspiration name only; secondary to PJRT; not a port).
 SoftNPU is the path-B qemu demo.
 Clone-and-run without QEMU: `make partner-hello` /
 `examples/partner-hello`. `PartnerNpuStub` is a leftover no-op sketch,
@@ -235,11 +238,12 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 
 | Job | Command | Intent |
 | --- | --- | --- |
-| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + design-win-check crates, partner-hello |
+| Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] heap=refused` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
+| MP-shaped shim | `make mp-shim-ci` | Thin MicroPerceptron-shaped consumer of the same image; Soft-CP firewall; no QEMU |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |

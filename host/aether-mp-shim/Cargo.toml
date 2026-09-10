@@ -1,0 +1,23 @@
+[package]
+name = "aether-mp-shim"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "MicroPerceptron-shaped thin host consumer of frozen IreeHalCmd (research sketch; secondary to aether-pjrt)"
+publish = false
+
+[[bin]]
+name = "aether-mp-shim"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-hal = { path = "../../hal" }
+aether-drivers = { path = "../../drivers" }
+
+[dev-dependencies]
+aether-pjrt = { path = "../aether-pjrt" }
+aether-accel-client = { path = "../../examples/accel-client" }
+
+[lints]
+workspace = true
