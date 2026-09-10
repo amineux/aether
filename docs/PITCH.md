@@ -15,7 +15,8 @@ Longer technical session: [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md)
 [DILIGENCE.md](DILIGENCE.md). Call worksheet:
 [DESIGN_WIN.md](DESIGN_WIN.md). Week 1 20-minute pack:
 [WEEK1_CALL.md](WEEK1_CALL.md). Calendar:
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027);
+horizon [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
 [pitch/transcript.txt](pitch/transcript.txt) (copied from in-tree
 prints / golden greps). Captured host runs:
 [pitch/diligence-demo.log](pitch/diligence-demo.log),
@@ -98,8 +99,10 @@ Three surfaces, in this order:
    Not a signed vendor ISA. A second host consumer of the same packet
    is `examples/accel-client` (`cargo run -p aether-accel-client`) —
    a doorbell sketch, not a Makefile target. A MicroPerceptron-shaped
-   thin consumer (`make mp-shim` / `host/aether-mp-shim`) is a research
-   sketch — inspiration name only, secondary to PJRT, not a port.
+   thin consumer (`make mp-shim` / `host/aether-mp-shim`; **landed**
+   PR #83) is a research sketch — inspiration name only, secondary to
+   PJRT, not a port. `Add` / `Relu` pack into the same frozen packet
+   (`function` 2 / 3; **landed** PR #84). Offsets unchanged.
 2. **PJRT-shaped host nouns.** `host/aether-pjrt` speaks Device,
    MemorySpace, Buffer, Executable, Event — public PJRT / IREE HAL
    vocabulary, cited, not claimed. The crate packs frozen `IreeHalCmd`
@@ -238,15 +241,18 @@ non-claims and stop. Do not paper over it.
 
 ## 6:30–8:00 — Two-year close
 
-**Calendar:** [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+**Calendar:** [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028). Sell demos: [SELL_GOALS.md](SELL_GOALS.md).
 
 **Say:**
 
-> 2027 deepens what already shipped: PJRT polish, SoftSFI widen with
-> honest leftovers (`atomic_add` SID-proved; tensor `Unmodeled`;
-> heap named refuse), a second consumer of the **frozen** packet. Opcode v2
-> only with a dual update of ACCEL.md, `ireecp`, and host pack/unpack.
-> Hardware SMMU is not a software milestone.
+> 2027 deepens what already shipped: PJRT `Add` / `Relu` on the frozen
+> packet (PR #84), SoftSFI widen with honest leftovers (`atomic_add`
+> SID-proved; tensor `Unmodeled`; heap named refuse, PR #80), a
+> MicroPerceptron-shaped thin consumer of the **frozen** packet
+> (PR #83). Opcode v2 only with a dual update of ACCEL.md, `ireecp`,
+> and host pack/unpack. Hardware SMMU is not a software milestone.
 
 **Then the stop condition:**
 
@@ -277,7 +283,8 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | What to show next | isolation → packet → wait → admit class → sandbox hole |
 | 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
-| MP-shaped thin consumer | `make mp-shim` (`host/aether-mp-shim`; inspiration name only) |
+| MP-shaped thin consumer | `make mp-shim` (`host/aether-mp-shim`; inspiration name only; PR #83) |
+| PJRT Add/Relu | `cargo test -p aether-pjrt` (frozen packet `function` 2 / 3; PR #84) |
 | Event / fabric-class / ATOMIC_ADD / heap | Event line in `make diligence-demo`; the rest in `make red-team` (`[softsfi] heap=refused`) |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
@@ -285,6 +292,7 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | Compiler boundary | [HOST.md](HOST.md), [ABI.md](ABI.md) |
 | Isolation invariants | [SECURITY.md](SECURITY.md), [BLAST.md](BLAST.md) |
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md), [ROADMAP.md](ROADMAP.md) |
+| Next six months | [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) / [SELL_GOALS.md](SELL_GOALS.md) |
 | Next two years | [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) |
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |
 | Partner landing page | [PARTNER.md](PARTNER.md) / `make partner-hello` |

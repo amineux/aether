@@ -329,10 +329,12 @@ not NVVM; tensor `Unmodeled`; heap/alloc is a named `Unmodeled` refuse,
 not a bump allocator; `atomic_add` is a sequential toy RMW, not a
 hardware atomic). Optional Soft SMMU kit is PR #48 (software tables). Path-A
 guest bind stays gated. Closed Month 5 record:
-[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). The **next calendar** is
-[docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
-SoftNoI-IS is **in-flight / landing this PR** (H2 2026 exploration;
-admit control, not topology synth; not marked Done until merge).
+[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). **What to sequence next:**
+[docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) (Sep 2026 →
+Mar 2027). Horizon: [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028). Partner demos:
+[docs/SELL_GOALS.md](docs/SELL_GOALS.md). H2 2026 leftovers
+**landed**.
 
 ## Docs
 
@@ -357,7 +359,9 @@ admit control, not topology synth; not marked Done until merge).
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar
 - [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — closed Month 5 record (four digests landed)
-- [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) — Kernel calendar Sep 2026 → Sep 2028
+- [docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) — near-term calendar Sep 2026 → Mar 2027
+- [docs/SELL_GOALS.md](docs/SELL_GOALS.md) — partner-facing demos / ask / non-claims
+- [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) — Kernel horizon Sep 2026 → Sep 2028
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 

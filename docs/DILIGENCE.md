@@ -10,10 +10,11 @@ active track the site must match. The closed M1–M4 calendar is
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
 landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
 SoftCmdFirewall landed). [MONTH5_PLAN.md](MONTH5_PLAN.md) is the
-closed Month 5 record (SoftSFI digest 4 landed). The **next
-calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
-2028). SoftNoI-IS is **in-flight / landing this PR** (H2 2026
-exploration; not marked Done). Site-as-milestone stays killed.
+closed Month 5 record (SoftSFI digest 4 landed). **What to sequence
+next:** [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 →
+Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 →
+Sep 2028). Partner demos: [SELL_GOALS.md](SELL_GOALS.md). H2 2026
+leftovers **landed**. Site-as-milestone stays killed.
 
 ## One-command host demo
 
@@ -63,7 +64,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device + host Soft-SMMU IOVA / wrong-SID proof; stock QEMU stays B | `qemu/`, `drivers/src/path_a.rs`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftNoI-IS admit (in-flight / this PR) + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + OperatorInject resident worker + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva,opinject,noi}.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftNoI-IS admit (PR #60 + fabric-class #75) + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + OperatorInject resident worker + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva,opinject,noi}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
@@ -72,7 +73,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor `Unmodeled`; heap/alloc named refuse) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
-| SoftNoI-IS | **In-flight / this PR.** Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5` (PARL/NoI inspiration; admit control, not topology synth, not UniCNet). Do not mark Done until merge | `core/src/noi.rs`, `drivers/src/noi.rs` |
+| SoftNoI-IS | **Landed** (PR #60 + fabric-class #75). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`; software `FlowClass` tag (PARL/NoI inspiration; admit control, not topology synth, not UniCNet) | `core/src/noi.rs`, `drivers/src/noi.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
 | PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
 | MP-shaped thin `IreeHalCmd` consumer | Research sketch; memcpy / matmul / wave; doorbell or Soft-CP; inspiration name only | `host/aether-mp-shim` |
@@ -147,7 +148,7 @@ gaps:
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines; SoftCCT is last-writer elision on that model; fence **counts** only, not a latency claim |
 | SoftGreenCtx SM/WQ | **Landed** as a software partition on Soft-CP (fake 70/30 pool). Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
-| SoftNoI-IS | **In-flight / this PR** as runtime admit on a fake shared NoI (IS = worst-case concurrent/solo). PARL/NoI inspiration. Not topology synthesis, not UniCNet. Do not mark Done until merge |
+| SoftNoI-IS | **Landed** (PR #60 + fabric-class #75) as runtime admit on a fake shared NoI (IS = worst-case concurrent/solo). PARL/NoI inspiration. Not topology synthesis, not UniCNet |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
 send/recv/map/accel. RISC-V now has the same syscall numbers over
@@ -312,8 +313,8 @@ We will not claim:
   coherence protocol, or a multi-chiplet latency win from single-die tests
 - That SoftCCT is a full coherence protocol, CPElide silicon, or a
   Vulkan / ROCm product
-- That SoftNoI-IS is Done on main before this PR merges, synthesizes
-  NoI topology, is UniCNet, or is a partner interposer result
+- That SoftNoI-IS synthesizes NoI topology, is UniCNet, or is a
+  partner interposer result (PR #60 + #75 landed as admit control)
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or CUDA UVA
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate path

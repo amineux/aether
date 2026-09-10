@@ -40,13 +40,15 @@ the doorbell cannot skip Soft SMMU map / SID stamp (same refuse rules:
 bad executable, unbound SID).
 
 A third, MicroPerceptron-**shaped** thin consumer lives in
-`host/aether-mp-shim` (`aether-mp-shim`). MicroPerceptron is an
-inspiration name only. The crate is secondary to this PJRT shim, not a
-port, and not a vendor. Opcode surface is memcpy (host copy; v1
-`TRANSFER` reserved) / matmul / wave. Submit is doorbell
-(`IreeShapedCp`) or Soft-CP (SoftCmdFirewall still applies). Same
-refuse rules. A full MicroPerceptron / virtio-accel port stays later
-and optional. See [ACCEL.md](ACCEL.md) and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
+`host/aether-mp-shim` (`aether-mp-shim`; **landed**, PR #83).
+MicroPerceptron is an inspiration name only. The crate is secondary
+to this PJRT shim, not a port, and not a vendor. Opcode surface is
+memcpy (host copy; v1 `TRANSFER` reserved) / matmul / wave. Submit
+is doorbell (`IreeShapedCp`) or Soft-CP (SoftCmdFirewall still
+applies). Same refuse rules. A full MicroPerceptron / virtio-accel
+port stays later and optional. See [ACCEL.md](ACCEL.md),
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md), and
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
 
 ## Public vocabulary (cited, not claimed)
 
