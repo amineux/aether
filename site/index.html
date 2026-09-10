@@ -32,6 +32,7 @@
         <li><a href="#how">How it works</a></li>
         <li><a href="#market">Market</a></li>
         <li><a href="#partners">Why partner</a></li>
+        <li><a href="#sell">Sell</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
         <li><a href="#status">Status</a></li>
         <li><a href="#pitch">Pitch</a></li>
@@ -52,7 +53,7 @@
           <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
           <div class="cta-row">
             <a class="btn btn-primary" href="https://github.com/amineux/aether">View on GitHub</a>
-            <a class="btn btn-ghost" href="#partners">Why partner</a>
+            <a class="btn btn-ghost" href="#sell">Sell / Design-win</a>
             <a class="btn btn-ghost" href="#pitch">8-minute pitch</a>
           </div>
           <div class="hero-meta">
@@ -423,7 +424,7 @@
         <div class="sec-head" data-reveal>
           <p class="kicker">05 — Why partner</p>
           <h2>A contract you can clone. Not a booked lab.</h2>
-          <p class="lede">What a silicon OS team can evaluate today: a frozen packet, a PJRT-shaped host shim, Soft SMMU SIDs, and a two-tenant refuse. Proof is host-test behavior already in the tree — mechanisms, not invented FLOPs. Research HAL; <code>PartnerNpuStub</code> stays a leftover no-op. The leave-behind is the <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">diligence pack</a>.</p>
+          <p class="lede">What a silicon OS team can evaluate today: a frozen packet, a PJRT-shaped host shim, Soft SMMU SIDs, and a two-tenant refuse. Proof is host-test behavior already in the tree — mechanisms, not invented FLOPs. Research HAL; <code>PartnerNpuStub</code> stays a leftover no-op. One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a>. Diligence: <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Six-month sell goals live in <a href="#sell">#sell</a>.</p>
         </div>
 
         <div class="gets-caption" data-reveal>
@@ -613,7 +614,8 @@
             <p><code>make diligence-demo</code> is the host Path B partner clip (no QEMU). <code>make red-team</code> is the named-attack refuse clip. Week 1 walk: isolation → packet (<code>make partner-hello</code> / doorbell) → wait → admit class → sandbox hole. Path B <code>make qemu</code> is the bootable slice. Optional path-A IOVA: <code>make accel-test</code> (no QEMU rebuild). Eight-minute call script: <a href="#pitch">#pitch</a>.</p>
             <div class="cta-row" style="margin-top:18px">
               <a class="btn btn-primary" href="https://github.com/amineux/aether">Clone on GitHub</a>
-              <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">Diligence pack</a>
+              <a class="btn btn-ghost" href="#sell">Sell / Design-win</a>
+              <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">Sell pack</a>
             </div>
             <p class="muted partner-cta-note">Your compiler keeps the ISA and fusion. Aether admits the job against a partition, a cut, a bank color, and a fence. No booked silicon bring-up. No vendor announcement.</p>
           </div>
@@ -621,11 +623,147 @@
       </div>
     </section>
 
-    <section class="band alt" id="roadmap">
+    <section class="band alt" id="sell">
       <div class="wrap">
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
-            <p class="kicker">06 — Two-year roadmap</p>
+            <p class="kicker">06 — Sell / Design-win</p>
+            <h2>What you get today. Commands that exist. Bring your opcode table.</h2>
+            <p class="lede">One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">docs/SELL_PACK.md</a>. Printable cut: <a href="https://github.com/amineux/aether/blob/main/docs/pitch/partner-one-pager.md">partner-one-pager</a>. Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a>. Isolation is the product. Soft SMMU is software. Path B is canonical. No NVIDIA partnership. No FLOPs. No tape-out.</p>
+          </div>
+          <div class="honest-pill" data-reveal>Ask: opcode table · 2028 handoff or freeze</div>
+        </div>
+
+        <div class="gets-caption" data-reveal>
+          <h3>Six-month sell goals</h3>
+          <span>Sep 2026 → Mar 2027 · process, not a booked lab</span>
+        </div>
+        <div class="sell-goals">
+          <article class="glass sell-goal" data-reveal>
+            <small>01</small>
+            <h3>Run the host clips</h3>
+            <p>Every first meeting: <code>make diligence-demo</code> then <code>make red-team</code>. No QEMU required. Captured logs live in <code>docs/pitch/</code> if cargo is cold.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="1">
+            <small>02</small>
+            <h3>Collect an opcode table</h3>
+            <p>Fill <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a> against frozen <code>IreeHalCmd</code> — or a written no. The IREE HAL stand-in is a research mapping, not a partner.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="2">
+            <small>03</small>
+            <h3>Walk the five beats</h3>
+            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + heap refuse. Same tree. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="3">
+            <small>04</small>
+            <h3>Leave the packet</h3>
+            <p><code>make partner-hello</code> is clone-and-run. Doorbell is a second consumer of the same 96-byte image. <code>make mp-shim</code> is a MicroPerceptron-<em>shaped</em> third consumer (PR #83) — inspiration name only, not a port.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="4">
+            <small>05</small>
+            <h3>Offer path-A IOVA</h3>
+            <p>Optional host proof: <code>make accel-test</code>. Wrong SID aborts. Stock <code>make qemu</code> stays path B. Do not rebuild QEMU on the call.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="5">
+            <small>06</small>
+            <h3>Hold the 2028 stop</h3>
+            <p>Signed opcode list from a real partner CP, or freeze the research ABI. Hardware SMMU stays partner silicon. Not a foundry date.</p>
+          </article>
+        </div>
+
+        <div class="gets-caption" data-reveal>
+          <h3>Makefile targets that exist</h3>
+          <span>POSIX /bin/sh safe · no pipefail · no invented names</span>
+        </div>
+        <div class="sell-cmds">
+          <article class="proof-card" data-reveal>
+            <div class="proof-head">
+              <span class="proof-serial">make diligence-demo</span>
+              <span class="badge done">wait</span>
+            </div>
+            <h3>Host Path B</h3>
+            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait, Event create/record/wait on existing SoftChipletSync fences. Greps <code>expected.txt</code>.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="1">
+            <div class="proof-head">
+              <span class="proof-serial">make red-team</span>
+              <span class="badge done">refuse</span>
+            </div>
+            <h3>Named attacks</h3>
+            <p><code>[redteam] attack=… result=refused</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code> (PR #80). Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="2">
+            <div class="proof-head">
+              <span class="proof-serial">make partner-hello</span>
+              <span class="badge done">packet</span>
+            </div>
+            <h3>Frozen <code>IreeHalCmd</code></h3>
+            <p>Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>. Bad executable refused. No QEMU rebuild. Not a signed vendor.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">make design-win-standin</span>
+              <span class="badge done">map</span>
+            </div>
+            <h3>IREE HAL stand-in</h3>
+            <p>Admits the filled public-noun worksheet. Not a partner. Blank they fill: <code>make design-win-check</code>.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="4">
+            <div class="proof-head">
+              <span class="proof-serial">make accel-test</span>
+              <span class="badge done">IOVA</span>
+            </div>
+            <h3>Path-A Soft-SMMU IOVA</h3>
+            <p>Host <code>PathABar</code>. Job wire carries non-identity IOVAs. Wrong SID aborts. Kernel PCI bind still optional. CI does not rebuild QEMU.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="5">
+            <div class="proof-head">
+              <span class="proof-serial">make mp-shim</span>
+              <span class="badge done">sketch</span>
+            </div>
+            <h3>MP-shaped consumer</h3>
+            <p>Thin third caller of frozen <code>IreeHalCmd</code> (PR #83). Inspiration name only. Secondary to PJRT. Not a MicroPerceptron port. No QEMU rebuild.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="6">
+            <div class="proof-head">
+              <span class="proof-serial">make qemu</span>
+              <span class="badge stub">optional</span>
+            </div>
+            <h3>Path-B guest</h3>
+            <p>Stock QEMU, in-kernel SoftNPU BAR. Use if they want the bootable slice. Skip if the laptop has no QEMU. PJRT <code>Add</code> / <code>Relu</code> (PR #84) stay research opcodes on the frozen packet — not FLOPs.</p>
+          </article>
+        </div>
+
+        <div class="horizon-card sell-ask" data-reveal>
+          <div class="horizon-card-copy">
+            <p class="kicker">The ask</p>
+            <h3>Bring your opcode table.</h3>
+            <p>Fill DESIGN_WIN.md — opcode names, SID budget, memory spaces, queue count, event/fence scope — against frozen <code>IreeHalCmd</code>. If the HAL contract matches the chip, that is the conversation. If it does not, a written no with reasons is a good outcome. Not a logo. Not an NDA draft in this meeting. Not NVIDIA.</p>
+          </div>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>leave-behind</span></div>
+            <pre><span class="cmd">$ make diligence-demo</span>
+<span class="ok">[event] SoftChipletSync create/record/wait
+[diligence] host Path B sealed</span>
+<span class="cmd">$ make red-team</span>
+<span class="ok">[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
+[redteam] sealed</span>
+<span class="cmd">$ make partner-hello &amp;&amp; make mp-shim</span>
+<span class="ok">[partner-hello] ok
+[mp-shim] ok</span>
+<span class="cmd">$ make accel-test</span>
+<span class="ok">path-A Soft-SMMU IOVA / wrong-SID</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="roadmap">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">07 — Two-year roadmap</p>
             <h2>Year-1, hardening, Months 1–5, H2 2026 explorations, and three 2027 H1 deepen slices landed. 2028 is a partner handoff or an ABI freeze.</h2>
             <p class="lede">Near-term calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (Sep 2026 → Mar 2027). Partner demos: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. Horizon: <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028). Historical Falsifier track in <a href="https://github.com/amineux/aether/blob/main/docs/YEAR2_PLAN.md">YEAR2_PLAN</a>; M1–M4 closed in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>; Month 5 four digests closed in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. Soft SMMU, Soft-CP, SMP, PML4, three-ISA <code>/init</code>, and the x86 hardening stack stay done. M1 opcodes, M2 PJRT, M4 XQueue, M3 SID-at-submit, the Soft SMMU kit, and SoftChipletSync stay done. SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI are done. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5 digests. Event create/record/wait, fabric-class SoftNoI, and SID-proved <code>atomic_add</code> landed as 2027 H1 deepen slices. Week 1 call pack walks those slices (Event wait, fabric-class, <code>ATOMIC_ADD</code>, partner-hello, doorbell). Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts); kernel PCI bind still optional. Path B / <code>make qemu</code> is canonical. Soft SMMU stays software. We do not tape out chips. Manufacturing support is not a milestone.</p>
           </div>
@@ -890,10 +1028,10 @@
       </div>
     </section>
 
-    <section class="band" id="status">
+    <section class="band alt" id="status">
       <div class="wrap">
         <div class="sec-head" data-reveal>
-          <p class="kicker">07 — Status / proof</p>
+          <p class="kicker">08 — Status / proof</p>
           <h2>What you can boot. What is still open.</h2>
           <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, the Month 5 exploration digests, the H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS), and three 2027 H1 deepen slices (Event wait, fabric-class SoftNoI, SoftSFI <code>atomic_add</code>) have landed. Week 1 call pack walks those slices. Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts); kernel PCI bind still optional. Path B / <code>make qemu</code> stays canonical. Host tests execute the same <code>run_boot_demo()</code> the guest prints.</p>
         </div>
@@ -936,8 +1074,8 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
             <div class="proof">
               <span class="badge done">Docs</span>
               <div>
-                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · DILIGENCE · PITCH · WEEK1_CALL · DESIGN_WIN · SELL_GOALS · SIX_MONTH_FORWARD · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
-                <p>Research leave-behind. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). Week 1 20-minute pack is <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a> — wired to Event wait, fabric-class admit, SoftSFI <code>ATOMIC_ADD</code>, partner-hello, and doorbell. Partner demos this quarter: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices. Near-term calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (Sep 2026 → Mar 2027). Horizon is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A Soft-SMMU IOVA host proof landed; kernel PCI bind still optional. Deep-dive agenda is a script, not a meeting that happened.</p>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · SELL_PACK · SELL_GOALS · DILIGENCE · PITCH · WEEK1_CALL · DESIGN_WIN · SIX_MONTH_FORWARD · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. One-page sell pack is <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a> (this page <a href="#sell">#sell</a>). Partner demos this quarter: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). Week 1 20-minute pack is <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a> — wired to Event wait, fabric-class admit, SoftSFI <code>ATOMIC_ADD</code>, partner-hello, and doorbell. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices. Near-term calendar is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (Sep 2026 → Mar 2027). Horizon is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A Soft-SMMU IOVA host proof landed; kernel PCI bind still optional. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
           </div>
@@ -945,13 +1083,13 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
       </div>
     </section>
 
-    <section class="band alt" id="pitch">
+    <section class="band" id="pitch">
       <div class="wrap">
         <div class="road-intro">
           <div class="sec-head" style="margin:0" data-reveal>
-            <p class="kicker">08 — 8-minute pitch</p>
+            <p class="kicker">09 — 8-minute pitch</p>
             <h2>A call script. Isolation is the product, not FLOPs.</h2>
-            <p class="lede">Read this on a live call. Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>. Proof commands that exist: <code>make diligence-demo</code>, <code>make red-team</code>, <code>make partner-hello</code>. What to show next: isolation → packet → wait → admit class → sandbox hole. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>.</p>
+            <p class="lede">Read this on a live call. One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK.md</a> (this page <a href="#sell">#sell</a>). Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>. Proof commands that exist: <code>make diligence-demo</code>, <code>make red-team</code>, <code>make partner-hello</code>, <code>make accel-test</code>. What to show next: isolation → packet → wait → admit class → sandbox hole. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>.</p>
           </div>
           <div class="honest-pill" data-reveal>8 min · refuse paths · not a vendor pitch</div>
         </div>
@@ -1010,7 +1148,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
           </div>
           <div class="disclaimer" style="margin:0">
             <strong>No partnership. No FLOPs. No tape-out.</strong>
-            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. Week 1 pack stays: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>.</span>
+            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. One-page pack: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK.md</a>. Week 1: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>.</span>
           </div>
         </div>
       </div>
@@ -1028,8 +1166,9 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
       </div>
       <div class="foot-links">
         <a href="https://github.com/amineux/aether">GitHub</a>
+        <a href="#sell">Sell</a>
         <a href="#partners">Why partner</a>
-        <a href="https://github.com/amineux/aether/blob/main/docs/ARCHITECTURE.md">Docs</a>
+        <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">Sell pack</a>
         <a href="#pitch">Pitch</a>
         <a href="https://github.com/amineux/aether/blob/main/LICENSE">License</a>
         <a href="https://github.com/amineux/aether/issues">Contact</a>

@@ -4,15 +4,21 @@
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).
 
+**Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
+what you get today. Commands that exist. Ask: bring your opcode table.
+**Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
+Site: [`#sell`](https://amineux.github.io/aether/#sell).
+
 **An accelerator-first fabric kernel** — a research prototype for how operating
 systems should look when the package is a mesh of CPU, NPU, GPU, and custom
 ASIC tiles rather than a host CPU with bolt-on devices.
 
-> This is **not** production silicon, not a tutorial toy, and not a claim of
-> partnership with any chip vendor. It is a bootable v0.1 whose *interfaces
-> and invariants* are what we would pitch to an AI-chip OS team.
-> Week 1 call pack (20 min): [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
-> Eight-minute script: [`docs/PITCH.md`](docs/PITCH.md)
+> Interfaces and refuse invariants for an AI-chip OS team. Isolation is
+> the product (blast radius), not FLOPs. Not production silicon, not a
+> vendor partnership. One-page leave-behind:
+> [`docs/SELL_PACK.md`](docs/SELL_PACK.md). Week 1 call:
+> [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md). Eight-minute script:
+> [`docs/PITCH.md`](docs/PITCH.md)
 > ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
 > What to show next: isolation (`make red-team`) → packet
 > (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
@@ -250,7 +256,7 @@ examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
 user/probe/      optional second static ELF64 (own PML4 @ 0x2400000)
-docs/            architecture, fabric, accel, security, diligence, pitch, Week 1 call pack
+docs/            architecture, fabric, accel, security, diligence, sell pack, pitch, Week 1 call pack
 docs/design-win/ IREE HAL research stand-in worksheet (`make design-win-standin`; not a partner)
 ```
 
@@ -333,8 +339,8 @@ guest bind stays gated. Closed Month 5 record:
 [docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) (Sep 2026 →
 Mar 2027). Horizon: [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
 (Sep 2026 → Sep 2028). Partner demos:
-[docs/SELL_GOALS.md](docs/SELL_GOALS.md). H2 2026 leftovers
-**landed**.
+[docs/SELL_GOALS.md](docs/SELL_GOALS.md). One-page leave-behind:
+[docs/SELL_PACK.md](docs/SELL_PACK.md). H2 2026 leftovers **landed**.
 
 ## Docs
 
@@ -347,6 +353,8 @@ Mar 2027). Horizon: [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
 - [docs/BLAST.md](docs/BLAST.md) — two-tenant blast-radius diligence clip (CrossCut + wrong-SID refuse)
 - [docs/ACCEL.md](docs/ACCEL.md) — HAL, virtqueue MMIO, map API, bank color, how to plug a real NPU
 - [docs/SECURITY.md](docs/SECURITY.md) — cap invariants, tenant isolation
+- [docs/SELL_PACK.md](docs/SELL_PACK.md) — one-page “what you get today” (commands that exist; 2028 handoff or freeze)
+- [docs/pitch/partner-one-pager.md](docs/pitch/partner-one-pager.md) — printable partner cut
 - [docs/PITCH.md](docs/PITCH.md) — 8-minute founder call script (`make diligence-demo` / `make red-team`)
 - [docs/WEEK1_CALL.md](docs/WEEK1_CALL.md) — 20-minute Week 1 partner-call pack (captured logs + IREE stand-in)
 - [docs/pitch/transcript.txt](docs/pitch/transcript.txt) — expected refuse-path serial (from in-tree prints / CI greps)
@@ -372,7 +380,8 @@ deploys from `.github/workflows/pages.yml` on pushes to `main` that touch
 `site/`. After the first successful run, enable **Settings → Pages → Source:
 GitHub Actions** if it is not already on. The live URL is
 [https://amineux.github.io/aether/](https://amineux.github.io/aether/)
-(8-minute script: [`#pitch`](https://amineux.github.io/aether/#pitch)).
+(sell / design-win: [`#sell`](https://amineux.github.io/aether/#sell);
+8-minute script: [`#pitch`](https://amineux.github.io/aether/#pitch)).
 
 Open `site/index.html` locally, or `python3 -m http.server -d site`, to
 review offline.

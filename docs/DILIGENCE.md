@@ -2,19 +2,22 @@
 
 This is what a silicon OS team would receive before spending bring-up
 time on Aether. It is **not** a partnership announcement, a tape-out
-checklist, or a benchmark brief. The public site (`site/`) is the same
-leave-behind — not a vendor pitch. The 8-minute call script is
-[PITCH.md](PITCH.md) (site `#pitch`). Week 1 20-minute pack:
-[WEEK1_CALL.md](WEEK1_CALL.md). See [ROADMAP.md](ROADMAP.md) for the
-active track the site must match. The closed M1–M4 calendar is
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (M1–M4 done; M3 SID-at-submit
-landed; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
-SoftCmdFirewall landed). [MONTH5_PLAN.md](MONTH5_PLAN.md) is the
-closed Month 5 record (SoftSFI digest 4 landed). **What to sequence
-next:** [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 →
-Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 →
-Sep 2028). Partner demos: [SELL_GOALS.md](SELL_GOALS.md). H2 2026
-leftovers **landed**. Site-as-milestone stays killed.
+checklist, or a benchmark brief. The one-page sell leave-behind is
+[SELL_PACK.md](SELL_PACK.md) (printable cut:
+[pitch/partner-one-pager.md](pitch/partner-one-pager.md); site
+`#sell`). Partner demos this quarter: [SELL_GOALS.md](SELL_GOALS.md).
+The public site (`site/`) is the same leave-behind — not a vendor
+pitch. The 8-minute call script is [PITCH.md](PITCH.md) (site
+`#pitch`). Week 1 20-minute pack: [WEEK1_CALL.md](WEEK1_CALL.md). See
+[ROADMAP.md](ROADMAP.md) for the active track the site must match. The
+closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
+(M1–M4 done; M3 SID-at-submit landed; SoftChipletSync + SoftCCT
+landed; SoftGreenCtx landed; SoftCmdFirewall landed).
+[MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
+(SoftSFI digest 4 landed). **What to sequence next:**
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+H2 2026 leftovers **landed**. Site-as-milestone stays killed.
 
 ## One-command host demo
 
@@ -37,15 +40,17 @@ scripted narrative. CI greps
 | --- | --- |
 | `[blast] SpectralCut CrossCut refuse` / `wrong SID abort` | Two tenants. Cross-cut placement and the other SID are refused. |
 | `[pjrt] IreeHalCmd submit + wait` | Frozen 96-byte HAL image; fence wait. Research opcodes, not FLOPs. |
-| `[event] SoftChipletSync create/record/wait` | Event create/record/wait on existing SoftChipletSync fences. Not `GetPjRtApi`. |
+| `[event] SoftChipletSync create/record/wait` | Event create/record/wait on existing SoftChipletSync fences (PR #74). Not `GetPjRtApi`. |
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
 | `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
 
 This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
-`make qemu-ci`). Path A is still `make accel-test` (host) /
-optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
-`make red-team` (see [Red-team clip](#red-team-clip-host-stdout)).
+`make qemu-ci`). Path A is `make accel-test` (host Soft-SMMU IOVA /
+wrong-SID, PR #78) / optional `QEMU_ACCEL`. The named-attack refuse
+clip is a sibling: `make red-team` (fabric-class + `ATOMIC_ADD`; see
+[Red-team clip](#red-team-clip-host-stdout)). One-page sell walk:
+[SELL_PACK.md](SELL_PACK.md).
 
 ## What ships in this tree
 
@@ -70,15 +75,17 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
-| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor `Unmodeled`; heap/alloc named refuse) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
+| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor `Unmodeled`). `atomic_add` is SID-proved (PR #73; in-range accept, cross-tenant `Oob`). Heap/alloc is a named refuse (PR #80; `[softsfi] heap=refused`) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
-| SoftNoI-IS | **Landed** (PR #60 + fabric-class #75). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`; software `FlowClass` tag (PARL/NoI inspiration; admit control, not topology synth, not UniCNet) | `core/src/noi.rs`, `drivers/src/noi.rs` |
+| SoftNoI-IS | **Landed** (PR #60). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`. Fabric-class tag (PR #75): tree → Gradient, ring → Curl, persistent → Harmonic; second Curl refuses reserved ring even at IS = 1.0. PARL/NoI inspiration; admit control, not topology synth, not UniCNet | `core/src/noi.rs`, `drivers/src/noi.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
-| PJRT/IREE-shaped host nouns | Types + working host session; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
-| MP-shaped thin `IreeHalCmd` consumer | Research sketch; memcpy / matmul / wave; doorbell or Soft-CP; inspiration name only | `host/aether-mp-shim` |
+| PJRT/IREE-shaped host nouns | Types + working host session; Event create/record/wait on existing SoftChipletSync fences (PR #74); Add / Relu on the frozen packet (PR #84); no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
+| MP-shaped thin `IreeHalCmd` consumer | Research sketch (PR #83); memcpy / matmul / wave; doorbell or Soft-CP; inspiration name only | `host/aether-mp-shim`, `make mp-shim` |
 | Design-win worksheet | Fill-in call artifact + host checker (not a signed vendor) | `docs/DESIGN_WIN.md`, `examples/design-win-check` |
+| IREE HAL research stand-in | Filled public-noun mapping; **not a partner** | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md), `make design-win-standin` |
 | Partner hello leave-behind | Host clone-and-run frozen `IreeHalCmd` → IreeShapedCp; no QEMU | `examples/partner-hello`, [PARTNER.md](PARTNER.md) |
+| Sell pack | One-page “what you get today” + six-month sell goals | [SELL_PACK.md](SELL_PACK.md), [WEEK1_CALL.md](WEEK1_CALL.md) |
 | x86_64 QEMU + ring-3 `/init` | Working vertical slice | `boot/x86_64/`, `user/init/`, `make qemu` |
 | Per-task PML4 + SMEP/SMAP | Documented x86 subset (CR3 + USER-local 2 MiB) | `kernel/src/mm/paging.rs`, `core/src/aspace.rs` |
 | User-level threads (`SYS_CLONE`) | Additive nr 10; share caller aspace; not Linux clone | `kernel/src/{task,syscall}.rs`, `user/init` |
@@ -117,13 +124,18 @@ PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
 `run_opinject_demo()` is the resident-worker clip (serial `[opinject]`);
 GPUOS / Mirage MPK inspiration only — not NVRTC, not CUDA, not a full
-LLM compiler. `make red-team` (`examples/red-team`) is the **buyer
-stdout**: it calls those same clips and prints
-`[redteam] attack=… result=refused` for wrong-SID/CrossCut DMA,
-SoftCmdFirewall mutate-during-validate, SoftSFI OOB load, SoftNoI-IS
-overload admit, and PASID stale translate after unmap. It ends with
-what this is **not** (confidential GPU, HW MIG, hardware SMMU — Soft
-SMMU is software). Not a new isolator. CI greps the proof lines.
+LLM compiler. `run_softnoi_demo()` is the SoftNoI-IS clip (serial
+`[softnoi]`); PARL / NoI inspiration only — admit control, not
+topology synth, not UniCNet. Fabric-class tags (PR #75) feed the same
+admit: Curl needs reserved ring capacity. `make red-team`
+(`examples/red-team`) is the **buyer stdout**: it calls those same
+clips and prints `[redteam] attack=… result=refused` for
+wrong-SID/CrossCut DMA, SoftCmdFirewall mutate-during-validate,
+SoftSFI OOB load, SoftNoI-IS overload admit, and PASID stale
+translate after unmap. It also prints fabric-class admit/refuse and
+`ATOMIC_ADD` accept/reject (PR #73). It ends with what this is
+**not** (confidential GPU, HW MIG, hardware SMMU — Soft SMMU is
+software). Not a new isolator. CI greps the proof lines.
 The RISC-V
 and aarch64 ports did not change `aether-hal` or the syscall /
 AccelDevice ABI.
@@ -136,7 +148,7 @@ gaps:
 | Gap | Honest reading |
 | --- | --- |
 | Hardware SMMU | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate) but is still software only; a real device can still DMA past it. Partner silicon required. |
-| Custom QEMU virtio-accel | Path A landed as optional (`qemu/`; `make accel-test`). Path B is still what stock `make qemu` runs. CI does not rebuild QEMU. Guest does not yet bind PCI BAR0 |
+| Custom QEMU virtio-accel | Path-A Soft-SMMU IOVA host proof **landed** (PR #78; `make accel-test` / `PathABar`; wrong SID aborts). Path B is still what stock `make qemu` runs. CI does not rebuild QEMU. Guest does not yet bind PCI BAR0 |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
 | aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
@@ -148,7 +160,7 @@ gaps:
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines; SoftCCT is last-writer elision on that model; fence **counts** only, not a latency claim |
 | SoftGreenCtx SM/WQ | **Landed** as a software partition on Soft-CP (fake 70/30 pool). Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
-| SoftNoI-IS | **Landed** (PR #60 + fabric-class #75) as runtime admit on a fake shared NoI (IS = worst-case concurrent/solo). PARL/NoI inspiration. Not topology synthesis, not UniCNet |
+| SoftNoI-IS | **Landed** (PR #60) as runtime admit on a fake shared NoI (IS = worst-case concurrent/solo). Fabric-class tag **landed** (PR #75). PARL/NoI inspiration. Not topology synthesis, not UniCNet |
 
 x86_64 **does** have ring-3 `/init` + `syscall`/`sysret` and cap checks on
 send/recv/map/accel. RISC-V now has the same syscall numbers over
@@ -243,8 +255,10 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] heap=refused` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
+| IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
 | MP-shaped shim | `make mp-shim-ci` | Thin MicroPerceptron-shaped consumer of the same image; Soft-CP firewall; no QEMU |
+| Path-A IOVA | `make accel-test` | Host Soft-SMMU IOVA / wrong-SID on `PathABar`. No QEMU rebuild |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
@@ -314,7 +328,8 @@ We will not claim:
 - That SoftCCT is a full coherence protocol, CPElide silicon, or a
   Vulkan / ROCm product
 - That SoftNoI-IS synthesizes NoI topology, is UniCNet, or is a
-  partner interposer result (PR #60 + #75 landed as admit control)
+  partner interposer result. The IS path and fabric-class tag (PR
+  #60 + #75) are landed software admit — not a silicon NoI
 - That `IommuMap` / Soft SMMU is a hardware SMMU
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or CUDA UVA
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate path
@@ -370,4 +385,5 @@ the worksheet is executable, not a PDF. Check it with
 IREE HAL research stand-in (not a partner):
 [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) /
 `make design-win-standin`.
-Partner landing page: [PARTNER.md](PARTNER.md). This is still not a signed vendor.
+Partner landing page: [PARTNER.md](PARTNER.md). One-page sell pack:
+[SELL_PACK.md](SELL_PACK.md). This is still not a signed vendor.

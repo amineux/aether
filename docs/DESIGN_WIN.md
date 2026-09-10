@@ -17,6 +17,7 @@ already frozen on `IreeHalCmd`, **not a partner**) is
 
 Partner landing page: [`docs/PARTNER.md`](PARTNER.md) (`make partner-hello`).
 Week 1 call pack: [`docs/WEEK1_CALL.md`](WEEK1_CALL.md).
+One-page sell pack: [`docs/SELL_PACK.md`](SELL_PACK.md).
 
 Public vocabulary is cited from IREE HAL headers on
 [iree-org/iree](https://github.com/iree-org/iree)
