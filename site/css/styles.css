@@ -1798,6 +1798,9 @@ footer {
 .reveal[data-d="6"] {
   animation-delay: 0.48s;
 }
+.reveal[data-d="7"] {
+  animation-delay: 0.56s;
+}
 
 @keyframes rise {
   to {
