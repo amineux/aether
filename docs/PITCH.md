@@ -31,8 +31,8 @@ Doorbell second consumer (not a Makefile target):
 **What to show next** (same tree): isolation (`make red-team`) →
 packet (`make partner-hello` / doorbell) → wait (Event line in
 `make diligence-demo`) → admit class (fabric-class line in
-`make red-team`) → sandbox hole (`ATOMIC_ADD` line in
-`make red-team`).
+`make red-team`) → sandbox hole (`ATOMIC_ADD` + `[softsfi] heap=refused`
+in `make red-team`).
 
 ---
 
@@ -163,6 +163,7 @@ refused. Makefile greps:
 [redteam] attack=pasid-stale result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```
@@ -240,8 +241,8 @@ non-claims and stop. Do not paper over it.
 **Say:**
 
 > 2027 deepens what already shipped: PJRT polish, SoftSFI widen with
-> honest TODOs (`atomic_add` SID-proved; tensor / heap still
-> `Unmodeled`), a second consumer of the **frozen** packet. Opcode v2
+> honest leftovers (`atomic_add` SID-proved; tensor `Unmodeled`;
+> heap named refuse), a second consumer of the **frozen** packet. Opcode v2
 > only with a dual update of ACCEL.md, `ireecp`, and host pack/unpack.
 > Hardware SMMU is not a software milestone.
 
@@ -274,7 +275,7 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | What to show next | isolation → packet → wait → admit class → sandbox hole |
 | 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
-| Event / fabric-class / ATOMIC_ADD | Event line in `make diligence-demo`; other two in `make red-team` |
+| Event / fabric-class / ATOMIC_ADD / heap | Event line in `make diligence-demo`; the rest in `make red-team` (`[softsfi] heap=refused`) |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) driver steps + `aether_hal::AccelDevice` |

@@ -17,7 +17,8 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > What to show next: isolation (`make red-team`) → packet
 > (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
 > (Event in `make diligence-demo`) → admit class (fabric-class in
-> `make red-team`) → sandbox hole (`ATOMIC_ADD` in `make red-team`).
+> `make red-team`) → sandbox hole (`ATOMIC_ADD` + `[softsfi] heap=refused`
+> in `make red-team`).
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
@@ -129,9 +130,9 @@ not NVRTC). Diligence clips, not a track.
 See [`docs/BLAST.md`](docs/BLAST.md) and [`docs/ACCEL.md`](docs/ACCEL.md).
 The host sell-path is `make red-team`: same refuse paths, stdout
 `[redteam] attack=… result=refused`, plus fabric-class admit/refuse
-and `ATOMIC_ADD` accept/reject on the same SoftNoI / SoftSFI clips,
-and an explicit “what this is not” closer (not confidential GPU, not
-HW MIG, Soft SMMU is software).
+and `ATOMIC_ADD` accept/reject plus `[softsfi] heap=refused` on the
+same SoftNoI / SoftSFI clips, and an explicit “what this is not”
+closer (not confidential GPU, not HW MIG, Soft SMMU is software).
 
 **RISC-V virt** (`qemu-system-riscv64`, `rustup target add riscv64gc-unknown-none-elf`):
 
@@ -322,8 +323,9 @@ without SID change; Green Contexts / DetShare inspiration; not HW MIG,
 not a BAR firewall, not FLOPs).
 **SoftSFI is landed** (Month 5 digest 4; toy Soft-CP
 load/store/add/dma/`atomic_add` + SFI verifier; GPU-AToLL inspiration;
-not NVVM; tensor/heap `Unmodeled`; `atomic_add` is a sequential toy
-RMW, not a hardware atomic). Optional Soft SMMU kit is PR #48 (software tables). Path-A
+not NVVM; tensor `Unmodeled`; heap/alloc is a named `Unmodeled` refuse,
+not a bump allocator; `atomic_add` is a sequential toy RMW, not a
+hardware atomic). Optional Soft SMMU kit is PR #48 (software tables). Path-A
 guest bind stays gated. Closed Month 5 record:
 [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). The **next calendar** is
 [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).

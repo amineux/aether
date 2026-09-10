@@ -123,10 +123,10 @@ pub use smmu_bringup::{
 };
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use softsfi::{
-    execute, execute_unverified, in_bounds_atomic_prog, in_bounds_prog, oob_atomic_prog,
-    oob_load_prog, run, run_softsfi_demo, verify, FlatMem, Insn, Program, SfiError, SfiExec,
-    SfiMem, SidRange, SidSandbox, SoftOp, SoftSfiReport, MAX_INSNS, MAX_REGS, SFI_SECRET_B,
-    SFI_SID_A, SFI_SID_B, WORD,
+    execute, execute_unverified, heap_alloc_prog, in_bounds_atomic_prog, in_bounds_prog,
+    oob_atomic_prog, oob_load_prog, run, run_softsfi_demo, verify, FlatMem, Insn, Program,
+    SfiError, SfiExec, SfiMem, SidRange, SidSandbox, SoftOp, SoftSfiReport, MAX_INSNS, MAX_REGS,
+    SFI_SECRET_B, SFI_SID_A, SFI_SID_B, WORD,
 };
 pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};

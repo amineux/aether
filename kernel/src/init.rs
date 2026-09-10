@@ -80,6 +80,11 @@ fn run_and_print_softsfi() -> bool {
         softsfi.in_bounds && softsfi.oob_reject && softsfi.atomic_ok && softsfi.unmodeled_reject,
     ));
     console::nl();
+    if softsfi.heap_reject {
+        println!("[softsfi] heap=refused");
+    } else {
+        println!("[softsfi] heap FAIL");
+    }
     write_str("[softsfi] skip-verify no cross-read  ");
     write_str(flag(softsfi.no_cross_read));
     console::nl();
