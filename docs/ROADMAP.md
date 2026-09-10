@@ -811,7 +811,7 @@ Search for `// STUB:` / `STUB` :
 | SoftCCT | `core/src/chipsync.rs` | **done** as last-writer elision on SoftChipletSync. CPElide inspiration. Not a coherence protocol, not Vulkan / ROCm. Single-chiplet is a no-op |
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
-| SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape). Not NVVM. Tensor / heap `Unmodeled`. `atomic_add` is a sequential toy RMW, not a hardware atomic |
+| SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape). Not NVVM. Tensor `Unmodeled`. Heap/alloc is a named `Unmodeled` refuse (not a bump allocator). `atomic_add` is a sequential toy RMW, not a hardware atomic |
 | SoftNoI-IS | `core/src/noi.rs` | IS admit **landed** (PR #60). This PR: software `FlowClass` tag at submit (Curl ring reserve). PARL/NoI inspiration. Admit control, not topology synth, not a vendor header |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
@@ -865,8 +865,9 @@ opcode device (PR #38). **What to sequence next:**
 - **SoftSFI landed:** toy Soft-CP ISA (`load` / `store` / `add` /
   `dma` / `atomic_add`) with an SFI verifier (GPU-AToLL shape). Every
   modeled memory op proves `base+bound` in the SID window. Not an
-  NVVM pipeline. Not “safe multi-tenant kernels.” Tensor / heap stay
-  `Unmodeled`. `atomic_add` is SID-proved (in-range accept,
+  NVVM pipeline. Not “safe multi-tenant kernels.” Tensor stays
+  `Unmodeled`. Heap/alloc is a named `Unmodeled` refuse (not a bump
+  allocator). `atomic_add` is SID-proved (in-range accept,
   cross-tenant `Oob`) and is a sequential toy RMW, not a hardware
   atomic.
 - **SoftNoI-IS in-flight (this PR):** fake shared NoI; solo vs
@@ -891,7 +892,8 @@ is leftover engineering, not a fifth digest.
 
 1. **H2 2026 leftovers** (see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
    SoftSFI is **landed** (toy ISA bounds + SID-proved `atomic_add`;
-   not a safe multi-tenant kernel; tensor/heap `Unmodeled`). SoftGreenCtx is **landed** (not MIG).
+   not a safe multi-tenant kernel; tensor `Unmodeled`; heap named
+   refuse). SoftGreenCtx is **landed** (not MIG).
    SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
    **landed** (last-writer elision; incorrect elision fails).
    SoftNoI-IS is **in-flight / landing this PR** (admit control, not

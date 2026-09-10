@@ -12,4 +12,5 @@ make red-team
 
 or `cargo run -p aether-redteam`. CI greps `[redteam] attack=… result=refused`
 plus `[redteam] fabric-class admit/refuse`, `[redteam] ATOMIC_ADD accept/reject`,
-and the “what this is not” closer. See [docs/DILIGENCE.md](../../docs/DILIGENCE.md).
+`[softsfi] heap=refused`, and the “what this is not” closer. See
+[docs/DILIGENCE.md](../../docs/DILIGENCE.md).

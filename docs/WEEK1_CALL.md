@@ -53,8 +53,8 @@ Optional, not this slot: `make partner-hello`, `make design-win-standin`,
 **What to show next** (same tree; commands that exist): isolation
 (`make red-team`) → packet (`make partner-hello` / doorbell) → wait
 (Event line in `make diligence-demo`) → admit class (fabric-class
-line in `make red-team`) → sandbox hole (`ATOMIC_ADD` line in
-`make red-team`). Map below.
+line in `make red-team`) → sandbox hole (`ATOMIC_ADD` +
+`[softsfi] heap=refused` in `make red-team`). Map below.
 
 ---
 
@@ -86,7 +86,7 @@ Makefile targets.
 | Packet | frozen `IreeHalCmd`; second consumer | `make partner-hello` then `cargo run -p aether-accel-client` |
 | Wait | Event create/record/wait on SoftChipletSync | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
 | Admit class | fabric-class tag into SoftNoI | `make red-team` — grep `[redteam] fabric-class admit/refuse` |
-| Sandbox hole | SoftSFI `ATOMIC_ADD` accept/reject | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` |
+| Sandbox hole | SoftSFI `ATOMIC_ADD` accept/reject; heap named refuse | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` and `[softsfi] heap=refused` |
 
 Worksheet still: `make design-win-check` / `make design-win-standin`.
 Blank: [DESIGN_WIN.md](DESIGN_WIN.md). Filled IREE stand-in (not a
@@ -148,13 +148,15 @@ Captured stdout: [pitch/red-team.log](pitch/red-team.log). Makefile greps:
 [redteam] attack=pasid-stale result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```
 
 Same refuse paths the kernel already has. Not a new isolator.
-`fabric-class` and `ATOMIC_ADD` are the same SoftNoI / SoftSFI clips
-— admit/refuse and accept/reject on code that already exists.
+`fabric-class`, `ATOMIC_ADD`, and heap refuse are the same SoftNoI /
+SoftSFI clips — admit/refuse and accept/reject on code that already
+exists. Heap is a named `Unmodeled` fault, not a bump allocator.
 
 ---
 
@@ -202,6 +204,7 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | Event wait | `make diligence-demo` — `[event] SoftChipletSync create/record/wait` |
 | Fabric-class admit | `make red-team` — `[redteam] fabric-class admit/refuse` |
 | ATOMIC_ADD hole | `make red-team` — `[redteam] ATOMIC_ADD accept/reject` |
+| SoftSFI heap refuse | `make red-team` — `[softsfi] heap=refused` |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | Example mapping | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) + `aether_hal::AccelDevice` |

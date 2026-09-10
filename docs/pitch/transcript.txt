@@ -67,6 +67,7 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=pasid-stale result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```

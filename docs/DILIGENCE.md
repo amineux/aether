@@ -69,7 +69,7 @@ optional `QEMU_ACCEL`. The named-attack refuse clip is a sibling:
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
-| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor/heap `Unmodeled`) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
+| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM; tensor `Unmodeled`; heap/alloc named refuse) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
 | SoftNoI-IS | **In-flight / this PR.** Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5` (PARL/NoI inspiration; admit control, not topology synth, not UniCNet). Do not mark Done until merge | `core/src/noi.rs`, `drivers/src/noi.rs` |
@@ -107,7 +107,9 @@ firewall, not FLOPs.
 `run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
 GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
 `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`); tensor
-and heap stay `Unmodeled`.
+stays `Unmodeled`. Heap/alloc is a named opcode that is refused
+(`SfiError::Unmodeled`) — not a bump allocator. Sell clip:
+`[softsfi] heap=refused`.
 `run_sva_demo()` is the PASID/SVA clip (serial `[sva]`); Linux SVA /
 PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
@@ -235,7 +237,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` and the “what this is not” closer |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] heap=refused` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
 | x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
@@ -262,6 +264,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Mutate command buffer during validate | `run_firewall_demo` — SoftCmdFirewall copy-then-validate (Host1x hole closed) | refused |
 | Out-of-bounds load/store | `run_softsfi_demo` — SoftSFI verifier `SfiError::Oob`; skip-verify still does not cross-read | refused |
 | Cross-tenant `atomic_add` | `run_softsfi_demo` — SID-proved toy fetch-add; foreign span is `Oob` (not a hardware atomic) | refused |
+| Heap / alloc | `run_softsfi_demo` — named `SoftOp::Heap` is `SfiError::Unmodeled` (not a bump allocator) | refused |
 | Overload admit (`IS` over budget) | `run_softnoi_demo` — SoftNoI-IS refuse when projected `IS > 1.5` | refused |
 | Fabric-class tag at admit | `run_softnoi_demo` — Gradient admits; second Curl refuses the reserved ring | admit / refuse |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
@@ -276,6 +279,7 @@ Expected stdout (CI greps these):
 [redteam] attack=pasid-stale result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```

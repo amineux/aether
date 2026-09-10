@@ -574,7 +574,9 @@ escapes the SID window (`Oob`).
 
 - Tensor copies / SoftNPU `MatMul` / `Wave` / TMA-shaped ops are
   **refused**, not modeled.
-- Heap / dynamic allocation is not a sandbox (no heap in this ISA).
+- Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
+  allocator and not a sandbox. Prefer refuse over fake safety.
+  Diligence line: `[softsfi] heap=refused`.
 
 **Modeled side-effect:** `atomic_add` is a sequential word fetch-add
 (`rd = mem[rs+imm]; mem[rs+imm] += rt`). The verifier must prove the
@@ -590,7 +592,7 @@ verify(program, SidSandbox::from_iommu(sid))
   AtomicAdd:    prove [rs+imm, +4) writable ⊆ window (toy RMW)
   Dma:          prove src and dst spans ⊆ window
   Add/AddImm:   no memory; refine constants
-  Tensor/unknown/no-heap: Unmodeled
+  Tensor/Heap/unknown: Unmodeled (heap is named refuse, not a bump)
 Soft-CP submit_sfi(sid, program)     // verify then execute
 Soft-CP inject_sfi_skip_verify(...)  // runtime SID trap only
 ```
@@ -603,8 +605,9 @@ reject OOB / cross-tenant, and show skip-verify does not leak tenant B.
 Host tests: `verifier_accepts_in_bounds_program`,
 `verifier_rejects_oob`, `atomic_add_in_bounds_accepted`,
 `atomic_add_cross_tenant_rejected`, `verifier_rejects_tensor_and_unknown`,
+`verifier_rejects_heap_and_alloc`,
 `softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
-`[softsfi]`.
+`[softsfi]` including `[softsfi] heap=refused`.
 
 ## PASID / SVA (software; Linux SVA-shaped)
 

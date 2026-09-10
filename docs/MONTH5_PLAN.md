@@ -161,7 +161,8 @@ injection still traps; in-range SID-A must not touch SID-B pins).
 
 **Later (SoftSFI widen):** `atomic_add` is a SID-proved toy fetch-add
 (in-range accept, cross-tenant `Oob`). Sequential RMW, not a hardware
-atomic. Tensor / heap stay `Unmodeled`. Still not “safe multi-tenant
+atomic. Tensor stays `Unmodeled`. Heap/alloc is a named `Unmodeled`
+refuse (not a bump allocator). Still not “safe multi-tenant
 kernels.”
 
 **Contract** (`aether_core::softsfi` + Soft-CP `submit_sfi`):
@@ -170,8 +171,9 @@ kernels.”
    load/store/dma/`atomic_add` against the submit SID’s Soft-SMMU
    IOVA window.
 2. Host tests: in-bounds accept; OOB reject; SID-proved `atomic_add`
-   (in-range accept, cross-tenant `Oob`); two tenants SFI+SID
-   (A cannot load/store/RMW B’s pin; skip-verify does not cross-read).
+   (in-range accept, cross-tenant `Oob`); heap/alloc named `Unmodeled`
+   refuse; two tenants SFI+SID (A cannot load/store/RMW B’s pin;
+   skip-verify does not cross-read).
    Existing SET_SID refuse unchanged.
 3. Docs: GPU-AToLL pattern, software sandbox. **Not** a verified
    multi-tenant GPU, **Not** NVRTC, **Not** confidential GPU, **not**
@@ -267,7 +269,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | **SoftGreenCtx** | **Landed** | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
 | **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
 | **SoftCCT** | **Landed** (Month 5 digest 3) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails; single-chiplet no-op | CPElide last-writer table. **Not UCIe.** Not a coherence protocol |
-| **SoftSFI** | **Landed** (digest 4) | Toy ISA: accept in-bounds load/store/`atomic_add` in the SID range; reject OOB / cross-tenant; two tenants SFI+SID. Tensor / heap `Unmodeled` | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
+| **SoftSFI** | **Landed** (digest 4) | Toy ISA: accept in-bounds load/store/`atomic_add` in the SID range; reject OOB / cross-tenant; two tenants SFI+SID. Tensor `Unmodeled`. Heap/alloc named refuse | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
 | **SoftNoI-IS** | **In-flight** (this PR; H2 2026) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth.** Not UniCNet. Not a Month 5 digest |
 | PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
 | OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add scale; no Soft-CP restart | Own IR. **Not NVRTC/CUDA**. Not a full LLM compiler |

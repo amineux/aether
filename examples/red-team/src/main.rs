@@ -7,8 +7,10 @@
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
-//! each from the same clips. The closer names what this is **not**:
-//! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
+//! each from the same clips. SoftSFI heap/alloc prints
+//! `[softsfi] heap=refused` (named `Unmodeled`, not a bump allocator).
+//! The closer names what this is **not**: confidential GPU, HW MIG,
+//! hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
@@ -26,6 +28,7 @@ const LINE_NOI: &str = "[redteam] attack=softnoi-is result=refused";
 const LINE_PASID: &str = "[redteam] attack=pasid-stale result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
+const LINE_HEAP: &str = "[softsfi] heap=refused";
 const LINE_NOT: &str =
     "[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software";
 const LINE_SEALED: &str = "[redteam] sealed";
@@ -39,6 +42,7 @@ struct RedTeamReport {
     pasid: bool,
     class: bool,
     atomic: bool,
+    heap: bool,
 }
 
 impl RedTeamReport {
@@ -50,6 +54,7 @@ impl RedTeamReport {
             && self.pasid
             && self.class
             && self.atomic
+            && self.heap
     }
 }
 
@@ -79,6 +84,8 @@ fn run_redteam() -> RedTeamReport {
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
         atomic: sfi.atomic_ok,
+        // Named heap/alloc refuse (`SfiError::Unmodeled`). Not a bump allocator.
+        heap: sfi.heap_reject,
     }
 }
 
@@ -109,6 +116,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.pasid, LINE_PASID);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
+    emit_tagged(r.heap, LINE_HEAP);
     println!();
     println!("{LINE_NOT}");
     if r.all_ok() {
@@ -140,6 +148,7 @@ mod tests {
         assert!(r.pasid, "PASID stale translate after unmap");
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
+        assert!(r.heap, "SoftSFI heap/alloc named refuse");
         assert!(r.all_ok());
     }
 
@@ -152,6 +161,7 @@ mod tests {
         assert!(LINE_PASID.contains("attack=pasid-stale"));
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
+        assert_eq!(LINE_HEAP, "[softsfi] heap=refused");
         for line in [LINE_CROSSCUT, LINE_FIREWALL, LINE_SFI, LINE_NOI, LINE_PASID] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

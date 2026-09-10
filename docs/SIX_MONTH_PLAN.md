@@ -348,8 +348,8 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 
 Month 5 remaining (not leftovers): none of the four digests.
 SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI (**digest 4**;
-GPU-AToLL-shaped toy ISA; `atomic_add` later SID-proved; tensor / heap
-`Unmodeled`) are
+GPU-AToLL-shaped toy ISA; `atomic_add` later SID-proved; tensor
+`Unmodeled`; heap named refuse) are
 **landed**. SoftNoI-IS is **in-flight / landing this PR** (H2 2026
 exploration; not a Month 5 digest; not marked Done).
 See [MONTH5_PLAN.md](MONTH5_PLAN.md).

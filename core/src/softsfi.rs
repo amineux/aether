@@ -16,7 +16,8 @@
 //!
 //! Honest remaining holes (named [`SfiError::Unmodeled`], not “safe”):
 //! - Tensor copies / SoftNPU `MatMul` / `Wave` are **refused**, not modeled.
-//! - Heap / dynamic allocation is not a sandbox (no heap in this ISA).
+//! - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
+//!   allocator and not a sandbox. Prefer refuse over fake safety.
 //!
 //! [atoll]: https://github.com/AERO-Project-EU/gpu-atoll
 
@@ -62,6 +63,9 @@ pub enum SoftOp {
     /// Must prove the word writable in the SID window. Sequential toy RMW,
     /// not a coherent hardware atomic.
     AtomicAdd = 6,
+    /// Unmodeled heap / alloc / free. Named refuse (`Unmodeled`).
+    /// Not a bump allocator. Not a sandbox. Prefer refuse over fake safety.
+    Heap = 0x80,
     /// Unmodeled tensor / TMA-shaped copy. Refuse (`Unmodeled`).
     Tensor = 0x81,
 }
@@ -76,6 +80,7 @@ impl SoftOp {
             4 => Some(Self::AddImm),
             5 => Some(Self::Dma),
             6 => Some(Self::AtomicAdd),
+            0x80 => Some(Self::Heap),
             0x81 => Some(Self::Tensor),
             _ => None,
         }
@@ -151,6 +156,16 @@ impl Insn {
 
     pub const fn tensor(rd: u8, rs: u8, imm: u64) -> Self {
         Self::encode(SoftOp::Tensor, rd, rs, 0, imm)
+    }
+
+    /// Heap / alloc image. Verifier and runtime refuse (`Unmodeled`).
+    pub const fn heap(rd: u8, rs: u8, imm: u64) -> Self {
+        Self::encode(SoftOp::Heap, rd, rs, 0, imm)
+    }
+
+    /// Alloc alias of [`Self::heap`]. Same named refuse.
+    pub const fn alloc(rd: u8, rs: u8, imm: u64) -> Self {
+        Self::heap(rd, rs, imm)
     }
 
     pub const fn opcode(self) -> Option<SoftOp> {
@@ -397,8 +412,9 @@ fn check_reg(r: u8) -> Result<usize, SfiError> {
 ///
 /// Registers start unknown except `r0 = 0`. `Add` / `AddImm` of constants
 /// refine the abstract file. A memory op whose base is not a constant is
-/// [`SfiError::UnknownBase`] (no distinct location). Tensor / unknown
-/// ops are [`SfiError::Unmodeled`]. Heap is not an opcode.
+/// [`SfiError::UnknownBase`] (no distinct location). Tensor / heap /
+/// unknown ops are [`SfiError::Unmodeled`]. Heap is a named refuse,
+/// not a modeled bump allocator.
 pub fn verify(prog: &Program, sandbox: &SidSandbox) -> Result<(), SfiError> {
     if prog.is_empty() {
         return Err(SfiError::BadInsn);
@@ -475,7 +491,7 @@ fn step_verify(
             write_abs(abs, rd, None);
             Ok(())
         }
-        SoftOp::Tensor => Err(SfiError::Unmodeled),
+        SoftOp::Heap | SoftOp::Tensor => Err(SfiError::Unmodeled),
     }
 }
 
@@ -606,7 +622,7 @@ fn step_exec<M: SfiMem>(
             write_reg(regs, rd, old as u64);
             Ok(())
         }
-        SoftOp::Tensor => Err(SfiError::Unmodeled),
+        SoftOp::Heap | SoftOp::Tensor => Err(SfiError::Unmodeled),
     }
 }
 
@@ -617,6 +633,8 @@ pub struct SoftSfiReport {
     pub oob_reject: bool,
     pub atomic_ok: bool,
     pub unmodeled_reject: bool,
+    /// Named heap/alloc opcode is `SfiError::Unmodeled` (not a bump allocator).
+    pub heap_reject: bool,
     pub no_cross_read: bool,
 }
 
@@ -626,6 +644,7 @@ impl SoftSfiReport {
             && self.oob_reject
             && self.atomic_ok
             && self.unmodeled_reject
+            && self.heap_reject
             && self.no_cross_read
     }
 }
@@ -678,9 +697,16 @@ pub fn oob_atomic_prog(foreign_base: u64) -> Program {
     p
 }
 
+/// Heap / alloc program. Verifier must name-refuse (`Unmodeled`).
+pub fn heap_alloc_prog(size: u64) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::heap(1, 0, size));
+    p
+}
+
 /// Two tenants, same toy Soft-CP ISA: accept in-bounds load/store and
-/// SID-proved `atomic_add`, reject OOB and tensor, skip-verify fault
-/// injection does not cross-read B.
+/// SID-proved `atomic_add`, reject OOB, tensor, and heap/alloc, skip-verify
+/// fault injection does not cross-read B.
 #[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
     let mut bytes = [0u8; 128];
@@ -730,6 +756,12 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
     let _ = tens.push(Insn::tensor(2, 1, 4));
     let unmodeled_reject = verify(&tens, &a) == Err(SfiError::Unmodeled);
 
+    let heap = heap_alloc_prog(16);
+    let mut alloc_only = Program::new();
+    let _ = alloc_only.push(Insn::alloc(1, 0, 32));
+    let heap_reject = verify(&heap, &a) == Err(SfiError::Unmodeled)
+        && verify(&alloc_only, &a) == Err(SfiError::Unmodeled);
+
     // Fault inject: skip verifier. Runtime SID trap; B's secret unread.
     let mut mem = FlatMem {
         base: 0,
@@ -751,6 +783,7 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         oob_reject,
         atomic_ok,
         unmodeled_reject,
+        heap_reject,
         no_cross_read,
     }
 }
@@ -800,17 +833,39 @@ mod tests {
             imm: 0,
         });
         assert_eq!(verify(&unk, &a), Err(SfiError::Unmodeled));
-        // Heap is not an opcode; leftover 0x80 encoding is unknown, not modeled.
-        let mut heapish = Program::new();
-        let _ = heapish.push(Insn {
+    }
+
+    #[test]
+    fn verifier_rejects_heap_and_alloc() {
+        let a = box_a();
+        let heap = heap_alloc_prog(16);
+        assert_eq!(verify(&heap, &a), Err(SfiError::Unmodeled));
+        assert_eq!(SoftOp::from_u8(0x80), Some(SoftOp::Heap));
+        assert!(!SoftOp::Heap.is_modeled());
+        assert!(!SoftOp::Heap.touches_memory());
+        let mut alloc = Program::new();
+        let _ = alloc.push(Insn::alloc(1, 0, 64));
+        assert_eq!(verify(&alloc, &a), Err(SfiError::Unmodeled));
+        // Named encoding, not an unknown leftover.
+        let mut raw = Program::new();
+        let _ = raw.push(Insn {
             op: 0x80,
-            rd: 0,
+            rd: 1,
             rs: 0,
             rt: 0,
-            imm: 0,
+            imm: 8,
         });
-        assert_eq!(verify(&heapish, &a), Err(SfiError::Unmodeled));
-        assert_eq!(SoftOp::from_u8(0x80), None);
+        assert_eq!(verify(&raw, &a), Err(SfiError::Unmodeled));
+        let mut mem_bytes = [0u8; 128];
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut mem_bytes,
+        };
+        assert_eq!(run(&heap, &a, &mut mem), Err(SfiError::Unmodeled));
+        assert_eq!(
+            execute_unverified(&heap, &a, &mut mem),
+            Err(SfiError::Unmodeled)
+        );
     }
 
     #[test]
@@ -953,18 +1008,21 @@ mod tests {
         assert!(r.oob_reject, "OOB reject");
         assert!(r.atomic_ok, "atomic SID-range / cross-tenant Oob");
         assert!(r.unmodeled_reject, "tensor refuse");
+        assert!(r.heap_reject, "heap/alloc named refuse");
         assert!(r.no_cross_read, "skip-verify does not leak B");
         assert!(r.all_ok());
     }
 
     #[test]
     fn not_nvvm_and_not_safe_multitenant_kernels() {
-        // Honest bound: one modeled RMW (atomic_add); heap is not an ISA.
+        // Honest bound: one modeled RMW (atomic_add); heap is named refuse.
         let a = box_a();
         assert_eq!(a.len(), 1);
         assert!(SoftOp::AtomicAdd.is_modeled());
         assert!(SoftOp::AtomicAdd.touches_memory());
         assert!(!SoftOp::Tensor.is_modeled());
+        assert!(!SoftOp::Heap.is_modeled());
+        assert_eq!(SfiError::Unmodeled.as_str(), "Unmodeled");
         assert!(SoftOp::Load.touches_memory());
         assert!(!SoftOp::Add.touches_memory());
     }
