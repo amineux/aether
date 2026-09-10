@@ -620,7 +620,7 @@ Host tests: `verifier_accepts_in_bounds_program`,
 ## PASID / SVA (software; Linux SVA-shaped)
 
 **Status:** Software bind + SSID TLB invalidate on Soft SMMU (Linux
-SVA-shaped). Not marked Done on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+SVA-shaped). **Landed** (PR #62) on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 (H2 2026 exploration). Per-`AccelDevice` PASID
 space. Bind process mm ↔ SSID; Soft-CP DMA uses that process VA;
 host unmap invalidates the SSID ATC (TLB); a skipped invalidate is
@@ -668,7 +668,7 @@ Host tests: `sva_demo_bind_dma_unmap_stale`,
 ## OperatorInject (software; GPUOS / Mirage MPK-shaped)
 
 **Status:** this leftover slice (H2 2026 on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md);
-**not** marked Done). Soft-CP
+**landed**, PR #61). Soft-CP
 keeps **one resident worker**. The host publishes operator slots on a
 versioned function table. `memcpy` and `saxpy` seed at CP construct;
 `scale` **hot-adds** without Soft-CP restart (`epoch` / `launches`
@@ -711,9 +711,10 @@ Host tests: `memcpy_and_saxpy_on_resident_worker`,
 
 ## SoftNoI-IS (software; PARL / NoI-shaped admit)
 
-**Status:** IS admit landed (PR #60). This cut adds a thin fabric-class
-tag as an admit input. H2 2026 exploration on
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Not a Month 5 digest. Not
+**Status:** IS admit landed (PR #60). Fabric-class tag landed
+(PR #75) as an admit input. H2 2026 exploration on
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) — **landed**. Not a Month 5
+digest. Not
 FlowHodgeQuota DMA headers (that digest stays killed). SoftChipletSync
 advertises a per-tenant Interference Score on a **fake** shared
 Network-on-Interposer. Soft-CP XQueue admit refuses when the

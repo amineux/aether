@@ -14,13 +14,14 @@ Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 **This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).**
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
 (SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
-The **next calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028; SoftNoI-IS is in-flight / landing this PR as
-an H2 2026 exploration, not marked Done; PASID/SVA / OperatorInject
-stay explorations, not marked Done). SoftSFI is a toy
-Soft-CP bytecode sandbox. SpecForge OS-completeness theater is not
-the schedule. SpectraScout Soft-CP items are software models, not
-fork / POSIX / CXL.mem / ChipletFleet.
+The **next calendar** is [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028). H2 2026 leftovers **landed** (SoftNoI #60,
+PASID #62, OperatorInject #61, Event #74, fabric-class #75, SoftSFI
+`ATOMIC_ADD` #73, path-A IOVA #78, sell set #65–#72 / #77). SoftSFI
+is a toy Soft-CP bytecode sandbox. SpecForge OS-completeness theater
+is not the schedule. SpectraScout Soft-CP items are software models,
+not fork / POSIX / CXL.mem / ChipletFleet.
 
 ## Non-negotiables
 
@@ -71,7 +72,7 @@ SoftNPU path-B opcodes stay Aether-native `Nop` / `MatMul` / `Wave`.
 elision are **landed**. SoftGreenCtx (Month 5 digest 1) is **landed**.
 SoftCmdFirewall (digest 2) is **landed**. Month 5 is **not** a
 second half-year of this file — see [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(four digests landed; SoftNoI-IS in-flight / landing this PR). Optional / conditional work in *this* file is
+(four digests landed; H2 2026 leftovers landed). Optional / conditional work in *this* file is
 leave-behind, not a pillar. Site-as-milestone stays killed (PR #46 /
 #50 / #52 were
 progress refreshes, not a marketing climax).
@@ -336,22 +337,22 @@ Sequencing moved to [MONTH5_PLAN.md](MONTH5_PLAN.md):
 3. **SoftGreenCtx SM/WQ partitions** (**landed**, Month 5 digest 1).
    Fake 70/30 SM/WQ pool; XQueue bind; memcpy interference vs
    unpartitioned; migrate-to-yield without SID change. Not HW MIG.
-4. **PASID / SVA** — **parked leftover** (per-AccelDevice PASID;
+4. **PASID / SVA** — **landed** (PR #62; per-AccelDevice PASID;
    bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB invalidate).
    Software only. Not zero-copy SVA without the invalidate path.
 5. **FlowHodgeQuota.** Already landed as admit/refuse. DMA class
    headers stay killed as theater. SoftNoI consumes a software
    `FlowClass` tag on `AccelJobDesc` instead.
-6. **OperatorInject deepen** — **parked leftover** (Soft-CP)
+6. **OperatorInject deepen** — **landed** (PR #61; Soft-CP
    resident worker + versioned ops). Distinct from landed
    `OperatorKernelHandle` Hodge inject. Not NVRTC/CUDA.
 
 Month 5 remaining (not leftovers): none of the four digests.
 SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI (**digest 4**;
 GPU-AToLL-shaped toy ISA; `atomic_add` later SID-proved; tensor
-`Unmodeled`; heap named refuse) are
-**landed**. SoftNoI-IS is **in-flight / landing this PR** (H2 2026
-exploration; not a Month 5 digest; not marked Done).
+`Unmodeled`; heap named refuse, PR #80) are
+**landed**. SoftNoI-IS is **landed** (PR #60 + fabric-class #75;
+H2 2026 exploration; not a Month 5 digest).
 See [MONTH5_PLAN.md](MONTH5_PLAN.md).
 
 **Skip:** SMMUv3 emulator, UCIe PHY. Hardware SMMU still needs partner
@@ -367,16 +368,18 @@ hardening) plus the SpecForge Y1H1–Y2H2 appendix.
 That ACTIVE track is **done as research slices through PR #37**. This
 file is the closed M1–M4 Kernel calendar (it replaced YEAR2_PLAN’s
 ACTIVE track). The **next calendar** is
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md). Horizon:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). The SpecForge appendix stays
 aspirational — including bank QoS EventRing theater, CXL objects, and
 a Y2 bring-up climax.
 
-[ROADMAP.md](ROADMAP.md) points at [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-for what to sequence next. This file remains the closed M1–M4
-record. SoftChipletSync, SoftCCT, SoftGreenCtx, and SoftCmdFirewall
-are landed. SoftSFI (digest 4) is **landed**. SoftNoI-IS is
-**in-flight / landing this PR**. Suggested next cuts
-in ROADMAP that are not parked leftovers remain **technical leftovers**.
+[ROADMAP.md](ROADMAP.md) points at
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) for what to sequence
+next. This file remains the closed M1–M4 record. SoftChipletSync,
+SoftCCT, SoftGreenCtx, and SoftCmdFirewall are landed. SoftSFI
+(digest 4) is **landed**. H2 2026 leftovers are **landed**.
+Suggested next cuts in ROADMAP that are not parked leftovers remain
+**technical leftovers**.
 
 ## Kernel PR order (this calendar)
 
@@ -396,8 +399,8 @@ in ROADMAP that are not parked leftovers remain **technical leftovers**.
     PCI BAR0 bind still not required. See
     [MONTH5_PLAN.md](MONTH5_PLAN.md) / [ACCEL.md](ACCEL.md).
 11. Month 5 remaining — [MONTH5_PLAN.md](MONTH5_PLAN.md)
-    (SoftSFI digest 4 **landed**; SoftNoI-IS in-flight / this PR;
-    PASID/SVA and OperatorInject parked)
+    (SoftSFI digest 4 **landed**; H2 leftovers SoftNoI / PASID /
+    OperatorInject **landed**)
 
 Do not open calendar PRs for fork, POSIX `open`/`read`, CXL
 productization, ChipletFleet, formal caps, site-as-milestone, or
@@ -418,7 +421,7 @@ milestone.
 | SoftCmdFirewall | `drivers/src/firewall.rs`, Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP buffer labels, host tests — **landed** |
 | SoftSFI | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` `submit_sfi` / skip-verify, host tests — **landed** |
-| SoftNoI-IS | `core/src/noi.rs`, SoftChipletSync advertisement, Soft-CP `submit_xqueue_noi`, host tests — **in-flight / this PR** |
+| SoftNoI-IS | `core/src/noi.rs`, SoftChipletSync advertisement, Soft-CP `submit_xqueue_noi`, host tests — **landed** (PR #60 + #75) |
 | Conditional path A | host `PathABar` IOVA / wrong-SID proof; CI still does not rebuild QEMU |
 | Month 5 digests | [MONTH5_PLAN.md](MONTH5_PLAN.md) file-touch map (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 
@@ -446,8 +449,8 @@ target appears. No new syscall.
   HBM encryption, GPU-CC HMAC, or NVIDIA SEC2
 - That SoftCCT is a full coherence protocol, CPElide silicon, or a
   Vulkan / ROCm product
-- That SoftNoI-IS synthesizes NoI topology, is UniCNet, or is
-  already Done on this closed calendar
+- That SoftNoI-IS synthesizes NoI topology, is UniCNet, or became
+  hardware (PR #60 + fabric-class #75 landed as admit control)
 - An OS-completeness M3–M4 clock (fork, POSIX, CXL.mem, ChipletFleet,
   SMMUv3 emulator, UCIe PHY). SpectraScout Soft-CP M3–M4 + SoftChipletSync
   + SoftGreenCtx + SoftCCT is the software-model track; that theater is not.

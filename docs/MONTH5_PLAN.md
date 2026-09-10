@@ -5,16 +5,16 @@ landed on main (PRs #38, #41, #47, #49, #51) plus the Soft SMMU
 bring-up kit (#48) and site progress through #52.
 
 **This calendar is closed** (four digests landed). The **next
-calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep
-2028). [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) closed M1–M4.
-SoftGreenCtx (digest 1) is **landed**. SpecForge OS-completeness
-theater is still not the schedule. Month 5 is **four SpectraScout
-exploration digests** — not one pillar, not a half-year of
-OS-completeness. SoftGreenCtx and SoftCmdFirewall are **landed**.
-SoftCCT (digest 3) is **landed**. SoftSFI (digest 4) is **landed**.
-PASID/SVA, OperatorInject, and SoftNoI-IS are H2 2026 explorations
-on the two-year plan — **not** marked Done here. SoftNoI-IS is
-**in-flight / landing this PR** (admit control, not a fifth digest).
+calendar** is [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028). [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) closed
+M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
+OS-completeness theater is still not the schedule. Month 5 is
+**four SpectraScout exploration digests** — not one pillar, not a
+half-year of OS-completeness. SoftGreenCtx and SoftCmdFirewall are
+**landed**. SoftCCT (digest 3) is **landed**. SoftSFI (digest 4) is
+**landed**. H2 2026 leftovers **landed** on the two-year plan
+(SoftNoI #60, PASID #62, OperatorInject #61) — not Month 5 digests.
 The exploration menu below is a direction list; do not re-schedule
 the four landed digests.
 
@@ -72,8 +72,8 @@ main (SoftCCT: see below).
 
 ```text
 SoftGreenCtx (landed)  →  SoftCmdFirewall (landed)  →  SoftCCT (landed)  →  SoftSFI (landed)
-SoftNoI-IS in-flight (this PR; H2 2026 — not a fifth digest)
-PASID / SVA  and  OperatorInject deepen  parked leftovers
+SoftNoI-IS landed (PR #60 + #75; H2 2026 — not a fifth digest)
+PASID / SVA  and  OperatorInject deepen  landed (PR #62 / #61)
 ```
 
 ### 1. SoftGreenCtx (**landed**)
@@ -160,10 +160,10 @@ range and rejects OOB. Digest 4 left atomics / tensor / heap
 injection still traps; in-range SID-A must not touch SID-B pins).
 
 **Later (SoftSFI widen):** `atomic_add` is a SID-proved toy fetch-add
-(in-range accept, cross-tenant `Oob`). Sequential RMW, not a hardware
-atomic. Tensor stays `Unmodeled`. Heap/alloc is a named `Unmodeled`
-refuse (not a bump allocator). Still not “safe multi-tenant
-kernels.”
+(in-range accept, cross-tenant `Oob`; PR #73). Sequential RMW, not a
+hardware atomic. Tensor stays `Unmodeled`. Heap/alloc named refuse
+**landed** (PR #80; not a bump allocator). Still not “safe
+multi-tenant kernels.”
 
 **Contract** (`aether_core::softsfi` + Soft-CP `submit_sfi`):
 
@@ -188,16 +188,16 @@ thin so SoftGreenCtx / SoftCmdFirewall can land beside this).
 These stay documented so they are not lost. They are **not** the
 Month 5 clock.
 
-### PASID / SVA
+### PASID / SVA (**landed**, PR #62)
 
 Per-`AccelDevice` PASID space. Bind process VA ↔ Soft-SMMU SSID;
 Soft-CP DMA uses VA; host unmap → SSID TLB invalidate; stale
 translate faults. Software only.
 
-**Overclaim watch** if pulled later: no “zero-copy SVA” / “unified
-VA” without the unmap → invalidate path in the same PR.
+**Overclaim watch:** no “zero-copy SVA” / “unified VA” without the
+unmap → invalidate path. That pairing landed in the same PR.
 
-**Done when (if pulled):** bind mm↔ssid; Soft-CP DMA via VA;
+**Done when (met):** bind mm↔ssid; Soft-CP DMA via VA;
 unmap→SSID TLB invalidate; stale translate faults; docs non-claims
 (not ARM SVA, not PCIe PASID/PRI, not CUDA UVA). No new syscall.
 
@@ -210,19 +210,19 @@ Own bytecode / IR only — not NVRTC / CUDA.
 
 Distinct from landed `OperatorKernelHandle` Hodge inject.
 GPUOS / Mirage MPK inspiration only. Not a full LLM compiler, not
-NVIDIA. H2 2026 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) —
-**not** marked Done.
+NVIDIA. H2 2026 leftover — **landed** (PR #61). See
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
 
-### SoftNoI-IS (in-flight / landing this PR)
+### SoftNoI-IS (**landed**, PR #60 + fabric-class #75)
 
 Interference Score admit policy (PARL / NoI inspiration).
 SoftChipletSync fabric IS estimate; refuse when `IS > budget`.
 Solo vs concurrent → IS; refuse `IS > 1.5`. Two Soft-CP tenants on
 a shared fake NoI. **Admit control, not topology synthesis, not
 UniCNet.** H2 2026 exploration on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
-Not a fifth Month 5 digest. Do not mark Done until this PR merges.
+Not a fifth Month 5 digest. **Landed.**
 
-**Done when (this PR; not marked Done here):**
+**Done when (met):**
 
 1. SoftChipletSync advertises a per-tenant IS estimate on a fake
    shared NoI. Soft-CP / XQueue admit refuses when projected IS >
@@ -251,10 +251,10 @@ killed.
 Kernel / user may pull these later. SpectraScout filed five M5–6
 bets as a **menu** (suggested order below). A later redirect put
 the first four on the Month 5 clock; they are still **not one
-spine**. SoftNoI-IS is **in-flight / landing this PR** (H2 2026;
-not marked Done here). PASID/SVA, OperatorInject, and FlowHodgeQuota
-stay parked / gated. Skip shipped work (SoftChipletSync CCT in
-PR #51 is a deepen, not a re-landing).
+spine**. SoftNoI-IS is **landed** (PR #60 + #75; H2 2026).
+PASID/SVA and OperatorInject **landed** (PR #62 / #61).
+FlowHodgeQuota stays gated. Skip shipped work (SoftChipletSync CCT
+in PR #51 is a deepen, not a re-landing).
 
 Suggested digest order (menu):
 
@@ -269,10 +269,10 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 | **SoftGreenCtx** | **Landed** | 70/30 fake SM pool; two XQueues bind a `SoftGreenCtx`; BW interference vs unpartitioned; migrate-to-yield (queue-boundary); SID unchanged on migrate | CUDA Green Contexts / DetShare inspiration. **Not MIG.** |
 | **SoftCmdFirewall** | **Landed** (Month 5 digest 2) | Copy cmdbuf → validate opcodes / relocs / SID / caps → enqueue. Mutation-during-validate sneaks without the firewall, ignored with it | Host1x lesson. **Not confidential GPU.** |
 | **SoftCCT** | **Landed** (Month 5 digest 3) | chiplet0→1 labeled buffer; package-fence ≪ broadcast; incorrect elision fails; single-chiplet no-op | CPElide last-writer table. **Not UCIe.** Not a coherence protocol |
-| **SoftSFI** | **Landed** (digest 4) | Toy ISA: accept in-bounds load/store/`atomic_add` in the SID range; reject OOB / cross-tenant; two tenants SFI+SID. Tensor `Unmodeled`. Heap/alloc named refuse | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
-| **SoftNoI-IS** | **In-flight** (this PR; H2 2026) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget) | PARL / NoI inspiration. **Admit control, not topology synth.** Not UniCNet. Not a Month 5 digest |
-| PASID / SVA | **Parked leftover** | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
-| OperatorInject | **Parked leftover** | Resident worker + memcpy/saxpy + hot-add scale; no Soft-CP restart | Own IR. **Not NVRTC/CUDA**. Not a full LLM compiler |
+| **SoftSFI** | **Landed** (digest 4 + heap refuse #80) | Toy ISA: accept in-bounds load/store/`atomic_add` in the SID range; reject OOB / cross-tenant; two tenants SFI+SID. Tensor `Unmodeled`. Heap/alloc named refuse | GPU-AToLL pattern. **Not** a full safe multi-tenant kernel claim |
+| **SoftNoI-IS** | **Landed** (PR #60 + #75; H2 2026) | SoftChipletSync fabric IS estimate; solo vs concurrent → IS; refuse `IS > 1.5` (or budget); fabric-class tag | PARL / NoI inspiration. **Admit control, not topology synth.** Not UniCNet. Not a Month 5 digest |
+| PASID / SVA | **Landed** (PR #62) | per-AccelDevice PASID; bind VA↔SSID; unmap→invalidate; stale fault | Software only. No zero-copy SVA without invalidate |
+| OperatorInject | **Landed** (PR #61) | Resident worker + memcpy/saxpy + hot-add scale; no Soft-CP restart | Own IR. **Not NVRTC/CUDA**. Not a full LLM compiler |
 | FlowHodgeQuota | Gated digest | **Killed as theater** (no DMA class headers). SoftNoI consumes a software `FlowClass` tag instead |
 
 ### Partner / HAL
@@ -280,9 +280,9 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 - PJRT Event timeline polish (**landed**): `host/aether-pjrt` Event
   create / record / wait on existing fences / SoftChipletSync. Still
   not `GetPjRtApi` / XLA / `iree_hal_driver_t`. TRANSFER stays reserved.
-- PJRT shim more ops (**landed**): `Add` / `Relu` on the frozen
-  `IreeHalCmd` (`function` 2 / 3). Still not `GetPjRtApi`. TRANSFER
-  stays reserved.
+- PJRT shim more ops (**landed**, PR #84): `Add` / `Relu` on the
+  frozen `IreeHalCmd` (`function` 2 / 3). Still not `GetPjRtApi`.
+  TRANSFER stays reserved. Offsets unchanged.
 - MicroPerceptron / virtio-accel consumer (same frozen `IreeHalCmd`
   or path-A BAR; secondary to PJRT). Thin research sketch landed as
   `host/aether-mp-shim` (inspiration name only; not a port). The
@@ -294,7 +294,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 
 ### Isolation / Soft SMMU
 
-- PASID / SVA (parked leftover; see above).
+- PASID / SVA (**landed**, PR #62; see above).
 - Guest PCI path-A IOVA proof (**landed** as host contract; BAR DMA
   initiator + Soft SMMU ssid 4 + wrong-SID abort). Kernel PCI bind
   still optional / not required.
@@ -306,7 +306,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 ### Soft-CP / sched
 
 - SoftGreenCtx (**landed**).
-- OperatorInject mega-kernel lite (parked leftover).
+- OperatorInject mega-kernel lite (**landed**, PR #61).
 - XQueue mid-op pretends — honest levels only (queue-boundary is
   what landed; do not claim intra-`service()` preempt).
 - SoftCCT deepen / multi-chiplet **sim** metrics (digest 3 is the
@@ -317,7 +317,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 
 - FlowHodgeQuota class tags on Soft-CP DMA (gated; headers required —
   **killed**). SoftNoI uses a software enum on `AccelJobDesc.flow`.
-- SoftNoI-IS (**in-flight / this PR**; admit control, not topology synth).
+- SoftNoI-IS (**landed**, PR #60 + #75; admit control, not topology synth).
 - AffinityLaplacian / SpectralCut diligence clips. Not GiFt-Placer.
   ChipletFleet stays killed as calendar.
 
@@ -358,11 +358,11 @@ fake NVIDIA / FLOPs / tape-out.
 4. SoftCCT — **landed** (PR #57)
 5. SoftSFI — **landed** (toy ISA + SID sandbox; not NVVM)
 
-Do not open calendar PRs for the killed list or the remaining
-parked leftovers (PASID/SVA, OperatorInject) unless the user
-redirects. SoftNoI-IS is the H2 2026 pull landing this PR — see
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md); not marked Done here. A later
-site progress refresh is not a milestone.
+Do not open calendar PRs for the killed list. PASID/SVA,
+OperatorInject, and SoftNoI-IS **landed** as H2 2026 explorations —
+see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) /
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md). A later site progress
+refresh is not a milestone.
 
 ### File touch map
 
@@ -372,9 +372,9 @@ site progress refresh is not a milestone.
 | SoftCmdFirewall | `drivers/src/firewall.rs` + Soft-CP `submit_xqueue` / `submit_cmdbuf`, host tests — **landed** |
 | SoftCCT | `core/src/chipsync.rs` (`SoftCct`), Soft-CP / IreeShapedCp `submit_scoped`, host tests — **landed** |
 | SoftSFI | `core/src/softsfi.rs` + `drivers/src/softsfi.rs` (toy ISA + SID window). Keep `fakecp.rs` thin — **landed** |
-| SoftNoI-IS (in-flight / this PR) | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests — not a Month 5 digest |
-| PASID / SVA (parked) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
-| OperatorInject (parked) | `core/src/opinject.rs` + `drivers/src/opinject.rs` resident worker — H2 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md); **not** marked Done |
+| SoftNoI-IS (**landed**) | `core/src/noi.rs` + SoftChipletSync advertisement + `drivers/src/noi.rs` XQueue admit, host tests — not a Month 5 digest |
+| PASID / SVA (**landed**, PR #62) | `core/src/iommu.rs`, `drivers/src/fakecp.rs` — not this month |
+| OperatorInject (**landed**, PR #61) | `core/src/opinject.rs` + `drivers/src/opinject.rs` resident worker — H2 leftover on [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) |
 | FlowHodgeQuota digest | stays killed (no DMA class headers). SoftNoI tag: `AccelJobDesc.flow` |
 | MicroPerceptron digest | host crate or virtio-accel consumer of frozen `IreeHalCmd` |
 | Path-A guest bind | host `PathABar` IOVA / wrong-SID **landed**; kernel PCI bind still optional. CI still does not rebuild QEMU |
@@ -390,15 +390,17 @@ frozen. Path B canonical.
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed M1–M4 calendar
 (plus SoftChipletSync). This file is the closed Month 5 record.
 
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the Kernel calendar
-(Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) still holds
-the 2026-09-06 Falsifier ACTIVE track (done through PR #37) and the
-SpecForge appendix (aspirational). Do not sequence new work against
-this file or YEAR2_PLAN.
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the near-term
+calendar (Sep 2026 → Mar 2027). [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+is the horizon (Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md)
+still holds the 2026-09-06 Falsifier ACTIVE track (done through
+PR #37) and the SpecForge appendix (aspirational). Do not sequence
+new work against this file or YEAR2_PLAN.
 
-[ROADMAP.md](ROADMAP.md) points at [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-for what to sequence next. Suggested next cuts in ROADMAP that are
-not H2 2026 leftovers remain **technical leftovers**.
+[ROADMAP.md](ROADMAP.md) points at
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) for what to sequence
+next. Suggested next cuts in ROADMAP that are not forward M0–M6
+remain **technical leftovers**.
 
 ## What we will not claim
 
@@ -409,8 +411,8 @@ not H2 2026 leftovers remain **technical leftovers**.
   a multi-chiplet latency result from single-die host tests
 - That SoftSFI is a verified multi-tenant GPU or a safe-kernel
   product
-- That SoftNoI-IS synthesizes topology, is UniCNet, or is already
-  Done on MONTH5 / main (it is in-flight / landing this PR)
+- That SoftNoI-IS synthesizes topology, is UniCNet, or is a Month 5
+  digest (PR #60 + #75 landed as H2 2026 admit control)
 - That PASID/SVA is ARM SVA, PCIe PASID/PRI, hardware ATS, or a
   CUDA unified virtual address space
 - Zero-copy / unified VA without the unmap → SSID TLB invalidate path

@@ -12,6 +12,9 @@ Clone-and-run leave-behind: [PARTNER.md](PARTNER.md). Blank worksheet:
 
 **The ask (say it this way):** bring your opcode table.
 
+Runnable demos this quarter: [SELL_GOALS.md](SELL_GOALS.md).
+Near-term calendar: [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+
 ---
 
 ## Non-claims (read before the clock)
@@ -201,7 +204,8 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | What to show next | isolation → packet → wait → admit class → sandbox hole (table above) |
 | Clone-and-run packet | [PARTNER.md](PARTNER.md) / `make partner-hello` |
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
-| MP-shaped thin consumer | `make mp-shim` (inspiration name only; secondary to PJRT) |
+| MP-shaped thin consumer | `make mp-shim` (inspiration name only; secondary to PJRT; PR #83) |
+| PJRT Add/Relu | `cargo test -p aether-pjrt` (frozen packet `function` 2 / 3; PR #84) |
 | Event wait | `make diligence-demo` — `[event] SoftChipletSync create/record/wait` |
 | Fabric-class admit | `make red-team` — `[redteam] fabric-class admit/refuse` |
 | ATOMIC_ADD hole | `make red-team` — `[redteam] ATOMIC_ADD accept/reject` |

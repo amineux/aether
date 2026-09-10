@@ -32,9 +32,9 @@ product kernel.
 | SoftCommandProcessor (`backend = 3`) | **done** (packed `CpCmd` + SET_SID-at-submit + XQueue + Soft SMMU SID + IRQ/fence; host tests) |
 | Partner-shaped IREE HAL CP (`IreeShapedCp`, `backend = 4`) | **done** (frozen `IreeHalCmd` from public IREE HAL nouns; Soft SMMU `ssid=2` + SET_SID-at-submit; not a signed vendor) |
 | Soft-CP SID-at-submit (Host1x-shaped) | **done** (job-head SET_SID; Soft SMMU submit latch + SID budget; two-SID host tests + `[sid]` serial). Not a Tegra driver. |
-| PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; Event create/record/wait on existing fences; not a PJRT plugin, not `GetPjRtApi`, not XLA) |
+| PJRT/IREE-shaped host crate | **done** (`host/aether-pjrt`; SoftNPU / IreeShapedCp; Event create/record/wait on existing fences; `Add` / `Relu` on frozen `IreeHalCmd`, PR #84; not a PJRT plugin, not `GetPjRtApi`, not XLA) |
 | Second `IreeHalCmd` consumer (doorbell) | **done** (`examples/accel-client`; same 96-byte image + refuse rules; research sketch, not a MicroPerceptron port) |
-| MicroPerceptron-shaped thin consumer | **done** as research sketch (`host/aether-mp-shim`; memcpy / matmul / wave on frozen `IreeHalCmd`; doorbell or Soft-CP; SoftCmdFirewall on Soft-CP). Inspiration name only. Secondary to PJRT. Not a port, not a vendor. Full virtio-accel interop stays later. |
+| MicroPerceptron-shaped thin consumer | **done** (PR #83) as research sketch (`host/aether-mp-shim`; memcpy / matmul / wave on frozen `IreeHalCmd`; doorbell or Soft-CP; SoftCmdFirewall on Soft-CP). Inspiration name only. Secondary to PJRT. Not a port, not a vendor. Full virtio-accel interop stays later. |
 | Soft-CP XQueue (software) | **done** (two queues; queue-boundary suspend/resume; SET_SID inherits / sticks on the queue; not a silicon queuing unit; not XSched LD_PRELOAD) |
 | SoftChipletSync scoped timelines | **done** (wave / CU / chiplet / package; Fleet inspiration; fence-count host tests; not Vulkan, not UCIe, not ChipletFleet placement) |
 | SoftCCT elision | **done** (last-writer chiplet per buffer label; package fence only on cross-chiplet hazard; CCT ≪ broadcast; single-chiplet no-op; incorrect elision fails; CPElide inspiration; not a coherence protocol, not Vulkan / ROCm) |
@@ -43,15 +43,18 @@ product kernel.
 
 ## Month 5–6 (this cut): Portability & partners
 
-The **next Kernel calendar** is
+**What to sequence next:**
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+Partner-facing demos: [SELL_GOALS.md](SELL_GOALS.md). Horizon:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record.
 SoftGreenCtx (**landed**). SoftCmdFirewall (**landed**). SoftCCT
-(**landed**). SoftSFI (digest 4) is **landed**. SoftNoI-IS is
-**in-flight / landing this PR** (H2 2026 exploration; do not mark
-Done until merge). PASID/SVA and OperatorInject stay H2 2026
-explorations — **not** marked Done. The portability / partner slices
-below already landed; they are not Month 5.
+(**landed**). SoftSFI (digest 4) is **landed**. H2 2026 leftovers
+**landed:** SoftNoI-IS (PR #60), OperatorInject (PR #61), PASID/SVA
+(PR #62), Event (PR #74), fabric-class (PR #75), SoftSFI
+`ATOMIC_ADD` (PR #73), path-A IOVA (PR #78), sell set (#65–#72,
+#77). The portability / partner slices below already landed; they
+are not Month 5.
 
 Landed:
 
@@ -812,8 +815,10 @@ Search for `// STUB:` / `STUB` :
 | SoftCCT | `core/src/chipsync.rs` | **done** as last-writer elision on SoftChipletSync. CPElide inspiration. Not a coherence protocol, not Vulkan / ROCm. Single-chiplet is a no-op |
 | SoftGreenCtx | `core/src/greenctx.rs` | **done** as software SM/WQ partitions on Soft-CP. Green Contexts / DetShare inspiration. Not HW MIG, not a BAR firewall, not FLOPs |
 | SoftCmdFirewall | `drivers/src/firewall.rs` | **done** as copy-then-validate on Soft-CP submit. Host1x inspiration. Not confidential GPU |
-| SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape). Not NVVM. Tensor `Unmodeled`. Heap/alloc is a named `Unmodeled` refuse (not a bump allocator). `atomic_add` is a sequential toy RMW, not a hardware atomic |
-| SoftNoI-IS | `core/src/noi.rs` | IS admit **landed** (PR #60). This PR: software `FlowClass` tag at submit (Curl ring reserve). PARL/NoI inspiration. Admit control, not topology synth, not a vendor header |
+| SoftSFI | `core/src/softsfi.rs` | **done** as toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape). Not NVVM. Tensor `Unmodeled`. Heap/alloc is a named `Unmodeled` refuse (PR #80; not a bump allocator). `atomic_add` is a sequential toy RMW, not a hardware atomic |
+| SoftNoI-IS | `core/src/noi.rs` | **done** (PR #60 IS admit + PR #75 fabric-class tag). PARL/NoI inspiration. Admit control, not topology synth, not a vendor header |
+| PASID / SVA | `core/src/{iommu,sva}.rs` | **done** (PR #62). Bind mm↔SSID; unmap→SSID TLB; stale ATC fault. Not ARM SVA, not CUDA UVA |
+| OperatorInject | `core/src/opinject.rs` | **done** (PR #61). Resident worker + hot-add scale. Not NVRTC/CUDA |
 | User-level threads (clone) | `kernel/src/{task,syscall}.rs` | **done** (`SYS_CLONE=10` shares caller aspace; not Linux clone; `flags` must be 0) |
 | Growable user `mmap` | `kernel/src/{syscall,mm/paging}.rs` | **done** (`SYS_MMAP=11` anonymous 4 KiB USER pages; not POSIX; no file / no `MAP_SHARED`) |
 | ramfs / virtio-blk for `/init` | `core/src/{ramfs,bootfs}.rs`, `kernel/src/{elfload,virtio_blk}.rs` | **done** as in-kernel ramfs + x86 virtio-blk seed (AETHFS01; embedded fallback). Not POSIX / not a block layer |
@@ -828,8 +833,10 @@ kernel thread queue sleeps.
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed Falsifier
 M1–M4 calendar after Year-1 + hardening (through PR #37) and the M1
 opcode device (PR #38). **What to sequence next:**
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Closed Month 5 record:
-[MONTH5_PLAN.md](MONTH5_PLAN.md).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Closed Month 5
+record: [MONTH5_PLAN.md](MONTH5_PLAN.md). Partner demos:
+[SELL_GOALS.md](SELL_GOALS.md).
 
 - **M1 landed (PR #38):** `IreeShapedCp` (`backend = 4`) — frozen IREE
   HAL packet; research opcodes, not a vendor-as-partner claim.
@@ -839,10 +846,10 @@ opcode device (PR #38). **What to sequence next:**
 - **Second consumer (doorbell):** `examples/accel-client` packs the same
   96-byte image. Research sketch, not a plugin, not a MicroPerceptron
   port.
-- **MicroPerceptron-shaped thin consumer:** `host/aether-mp-shim`
-  (inspiration name only; secondary to PJRT). Same frozen image;
-  doorbell or Soft-CP; SoftCmdFirewall on Soft-CP. Not a port. Full
-  virtio-accel interop stays later / optional.
+- **MicroPerceptron-shaped thin consumer (PR #83):**
+  `host/aether-mp-shim` (inspiration name only; secondary to PJRT).
+  Same frozen image; doorbell or Soft-CP; SoftCmdFirewall on Soft-CP.
+  Not a port. Full virtio-accel interop stays later / optional.
 - **M4 landed (PR #47):** Soft-CP XQueue (two software queues;
   queue-boundary suspend/resume; SID sticks to the queue). Not a
   silicon queueing unit. Not an XSched LD_PRELOAD shim.
@@ -875,10 +882,10 @@ opcode device (PR #38). **What to sequence next:**
   allocator). `atomic_add` is SID-proved (in-range accept,
   cross-tenant `Oob`) and is a sequential toy RMW, not a hardware
   atomic.
-- **SoftNoI-IS in-flight (this PR):** fake shared NoI; solo vs
-  concurrent → IS; Soft-CP / XQueue refuse `IS > 1.5`. PARL/NoI
-  inspiration. Admit control, not topology synth, not UniCNet. Do
-  not mark Done until merge.
+- **SoftNoI-IS landed (PR #60 + fabric-class #75):** fake shared
+  NoI; solo vs concurrent → IS; Soft-CP / XQueue refuse `IS > 1.5`;
+  software `FlowClass` tag (Curl ring). PARL/NoI inspiration.
+  Admit control, not topology synth, not UniCNet.
 - SpecForge OS-completeness theater (fork, POSIX, CXL productization,
   ChipletFleet, formal caps, site-as-milestone, PartnerNpuStub without
   opcodes) is **not** the schedule. PR #46 / #50 / #52 were site
@@ -887,27 +894,31 @@ opcode device (PR #38). **What to sequence next:**
 
 ## Suggested next cuts (technical, not calendar)
 
-The Kernel **calendar** is [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028; M1–M4 + SoftChipletSync + SoftCCT closed in
+The near-term Kernel **calendar** is
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028;
+M1–M4 + SoftChipletSync + SoftCCT closed in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
 SoftCCT, and SoftSFI landed in [MONTH5_PLAN.md](MONTH5_PLAN.md)).
-PASID/SVA and OperatorInject are H2 2026 explorations, not marked
-Done. SoftNoI-IS is **in-flight / landing this PR**. The list below
-is leftover engineering, not a fifth digest.
+H2 2026 leftovers **landed** (SoftNoI #60, PASID #62, OperatorInject
+#61, Event #74, fabric-class #75, SoftSFI `ATOMIC_ADD` #73, SoftSFI
+heap refuse #80, path-A IOVA #78, sell set #65–#72 / #77). The list
+below is leftover engineering, not a fifth digest.
 
-1. **H2 2026 leftovers** (see [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
-   SoftSFI is **landed** (toy ISA bounds + SID-proved `atomic_add`;
-   not a safe multi-tenant kernel; tensor `Unmodeled`; heap named
-   refuse). SoftGreenCtx is **landed** (not MIG).
-   SoftCmdFirewall is **landed** (not confidential GPU). SoftCCT is
-   **landed** (last-writer elision; incorrect elision fails).
-   SoftNoI-IS is **in-flight / landing this PR** (admit control, not
-   topology synth; do not mark Done until merge). **PASID / SVA** and
-   OperatorInject stay explorations on the two-year plan — **not**
-   marked Done (per-`AccelDevice`
-   PASID; bind process VA ↔ Soft-SMMU SSID; unmap → SSID TLB
-   invalidate). Software only. Not zero-copy SVA without the
-   invalidate path.
+1. **Forward M0–M6** (see [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+   and [SELL_GOALS.md](SELL_GOALS.md)): sell/call pack live;
+   SoftGreenCtx diligence leave-behind; SoftCCT/Event fence-count
+   polish; CapTable **only if** two shim tenants alias slots; opcode
+   v2 **or** freeze-v1 checkpoint; diligence refresh; **one** port
+   **only if** path B doorbell fails a partner ask. Thin MP-shaped
+   `IreeHalCmd` consumer is **landed** (PR #83; `host/aether-mp-shim`;
+   inspiration name only). PJRT Add/Relu more ops are **landed**
+   (PR #84; same frozen packet). SoftSFI toy ISA + SID-proved
+   `atomic_add` + heap named refuse are **landed** (PR #73 / #80; not
+   a safe multi-tenant kernel; tensor `Unmodeled`; heap is refused,
+   not a bump allocator). SoftGreenCtx / SoftCmdFirewall / SoftCCT /
+   SoftNoI-IS / PASID/SVA / OperatorInject are **landed**. Do not
+   re-schedule them.
 2. **Guest driver for path A.** The QEMU `aether-accel` device, host
    model, and Soft-SMMU IOVA / wrong-SID **host proof** landed
    (`qemu/`, `drivers/src/path_a.rs`, `make accel-test` /
@@ -946,14 +957,17 @@ is leftover engineering, not a fifth digest.
 
 ## Two-year plan
 
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the Kernel calendar
-(Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) holds both
-historical tracks (2026-09-06). The Falsifier ACTIVE track through
-PR #37 is **complete as research slices**; do not sequence new work
-against it. Closed M1–M4 calendar:
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the near-term
+calendar (Sep 2026 → Mar 2027). [SELL_GOALS.md](SELL_GOALS.md) is
+the partner demo list. [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the
+horizon (Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) holds
+both historical tracks (2026-09-06). The Falsifier ACTIVE track
+through PR #37 is **complete as research slices**; do not sequence
+new work against it. Closed M1–M4 calendar:
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) (SoftChipletSync + SoftCCT
 landed). Closed Month 5 record: [MONTH5_PLAN.md](MONTH5_PLAN.md)
-(SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
+(SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4
+landed). H2 2026 leftovers **landed**.
 
 - **Landed (Falsifier revision):** Soft SMMU SIDs, SoftCommandProcessor,
   IreeShapedCp (IREE HAL packet, `backend = 4`; not a signed vendor),
@@ -1007,7 +1021,9 @@ The public site (`site/`) is a research leave-behind, not a vendor
 pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
 not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
 match the landed Year-1 track, [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md),
-[MONTH5_PLAN.md](MONTH5_PLAN.md), [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md),
+[MONTH5_PLAN.md](MONTH5_PLAN.md),
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md),
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md), [SELL_GOALS.md](SELL_GOALS.md),
 and [DILIGENCE.md](DILIGENCE.md)
 non-claims
 — no partnership, no booked silicon bring-up, no manufacturing climax.
@@ -1024,9 +1040,9 @@ non-claims
 - In-kernel ML graph IR / fusion (compilers schedule FLOPs)
 - That the RISC-V or aarch64 port is a product-class second architecture
 - That `TypedWindow` / `CxlMemStub` is CXL.mem silicon (Exploration E is a stub)
-- That SoftNoI-IS is Done on main before this PR merges, synthesizes
-  NoI topology, is UniCNet, or is a partner interposer result. It is
-  runtime admit control on a fake shared NoI.
+- That SoftNoI-IS synthesizes NoI topology, is UniCNet, or is a
+  partner interposer result. It is runtime admit control on a fake
+  shared NoI (PR #60 + fabric-class #75).
 
 If you are a silicon OS team: start at `aether_hal::AccelDevice`,
 `AccelJobDesc`, and either `SoftCommandProcessor` (`CpCmd`) or
