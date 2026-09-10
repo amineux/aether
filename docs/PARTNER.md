@@ -51,8 +51,8 @@ Compilers own the ISA blob. Aether admits the job against a partition,
 a SpectralCut, a bank color, and a fence. It does not fuse a graph.
 
 Walkthrough: [ACCEL.md](ACCEL.md), [HOST.md](HOST.md), [ABI.md](ABI.md),
-[DILIGENCE.md](DILIGENCE.md). Code: `examples/partner-hello`,
-`host/aether-pjrt`, `drivers/src/ireecp.rs`.
+[DILIGENCE.md](DILIGENCE.md), [SELL_PACK.md](SELL_PACK.md). Code:
+`examples/partner-hello`, `host/aether-pjrt`, `drivers/src/ireecp.rs`.
 
 ## Non-claims
 

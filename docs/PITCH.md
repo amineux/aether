@@ -11,9 +11,11 @@ hardware SMMU, MIG-class isolation, or confidential GPU. Those words
 do not appear as claims below.
 
 Longer technical session: [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md)
-(60–90 min script; that meeting has not happened). Diligence pack:
-[DILIGENCE.md](DILIGENCE.md). Call worksheet:
-[DESIGN_WIN.md](DESIGN_WIN.md). Week 1 20-minute pack:
+(60–90 min script; that meeting has not happened). One-page sell
+leave-behind: [SELL_PACK.md](SELL_PACK.md) (printable:
+[pitch/partner-one-pager.md](pitch/partner-one-pager.md); site
+`#sell`). Diligence pack: [DILIGENCE.md](DILIGENCE.md). Call
+worksheet: [DESIGN_WIN.md](DESIGN_WIN.md). Week 1 20-minute pack:
 [WEEK1_CALL.md](WEEK1_CALL.md). Calendar:
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027);
 horizon [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
@@ -24,10 +26,21 @@ prints / golden greps). Captured host runs:
 
 **Proof commands that exist** (`Makefile` `help`):
 `make diligence-demo`, `make red-team`, `make design-win-check`,
-`make design-win-standin`, `make partner-hello`, `make qemu`.
+`make design-win-standin`, `make partner-hello`, `make mp-shim`,
+`make accel-test`, `make qemu`.
 [`docs/PARTNER.md`](PARTNER.md) is the partner landing page.
 Doorbell second consumer (not a Makefile target):
 `cargo run -p aether-accel-client`.
+
+Post-#73 / #74 / #75 / #77 / #78 / #80 / #83 / #84: SoftSFI
+`ATOMIC_ADD` is SID-proved; heap/alloc is a named refuse
+(`[softsfi] heap=refused`); Event create/record/wait sits on
+existing SoftChipletSync fences; fabric-class tags feed SoftNoI
+admit; Week 1 pack walks those slices; path-A Soft-SMMU IOVA is a
+host proof (`make accel-test`); `make mp-shim` is a
+MicroPerceptron-shaped thin consumer (not a port); PJRT Add / Relu
+are extra research opcodes on the frozen packet (not FLOPs).
+SoftNoI-IS **landed** (PR #60) — not in flight.
 
 **What to show next** (same tree): isolation (`make red-team`) →
 packet (`make partner-hello` / doorbell) → wait (Event line in
@@ -193,6 +206,15 @@ make partner-hello
 Host `IreeHalCmd` leave-behind. No QEMU rebuild. See [PARTNER.md](PARTNER.md).
 
 ```bash
+make accel-test
+```
+
+Path-A Soft-SMMU IOVA / wrong-SID on the host (PR #78). No QEMU
+rebuild. Stock `make qemu` stays path B. Optional
+`make qemu-accel` attaches `-device aether-accel` only when
+`QEMU_ACCEL` names a patched binary.
+
+```bash
 make qemu
 ```
 
@@ -279,6 +301,7 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 
 | They asked | Point at |
 | --- | --- |
+| One-page leave-behind | [SELL_PACK.md](SELL_PACK.md) / [pitch/partner-one-pager.md](pitch/partner-one-pager.md) |
 | Run it without QEMU | `make diligence-demo` then `make red-team` |
 | What to show next | isolation → packet → wait → admit class → sandbox hole |
 | 20-minute Week 1 pack | [WEEK1_CALL.md](WEEK1_CALL.md) |
@@ -297,6 +320,6 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |
 | Partner landing page | [PARTNER.md](PARTNER.md) / `make partner-hello` |
 
-Site section (same five beats):
-[https://amineux.github.io/aether/#pitch](https://amineux.github.io/aether/#pitch).
-Why-partner page: `#partners`.
+One-page sell pack: [SELL_PACK.md](SELL_PACK.md).
+Site sell / design-win: `#sell`. Pitch beats: `#pitch`.
+Why-partner proofs: `#partners`.

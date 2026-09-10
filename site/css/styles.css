@@ -1294,6 +1294,64 @@ section.band + section.band {
   color: var(--ink);
 }
 
+/* ——— sell / design-win ——— */
+.sell-goals {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 36px;
+}
+
+.sell-goal {
+  padding: 20px 20px 18px;
+}
+
+.sell-goal small {
+  display: block;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--mint);
+  margin-bottom: 8px;
+}
+
+.sell-goal h3 {
+  margin: 0 0 8px;
+  font-size: 1.12rem;
+  color: var(--ink);
+}
+
+.sell-goal p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 14.5px;
+}
+
+.sell-cmds {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  margin-bottom: 28px;
+}
+
+.sell-ask {
+  border-color: rgba(61, 220, 151, 0.28);
+  background:
+    radial-gradient(420px 160px at 88% 0%, rgba(61, 220, 151, 0.08), transparent 62%),
+    linear-gradient(180deg, rgba(22, 27, 36, 0.88), rgba(10, 12, 16, 0.92));
+  margin-bottom: 0;
+}
+
+.sell-ask .horizon-card-copy .kicker {
+  color: var(--mint);
+}
+
+.sell-ask .horizon-card-copy .kicker::before {
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint-glow);
+}
+
 /* ——— roadmap ——— */
 .road-intro {
   display: flex;
@@ -1740,6 +1798,9 @@ footer {
 .reveal[data-d="6"] {
   animation-delay: 0.48s;
 }
+.reveal[data-d="7"] {
+  animation-delay: 0.56s;
+}
 
 @keyframes rise {
   to {
@@ -1774,8 +1835,14 @@ footer {
   .pitch-proof,
   .fail-row,
   .horizon-card,
-  .partner-cta {
+  .partner-cta,
+  .sell-ask {
     grid-template-columns: 1fr;
+  }
+
+  .sell-goals,
+  .sell-cmds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .gets-grid {
@@ -1842,6 +1909,8 @@ footer {
   .partner-grid,
   .gets-grid,
   .proof-board,
+  .sell-goals,
+  .sell-cmds,
   .places,
   .hodge,
   .horizon-row,

@@ -3,6 +3,8 @@
 One folder. Clone this tree. Run the call. No QEMU rebuild. No new
 kernel features. Research prototype.
 
+One-page sell pack: [SELL_PACK.md](SELL_PACK.md) (printable:
+[pitch/partner-one-pager.md](pitch/partner-one-pager.md)).
 Eight-minute condensed script: [PITCH.md](PITCH.md). Host Path B clip
 (and a captured run): [pitch/diligence-demo.log](pitch/diligence-demo.log).
 Named-attack refuse clip: [pitch/red-team.log](pitch/red-team.log).
@@ -216,5 +218,6 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | Path A IOVA (optional BAR) | [ACCEL.md](ACCEL.md) path-A ADR + `make accel-test` / [qemu/README.md](../qemu/README.md). Stock `make qemu` stays B. Do not rebuild QEMU. |
 | Isolation invariants | [SECURITY.md](SECURITY.md), [BLAST.md](BLAST.md) |
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md) |
+| One-page sell pack | [SELL_PACK.md](SELL_PACK.md) |
 | 8-minute script | [PITCH.md](PITCH.md) |
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |

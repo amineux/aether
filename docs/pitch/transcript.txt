@@ -3,6 +3,9 @@
 Copied from in-tree prints and CI greps. Not a recorded call.
 Do not invent extra banners.
 
+One-page sell pack: [SELL_PACK.md](../SELL_PACK.md).
+Printable cut: [partner-one-pager.md](partner-one-pager.md).
+
 Makefile targets that exist (`make help`):
 
 ```
@@ -11,6 +14,7 @@ make red-team
 make design-win-check
 make design-win-standin
 make partner-hello
+make accel-test
 make qemu
 make qemu-ci
 make test
