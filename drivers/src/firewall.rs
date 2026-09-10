@@ -588,7 +588,7 @@ mod tests {
         let (iommu, sid, iova) = setup();
         let mut fw = SoftCmdFirewall::new();
         let mut bad = demo_matmul_cmd(sid, iova);
-        bad.opcode = 0x3;
+        bad.opcode = 0x7F;
         assert_eq!(
             fw.admit_packed(bad, &iommu, Some(sid)).unwrap_err(),
             HalError::Fault

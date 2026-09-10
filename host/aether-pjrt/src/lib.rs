@@ -9,10 +9,13 @@
 //! This crate is **not** a PJRT plugin, **not** `GetPjRtApi`, **not** XLA,
 //! **not** an IREE HAL driver, and **not** a vendor runtime. It maps
 //! `abi::{Device,Buffer,Executable,Event}` onto a frozen [`IreeHalCmd`]
-//! image and submits into [`IreeShapedCp`]. Event create / record / wait
-//! lower onto the existing CP-shaped [`Timeline`] and SoftChipletSync
-//! chiplet/package fences — not a new IR. SoftNPU remains a host backend
-//! for virtqueue tests; `make qemu` still demos path-B SoftNPU.
+//! image and submits into [`IreeShapedCp`]. Research opcodes are
+//! `Nop` / `MatMul` / `Wave` / `Add` / `Relu` — `Add` / `Relu` use
+//! `IreeHalCmd.function` 2 / 3 on the frozen 96-byte layout. Event
+//! create / record / wait lower onto the existing CP-shaped [`Timeline`]
+//! and SoftChipletSync chiplet/package fences — not a new IR. SoftNPU
+//! remains a host backend for virtqueue tests; `make qemu` still demos
+//! path-B SoftNPU.
 //! `PartnerNpuStub` is not used.
 //!
 //! [`docs/HOST.md`]: https://github.com/amineux/aether/blob/main/docs/HOST.md
@@ -569,7 +572,10 @@ impl Client {
         op: AccelOp,
         dtype: DType,
     ) -> Result<ExecutableId, Error> {
-        if !matches!(op, AccelOp::Nop | AccelOp::MatMul | AccelOp::Wave) {
+        if !matches!(
+            op,
+            AccelOp::Nop | AccelOp::MatMul | AccelOp::Wave | AccelOp::Add | AccelOp::Relu
+        ) {
             return Err(Error::Unsupported);
         }
         if self.kind == BackendKind::IreeShaped && isa_blob_id != IREE_REF_EXECUTABLE {
@@ -620,10 +626,17 @@ impl Client {
             if a.space != b.space || a.space != c.space {
                 return Err(Error::SpaceMismatch);
             }
-            if es * (job.m as u64) * (job.k as u64) > a.len
-                || es * (job.k as u64) * (job.n as u64) > b.len
-                || es * (job.m as u64) * (job.n as u64) > c.len
-            {
+            let (need_a, need_b, need_c) = if op.is_elementwise() {
+                let n = es.saturating_mul(job.m as u64).saturating_mul(job.n as u64);
+                (n, n, n)
+            } else {
+                (
+                    es.saturating_mul(job.m as u64).saturating_mul(job.k as u64),
+                    es.saturating_mul(job.k as u64).saturating_mul(job.n as u64),
+                    es.saturating_mul(job.m as u64).saturating_mul(job.n as u64),
+                )
+            };
+            if need_a > a.len || need_b > b.len || need_c > c.len {
                 return Err(Error::Hal(HalError::BadArg));
             }
             let (bias_pa, bias_abi) = if let Some(id) = job.bias {
@@ -658,6 +671,11 @@ impl Client {
         let mut desc = AccelJobDesc::matmul_i32(job.m, job.n, job.k, pa_a, pa_b, pa_c, 1);
         desc.op = op;
         desc.dtype = dtype;
+        if op.is_elementwise() {
+            desc.a_stride = job.n;
+            desc.b_stride = job.n;
+            desc.c_stride = job.n;
+        }
         desc.bias = bias_pa;
         desc.space = space;
         desc.place = place;
@@ -925,6 +943,43 @@ impl Dispatch {
             wait_for: None,
         }
     }
+
+    /// Elementwise `C = A + B`. `k` is 1 (shape stand-in, not tiles).
+    pub fn add(
+        executable: ExecutableId,
+        m: u32,
+        n: u32,
+        a: BufferId,
+        b: BufferId,
+        c: BufferId,
+    ) -> Self {
+        Self {
+            executable,
+            m,
+            n,
+            k: 1,
+            a,
+            b,
+            c,
+            bias: None,
+            wait_for: None,
+        }
+    }
+
+    /// Elementwise `C = max(A, 0)`. Binding B aliases A so pack still pins A/B/C.
+    pub fn relu(executable: ExecutableId, m: u32, n: u32, a: BufferId, c: BufferId) -> Self {
+        Self {
+            executable,
+            m,
+            n,
+            k: 1,
+            a,
+            b: a,
+            c,
+            bias: None,
+            wait_for: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -933,7 +988,10 @@ mod tests {
     use aether_core::accel::AccelJobDesc;
     use aether_core::iommu::{StreamId, SOFT_SMMU_IOVA_BASE};
     use aether_core::types::{ChipletId, PhysAddr, TileId};
-    use aether_drivers::ireecp::IREE_HAL_COMMAND_CATEGORY_TRANSFER;
+    use aether_drivers::ireecp::{
+        HAL_FN_ADD, HAL_FN_RELU, IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+        IREE_HAL_COMMAND_CATEGORY_TRANSFER,
+    };
     use aether_hal::{
         HalError, ACCEL_BACKEND_IREE_SHAPED, ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU,
         ACCEL_BACKEND_SOFT_CP, ACCEL_BACKEND_VIRTIO_SOFTNPU,
@@ -1068,6 +1126,78 @@ mod tests {
     }
 
     #[test]
+    fn submit_add_wait_event() {
+        for kind in each_backend() {
+            let mut c = Client::new(kind).unwrap();
+            let a = c.allocate(MemorySpace::Host, 16).unwrap();
+            let b = c.allocate(MemorySpace::Host, 16).unwrap();
+            let out = c.allocate(MemorySpace::Host, 16).unwrap();
+            c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+            c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+            let exec = c.load_executable(AccelOp::Add, DType::I32).unwrap();
+            let ev = c.execute(Dispatch::add(exec, 2, 2, a, b, out)).unwrap();
+            assert!(!c.fence_ready(ev), "submit does not execute");
+            let cpl = c.wait(ev).unwrap();
+            assert_eq!(cpl.status, 0);
+            assert!(c.fence_ready(ev));
+            let mut got = [0i32; 4];
+            c.copy_i32_to_host(out, &mut got).unwrap();
+            assert_eq!(got, [6, 8, 10, 12], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn submit_relu_wait_event() {
+        for kind in each_backend() {
+            let mut c = Client::new(kind).unwrap();
+            let a = c.allocate(MemorySpace::Host, 16).unwrap();
+            let out = c.allocate(MemorySpace::Host, 16).unwrap();
+            c.copy_i32_from_host(a, &[-1, 2, -3, 4]).unwrap();
+            let exec = c.load_executable(AccelOp::Relu, DType::I32).unwrap();
+            let ev = c.execute(Dispatch::relu(exec, 2, 2, a, out)).unwrap();
+            assert!(!c.fence_ready(ev), "submit does not execute");
+            c.wait(ev).unwrap();
+            let mut got = [0i32; 4];
+            c.copy_i32_to_host(out, &mut got).unwrap();
+            assert_eq!(got, [0, 2, 0, 4], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn iree_add_relu_pack_frozen_function_ordinals() {
+        let mut c = Client::iree_shaped().unwrap();
+        let a = c.allocate(MemorySpace::Host, 16).unwrap();
+        let b = c.allocate(MemorySpace::Host, 16).unwrap();
+        let out = c.allocate(MemorySpace::Host, 16).unwrap();
+        c.copy_i32_from_host(a, &[1, 2, 3, 4]).unwrap();
+        c.copy_i32_from_host(b, &[5, 6, 7, 8]).unwrap();
+        let exec = c.load_executable(AccelOp::Add, DType::I32).unwrap();
+        let ev = c.execute(Dispatch::add(exec, 2, 2, a, b, out)).unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+        assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
+        assert_eq!(cmd.function, HAL_FN_ADD);
+        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+        assert_eq!(cmd.workgroup_count_x, 2);
+        assert_eq!(cmd.workgroup_count_y, 2);
+        assert_eq!(cmd.workgroup_count_z, 1, "k is shape, not tiles");
+        assert_eq!(cmd.binding0_length, 16);
+        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Add);
+        c.wait(ev).unwrap();
+
+        c.copy_i32_from_host(a, &[-1, 2, -3, 4]).unwrap();
+        let relu = c.load_executable(AccelOp::Relu, DType::I32).unwrap();
+        let ev = c.execute(Dispatch::relu(relu, 2, 2, a, out)).unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.function, HAL_FN_RELU);
+        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Relu);
+        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+        c.wait(ev).unwrap();
+    }
+
+    #[test]
     fn mixed_spaces_are_not_unified() {
         let mut c = Client::iree_shaped().unwrap();
         let a = c.allocate(MemorySpace::Host, 16).unwrap();
@@ -1105,9 +1235,7 @@ mod tests {
 
     #[test]
     fn iree_execute_packs_frozen_hal_image() {
-        use aether_drivers::ireecp::{
-            IREE_HAL_COMMAND_CATEGORY_DISPATCH, IREE_HAL_ELEMENT_TYPE_INT_32,
-        };
+        use aether_drivers::ireecp::IREE_HAL_ELEMENT_TYPE_INT_32;
 
         let mut c = Client::iree_shaped().unwrap();
         let a = c.allocate(MemorySpace::Host, 16).unwrap();

@@ -41,6 +41,12 @@ SoftNPU `AccelOp` (path B):
 | `Nop` | doorbell / latency probe |
 | `MatMul` | `C = A @ B` (I32 / software F16 / software F32) |
 | `Wave` | matmul + optional bias (stand-in for a fused wave) |
+| `Add` | elementwise `C = A + B` (m×n; `k` unused / typically 1) |
+| `Relu` | elementwise `C = max(A, 0)` (m×n; `B` unused) |
+
+`Add` / `Relu` are additive research opcodes. They pack into the same
+`IreeHalCmd` / `CpCmd` / `AccelJobDesc` — not a second IR. Frozen
+`IreeHalCmd` offsets are unchanged.
 
 `DType` values (additive; `I32 = 0` unchanged):
 
@@ -270,10 +276,12 @@ cover refuse (foreign bank / foreign tenant) and transfer-then-admit.
 - F16 / F32 use integer-only software IEEE (`core/src/softfloat.rs`);
   subnormals flush to zero. Not libm, not a vendor FLOP claim.
 - `Wave` adds an optional bias vector (same dtype as the job)
+- `Add` / `Relu` are elementwise on the same dtype (I32 overflow →
+  `Overflow`; F16/F32 relu flushes a negative sign bit to +0)
 - A DMA view without `load_u16` refuses F16 (`UnsupportedDType`)
 
-It is a **model of a matmul/wave engine**, not a product NPU. The point is
-that job submit, ownership, and completion look like silicon.
+It is a **model of a matmul/wave/elementwise engine**, not a product NPU.
+The point is that job submit, ownership, and completion look like silicon.
 
 ## How to plug a command processor
 
@@ -308,7 +316,7 @@ opcode/packet ADR below.
 ```text
 offset  type   field
 0x00    u32    magic        0xAE7E0C01
-0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2)
+0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2, Add=3, Relu=4)
 0x05    u8     dtype        DType (I32=0, F16=1, F32=2)
 0x06    u8     space        MemorySpace
 0x07    u8     phase        Phase (Compute=0, Exchange=1, Barrier=2)
@@ -572,8 +580,8 @@ escapes the SID window (`Oob`).
 
 **Honest remaining holes (named `SfiError::Unmodeled`, not “safe”):**
 
-- Tensor copies / SoftNPU `MatMul` / `Wave` / TMA-shaped ops are
-  **refused**, not modeled.
+- Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` /
+  TMA-shaped ops are **refused**, not modeled.
 - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
   allocator and not a sandbox. Prefer refuse over fake safety.
   Diligence line: `[softsfi] heap=refused`.
@@ -802,6 +810,8 @@ does **not** parse IREE VM bytecode):
 | `op = Nop` | `command_categories = 0`, `function = 0` (doorbell; no pins) |
 | `op = MatMul` | `DISPATCH`, `function = 0` (first export) |
 | `op = Wave` | `DISPATCH`, `function = 1` (fused export) |
+| `op = Add` | `DISPATCH`, `function = 2` (elementwise add) |
+| `op = Relu` | `DISPATCH`, `function = 3` (elementwise relu) |
 | `dtype` I32 / F16 / F32 | `IREE_HAL_ELEMENT_TYPE_{INT_32,FLOAT_16,FLOAT_32}` = `0x10000020` / `0x21000010` / `0x21000020` |
 | `m,n,k` | `workgroup_count_x/y/z` (shape stand-in) |
 | `a,b,c,bias` after Soft SMMU | `binding[0..3].offset` = IOVA; `.length` = `job.bytes_*()` byte spans (dtype-aware), not element counts |
@@ -825,12 +835,15 @@ other `isa_blob_id` values must be refused (the kernel does not parse IREE VM
 bytecode).
 
 `command_categories` and `function` are **not** `AccelOp` (`MatMul = 1`,
-`Wave = 2`). Soft-CP's `CpCmd.opcode` still is. That is the point of
-this backend.
+`Wave = 2`, `Add = 3`, `Relu = 4`). Soft-CP's `CpCmd.opcode` still is.
+That is the point of this backend. Unknown DISPATCH `function` is
+Unsupported (not a silent MatMul).
 
 v1 decode keys off the **DISPATCH** bit first. `categories = 0` is Nop
-and **ignores** `function` (pack writes 0). v1 pack emits **0 or
-DISPATCH only**; `TRANSFER` alone is `HalError::Fault` / not defined.
+and **ignores** `function` (pack writes 0). DISPATCH `function` 0/1/2/3
+is MatMul / Wave / Add / Relu; any other export is Unsupported. v1 pack
+emits **0 or DISPATCH only**; `TRANSFER` alone is `HalError::Fault` /
+not defined.
 `workgroup_count_*` are AccelJobDesc `m,n,k` shape stand-ins — not
 compiler tile sizes or IREE launch geometry. Binding `.length` fields
 are dtype-aware **byte spans**, not element counts. The only accepted

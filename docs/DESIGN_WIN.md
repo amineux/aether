@@ -57,13 +57,14 @@ Fill **their** command-processor names. v1 pack emits
 defined v1 packet** (`IreeHalCmd::check_v1` → `HalError::Fault`).
 
 `command_categories` and `function` are **not** `AccelOp` bytes
-(`Nop=0`, `MatMul=1`, `Wave=2`). Soft-CP `CpCmd.opcode` still is.
-Decode keys off the DISPATCH bit first; `categories = 0` ignores
-`function` (pack writes 0).
+(`Nop=0`, `MatMul=1`, `Wave=2`, `Add=3`, `Relu=4`). Soft-CP
+`CpCmd.opcode` still is. Decode keys off the DISPATCH bit first;
+`categories = 0` ignores `function` (pack writes 0). Unknown DISPATCH
+`function` is Unsupported.
 
 | Their opcode name | IREE `iree_hal_command_category_t` | IREE `iree_hal_executable_function_t` | Maps to `AccelOp` | IREE `iree_hal_element_type_t` / Aether `DType` | IREE `iree_hal_queue_affinity_t` (low 32: `chiplet<<16 \| tile`) |
 | --- | --- | --- | --- | --- | --- |
-| _fill_ | `0` (doorbell) or `DISPATCH` | `0` (`HAL_FN_MATMUL`) or `1` (`HAL_FN_FUSED`) | `Nop` / `MatMul` / `Wave` | `INT_32` `0x10000020` / `FLOAT_16` `0x21000010` / `FLOAT_32` `0x21000020` | _fill_ |
+| _fill_ | `0` (doorbell) or `DISPATCH` | `0` (`HAL_FN_MATMUL`) / `1` (`HAL_FN_FUSED`) / `2` (`HAL_FN_ADD`) / `3` (`HAL_FN_RELU`) | `Nop` / `MatMul` / `Wave` / `Add` / `Relu` | `INT_32` `0x10000020` / `FLOAT_16` `0x21000010` / `FLOAT_32` `0x21000020` | _fill_ |
 | | | | | | |
 | | | | | | |
 

@@ -280,7 +280,9 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 - PJRT Event timeline polish (**landed**): `host/aether-pjrt` Event
   create / record / wait on existing fences / SoftChipletSync. Still
   not `GetPjRtApi` / XLA / `iree_hal_driver_t`. TRANSFER stays reserved.
-- PJRT shim more ops — still open (Nop / MatMul / Wave only).
+- PJRT shim more ops (**landed**): `Add` / `Relu` on the frozen
+  `IreeHalCmd` (`function` 2 / 3). Still not `GetPjRtApi`. TRANSFER
+  stays reserved.
 - MicroPerceptron / virtio-accel consumer (same frozen `IreeHalCmd`
   or path-A BAR; secondary to PJRT). Thin research sketch landed as
   `host/aether-mp-shim` (inspiration name only; not a port). The
