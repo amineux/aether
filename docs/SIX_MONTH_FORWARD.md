@@ -141,14 +141,14 @@ unchanged. `IreeHalCmd` offsets unchanged.
 The two host clips **landed**. CapTable **skipped** (gate still
 closed). Do not open a new ISA. Do not invent a CNode.
 
-1. **SoftGreenCtx interference leave-behind** (**Done**, this PR).
+1. **SoftGreenCtx interference leave-behind** (**Done**, PR #85).
    The 70/30 SM/WQ partition already landed. Diligence now prints a
    stable `[greenctx] interference partitioned 70/30 vs unpartitioned`
    line with integer `bw_milli` / `interference_milli` from
    `MemcpyReport` / `GreenCtxReport`. Existing
    `[greenctx] SM/WQ pool split 70/30` needle stays. Not HW MIG, not
    FLOPs, not a BAR firewall. Residual shared-HBM tax stays.
-2. **SoftCCT / Event polish** (**Done**, this PR). Package-scope ≪
+2. **SoftCCT / Event polish** (**Done**, PR #85). Package-scope ≪
    broadcast stays the proof (`cct=1` vs `broadcast=10` on the
    multi-chiplet clip; single-chiplet is a no-op). Diligence prints
    `[softcct] package fences=` plus
@@ -255,7 +255,7 @@ below remain **technical leftovers**, not calendar.
    Further packet change is still a dual ACCEL.md + `ireecp` + host
    pack/unpack
 4. M3–M4 — **landed:** SoftGreenCtx interference clip + SoftCCT/Event
-   fence-count polish (this PR). CapTable **skipped** (no shim-tenant
+   fence-count polish (PR #85). CapTable **skipped** (no shim-tenant
    slot alias; gate still closed). Do not re-schedule the clips.
 5. M5–M6: opcode v2 **or** freeze-v1 checkpoint; diligence refresh;
    **one** port **only if** path B doorbell fails a partner ask
@@ -270,8 +270,8 @@ numbered.
 | Thin MP consumer (**landed**, PR #83) | `host/aether-mp-shim`; frozen `IreeHalCmd`; doorbell or Soft-CP. Doorbell sketch stays `examples/accel-client` |
 | SoftSFI heap refuse (**landed**, PR #80) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `SoftOp::Heap` → `Unmodeled`; `[softsfi] heap=refused` |
 | PJRT more ops (**landed**, PR #84) | `Add` / `Relu` on frozen `IreeHalCmd` (`function` 2 / 3). `host/aether-pjrt`, [HOST.md](HOST.md), [ACCEL.md](ACCEL.md), `drivers/src/ireecp.rs`. Offsets unchanged |
-| SoftGreenCtx leave-behind (**landed**, this PR) | [DILIGENCE.md](DILIGENCE.md), `examples/diligence-demo/`; `[greenctx] interference partitioned 70/30 vs unpartitioned`. Host tests already in `core/src/greenctx.rs` |
-| SoftCCT / Event polish (**landed**, this PR) | `core/src/chipsync.rs`, `host/aether-pjrt` `EventFenceCounts` / `cct_vs_broadcast`; `[softcct] package fences=` + `[event] fence counts`. [HOST.md](HOST.md) |
+| SoftGreenCtx leave-behind (**landed**, PR #85) | [DILIGENCE.md](DILIGENCE.md), `examples/diligence-demo/`; `[greenctx] interference partitioned 70/30 vs unpartitioned`. Host tests already in `core/src/greenctx.rs` |
+| SoftCCT / Event polish (**landed**, PR #85) | `core/src/chipsync.rs`, `host/aether-pjrt` `EventFenceCounts` / `cct_vs_broadcast`; `[softcct] package fences=` + `[event] fence counts`. [HOST.md](HOST.md) |
 | Per-task CapTable (**skipped**, no alias) | `core/src/caps.rs`, kernel World; gate still closed. `SYS_REVOKE` only with unbind/FLR demo |
 | Opcode v2 / freeze checkpoint | [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host pack/unpack **or** a written freeze-v1 note in this file |
 | Diligence refresh | [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
