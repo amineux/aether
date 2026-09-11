@@ -82,7 +82,8 @@ and [qemu/README.md](../qemu/README.md).
 | Soft SMMU SID-at-submit | STE→CD→Stage-1/2 software walk. SET_SID at the job head. A real device can DMA past it. | `[blast]` / `[sid]` |
 | Blast-radius refuse | Two tenants. CrossCut + wrong-SID abort. | `make red-team` · `wrong-sid-crosscut` |
 | SoftCmdFirewall | Copy-then-validate. Command-stream integrity, not confidential GPU. | `make red-team` · `softcmdfirewall` |
-| SoftGreenCtx | Fake 70/30 SM/WQ partition. Not HW MIG. | `[greenctx]` in `make diligence-demo` |
+| SoftGreenCtx | Fake 70/30 SM/WQ partition + interference vs unpartitioned (integer milli). Not HW MIG. | `[greenctx]` 70/30 + `interference partitioned` in `make diligence-demo` |
+| SoftCCT / Event counts | Package ≪ broadcast (`1` vs `10`). Chiplet-local vs package. Not latency. | `[softcct] package fences=` + `[event] fence counts` |
 | SoftNoI-IS + fabric-class | Fake shared NoI; refuse `IS > 1.5`. Software fabric-class tag (PR #75): Gradient admits, second Curl refuses the reserved ring. Not topology synth. | `make red-team` · `softnoi-is` + `fabric-class` |
 | SoftSFI `ATOMIC_ADD` | SID-proved toy fetch-add (PR #73). In-range accept; cross-tenant `Oob`. Tensor stays `Unmodeled`. Not a hardware atomic. | `make red-team` · `ATOMIC_ADD` |
 | SoftSFI heap refuse | Named `SoftOp::Heap` is `SfiError::Unmodeled` (PR #80). Not a bump allocator. | `make red-team` · `[softsfi] heap=refused` |
@@ -117,9 +118,10 @@ Process goals. Not a product kernel. Not a booked lab.
    freeze. Hardware SMMU stays partner silicon. No FLOPs. No tape-out.
 
 Open on the kernel calendar ([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
-PJRT more ops (Nop / MatMul / Wave only today); guest PCI BAR0 bind;
-**one** port if path B’s doorbell fails. Those are not this page’s
-asks.
+guest PCI BAR0 bind; gated `CapTable` only if two shim tenants alias
+slots; **one** port if path B’s doorbell fails. Those are not this
+page’s asks. PJRT Add/Relu, GreenCtx interference, and SoftCCT/Event
+counts already landed.
 
 ---
 

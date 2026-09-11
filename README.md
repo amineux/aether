@@ -80,8 +80,10 @@ make diligence-demo
 
 Stdout is the thesis: `[blast]` CrossCut + wrong-SID refuse,
 `[pjrt]` frozen `IreeHalCmd` submit + wait (research opcodes, not
-FLOPs), `[event]` SoftChipletSync create/record/wait, `[firewall]`
-mutation-during-validate fails, `[greenctx]` 70/30 SM/WQ partition,
+FLOPs), `[event]` SoftChipletSync create/record/wait plus fence
+counts, `[softcct]` package fences ≪ broadcast, `[firewall]`
+mutation-during-validate fails, `[greenctx]` 70/30 SM/WQ partition
+and interference vs unpartitioned,
 then a short *what this proves / what it does not* block. CI greps
 [`examples/diligence-demo/expected.txt`](examples/diligence-demo/expected.txt).
 See [`docs/DILIGENCE.md`](docs/DILIGENCE.md). Soft SMMU is software.

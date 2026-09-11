@@ -598,6 +598,9 @@
             <pre><span class="cmd">$ git clone https://github.com/amineux/aether.git && cd aether</span>
 <span class="cmd">$ make diligence-demo</span>
 <span class="ok">[event] SoftChipletSync create/record/wait
+[event] fence counts chiplet-local vs package
+[softcct] package fences=
+[greenctx] interference partitioned 70/30 vs unpartitioned
 [diligence] host Path B sealed</span>
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] fabric-class admit/refuse
@@ -744,6 +747,9 @@
             <div class="term-bar"><i></i><i></i><i></i><span>leave-behind</span></div>
             <pre><span class="cmd">$ make diligence-demo</span>
 <span class="ok">[event] SoftChipletSync create/record/wait
+[event] fence counts chiplet-local vs package
+[softcct] package fences=
+[greenctx] interference partitioned 70/30 vs unpartitioned
 [diligence] host Path B sealed</span>
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] fabric-class admit/refuse
@@ -968,7 +974,7 @@
                 </div>
               </div>
               <ul>
-                <li>Near-term in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (Sep 2026 → Mar 2027). Horizon in <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. Landed slices: Event create/record/wait on existing fences (still not a plugin), fabric-class tags into SoftNoI admit, SID-proved SoftSFI <code>atomic_add</code> (tensor <code>Unmodeled</code>), SoftSFI heap named refuse (PR #80; not a bump allocator), thin MicroPerceptron-shaped <code>IreeHalCmd</code> consumer (PR #83; <code>host/aether-mp-shim</code>; inspiration name only; secondary to PJRT; not a port), PJRT shim <code>Add</code> / <code>Relu</code> on the frozen packet (PR #84; offsets unchanged). Week 1 call pack walks those slices. Still open: SoftGreenCtx diligence leave-behind, SoftCCT/Event fence-count polish, gated per-task <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots. <strong>One</strong> port (RISC-V virtio-mmio <em>or</em> aarch64 GIC) only if path B’s doorbell fails a partner ask. Opcode v2 or freeze-v1 checkpoint only with a dual update of ACCEL.md + <code>ireecp</code> + host pack/unpack</li>
+                <li>Near-term in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (Sep 2026 → Mar 2027). Horizon in <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. Landed slices: Event create/record/wait on existing fences (still not a plugin), fabric-class tags into SoftNoI admit, SID-proved SoftSFI <code>atomic_add</code> (tensor <code>Unmodeled</code>), SoftSFI heap named refuse (PR #80; not a bump allocator), thin MicroPerceptron-shaped <code>IreeHalCmd</code> consumer (PR #83; <code>host/aether-mp-shim</code>; inspiration name only; secondary to PJRT; not a port), PJRT shim <code>Add</code> / <code>Relu</code> on the frozen packet (PR #84; offsets unchanged), SoftGreenCtx interference leave-behind (M3; <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>; not HW MIG), SoftCCT/Event fence-count polish (M4; <code>[softcct] package fences=</code> + <code>[event] fence counts</code>; not latency). Week 1 call pack walks those slices. Still open: gated per-task <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots (gate still closed — PJRT / MP shims do not mint World <code>CPtr</code>s). <strong>One</strong> port (RISC-V virtio-mmio <em>or</em> aarch64 GIC) only if path B’s doorbell fails a partner ask. Opcode v2 or freeze-v1 checkpoint only with a dual update of ACCEL.md + <code>ireecp</code> + host pack/unpack</li>
                 <li>2028 maintains the Soft SMMU bring-up kit as the silicon handoff. Hardware SMMU is partner silicon, not a software milestone. Year-end is a <strong>signed opcode list</strong> from a real partner CP, or a <strong>research ABI freeze</strong> — not a manufacturing climax, not tape-out. <code>PartnerNpuStub</code> stays a labeled no-op until a signed list retires it</li>
                 <li>Path B stays canonical. Soft SMMU stays software. ABI 0–11 frozen. No FLOPs. MicroPerceptron-shaped thin consumer landed as a research sketch (inspiration name only; secondary to PJRT). Full virtio-accel port stays later. Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts). Kernel PCI bind still optional. Default CI does not rebuild QEMU</li>
               </ul>
@@ -1140,6 +1146,9 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="cmd">$ make accel-test</span>        <span class="ok"># path-A IOVA / wrong-SID (optional; no QEMU rebuild)</span>
 
 <span class="ok">[event] SoftChipletSync create/record/wait</span>
+<span class="ok">[event] fence counts chiplet-local vs package</span>
+<span class="ok">[softcct] package fences=</span>
+<span class="ok">[greenctx] interference partitioned 70/30 vs unpartitioned</span>
 <span class="ok">[redteam] fabric-class admit/refuse</span>
 <span class="ok">[redteam] ATOMIC_ADD accept/reject</span>
 <span class="ok">[redteam] attack=wrong-sid-crosscut result=refused</span>

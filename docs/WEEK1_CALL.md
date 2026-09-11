@@ -90,6 +90,8 @@ Makefile targets.
 | Isolation | named attacks refused | `make red-team` |
 | Packet | frozen `IreeHalCmd`; second consumer | `make partner-hello` then `cargo run -p aether-accel-client` / `make mp-shim` |
 | Wait | Event create/record/wait on SoftChipletSync | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
+| Event counts | chiplet-local vs package; package vs broadcast | `make diligence-demo` — grep `[event] fence counts chiplet-local vs package` and `[softcct] package fences=` |
+| GreenCtx interference | partitioned 70/30 vs unpartitioned (integer milli) | `make diligence-demo` — grep `[greenctx] interference partitioned 70/30 vs unpartitioned` |
 | Admit class | fabric-class tag into SoftNoI | `make red-team` — grep `[redteam] fabric-class admit/refuse` |
 | Sandbox hole | SoftSFI `ATOMIC_ADD` accept/reject; heap named refuse | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` and `[softsfi] heap=refused` |
 
@@ -129,8 +131,12 @@ While it prints:
 > `IreeHalCmd` submit + wait — research opcodes, not FLOPs.
 > Mutation-during-validate fails: command-stream integrity, not
 > confidential GPU. SoftGreenCtx is a 70/30 software partition, not
-> HW MIG. Event create/record/wait sits on SoftChipletSync fences
-> already in the tree — grep `[event] SoftChipletSync`. Soft SMMU
+> HW MIG — grep `[greenctx] interference partitioned 70/30 vs
+> unpartitioned` (integer milli; residual shared-HBM tax). Event
+> create/record/wait sits on SoftChipletSync fences already in the
+> tree — grep `[event] SoftChipletSync` and
+> `[event] fence counts chiplet-local vs package`. SoftCCT package
+> ≪ broadcast — grep `[softcct] package fences=`. Soft SMMU
 > is software. Path B.
 
 Do **not** show a FLOP number. Do **not** attach `-device aether-accel`.
@@ -209,6 +215,9 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | MP-shaped thin consumer | `make mp-shim` (inspiration name only; secondary to PJRT; PR #83) |
 | PJRT Add/Relu | `cargo test -p aether-pjrt` (frozen packet `function` 2 / 3; PR #84) |
 | Event wait | `make diligence-demo` — `[event] SoftChipletSync create/record/wait` |
+| Event fence counts | `make diligence-demo` — `[event] fence counts chiplet-local vs package` |
+| SoftCCT vs broadcast | `make diligence-demo` — `[softcct] package fences=` |
+| SoftGreenCtx interference | `make diligence-demo` — `[greenctx] interference partitioned 70/30 vs unpartitioned` |
 | Fabric-class admit | `make red-team` — `[redteam] fabric-class admit/refuse` |
 | ATOMIC_ADD hole | `make red-team` — `[redteam] ATOMIC_ADD accept/reject` |
 | SoftSFI heap refuse | `make red-team` — `[softsfi] heap=refused` |

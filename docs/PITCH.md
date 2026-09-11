@@ -160,9 +160,13 @@ What to say while it prints:
 > `IreeHalCmd` submit + wait — research opcodes, not FLOPs.
 > Mutation-during-validate fails: command-stream integrity, not
 > confidential GPU. SoftGreenCtx is a 70/30 software partition, not
-> HW MIG. Event create/record/wait sits on SoftChipletSync fences
-> already in the tree (`[event] SoftChipletSync create/record/wait`).
-> Then the proves / does-not block. Soft SMMU is software.
+> HW MIG — `[greenctx] interference partitioned 70/30 vs unpartitioned`
+> (integer milli; residual shared-HBM tax). Event create/record/wait
+> sits on SoftChipletSync fences already in the tree
+> (`[event] SoftChipletSync create/record/wait` plus
+> `[event] fence counts chiplet-local vs package`). SoftCCT package
+> ≪ broadcast (`[softcct] package fences=`). Then the proves /
+> does-not block. Soft SMMU is software.
 
 Then the buyer stdout:
 
@@ -308,7 +312,7 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | Doorbell second consumer | `cargo run -p aether-accel-client` (not a Makefile target) |
 | MP-shaped thin consumer | `make mp-shim` (`host/aether-mp-shim`; inspiration name only; PR #83) |
 | PJRT Add/Relu | `cargo test -p aether-pjrt` (frozen packet `function` 2 / 3; PR #84) |
-| Event / fabric-class / ATOMIC_ADD / heap | Event line in `make diligence-demo`; the rest in `make red-team` (`[softsfi] heap=refused`) |
+| Event / GreenCtx / SoftCCT / fabric-class / ATOMIC_ADD / heap | Event wait + fence counts + GreenCtx interference + `[softcct] package fences=` in `make diligence-demo`; fabric-class / ATOMIC_ADD / heap in `make red-team` (`[softsfi] heap=refused`) |
 | Fill the opcode map | [DESIGN_WIN.md](DESIGN_WIN.md) + `make design-win-check` |
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | How to plug a CP | [ACCEL.md](ACCEL.md) driver steps + `aether_hal::AccelDevice` |

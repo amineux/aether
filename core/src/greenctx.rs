@@ -367,6 +367,10 @@ impl Default for SoftGreenPool {
 }
 
 /// Host-identical clip. Kernel prints `[greenctx] …`.
+///
+/// `*_bw` and `*_interference` are integer milli units already on
+/// [`MemcpyReport`] (`bw_milli` / [`MemcpyReport::interference_milli`]).
+/// Partner-readable, not FLOPs, not HW MIG.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct GreenCtxReport {
     pub split_ok: bool,
@@ -377,6 +381,12 @@ pub struct GreenCtxReport {
     pub unpart_bw: u32,
     pub part70_bw: u32,
     pub part30_bw: u32,
+    /// Unpartitioned co-run interference vs solo (`interference_milli`).
+    pub unpart_interference: u32,
+    /// 70% partition co-run interference vs solo.
+    pub part70_interference: u32,
+    /// 30% partition co-run interference vs solo.
+    pub part30_interference: u32,
 }
 
 impl GreenCtxReport {
@@ -448,6 +458,9 @@ pub fn run_greenctx_demo() -> GreenCtxReport {
         unpart_bw: u0.bw_milli,
         part70_bw: p70.bw_milli,
         part30_bw: p30.bw_milli,
+        unpart_interference: u0.interference_milli(solo),
+        part70_interference: p70.interference_milli(solo),
+        part30_interference: p30.interference_milli(solo),
     }
 }
 
@@ -499,6 +512,12 @@ mod tests {
         assert!(r.part70_bw > r.unpart_bw);
         assert!(r.unpart_bw > r.part30_bw);
         assert!(r.part70_bw < r.solo_bw);
+        // 70% slice takes less interference than the 50/50 share.
+        // Residual tax keeps both above zero — not MIG / BAR firewall.
+        assert!(r.part70_interference < r.unpart_interference);
+        assert!(r.unpart_interference < r.part30_interference);
+        assert!(r.part70_interference > 0);
+        assert!(r.unpart_interference > 0);
     }
 
     #[test]

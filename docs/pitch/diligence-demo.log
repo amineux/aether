@@ -7,20 +7,24 @@
 [pjrt] IreeHalCmd submit + wait  magic=0xAE7E1EE1 backend=4 ssid=2 opcode=MatMul  ok
 [pjrt] research opcode MatMul; not FLOPs  ok
 [event] SoftChipletSync create/record/wait  ok
+[event] fence counts chiplet-local vs package  chiplet_pkg=0 package_pkg=1  (not CUDA EventRecord; not latency)  ok
+[softcct] package fences=1 broadcast=10  (CCT ≪ broadcast; Event wait still works; not UCIe)  ok
 [firewall] copy-then-validate Host1x race  sneak=ok hold=ok  (cmd-stream integrity; not confidential GPU)  ok
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30  part70_bw=636 unpart=454  (Green Contexts / DetShare; not MIG, not FLOPs)  ok
+[greenctx] interference partitioned 70/30 vs unpartitioned  part70_bw=636 unpart_bw=454 interference_milli=364/546  (not MIG; residual shared-HBM tax; not FLOPs; not a BAR firewall)  ok
 [greenctx] two-queue SoftGreenCtx sealed
 [diligence] what this proves
   two tenants: CrossCut + wrong-SID refuse (Soft SMMU software tables)
   PJRT-shaped Client packs frozen IreeHalCmd and waits a fence (research opcodes)
   Event create/record/wait on existing SoftChipletSync fences (not GetPjRtApi)
+  SoftCCT package fences ≪ broadcast; Event exposes chiplet-local vs package counts
   SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue
-  SoftGreenCtx 70/30 SM/WQ partition is measurable on a software pool
+  SoftGreenCtx 70/30 SM/WQ partition + interference vs unpartitioned (integer milli; not MIG)
 [diligence] what this does not prove
-  hardware SMMU, HW MIG, confidential GPU, or a silicon command processor
-  FLOP throughput, tape-out readiness, or a QEMU rebuild
+  hardware SMMU, HW MIG, confidential GPU, a BAR firewall, or a silicon command processor
+  FLOP throughput, multi-chiplet latency from single-die counts, tape-out, or a QEMU rebuild
   a PJRT plugin, an IREE HAL driver, or an NVIDIA partnership
   Path A -device aether-accel (stock demo stays Path B)
 [diligence] host Path B sealed

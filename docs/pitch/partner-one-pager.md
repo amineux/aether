@@ -29,7 +29,7 @@ Full leave-behind: [SELL_PACK.md](../SELL_PACK.md). Week 1 call:
 ## Commands that exist (`make help`)
 
 ```bash
-make diligence-demo      # host Path B; [event] wait; no QEMU
+make diligence-demo      # host Path B; [event] wait + counts; [softcct]; [greenctx] interference; no QEMU
 make red-team            # named attacks + fabric-class + ATOMIC_ADD + heap refuse
 make partner-hello       # frozen IreeHalCmd; no QEMU rebuild
 make mp-shim             # MP-shaped thin consumer (inspiration name; not a port)
@@ -39,8 +39,10 @@ make qemu                # optional guest; path B SoftNPU
 ```
 
 Walk: isolation (`make red-team`) → packet (`make partner-hello`) →
-wait (`make diligence-demo` · `[event]`) → admit class (`make red-team`
-· `fabric-class`) → sandbox hole (`make red-team` · `ATOMIC_ADD`).
+wait (`make diligence-demo` · `[event]`) → fence counts / GreenCtx
+interference (`[softcct]` / `[greenctx] interference`) → admit class
+(`make red-team` · `fabric-class`) → sandbox hole (`make red-team` ·
+`ATOMIC_ADD`).
 
 Doorbell (not a Makefile target): `cargo run -p aether-accel-client`.
 

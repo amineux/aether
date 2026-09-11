@@ -592,6 +592,33 @@ impl SoftChipletSync {
         naive > 0 && issued < naive && (issued == 0 || issued.saturating_mul(4) < naive)
     }
 
+    /// Canonical two-chiplet SoftCCT vs-broadcast clip.
+    ///
+    /// 10 labeled waits: 8 same-chiplet elide + 2 cross-chiplet. Issued
+    /// package fences = 1; broadcast baseline = 10. Host **counts**
+    /// only — not partner latency, not Vulkan, not UCIe.
+    ///
+    /// Single-chiplet callers must not use this clip as a CCT win
+    /// (`cct_lt_broadcast` stays false there on purpose).
+    pub fn demo_cct_vs_broadcast(&mut self) {
+        let buf = BufferLabel(2);
+        let a = ChipletId(0);
+        let b = ChipletId(1);
+        self.enable_cct(true);
+        self.open(SyncScope::Package);
+        let _ = self.expect(a, 10);
+        let _ = self.expect(b, 1);
+        for _ in 0..10 {
+            let _ = self.arrive(a, Some(buf));
+        }
+        for _ in 0..8 {
+            let _ = self.wait(a, Some(buf));
+        }
+        for _ in 0..2 {
+            let _ = self.wait(b, Some(buf));
+        }
+    }
+
     /// SoftCCT issued package fences ≪ all-chiplet broadcast baseline.
     ///
     /// Requires CCT on and at least one labeled wait. Single-chiplet is
@@ -740,19 +767,7 @@ pub fn run_softcct_demo() -> SoftCctReport {
 
     // 10 arrives, then 8 same-chiplet waits + 2 cross waits.
     let mut sync = SoftChipletSync::new(PartitionId(1));
-    sync.enable_cct(true);
-    sync.open(SyncScope::Package);
-    let _ = sync.expect(a, 10);
-    let _ = sync.expect(b, 1);
-    for _ in 0..10 {
-        let _ = sync.arrive(a, Some(buf));
-    }
-    for _ in 0..8 {
-        let _ = sync.wait(a, Some(buf));
-    }
-    for _ in 0..2 {
-        let _ = sync.wait(b, Some(buf));
-    }
+    sync.demo_cct_vs_broadcast();
     let cct_fences = sync.package_fences();
     let broadcast_fences = sync.broadcast_package_fences();
     let cct_lt_broadcast =
@@ -932,6 +947,17 @@ mod tests {
         assert!(r.cct_elide, "CCT same-chiplet elide");
         assert!(r.two_chiplet, "cross-chiplet cannot elide");
         assert!(r.all_ok());
+    }
+
+    #[test]
+    fn demo_cct_vs_broadcast_is_one_vs_ten() {
+        let mut s = SoftChipletSync::new(PartitionId(1));
+        s.demo_cct_vs_broadcast();
+        assert_eq!(s.package_fences(), 1);
+        assert_eq!(s.broadcast_package_fences(), 10);
+        assert_eq!(s.elided(), 8);
+        assert!(s.cct_lt_broadcast(), "package-scope ≪ broadcast");
+        assert!(!s.softcct().is_noop());
     }
 
     #[test]
