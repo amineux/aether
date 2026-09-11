@@ -196,16 +196,22 @@ Do not port the kernel.
   `SfiError::Unmodeled`; `[softsfi] heap=refused`) — not a bump
   allocator. Still not NVVM. Still not “safe multi-tenant
   kernels.”
-- **Per-task `CapTable`** — **only if** two shim tenants alias
-  slots on the shared World table. World still shares one table
-  today. Isolate those tenants; do not invent a CNode. Forward
-  M3–M4 gate.
+- **Per-task `CapTable`** — **skipped** on the M3–M4 cut. Two
+  shim tenants do **not** alias slots. Kernel World still shares
+  one table (`TenantId(1)`). `aether-pjrt` / `aether-mp-shim` do
+  not mint World `CPtr`s. Gate still closed. Do not invent a
+  CNode. Isolate only if a later shim actually aliases slots.
 - **`SYS_REVOKE`** — **only if** the same PR demos
   revoke → `unbind_stream` / FLR. Internal `revoke` / `revoke_in`
-  already exist. Additive syscall only with that demo.
+  already exist. Additive syscall only with that demo. Not opened
+  here (CapTable gate did not fire).
 - **Blast-radius diligence clips** as needed (two-tenant refuse
-  that earns a new line). SoftGreenCtx interference leave-behind is
-  forward M3–M4. Not a second ring-3 World.
+  that earns a new line). SoftGreenCtx interference leave-behind
+  **landed** (M3; host
+  `[greenctx] interference partitioned 70/30 vs unpartitioned`).
+  SoftCCT / Event fence-count polish **landed** (M4;
+  `[softcct] package fences=` + `[event] fence counts`). Not a
+  second ring-3 World.
 
 Path B / Soft SMMU software / ABI 0–11 stay. No FLOPs.
 
@@ -213,7 +219,9 @@ Path B / Soft SMMU software / ABI 0–11 stay. No FLOPs.
 
 Pulled forward where the partner ask is already live. See
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) M1–M2 (**landed:** heap
-#80, MP #83, PJRT Add/Relu #84) and M5–M6 (opcode v2 **or**
+#80, MP #83, PJRT Add/Relu #84), M3–M4 (**landed:** GreenCtx
+interference + SoftCCT/Event counts; CapTable skipped, no alias),
+and M5–M6 (opcode v2 **or**
 freeze checkpoint; **one**
 port **only if** path B’s doorbell fails a partner ask).
 

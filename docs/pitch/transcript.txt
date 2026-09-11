@@ -47,9 +47,12 @@ Golden needles from `examples/diligence-demo/expected.txt`
 [pjrt] IreeHalCmd submit + wait
 [pjrt] research opcode
 [event] SoftChipletSync create/record/wait
+[event] fence counts chiplet-local vs package
+[softcct] package fences=
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30
+[greenctx] interference partitioned 70/30 vs unpartitioned
 [greenctx] two-queue SoftGreenCtx sealed
 [diligence] what this proves
 [diligence] what this does not prove

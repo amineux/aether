@@ -24,7 +24,7 @@ call. Stock `make qemu` stays the path-B guest demo if they want it.
 
 | Demo | Command | What they see |
 | --- | --- | --- |
-| Diligence clip | `make diligence-demo` | Two tenants. CrossCut + wrong-SID refuse. Frozen `IreeHalCmd` submit + wait. Event create/record/wait. SoftCmdFirewall mutation-during-validate fails. SoftGreenCtx 70/30. Honest close. |
+| Diligence clip | `make diligence-demo` | Two tenants. CrossCut + wrong-SID refuse. Frozen `IreeHalCmd` submit + wait. Event create/record/wait + fence **counts**. SoftCCT package ≪ broadcast. SoftCmdFirewall mutation-during-validate fails. SoftGreenCtx 70/30 + interference vs unpartitioned. Honest close. |
 | Named attacks | `make red-team` | wrong-SID / SoftCmdFirewall / SoftSFI-OOB / SoftNoI-IS / PASID-stale **refused**. Fabric-class admit/refuse. `ATOMIC_ADD` accept/reject. `[softsfi] heap=refused`. |
 | Frozen packet | `make partner-hello` | 96-byte `IreeHalCmd` → `IreeShapedCp`. Magic `0xAE7E1EE1`. 2×2 I32 matmul. Unknown executable refused. |
 | Doorbell (second caller) | `cargo run -p aether-accel-client` | Same 96-byte image. Not a Makefile target. Not a MicroPerceptron port. |
@@ -46,12 +46,15 @@ Makefile targets.
 | Proof | Point at |
 | --- | --- |
 | Isolation | `make red-team` — named attacks refused |
-| Diligence narrative | `make diligence-demo` — blast / pjrt / event / firewall / greenctx |
+| Diligence narrative | `make diligence-demo` — blast / pjrt / event / softcct / firewall / greenctx |
 | Partner hello | `make partner-hello` — frozen packet, no QEMU |
 | MP-shaped thin consumer | `make mp-shim` — same frozen `IreeHalCmd`; inspiration name only |
 | PJRT Add/Relu | `cargo test -p aether-pjrt` — same frozen packet; `function` 2 / 3; PR #84 |
 | Path-A IOVA | `make accel-test` — Soft-SMMU IOVA / wrong-SID on the optional BAR |
 | Event wait | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
+| Event fence counts | `make diligence-demo` — grep `[event] fence counts chiplet-local vs package` |
+| SoftCCT vs broadcast | `make diligence-demo` — grep `[softcct] package fences=` |
+| SoftGreenCtx interference | `make diligence-demo` — grep `[greenctx] interference partitioned 70/30 vs unpartitioned` |
 | Fabric-class admit | `make red-team` — grep `[redteam] fabric-class admit/refuse` |
 | SoftSFI `ATOMIC_ADD` | `make red-team` — grep `[redteam] ATOMIC_ADD accept/reject` |
 | SoftSFI heap refuse | `make red-team` — grep `[softsfi] heap=refused` |
@@ -89,7 +92,7 @@ paint, or site-as-milestone.
 | --- | --- | --- |
 | **M0 now (Sep)** | Sell pack + call pack live. Capture feedback. Fill DESIGN_WIN from a **real** table when one appears. | Pack is already in tree. Do not invent a vendor table. |
 | **M1–M2 (Oct–Nov)** | **Done.** Thin MP-shaped consumer (PR #83; `make mp-shim`). SoftSFI heap refuse (PR #80; named `Unmodeled`, not a bump allocator). PJRT Add/Relu more ops (PR #84; same frozen packet, `function` 2 / 3). | Same packet. Dual ACCEL.md + `ireecp` + host pack/unpack if the image moves. |
-| **M3–M4 (Dec–Jan)** | SoftGreenCtx interference clip in the diligence pack. SoftCCT / Event fence-**count** polish. CapTable only if two shim tenants alias slots. | Not HW MIG. Not a latency claim from single-die numbers. |
+| **M3–M4 (Dec–Jan)** | **Done.** SoftGreenCtx interference clip (`[greenctx] interference partitioned 70/30 vs unpartitioned`). SoftCCT / Event fence-**count** polish (`[softcct] package fences=` + `[event] fence counts`). CapTable **skipped** (no shim-tenant slot alias; gate still closed). | Not HW MIG. Not a latency claim from single-die numbers. |
 | **M5–M6 (Feb–Mar)** | Opcode-table v2 **or** freeze-v1 checkpoint. Diligence pack refresh. One port (RISC-V virtio-mmio **or** aarch64 GIC) **only if** path B’s doorbell fails a partner ask. | 2028 language unchanged: signed list or freeze research ABI. Not tape-out. |
 
 M0 does not need a kernel PR. Later months land only if they stay

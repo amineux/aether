@@ -104,6 +104,12 @@ Client::create(SoftNpu | IreeShaped)
     record(event)
         SoftChipletSync::arrive            // chiplet-local or package fence
         → Event { fence: seq, scope }
+    event_fence_counts()
+        → { scope, package_fences, naive, broadcast, elided }
+                                           // chiplet-local vs package
+    cct_vs_broadcast()
+        SoftChipletSync::demo_cct_vs_broadcast
+        → (package_fences, broadcast)      // 1 vs 10 on the two-chiplet clip
     wait(event)
         scoped: SoftChipletSync::wait_seq  // NotReady until record
         job: service()                     // host IRQ pump (SoftNPU used-ring / IreeShapedCp mailbox)
@@ -131,6 +137,8 @@ alone stays `HalError::Fault`). `UNIFIED` stays off unless that cap bit is grant
 
 - An OpenXLA PJRT plugin (`GetPjRtApi`) or an in-tree IREE HAL driver.
   This is not XLA. Event wait is not a CUDA stream and not a silicon fence.
+  `event_fence_counts` / `cct_vs_broadcast` are fence **counts**, not
+  partner latency and not CUDA EventRecord.
 - A vendor compiler integration or a signed silicon partnership.
 - In-kernel ML graph IR / fusion (`Wave` is a stand-in dispatch).
 - A CUDA stream, a default unified virtual address space, or CXL.mem.

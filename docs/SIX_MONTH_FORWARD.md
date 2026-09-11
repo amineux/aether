@@ -64,6 +64,9 @@ record in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) or
 | Site through PR #79 | Research leave-behind / progress refresh. **Not** a calendar item |
 | **MP-shaped thin consumer (PR #83)** | `host/aether-mp-shim`. Same frozen 96-byte `IreeHalCmd`. memcpy / matmul / wave. Inspiration name only. Secondary to PJRT. Not a port |
 | **PJRT Add/Relu more ops (PR #84)** | SoftNPU `Add=3` / `Relu=4` through `aether-pjrt` as IREE HAL `function` 2 / 3. Same frozen `IreeHalCmd`. Offsets / magic / executable / TRANSFER reserved stay. Not a second IR. Not `GetPjRtApi` |
+| **SoftGreenCtx interference clip (M3)** | Diligence `[greenctx] interference partitioned 70/30 vs unpartitioned` with integer `bw_milli` / `interference_milli`. Existing 70/30 needle stays. Not HW MIG, not FLOPs, not a BAR firewall |
+| **SoftCCT / Event fence counts (M4)** | Diligence `[softcct] package fences=` (1 vs 10) + `[event] fence counts chiplet-local vs package`. Host tests measure counts. Not latency, not Vulkan, not UCIe |
+| **CapTable (M3–M4 gate)** | **Skipped.** PJRT / MP shims do not mint World `CPtr` slots. No alias. No `SYS_REVOKE`. Gate still closed |
 
 SoftNPU path-B opcodes stay Aether-native. `PartnerNpuStub`
 (`backend = 2`) stays a labeled no-op. Path B is canonical. Soft
@@ -75,7 +78,7 @@ tape-out.
 ```text
 M0 now (Sep)     sell pack + call pack live; capture feedback; DESIGN_WIN from real tables
 M1–M2 (Oct–Nov)  Done — heap refuse #80, MP consumer #83, PJRT Add/Relu #84
-M3–M4 (Dec–Jan)  SoftGreenCtx diligence leave-behind; SoftCCT/Event fence-count polish; CapTable iff alias
+M3–M4 (Dec–Jan)  Done — GreenCtx interference clip + SoftCCT/Event fence counts; CapTable skipped (no alias)
 M5–M6 (Feb–Mar)  opcode v2 or ABI-freeze checkpoint; diligence refresh; one port iff path B doorbell fails
 ```
 
@@ -135,27 +138,37 @@ unchanged. `IreeHalCmd` offsets unchanged.
 
 ### M3–M4 — Dec 2026 – Jan 2027
 
-Deepen what already shipped. Do not open a new ISA.
+The two host clips **landed**. CapTable **skipped** (gate still
+closed). Do not open a new ISA. Do not invent a CNode.
 
-1. **SoftGreenCtx interference leave-behind** for diligence. The
-   70/30 SM/WQ partition already landed. This cut is a partner-readable
-   clip (host stdout + [DILIGENCE.md](DILIGENCE.md) line), not HW MIG,
-   not FLOPs, not a BAR firewall.
-2. **SoftCCT / Event polish** for multi-chiplet **fence counts**.
-   Package-scope ≪ broadcast stays the proof. Single-die QEMU / host
-   numbers are still not partner latency proof. Event create / record /
-   wait already sits on SoftChipletSync; polish is more honest counts,
-   not a new IR.
-3. **Per-task `CapTable` — only if** two shim tenants alias slots on
-   the shared World table. World still shares one table today.
-   Isolate those tenants. Do not invent a CNode. Additive
-   `SYS_REVOKE` only if the same PR demos revoke → `unbind_stream` /
-   FLR.
+1. **SoftGreenCtx interference leave-behind** (**Done**, this PR).
+   The 70/30 SM/WQ partition already landed. Diligence now prints a
+   stable `[greenctx] interference partitioned 70/30 vs unpartitioned`
+   line with integer `bw_milli` / `interference_milli` from
+   `MemcpyReport` / `GreenCtxReport`. Existing
+   `[greenctx] SM/WQ pool split 70/30` needle stays. Not HW MIG, not
+   FLOPs, not a BAR firewall. Residual shared-HBM tax stays.
+2. **SoftCCT / Event polish** (**Done**, this PR). Package-scope ≪
+   broadcast stays the proof (`cct=1` vs `broadcast=10` on the
+   multi-chiplet clip; single-chiplet is a no-op). Diligence prints
+   `[softcct] package fences=` plus
+   `[event] fence counts chiplet-local vs package`. Event
+   create / record / wait still sits on SoftChipletSync; polish is
+   honest **counts**, not a new IR. Not CUDA EventRecord. Frozen
+   `IreeHalCmd` offsets unchanged. Single-die QEMU / host numbers are
+   still not partner latency proof. Not Vulkan, not UCIe, not a
+   coherence protocol.
+3. **Per-task `CapTable` — skipped.** Two shim tenants do **not**
+   alias slots. Kernel World (`kernel/src/world.rs`) still owns one
+   `CapTable` for `TenantId(1)`. `aether-pjrt` and `aether-mp-shim`
+   pin through a host Soft-SMMU walk; they do not mint World `CPtr`
+   slots and do not share a table. No alias → no isolate. No
+   `SYS_REVOKE`. Gate stays closed. Do not invent a CNode. No new
+   syscall.
 
-**Done when:** diligence names the GreenCtx clip; CCT/Event host tests
-still measure fence **counts**; CapTable is either skipped (no alias)
-or isolates the two tenants. No new syscall unless the CapTable gate
-fires with the revoke→FLR demo.
+**Done when:** met. Diligence names the GreenCtx interference clip;
+CCT/Event host tests still measure fence **counts**; CapTable skipped
+(no alias). No new syscall. Path B / `make qemu` unchanged.
 
 ### M5–M6 — Feb–Mar 2027
 
@@ -222,7 +235,9 @@ Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 / XQueue / SID-at-submit / SoftChipletSync / Month 5 digests 1–4 /
 H2 2026 leftovers / Event / fabric-class / `ATOMIC_ADD` / SoftSFI
 heap refuse / path-A IOVA / the sell set / MP-shaped thin consumer
-(PR #83) / PJRT Add/Relu more ops (PR #84). Do not sequence against the SpecForge
+(PR #83) / PJRT Add/Relu more ops (PR #84) / SoftGreenCtx interference
+clip / SoftCCT/Event fence-count polish. CapTable stays gated (no
+alias). Do not sequence against the SpecForge
 Y1H1–Y2H2 appendix.
 
 [ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in M0–M6
@@ -239,9 +254,9 @@ below remain **technical leftovers**, not calendar.
    consumer (PR #83), PJRT Add/Relu (PR #84). Do not re-schedule.
    Further packet change is still a dual ACCEL.md + `ireecp` + host
    pack/unpack
-4. M3–M4: SoftGreenCtx diligence leave-behind; SoftCCT/Event
-   fence-count polish; CapTable **only if** two shim tenants alias
-   slots
+4. M3–M4 — **landed:** SoftGreenCtx interference clip + SoftCCT/Event
+   fence-count polish (this PR). CapTable **skipped** (no shim-tenant
+   slot alias; gate still closed). Do not re-schedule the clips.
 5. M5–M6: opcode v2 **or** freeze-v1 checkpoint; diligence refresh;
    **one** port **only if** path B doorbell fails a partner ask
 
@@ -255,9 +270,9 @@ numbered.
 | Thin MP consumer (**landed**, PR #83) | `host/aether-mp-shim`; frozen `IreeHalCmd`; doorbell or Soft-CP. Doorbell sketch stays `examples/accel-client` |
 | SoftSFI heap refuse (**landed**, PR #80) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `SoftOp::Heap` → `Unmodeled`; `[softsfi] heap=refused` |
 | PJRT more ops (**landed**, PR #84) | `Add` / `Relu` on frozen `IreeHalCmd` (`function` 2 / 3). `host/aether-pjrt`, [HOST.md](HOST.md), [ACCEL.md](ACCEL.md), `drivers/src/ireecp.rs`. Offsets unchanged |
-| SoftGreenCtx leave-behind | [DILIGENCE.md](DILIGENCE.md), `examples/diligence-demo/`, host tests already in `core/src/greenctx.rs` |
-| SoftCCT / Event polish | `core/src/chipsync.rs`, `host/aether-pjrt`, [HOST.md](HOST.md) |
-| Per-task CapTable (gated) | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
+| SoftGreenCtx leave-behind (**landed**, this PR) | [DILIGENCE.md](DILIGENCE.md), `examples/diligence-demo/`; `[greenctx] interference partitioned 70/30 vs unpartitioned`. Host tests already in `core/src/greenctx.rs` |
+| SoftCCT / Event polish (**landed**, this PR) | `core/src/chipsync.rs`, `host/aether-pjrt` `EventFenceCounts` / `cct_vs_broadcast`; `[softcct] package fences=` + `[event] fence counts`. [HOST.md](HOST.md) |
+| Per-task CapTable (**skipped**, no alias) | `core/src/caps.rs`, kernel World; gate still closed. `SYS_REVOKE` only with unbind/FLR demo |
 | Opcode v2 / freeze checkpoint | [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host pack/unpack **or** a written freeze-v1 note in this file |
 | Diligence refresh | [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
 | One port (if needed) | `kernel/src/arch/riscv64/` virtio-mmio **or** `kernel/src/arch/aarch64/` GIC IRQ — not both |

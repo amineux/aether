@@ -79,8 +79,9 @@ What to point at on the serial:
 
 If QEMU is blocked, **stop after `make diligence-demo`**. That is the
 leave-behind: `[blast]` CrossCut + wrong-SID, `[pjrt]` `IreeHalCmd`
-submit+wait, `[firewall]` mutation-during-validate, `[greenctx]` 70/30
-partition, then proves / does-not. `make red-team` is the named-attack
+submit+wait, `[event]` wait + fence counts, `[softcct]` package ≪
+broadcast, `[firewall]` mutation-during-validate, `[greenctx]` 70/30
+plus interference vs unpartitioned, then proves / does-not. `make red-team` is the named-attack
 stdout (`[redteam] attack=… result=refused`). `cargo test -p aether-core
 laplacian -- --nocapture` still shows `L = D − A` if someone asks.
 

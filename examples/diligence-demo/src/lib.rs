@@ -12,11 +12,13 @@ use std::fmt;
 use aether_core::accel::{AccelOp, DType};
 use aether_core::iommu::StreamId;
 use aether_core::space::MemorySpace;
-use aether_core::{run_blast_demo, run_greenctx_demo, BlastReport, GreenCtxReport};
+use aether_core::{
+    run_blast_demo, run_greenctx_demo, run_softcct_demo, BlastReport, GreenCtxReport, SoftCctReport,
+};
 use aether_drivers::ireecp::{IreeHalCmd, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
 use aether_drivers::{run_firewall_demo, FirewallReport};
 use aether_hal::ACCEL_BACKEND_IREE_SHAPED;
-use aether_pjrt::{Client, Dispatch, EventScope};
+use aether_pjrt::{Client, Dispatch, EventFenceCounts, EventScope};
 
 /// Needles CI / `make diligence-demo` greps. Kept in
 /// [`expected.txt`](../expected.txt); tests include that file.
@@ -117,32 +119,63 @@ fn op_name(op: AccelOp) -> &'static str {
     }
 }
 
+struct EventClip {
+    wait_ok: bool,
+    chiplet: EventFenceCounts,
+    package: EventFenceCounts,
+    cct: SoftCctReport,
+    cct_on_event: (u32, u32),
+}
+
 /// Event create / record / wait on existing SoftChipletSync fences.
 /// Same host API as `aether-pjrt` tests. Does not pack `IreeHalCmd`.
-fn run_event_clip() -> Result<bool, DemoError> {
+/// Exposes chiplet-local vs package and package vs broadcast **counts**.
+fn run_event_clip() -> Result<EventClip, DemoError> {
     let mut c = Client::iree_shaped().map_err(|_| DemoError {
         clip: "event Client::iree_shaped",
     })?;
-    let mut ok = true;
+    let mut wait_ok = true;
+    let mut chiplet = None;
+    let mut package = None;
     for scope in [EventScope::Chiplet, EventScope::Package] {
         let ev = c.create_event(scope).map_err(|_| DemoError {
             clip: "event create",
         })?;
         if c.fence_ready(ev) || c.wait(ev).is_ok() {
-            ok = false;
+            wait_ok = false;
         }
         let ev = c.record(ev).map_err(|_| DemoError {
             clip: "event record",
         })?;
         let cpl = c.wait(ev).map_err(|_| DemoError { clip: "event wait" })?;
-        ok = ok && cpl.status == 0 && c.fence_ready(ev);
+        wait_ok = wait_ok && cpl.status == 0 && c.fence_ready(ev);
+        match scope {
+            EventScope::Chiplet => chiplet = Some(c.event_fence_counts()),
+            EventScope::Package => package = Some(c.event_fence_counts()),
+        }
     }
-    Ok(ok)
+    let chiplet = chiplet.ok_or(DemoError {
+        clip: "event chiplet counts",
+    })?;
+    let package = package.ok_or(DemoError {
+        clip: "event package counts",
+    })?;
+    wait_ok = wait_ok && chiplet.is_chiplet_local() && package.is_package_scope();
+    let cct_on_event = c.cct_vs_broadcast();
+    let cct = run_softcct_demo();
+    wait_ok = wait_ok && cct.all_ok() && cct_on_event == (cct.cct_fences, cct.broadcast_fences);
+    Ok(EventClip {
+        wait_ok,
+        chiplet,
+        package,
+        cct,
+        cct_on_event,
+    })
 }
 
 /// Scripted host narrative. Same clips as kernel serial `[blast]` /
-/// `[firewall]` / `[greenctx]`, plus the PJRT `IreeHalCmd` submit+wait
-/// and Event create/record/wait the guest does not run.
+/// `[firewall]` / `[greenctx]` / `[softcct]`, plus the PJRT `IreeHalCmd`
+/// submit+wait and Event create/record/wait the guest does not run.
 pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     writeln!(
         out,
@@ -201,11 +234,31 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     )
     .map_err(|_| DemoError { clip: "write" })?;
 
-    let event_ok = run_event_clip()?;
+    let event = run_event_clip()?;
     writeln!(
         out,
         "[event] SoftChipletSync create/record/wait  {}",
-        flag(event_ok)
+        flag(event.wait_ok)
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "[event] fence counts chiplet-local vs package  chiplet_pkg={} package_pkg={}  (not CUDA EventRecord; not latency)  {}",
+        event.chiplet.package_fences,
+        event.package.package_fences,
+        flag(event.chiplet.is_chiplet_local() && event.package.is_package_scope())
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "[softcct] package fences={} broadcast={}  (CCT ≪ broadcast; Event wait still works; not UCIe)  {}",
+        event.cct.cct_fences,
+        event.cct.broadcast_fences,
+        flag(
+            event.cct.cct_lt_broadcast
+                && event.cct_on_event == (event.cct.cct_fences, event.cct.broadcast_fences)
+                && event.wait_ok
+        )
     )
     .map_err(|_| DemoError { clip: "write" })?;
 
@@ -241,6 +294,21 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         flag(green.split_ok && green.interference_ok)
     )
     .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "[greenctx] interference partitioned 70/30 vs unpartitioned  part70_bw={} unpart_bw={} interference_milli={}/{}  (not MIG; residual shared-HBM tax; not FLOPs; not a BAR firewall)  {}",
+        green.part70_bw,
+        green.unpart_bw,
+        green.part70_interference,
+        green.unpart_interference,
+        flag(
+            green.interference_ok
+                && green.not_mig
+                && green.part70_bw > green.unpart_bw
+                && green.part70_interference < green.unpart_interference
+        )
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
     if green.all_ok() {
         writeln!(out, "[greenctx] two-queue SoftGreenCtx sealed")
             .map_err(|_| DemoError { clip: "write" })?;
@@ -267,24 +335,29 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  SoftCCT package fences ≪ broadcast; Event exposes chiplet-local vs package counts"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
-        "  SoftGreenCtx 70/30 SM/WQ partition is measurable on a software pool"
+        "  SoftGreenCtx 70/30 SM/WQ partition + interference vs unpartitioned (integer milli; not MIG)"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(out, "[diligence] what this does not prove")
         .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
-        "  hardware SMMU, HW MIG, confidential GPU, or a silicon command processor"
+        "  hardware SMMU, HW MIG, confidential GPU, a BAR firewall, or a silicon command processor"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
-        "  FLOP throughput, tape-out readiness, or a QEMU rebuild"
+        "  FLOP throughput, multi-chiplet latency from single-die counts, tape-out, or a QEMU rebuild"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
@@ -299,7 +372,7 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
 
     let all_ok =
-        blast.all_ok() && pjrt.submit_wait && event_ok && firewall.all_ok() && green.all_ok();
+        blast.all_ok() && pjrt.submit_wait && event.wait_ok && firewall.all_ok() && green.all_ok();
     if all_ok {
         writeln!(out, "[diligence] host Path B sealed").map_err(|_| DemoError { clip: "write" })?;
         Ok(())
@@ -357,8 +430,11 @@ mod tests {
         assert!(needles.contains("[blast] Soft SMMU wrong SID abort"));
         assert!(needles.contains("[pjrt] IreeHalCmd submit + wait"));
         assert!(needles.contains("[event] SoftChipletSync create/record/wait"));
+        assert!(needles.contains("[event] fence counts chiplet-local vs package"));
+        assert!(needles.contains("[softcct] package fences="));
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
+        assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));
         assert!(needles.contains("[diligence] what this proves"));
         assert!(needles.contains("[diligence] what this does not prove"));
     }

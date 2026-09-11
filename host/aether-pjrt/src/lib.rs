@@ -113,6 +113,32 @@ impl EventScope {
     }
 }
 
+/// Honest fence **counts** the Event path already sits on.
+///
+/// Chiplet-local vs package after [`Client::record`]. Package vs
+/// broadcast after [`Client::cct_vs_broadcast`]. Not CUDA EventRecord,
+/// not a new packet, not partner latency.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EventFenceCounts {
+    pub scope: SyncScope,
+    pub package_fences: u32,
+    pub naive_package: u32,
+    pub broadcast_package: u32,
+    pub elided: u32,
+}
+
+impl EventFenceCounts {
+    /// Chiplet-scope record issued no package fence.
+    pub const fn is_chiplet_local(self) -> bool {
+        matches!(self.scope, SyncScope::Chiplet) && self.package_fences == 0
+    }
+
+    /// Package-scope record issued at least one package fence.
+    pub const fn is_package_scope(self) -> bool {
+        matches!(self.scope, SyncScope::Package) && self.package_fences >= 1
+    }
+}
+
 impl From<HalError> for Error {
     fn from(e: HalError) -> Self {
         Self::Hal(e)
@@ -818,6 +844,34 @@ impl Client {
         &self.chipsync
     }
 
+    /// Fence counts the last Event [`Self::record`] sat on.
+    ///
+    /// Chiplet-local record: `package_fences == 0`. Package record:
+    /// `package_fences >= 1`. Broadcast baseline stays 0 until
+    /// [`Self::cct_vs_broadcast`] (CCT labeled waits). Not a new IR.
+    pub fn event_fence_counts(&self) -> EventFenceCounts {
+        EventFenceCounts {
+            scope: self.chipsync.scope(),
+            package_fences: self.chipsync.package_fences(),
+            naive_package: self.chipsync.naive_package_fences(),
+            broadcast_package: self.chipsync.broadcast_package_fences(),
+            elided: self.chipsync.elided(),
+        }
+    }
+
+    /// SoftCCT vs-broadcast clip on the same SoftChipletSync Event uses.
+    ///
+    /// Returns `(package_fences, broadcast_package)`. Canonical
+    /// two-chiplet case is `1` vs `10`. Does **not** pack
+    /// [`IreeHalCmd`]. Single-die host numbers are not latency proof.
+    pub fn cct_vs_broadcast(&mut self) -> (u32, u32) {
+        self.chipsync.demo_cct_vs_broadcast();
+        (
+            self.chipsync.package_fences(),
+            self.chipsync.broadcast_package_fences(),
+        )
+    }
+
     /// Poll the Event without pumping the device.
     ///
     /// Job Events stay [`Error::NotReady`] until IRQ retire. Scoped
@@ -1335,6 +1389,53 @@ mod tests {
             c.chipsync().package_fences() >= 1,
             "package-scope record issues the existing SoftChipletSync fence"
         );
+        let counts = c.event_fence_counts();
+        assert!(counts.is_package_scope());
+        assert_eq!(counts.package_fences, c.chipsync().package_fences());
+        assert_eq!(counts.broadcast_package, 0, "record does not use CCT labels");
+    }
+
+    #[test]
+    fn event_fence_counts_chiplet_local_vs_package() {
+        let mut c = Client::iree_shaped().unwrap();
+        let ev = c.create_event(EventScope::Chiplet).unwrap();
+        let ev = c.record(ev).unwrap();
+        c.wait(ev).unwrap();
+        let chiplet = c.event_fence_counts();
+        assert!(chiplet.is_chiplet_local());
+        assert_eq!(chiplet.package_fences, 0);
+        assert_eq!(chiplet.naive_package, 1);
+        assert_eq!(c.last_iree_cmd(), None);
+
+        let ev = c.create_event(EventScope::Package).unwrap();
+        let ev = c.record(ev).unwrap();
+        c.wait(ev).unwrap();
+        let package = c.event_fence_counts();
+        assert!(package.is_package_scope());
+        assert_eq!(package.package_fences, 1);
+        assert_eq!(package.naive_package, 1);
+        assert!(
+            package.package_fences > chiplet.package_fences,
+            "package-scope pays; chiplet-local is free"
+        );
+        assert_eq!(c.last_iree_cmd(), None, "counts do not pack IreeHalCmd");
+    }
+
+    #[test]
+    fn event_cct_vs_broadcast_is_one_vs_ten() {
+        let mut c = Client::iree_shaped().unwrap();
+        let ev = c.create_event(EventScope::Package).unwrap();
+        let ev = c.record(ev).unwrap();
+        c.wait(ev).unwrap();
+        let (cct, bcast) = c.cct_vs_broadcast();
+        assert_eq!(cct, 1);
+        assert_eq!(bcast, 10);
+        assert!(c.chipsync().cct_lt_broadcast());
+        let counts = c.event_fence_counts();
+        assert_eq!(counts.package_fences, 1);
+        assert_eq!(counts.broadcast_package, 10);
+        assert_eq!(counts.elided, 8);
+        assert_eq!(c.last_iree_cmd(), None, "CCT clip does not pack IreeHalCmd");
     }
 
     #[test]

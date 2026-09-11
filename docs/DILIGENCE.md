@@ -41,8 +41,11 @@ scripted narrative. CI greps
 | `[blast] SpectralCut CrossCut refuse` / `wrong SID abort` | Two tenants. Cross-cut placement and the other SID are refused. |
 | `[pjrt] IreeHalCmd submit + wait` | Frozen 96-byte HAL image; fence wait. Research opcodes, not FLOPs. |
 | `[event] SoftChipletSync create/record/wait` | Event create/record/wait on existing SoftChipletSync fences (PR #74). Not `GetPjRtApi`. |
+| `[event] fence counts chiplet-local vs package` | M4 polish. Event exposes the SoftChipletSync counts it already sits on. Not CUDA EventRecord. Not latency. |
+| `[softcct] package fences=` | M4 polish. Package-scope ≪ broadcast (`1` vs `10` on the two-chiplet clip). Event wait still works. Not UCIe. |
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
+| `[greenctx] interference partitioned 70/30 vs unpartitioned` | **M3 leave-behind** (host stdout). Integer `bw_milli` / `interference_milli`. Not HW MIG, not FLOPs, not a BAR firewall. Residual shared-HBM tax stays. |
 | `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
 
 This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
@@ -112,7 +115,17 @@ inspiration only — not a coherence protocol, not a Vulkan / ROCm product.
 `[firewall]`); command-stream integrity only — not confidential GPU.
 `run_greenctx_demo()` is the SM/WQ partition clip (serial `[greenctx]`);
 Green Contexts / DetShare inspiration only — not HW MIG, not a BAR
-firewall, not FLOPs.
+firewall, not FLOPs. The **M3 leave-behind** is the host interference
+line: partitioned 70/30 vs unpartitioned baseline, integer
+`bw_milli` / `interference_milli` on `MemcpyReport` / `GreenCtxReport`.
+`make diligence-demo` greps
+`[greenctx] interference partitioned 70/30 vs unpartitioned`.
+The existing 70/30 needle stays. SoftCCT / Event fence-**count**
+polish (M4) is the sibling host line
+`[softcct] package fences=` plus
+`[event] fence counts chiplet-local vs package`. Host tests still
+measure fence counts (`SoftChipletSync::cct_lt_broadcast`). Not a
+new IR. Not partner latency.
 `run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
 GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
 `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`); tensor
@@ -252,7 +265,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
-| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[firewall]` / `[greenctx]` + proves/does-not. No QEMU rebuild |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` / `[firewall]` / `[greenctx]` (incl. M3 interference) + proves/does-not. No QEMU rebuild |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] heap=refused` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |

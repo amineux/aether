@@ -907,8 +907,9 @@ below is leftover engineering, not a fifth digest.
 
 1. **Forward M0–M6** (see [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
    and [SELL_GOALS.md](SELL_GOALS.md)): sell/call pack live;
-   SoftGreenCtx diligence leave-behind; SoftCCT/Event fence-count
-   polish; CapTable **only if** two shim tenants alias slots; opcode
+   SoftGreenCtx interference leave-behind **landed**; SoftCCT/Event
+   fence-count polish **landed**; CapTable **skipped** (no shim-tenant
+   slot alias; gate still closed); opcode
    v2 **or** freeze-v1 checkpoint; diligence refresh; **one** port
    **only if** path B doorbell fails a partner ask. Thin MP-shaped
    `IreeHalCmd` consumer is **landed** (PR #83; `host/aether-mp-shim`;
