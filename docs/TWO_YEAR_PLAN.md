@@ -67,6 +67,7 @@ Do **not** re-schedule any of the following as new milestones. Do
 | **Path-A IOVA (PR #78)** | Soft-SMMU IOVA on path-A BAR DMA; wrong SID aborts. Kernel PCI bind still optional |
 | **MP-shaped thin consumer (PR #83)** | `host/aether-mp-shim`. Same frozen `IreeHalCmd`. Inspiration name only. Secondary to PJRT. Not a port |
 | **PJRT Add/Relu more ops (PR #84)** | SoftNPU `Add=3` / `Relu=4` through `aether-pjrt` as IREE HAL `function` 2 / 3. Same frozen packet. Offsets unchanged |
+| **freeze-v1 checkpoint (M5–M6)** | Research `IreeHalCmd` v1 stays. No real partner table. Diligence pack refreshed. Port **skipped**. Not tape-out |
 | Explorations A–E | A merged into M2; B blast-radius clip; C `ChipletTaskScope` stub; D CDT props; E `TypedWindow` stub |
 | Site through PR #79 | Research leave-behind / progress refresh. **Not** a calendar item |
 
@@ -78,7 +79,8 @@ OperatorInject #61, Event #74, fabric-class #75, SoftSFI
 `ATOMIC_ADD` #73, SoftSFI heap refuse #80, path-A IOVA #78, sell
 set #65–#72 / #77). Thin MP-shaped consumer **landed** (PR #83).
 PJRT Add/Relu more ops **landed** (PR #84).
-Do not re-schedule them. Near-term sequencing is
+M5–M6 freeze-v1 **landed** (research `IreeHalCmd` v1 stays; port
+skipped). Do not re-schedule them. Near-term sequencing is
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
 
 ## H2 2026 (closed) — partner-HAL leftovers **landed**
@@ -221,9 +223,9 @@ Pulled forward where the partner ask is already live. See
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) M1–M2 (**landed:** heap
 #80, MP #83, PJRT Add/Relu #84), M3–M4 (**landed:** GreenCtx
 interference + SoftCCT/Event counts; CapTable skipped, no alias),
-and M5–M6 (opcode v2 **or**
-freeze checkpoint; **one**
-port **only if** path B’s doorbell fails a partner ask).
+and M5–M6 (**Done:** freeze-v1 — research `IreeHalCmd` v1 stays;
+diligence refresh; port **skipped** — path B doorbell has not failed
+a partner ask).
 
 - **MicroPerceptron / virtio-accel second consumer** on frozen
   `IreeHalCmd`. Same packet as M1/M2. Not a second compiler story.
@@ -232,15 +234,16 @@ port **only if** path B’s doorbell fails a partner ask).
   (`examples/accel-client`) is another caller of that image. A full
   MicroPerceptron port stays later and optional.
 - **RISC-V virtio-mmio SoftNPU *or* aarch64 GIC SoftNPU IRQ** —
-  pick **one** if the path B doorbell (PLIC UART-THRE on RISC-V;
-  CNTV/kthread drain on aarch64) fails a partner ask. Hard defer
-  otherwise. Do not schedule both. Neither port is a product-class
-  second kernel. Forward M5–M6 gate.
-- **Opcode table v2** — only with a **dual** update of
-  [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host
-  pack/unpack (`host/aether-pjrt`). A one-sided bump is a break.
-  Research opcodes until 2028 H2 says otherwise. M5–M6 is the
-  **checkpoint** (v2 or freeze-v1), not tape-out.
+  **Skipped** at M5–M6. Path B doorbell (PLIC UART-THRE on RISC-V;
+  CNTV/kthread drain on aarch64) has not failed a partner ask.
+  Hard defer. Gate stays. Do not schedule both. Neither port is a
+  product-class second kernel.
+- **Opcode table v2** — **not taken.** freeze-v1 named: research
+  `IreeHalCmd` v1 stays. Dual update of [ACCEL.md](ACCEL.md) **and**
+  `drivers/src/ireecp.rs` **and** host pack/unpack only if a real
+  partner table arrives. A one-sided bump is a break. 2028 H2
+  language unchanged: signed opcode list **or** freeze the research
+  ABI. Not tape-out.
 
 ## 2028 H1 — partner bring-up leave-behind
 
@@ -258,7 +261,8 @@ invent a hardware SMMU milestone.
 - **Diligence pack refresh** ([DILIGENCE.md](DILIGENCE.md) +
   [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) +
   [SELL_GOALS.md](SELL_GOALS.md)) for a real design-win
-  conversation. First refresh is forward M5–M6. Still not a
+  conversation. First refresh landed at M5–M6. Later refresh only
+  if a real design-win conversation needs it. Still not a
   partnership announcement. Still not a booked bring-up.
 
 ## 2028 H2 — stop or partner
@@ -313,8 +317,10 @@ site-as-milestone.
 | [ROADMAP.md](ROADMAP.md) | Landed status, stubs, technical leftovers. Points at SIX_MONTH_FORWARD for what to sequence next |
 
 Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
-/ XQueue / SID-at-submit / SoftChipletSync / Month 5 digests 1–4.
-Do not sequence against the SpecForge Y1H1–Y2H2 appendix.
+/ XQueue / SID-at-submit / SoftChipletSync / Month 5 digests 1–4 /
+M5–M6 freeze-v1 / diligence refresh. Port stays skipped (no
+doorbell-fail ask). Do not sequence against the SpecForge
+Y1H1–Y2H2 appendix.
 
 [ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) M0–M6 or a later
@@ -337,9 +343,10 @@ half-year below remain **technical leftovers**, not calendar.
    [SELL_GOALS.md](SELL_GOALS.md)
 4. 2027 H1 leftovers not pulled forward: gated `SYS_REVOKE` with
    unbind/FLR demo; blast-radius clips as needed
-5. 2027 H2 remainder: anything M5–M6 did not take; **one** port
-   only if path B doorbell fails; opcode v2 only with dual
-   ACCEL.md + ireecp + host pack/unpack
+5. 2027 H2 remainder: M5–M6 **landed** (freeze-v1; diligence
+   refresh; port skipped). Opcode v2 only with a real partner table
+   + dual ACCEL.md + ireecp + host pack/unpack. One port only if
+   path B doorbell later fails a partner ask
 6. 2028 H1 maintain bring-up kit; diligence refresh; hardware SMMU
    is not a software PR
 7. 2028 H2 signed opcode list **or** freeze research ABI
@@ -361,9 +368,9 @@ numbered.
 | SoftSFI widen | `core/src/softsfi.rs`, `drivers/src/softsfi.rs`; `atomic_add` modeled (PR #73); tensor `Unmodeled`; heap named refuse **landed** (PR #80) |
 | Per-task CapTable | `core/src/caps.rs`, kernel World; `SYS_REVOKE` only with unbind/FLR demo |
 | Blast-radius clip | `core/src/blast.rs` / host tests; extend, do not rebuild |
-| Opcode table v2 | [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host pack/unpack |
-| One port (if needed) | `kernel/src/arch/riscv64/` virtio-mmio **or** `kernel/src/arch/aarch64/` GIC IRQ — not both |
-| Diligence refresh | [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |
+| Opcode table v2 | **Not taken (M5–M6 freeze-v1).** Dual [ACCEL.md](ACCEL.md) + `ireecp` + host pack/unpack only if a real partner table arrives |
+| One port (if needed) | **Skipped at M5–M6.** Gate stays: only if path B doorbell fails a partner ask |
+| Diligence refresh | **Landed at M5–M6.** [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
 
 Cross-cutting: this file, [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md),
 [SELL_GOALS.md](SELL_GOALS.md), ROADMAP / SIX_MONTH_PLAN / YEAR2_PLAN

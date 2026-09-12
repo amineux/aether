@@ -277,8 +277,10 @@ non-claims and stop. Do not paper over it.
 > packet (PR #84), SoftSFI widen with honest leftovers (`atomic_add`
 > SID-proved; tensor `Unmodeled`; heap named refuse, PR #80), a
 > MicroPerceptron-shaped thin consumer of the **frozen** packet
-> (PR #83). Opcode v2 only with a dual update of ACCEL.md, `ireecp`,
-> and host pack/unpack. Hardware SMMU is not a software milestone.
+> (PR #83). M5–M6 named freeze-v1: research `IreeHalCmd` v1 stays
+> until a real partner table forces a dual update of ACCEL.md,
+> `ireecp`, and host pack/unpack. Port skipped. Hardware SMMU is not
+> a software milestone.
 
 **Then the stop condition:**
 

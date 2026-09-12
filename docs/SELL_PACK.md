@@ -73,11 +73,11 @@ and [qemu/README.md](../qemu/README.md).
 
 ---
 
-## What ships (post #73 / #74 / #75 / #77 / #78 / #80 / #83 / #84)
+## What ships (post #73 / #74 / #75 / #77 / #78 / #80 / #83 / #84 / M5–M6)
 
 | Surface | Honest reading | Proof |
 | --- | --- | --- |
-| Frozen `IreeHalCmd` | 96-byte LE, magic `0xAE7E1EE1`, `backend = 4`. Research opcodes. Not a signed vendor ISA. | `make partner-hello` |
+| Frozen `IreeHalCmd` | 96-byte LE, magic `0xAE7E1EE1`, `backend = 4`. Research opcodes. **M5–M6 freeze-v1:** research v1 stays. Not a signed vendor ISA. | `make partner-hello` / `make design-win-standin` |
 | PJRT-shaped host nouns | Device / MemorySpace / Buffer / Executable / Event. Event create/record/wait on **existing** SoftChipletSync fences (PR #74). Not `GetPjRtApi`. | `[event]` in `make diligence-demo` |
 | Soft SMMU SID-at-submit | STE→CD→Stage-1/2 software walk. SET_SID at the job head. A real device can DMA past it. | `[blast]` / `[sid]` |
 | Blast-radius refuse | Two tenants. CrossCut + wrong-SID abort. | `make red-team` · `wrong-sid-crosscut` |
@@ -119,9 +119,10 @@ Process goals. Not a product kernel. Not a booked lab.
 
 Open on the kernel calendar ([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
 guest PCI BAR0 bind; gated `CapTable` only if two shim tenants alias
-slots; **one** port if path B’s doorbell fails. Those are not this
-page’s asks. PJRT Add/Relu, GreenCtx interference, and SoftCCT/Event
-counts already landed.
+slots. M5–M6 **Done:** freeze-v1 (research `IreeHalCmd` v1 stays);
+port **skipped** (path B doorbell has not failed a partner ask).
+Those are not this page’s asks. PJRT Add/Relu, GreenCtx
+interference, and SoftCCT/Event counts already landed.
 
 ---
 

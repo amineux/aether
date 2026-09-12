@@ -40,13 +40,26 @@ RISC-V also needs `qemu-system-riscv64` and
 # 0. Partner thesis on the host (no QEMU rebuild; Path B).
 make diligence-demo
 # cargo diligence-demo
+# blast / pjrt / event + fence counts / softcct package ≪ broadcast
+# / firewall / greenctx 70/30 + interference
 
 # 1. Same invariants on the host (no QEMU).
 cargo test --workspace
 make partner-hello   # frozen IreeHalCmd → IreeShapedCp; no QEMU rebuild
+make mp-shim         # MP-shaped thin consumer; inspiration name only
+make design-win-check
+make design-win-standin   # IREE HAL research stand-in — not a partner
+# freeze-v1 proof: offsets held (magic 0xAE7E1EE1, 96-byte LE)
+cargo run -p aether-accel-client   # doorbell; same 96-byte image
+# PJRT Add/Relu (function 2 / 3) on the frozen packet:
+# cargo test -p aether-pjrt
 
 # 1b. Buyer stdout: named attacks refused (same clips, grep-able lines).
 make red-team
+# named refuses + fabric-class + ATOMIC_ADD + [softsfi] heap=refused
+
+# 1c. Optional path-A IOVA (host). Stock make qemu stays B.
+make accel-test
 
 # 2. x86_64 vertical slice: kernel self-check, then ring-3 /init.
 make qemu
@@ -82,7 +95,13 @@ leave-behind: `[blast]` CrossCut + wrong-SID, `[pjrt]` `IreeHalCmd`
 submit+wait, `[event]` wait + fence counts, `[softcct]` package ≪
 broadcast, `[firewall]` mutation-during-validate, `[greenctx]` 70/30
 plus interference vs unpartitioned, then proves / does-not. `make red-team` is the named-attack
-stdout (`[redteam] attack=… result=refused`). `cargo test -p aether-core
+stdout (`[redteam] attack=… result=refused` plus fabric-class /
+`ATOMIC_ADD` / `[softsfi] heap=refused`). `make partner-hello` /
+`make mp-shim` / `make design-win-standin` / doorbell
+(`cargo run -p aether-accel-client`) are the frozen-packet clips.
+PJRT Add/Relu (`function` 2 / 3) stay research ops on that packet.
+`make accel-test` is optional path-A IOVA. M5–M6 freeze-v1: research
+`IreeHalCmd` v1 stays. Port skipped. `cargo test -p aether-core
 laplacian -- --nocapture` still shows `L = D − A` if someone asks.
 
 Do **not** show a benchmark. There isn’t one.

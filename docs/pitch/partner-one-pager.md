@@ -53,7 +53,8 @@ Doorbell (not a Makefile target): `cargo run -p aether-accel-client`.
 1. Every first meeting runs the host clips. No QEMU required.
 2. Collect a filled [DESIGN_WIN.md](../DESIGN_WIN.md) — or a written no.
 3. Leave the frozen packet. Path-A IOVA is optional (`make accel-test`).
-4. Hold 2028: handoff or freeze. Hardware SMMU is partner silicon.
+4. Hold 2028: handoff or freeze. M5–M6 freeze-v1 named (research
+   `IreeHalCmd` v1 stays). Hardware SMMU is partner silicon.
 
 ---
 
