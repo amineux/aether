@@ -3,7 +3,9 @@
 Leave-behind for Kernel tracking. Filed 2026-09-10 after H2 2026
 leftovers landed on main.
 
-**This is the near-term Kernel calendar** for Sep 2026 → Mar 2027.
+**This is the closed Sep 2026 → Mar 2027 Kernel record** (M0–M6
+landed). Do not re-schedule it. **Next-12-month industry calendar:**
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) remains the Sep 2026 → Sep 2028
 horizon. Closed records: [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 (M1–M4), [MONTH5_PLAN.md](MONTH5_PLAN.md) (four digests).
@@ -246,9 +248,10 @@ FLOPs/tape-out.
 | [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) | Closed M1–M4 + SoftChipletSync record |
 | [MONTH5_PLAN.md](MONTH5_PLAN.md) | Closed Month 5 record (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
 | [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) | Horizon Sep 2026 → Sep 2028. H2 2026 leftovers **landed** |
-| **This file** | Near-term calendar Sep 2026 → Mar 2027 |
+| [YEAR_AHEAD.md](YEAR_AHEAD.md) | **Next-12-month industry calendar** Sep 2026 → Sep 2027 |
+| **This file** | **Closed** Sep 2026 → Mar 2027 record (M0–M6 landed) |
 | [SELL_GOALS.md](SELL_GOALS.md) | Partner-facing demos / ask / non-claims for this quarter |
-| [ROADMAP.md](ROADMAP.md) | Landed status, stubs, technical leftovers. Points here for what to sequence next |
+| [ROADMAP.md](ROADMAP.md) | Landed status, stubs, technical leftovers. Points at YEAR_AHEAD for the next twelve months |
 
 Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 / XQueue / SID-at-submit / SoftChipletSync / Month 5 digests 1–4 /
@@ -260,8 +263,9 @@ checkpoint / diligence refresh. Port stays skipped (no doorbell-fail
 ask). CapTable stays gated (no alias). Do not sequence against the
 SpecForge Y1H1–Y2H2 appendix.
 
-[ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in M0–M6
-below remain **technical leftovers**, not calendar.
+[ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in
+[YEAR_AHEAD.md](YEAR_AHEAD.md) remain **technical leftovers**, not
+calendar. M0–M6 in this file stay closed.
 
 ## Kernel PR order (this horizon)
 

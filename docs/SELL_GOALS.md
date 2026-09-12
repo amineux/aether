@@ -9,10 +9,13 @@ worksheet, or a written no with reasons, is a good outcome. The IREE
 HAL stand-in ([design-win/iree-hal-standin.md](design-win/iree-hal-standin.md))
 is a research mapping, **not** a partner.
 
-Near-term calendar: [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
-Week 1 script: [WEEK1_CALL.md](WEEK1_CALL.md). Eight minutes:
-[PITCH.md](PITCH.md).
+Next-twelve-month industry calendar: [YEAR_AHEAD.md](YEAR_AHEAD.md)
+(Sep 2026 → Sep 2027). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the closed Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Week 1 script:
+[WEEK1_CALL.md](WEEK1_CALL.md). Eight minutes: [PITCH.md](PITCH.md).
+Site: [https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell)
+· [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap).
 
 Path B is canonical. Soft SMMU is software. Frozen `IreeHalCmd`
 (**M5–M6 freeze-v1:** research v1 stays; no real partner table).
@@ -97,6 +100,7 @@ paint, or site-as-milestone.
 | **M3–M4 (Dec–Jan)** | **Done.** SoftGreenCtx interference clip (`[greenctx] interference partitioned 70/30 vs unpartitioned`). SoftCCT / Event fence-**count** polish (`[softcct] package fences=` + `[event] fence counts`). CapTable **skipped** (no shim-tenant slot alias; gate still closed). | Not HW MIG. Not a latency claim from single-die numbers. |
 | **M5–M6 (Feb–Mar)** | **Done.** freeze-v1: research `IreeHalCmd` v1 stays (no real partner table). Diligence pack refresh. Port **skipped** (path B doorbell has not failed a partner ask). | 2028 language unchanged: signed list or freeze research ABI. Not tape-out. |
 
-M0 does not need a kernel PR. Later months land only if they stay
-demos or docs on the frozen packet. Calendar:
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+M0 does not need a kernel PR. M1–M6 **landed** — do not re-schedule.
+Next twelve months: [YEAR_AHEAD.md](YEAR_AHEAD.md) (2027 H1 leftover
+gated; 2027 H2 waits for a real opcode table). Closed Sep → Mar
+record: [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).

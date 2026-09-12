@@ -4,10 +4,13 @@ Leave-behind for Kernel tracking. Filed after M1–M4 + SoftChipletSync
 landed on main (PRs #38, #41, #47, #49, #51) plus the Soft SMMU
 bring-up kit (#48) and site progress through #52.
 
-**This calendar is closed** (four digests landed). The **next
-calendar** is [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028). [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) closed
+**This calendar is closed** (four digests landed). The
+**next-12-month industry calendar** is
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) closed
 M1–M4. SoftGreenCtx (digest 1) is **landed**. SpecForge
 OS-completeness theater is still not the schedule. Month 5 is
 **four SpectraScout exploration digests** — not one pillar, not a
@@ -390,17 +393,18 @@ frozen. Path B canonical.
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed M1–M4 calendar
 (plus SoftChipletSync). This file is the closed Month 5 record.
 
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the near-term
-calendar (Sep 2026 → Mar 2027). [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-is the horizon (Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md)
-still holds the 2026-09-06 Falsifier ACTIVE track (done through
-PR #37) and the SpecForge appendix (aspirational). Do not sequence
-new work against this file or YEAR2_PLAN.
+[YEAR_AHEAD.md](YEAR_AHEAD.md) is the next-12-month industry
+calendar (Sep 2026 → Sep 2027). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the **closed** Sep 2026 → Mar 2027 record (M0–M6 landed).
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the horizon (Sep 2026 → Sep 2028).
+[YEAR2_PLAN.md](YEAR2_PLAN.md) still holds the 2026-09-06 Falsifier
+ACTIVE track (done through PR #37) and the SpecForge appendix
+(aspirational). Do not sequence new work against this file or
+YEAR2_PLAN.
 
-[ROADMAP.md](ROADMAP.md) points at
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) for what to sequence
-next. Suggested next cuts in ROADMAP that are not forward M0–M6
-remain **technical leftovers**.
+[ROADMAP.md](ROADMAP.md) points at [YEAR_AHEAD.md](YEAR_AHEAD.md)
+for the next twelve months. Suggested next cuts in ROADMAP that are
+not on YEAR_AHEAD remain **technical leftovers**.
 
 ## What we will not claim
 

@@ -10,9 +10,11 @@ The closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 (M1–M4 done; SoftChipletSync + SoftCCT landed; SoftGreenCtx landed;
 SoftCmdFirewall landed). [MONTH5_PLAN.md](MONTH5_PLAN.md) is the
 closed Month 5 record (SoftSFI digest 4 landed). H2 2026 leftovers
-**landed.** **What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
-Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+**landed.** **Next-12-month industry calendar:**
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 /
 `IreeShapedCp` from the KEEP list below. SpecForge appendix remains
 aspirational only.
@@ -38,7 +40,8 @@ aspirational only.
 only — do not schedule Kernel work against it. Closed M1–M4 sequencing lives in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); Month 5 lives in
 [MONTH5_PLAN.md](MONTH5_PLAN.md). **What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md). Horizon:
+[YEAR_AHEAD.md](YEAR_AHEAD.md). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the closed Sep 2026 → Mar 2027 record. Horizon:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Soft SMMU (PR #7;
 deepened as STE→CD→S1/S2 + ATS invalidate, still not hardware) and
 the SoftCommandProcessor AccelDevice (packed `CpCmd` + IRQ/fence) are

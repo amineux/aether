@@ -14,10 +14,12 @@ closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 (M1–M4 done; M3 SID-at-submit landed; SoftChipletSync + SoftCCT
 landed; SoftGreenCtx landed; SoftCmdFirewall landed).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
-(SoftSFI digest 4 landed). **What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027;
-**M5–M6 Done** — freeze-v1, diligence refresh, port skipped).
-Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
+(SoftSFI digest 4 landed). **Next-12-month industry calendar:**
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (**M5–M6 Done** — freeze-v1, diligence
+refresh, port skipped). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+(Sep 2026 → Sep 2028).
 H2 2026 leftovers **landed**. Site-as-milestone stays killed.
 
 ## One-command host demo

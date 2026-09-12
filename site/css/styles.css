@@ -434,6 +434,18 @@ h3 {
   max-width: 50ch;
 }
 
+.hero-horizon {
+  margin: 14px 0 0;
+  max-width: 52ch;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+
+.hero-horizon code {
+  font-family: var(--mono);
+  font-size: 0.86em;
+}
+
 .hero-meta {
   display: flex;
   flex-wrap: wrap;
@@ -1254,8 +1266,28 @@ section.band + section.band {
 }
 
 .horizon-card .horizon-row {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 0;
+}
+
+.horizon-card.year-ahead {
+  border-color: rgba(61, 220, 151, 0.28);
+  background:
+    radial-gradient(420px 160px at 88% 0%, rgba(61, 220, 151, 0.08), transparent 62%),
+    linear-gradient(180deg, rgba(22, 27, 36, 0.88), rgba(10, 12, 16, 0.92));
+}
+
+.horizon-card.year-ahead .horizon-card-copy .kicker {
+  color: var(--mint);
+}
+
+.horizon-card.year-ahead .horizon-card-copy .kicker::before {
+  background: var(--mint);
+  box-shadow: 0 0 10px var(--mint-glow);
+}
+
+.year-strip {
+  margin-bottom: 28px;
 }
 
 .partner-cta {
@@ -1490,6 +1522,11 @@ section.band + section.band {
   border-color: rgba(106, 168, 255, 0.28);
 }
 
+.horizon-phase.gated {
+  border-color: rgba(106, 168, 255, 0.32);
+  border-style: dashed;
+}
+
 .horizon-phase.end {
   border-color: rgba(240, 195, 106, 0.32);
 }
@@ -1507,6 +1544,10 @@ section.band + section.band {
 }
 
 .horizon-phase.mid small {
+  color: var(--blue);
+}
+
+.horizon-phase.gated small {
   color: var(--blue);
 }
 
@@ -1550,6 +1591,11 @@ section.band + section.band {
   background: var(--blue);
 }
 
+.horizon-phase.gated .fill i {
+  background: var(--blue);
+  width: 42%;
+}
+
 .horizon-phase.end .fill i {
   background: var(--amber);
 }
@@ -1559,6 +1605,10 @@ section.band + section.band {
 }
 
 .reveal .horizon-phase.mid .fill i {
+  animation: horizon-grow 0.85s var(--ease) 0.22s forwards;
+}
+
+.reveal .horizon-phase.gated .fill i {
   animation: horizon-grow 0.85s var(--ease) 0.22s forwards;
 }
 
@@ -1835,6 +1885,7 @@ footer {
   .pitch-proof,
   .fail-row,
   .horizon-card,
+  .horizon-card.year-ahead,
   .partner-cta,
   .sell-ask {
     grid-template-columns: 1fr;

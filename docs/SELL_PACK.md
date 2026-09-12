@@ -12,10 +12,12 @@ foundry date. Not tape-out.
 Week 1 20-minute pack: [WEEK1_CALL.md](WEEK1_CALL.md). Eight-minute
 script: [PITCH.md](PITCH.md). Printable cut:
 [pitch/partner-one-pager.md](pitch/partner-one-pager.md). This-quarter
-demos: [SELL_GOALS.md](SELL_GOALS.md). Near-term calendar:
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
-Site:
-[https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell).
+demos: [SELL_GOALS.md](SELL_GOALS.md). Next-twelve-month industry
+calendar: [YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the closed Sep 2026 →
+Mar 2027 record (M0–M6 landed). Site:
+[https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell)
+· [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap).
 
 ---
 
@@ -56,10 +58,13 @@ make design-win-standin
 | Packet | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | Third consumer | `make mp-shim` | MicroPerceptron-**shaped** thin consumer (PR #83). Inspiration name only. Not a port. |
 | Wait | `make diligence-demo` | `[event] SoftChipletSync create/record/wait` |
+| Event counts | `make diligence-demo` | `[event] fence counts chiplet-local vs package` |
+| SoftCCT | `make diligence-demo` | `[softcct] package fences=` |
+| GreenCtx interference | `make diligence-demo` | `[greenctx] interference partitioned 70/30 vs unpartitioned` |
 | Admit class | `make red-team` | `[redteam] fabric-class admit/refuse` |
 | Sandbox hole | `make red-team` | `[redteam] ATOMIC_ADD accept/reject` + `[softsfi] heap=refused` |
 | Worksheet | `make design-win-check` | admits the filled [DESIGN_WIN.md](DESIGN_WIN.md) sample |
-| IREE stand-in | `make design-win-standin` | admits public IREE HAL nouns — **not a partner** |
+| Freeze-v1 / IREE stand-in | `make design-win-standin` | admits public IREE HAL nouns — **not a partner**. Packet offsets stay. |
 | Path-A IOVA | `make accel-test` | host Soft-SMMU IOVA / wrong-SID; **no QEMU rebuild** |
 | Guest (optional) | `make qemu` | path-B SoftNPU on stock QEMU |
 
@@ -97,9 +102,11 @@ explorations (PRs #60 / #62 / #61). They are not “in flight.”
 
 ---
 
-## Six-month sell goals (Sep 2026 → Mar 2027)
+## Next-year sell goals (Sep 2026 → Sep 2027)
 
-Process goals. Not a product kernel. Not a booked lab.
+Process goals. Not a product kernel. Not a booked lab. Full spine:
+[YEAR_AHEAD.md](YEAR_AHEAD.md). M0–M6 already landed — do not
+re-schedule.
 
 1. **Every first meeting runs the host clips.** `make diligence-demo`
    then `make red-team`. No QEMU required. Captured logs live in
@@ -117,12 +124,14 @@ Process goals. Not a product kernel. Not a booked lab.
 6. **Hold the 2028 stop condition.** Signed opcode list **or** ABI
    freeze. Hardware SMMU stays partner silicon. No FLOPs. No tape-out.
 
-Open on the kernel calendar ([TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)):
-guest PCI BAR0 bind; gated `CapTable` only if two shim tenants alias
-slots. M5–M6 **Done:** freeze-v1 (research `IreeHalCmd` v1 stays);
-port **skipped** (path B doorbell has not failed a partner ask).
-Those are not this page’s asks. PJRT Add/Relu, GreenCtx
-interference, and SoftCCT/Event counts already landed.
+Open on the next-year calendar ([YEAR_AHEAD.md](YEAR_AHEAD.md)):
+guest PCI BAR0 bind; gated `CapTable` / `SYS_REVOKE` only if two
+shim tenants alias slots. M5–M6 **Done:** freeze-v1 (research
+`IreeHalCmd` v1 stays); port **skipped** (path B doorbell has not
+failed a partner ask). Those are not this page’s asks. PJRT Add/Relu,
+GreenCtx interference, and SoftCCT/Event counts already landed.
+2028 (signed list or ABI freeze) lives on
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) — not this year’s climax.
 
 ---
 
@@ -150,4 +159,6 @@ Not a logo. Not an NDA draft in this meeting. Not NVIDIA.
 | IREE HAL stand-in | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md) + `make design-win-standin` |
 | Clone-and-run packet | [PARTNER.md](PARTNER.md) / `make partner-hello` |
 | Path-A IOVA notes | [ACCEL.md](ACCEL.md) + `make accel-test` / `make qemu-accel` |
+| Next twelve months | [YEAR_AHEAD.md](YEAR_AHEAD.md) |
+| Live site | [https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell) · [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap) |
 | 2028 calendar | [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) |

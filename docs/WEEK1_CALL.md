@@ -15,7 +15,11 @@ Clone-and-run leave-behind: [PARTNER.md](PARTNER.md). Blank worksheet:
 **The ask (say it this way):** bring your opcode table.
 
 Runnable demos this quarter: [SELL_GOALS.md](SELL_GOALS.md).
-Near-term calendar: [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+Next-twelve-month calendar: [YEAR_AHEAD.md](YEAR_AHEAD.md).
+Site: [https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell)
+· [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the closed Sep 2026 →
+Mar 2027 record (M0–M6 landed).
 
 ---
 
@@ -230,4 +234,6 @@ Not an NDA draft in this meeting. Not NVIDIA.
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md) |
 | One-page sell pack | [SELL_PACK.md](SELL_PACK.md) |
 | 8-minute script | [PITCH.md](PITCH.md) |
+| Next twelve months | [YEAR_AHEAD.md](YEAR_AHEAD.md) · site `#roadmap` |
+| Live sell / roadmap | [https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell) · [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap) |
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |

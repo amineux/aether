@@ -14,9 +14,11 @@ Month 5 digest 2 (SoftCmdFirewall) is **landed** — see
 **This calendar is closed (M1–M4 + SoftChipletSync + SoftCCT).**
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
 (SoftGreenCtx, SoftCmdFirewall, SoftCCT, and SoftSFI digest 4 landed).
-The **next calendar** is [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
-(Sep 2026 → Sep 2028). H2 2026 leftovers **landed** (SoftNoI #60,
+The **next-12-month industry calendar** is
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028). H2 2026 leftovers **landed** (SoftNoI #60,
 PASID #62, OperatorInject #61, Event #74, fabric-class #75, SoftSFI
 `ATOMIC_ADD` #73, path-A IOVA #78, sell set #65–#72 / #77). SoftSFI
 is a toy Soft-CP bytecode sandbox. SpecForge OS-completeness theater
@@ -367,15 +369,16 @@ hardening) plus the SpecForge Y1H1–Y2H2 appendix.
 
 That ACTIVE track is **done as research slices through PR #37**. This
 file is the closed M1–M4 Kernel calendar (it replaced YEAR2_PLAN’s
-ACTIVE track). The **next calendar** is
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md). Horizon:
+ACTIVE track). The **next-12-month industry calendar** is
+[YEAR_AHEAD.md](YEAR_AHEAD.md). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the closed Sep 2026 → Mar 2027 record. Horizon:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). The SpecForge appendix stays
 aspirational — including bank QoS EventRing theater, CXL objects, and
 a Y2 bring-up climax.
 
 [ROADMAP.md](ROADMAP.md) points at
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) for what to sequence
-next. This file remains the closed M1–M4 record. SoftChipletSync,
+[YEAR_AHEAD.md](YEAR_AHEAD.md) for the next twelve months. This file
+remains the closed M1–M4 record. SoftChipletSync,
 SoftCCT, SoftGreenCtx, and SoftCmdFirewall are landed. SoftSFI
 (digest 4) is **landed**. H2 2026 leftovers are **landed**.
 Suggested next cuts in ROADMAP that are not parked leftovers remain

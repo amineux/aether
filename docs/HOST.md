@@ -47,8 +47,9 @@ memcpy (host copy; v1 `TRANSFER` reserved) / matmul / wave. Submit
 is doorbell (`IreeShapedCp`) or Soft-CP (SoftCmdFirewall still
 applies). Same refuse rules. A full MicroPerceptron / virtio-accel
 port stays later and optional. See [ACCEL.md](ACCEL.md),
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md), and
-[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
+[YEAR_AHEAD.md](YEAR_AHEAD.md),
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (closed Sep → Mar
+record), and [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md).
 
 ## Public vocabulary (cited, not claimed)
 
