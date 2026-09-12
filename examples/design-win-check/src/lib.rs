@@ -20,7 +20,7 @@ use aether_core::space::MemorySpace;
 use aether_core::types::{ChipletId, TileId};
 use aether_drivers::ireecp::{
     categories_from_op, element_type_from_dtype, function_from_op, op_from_hal, IreeHalCmd,
-    HAL_FN_ADD, HAL_FN_FUSED, HAL_FN_MATMUL, HAL_FN_RELU, IREE_HAL_CMD_SIZE,
+    HAL_FN_ADD, HAL_FN_FUSED, HAL_FN_MATMUL, HAL_FN_MUL, HAL_FN_RELU, IREE_HAL_CMD_SIZE,
     IREE_HAL_COMMAND_CATEGORY_DISPATCH, IREE_HAL_COMMAND_CATEGORY_TRANSFER,
     IREE_HAL_ELEMENT_TYPE_FLOAT_16, IREE_HAL_ELEMENT_TYPE_FLOAT_32, IREE_HAL_ELEMENT_TYPE_INT_32,
     IREE_HAL_PKT_MAGIC, IREE_REF_EXECUTABLE, IREE_SSID,
@@ -253,9 +253,10 @@ fn parse_accel_op(name: &str) -> Result<AccelOp, CheckError> {
         "Wave" => Ok(AccelOp::Wave),
         "Add" => Ok(AccelOp::Add),
         "Relu" => Ok(AccelOp::Relu),
+        "Mul" => Ok(AccelOp::Mul),
         other => Err(CheckError::OpcodeMismatch {
             their_name: other.to_string(),
-            detail: "AccelOp must be Nop, MatMul, Wave, Add, or Relu".into(),
+            detail: "AccelOp must be Nop, MatMul, Wave, Add, Relu, or Mul".into(),
         }),
     }
 }
@@ -310,6 +311,7 @@ fn check_opcode(w: &Worksheet, op: &OpcodeMap) -> Result<(), CheckError> {
         AccelOp::Wave => HAL_FN_FUSED,
         AccelOp::Add => HAL_FN_ADD,
         AccelOp::Relu => HAL_FN_RELU,
+        AccelOp::Mul => HAL_FN_MUL,
     };
     // Nop pack writes function = 0; decode ignores it. Filled function must
     // still be the pack value so a shim cannot branch on function first.
