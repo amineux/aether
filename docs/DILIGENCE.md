@@ -15,7 +15,8 @@ closed M1–M4 calendar is [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md)
 landed; SoftGreenCtx landed; SoftCmdFirewall landed).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record
 (SoftSFI digest 4 landed). **What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027;
+**M5–M6 Done** — freeze-v1, diligence refresh, port skipped).
 Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 H2 2026 leftovers **landed**. Site-as-milestone stays killed.
 
@@ -29,6 +30,25 @@ software. No fake NVIDIA, no FLOP numbers, no tape-out.
 make diligence-demo
 # cargo alias: cargo diligence-demo
 ```
+
+**Demos we can still run** (host clips first; no QEMU rebuild).
+M5–M6 freeze-v1: research `IreeHalCmd` v1 stays. Magic `0xAE7E1EE1`,
+96-byte LE, `backend = 4`, executable `0x0001EE00`, TRANSFER
+reserved. Freeze proof: `make design-win-standin`. Port skipped
+(path B doorbell has not failed a partner ask).
+
+| Command | What they see |
+| --- | --- |
+| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast / firewall / greenctx 70/30 + interference |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] heap=refused` |
+| `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
+| `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
+| `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
+| `cargo run -p aether-accel-client` | doorbell; same 96-byte image. Not a Makefile target. |
+| `make accel-test` | path-A Soft-SMMU IOVA / wrong-SID (optional). Stock `make qemu` stays B. |
+| `cargo test -p aether-pjrt` | PJRT Add/Relu (`function` 2 / 3) as research ops on the frozen packet |
+
+Still not a partnership announcement. Still not a booked bring-up.
 
 The runner (`examples/diligence-demo`) calls the same host clips the
 kernel self-check uses, plus the PJRT/`IreeHalCmd` submit+wait and

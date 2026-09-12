@@ -909,9 +909,10 @@ below is leftover engineering, not a fifth digest.
    and [SELL_GOALS.md](SELL_GOALS.md)): sell/call pack live;
    SoftGreenCtx interference leave-behind **landed**; SoftCCT/Event
    fence-count polish **landed**; CapTable **skipped** (no shim-tenant
-   slot alias; gate still closed); opcode
-   v2 **or** freeze-v1 checkpoint; diligence refresh; **one** port
-   **only if** path B doorbell fails a partner ask. Thin MP-shaped
+   slot alias; gate still closed); M5–M6 **Done** — freeze-v1
+   (research `IreeHalCmd` v1 stays; no real partner table);
+   diligence pack refresh; port **skipped** (path B doorbell has not
+   failed a partner ask). Thin MP-shaped
    `IreeHalCmd` consumer is **landed** (PR #83; `host/aether-mp-shim`;
    inspiration name only). PJRT Add/Relu more ops are **landed**
    (PR #84; same frozen packet). SoftSFI toy ISA + SID-proved

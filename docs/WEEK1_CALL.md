@@ -186,7 +186,8 @@ Walk three pages, in this order:
    admits the TOML twin. TRANSFER-only is reserved / refused. SID
    budget is a software pool (`SID_BUDGET_PER_TENANT = 4`).
 
-Do not change packet offsets on the call.
+Do not change packet offsets on the call. M5–M6 freeze-v1: research
+`IreeHalCmd` v1 stays. Freeze proof: `make design-win-standin`.
 
 ---
 

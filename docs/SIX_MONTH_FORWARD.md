@@ -67,6 +67,7 @@ record in [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) or
 | **SoftGreenCtx interference clip (M3)** | Diligence `[greenctx] interference partitioned 70/30 vs unpartitioned` with integer `bw_milli` / `interference_milli`. Existing 70/30 needle stays. Not HW MIG, not FLOPs, not a BAR firewall |
 | **SoftCCT / Event fence counts (M4)** | Diligence `[softcct] package fences=` (1 vs 10) + `[event] fence counts chiplet-local vs package`. Host tests measure counts. Not latency, not Vulkan, not UCIe |
 | **CapTable (M3–M4 gate)** | **Skipped.** PJRT / MP shims do not mint World `CPtr` slots. No alias. No `SYS_REVOKE`. Gate still closed |
+| **freeze-v1 checkpoint (M5–M6)** | Research `IreeHalCmd` v1 stays. No real partner table in-tree. Do not invent a vendor. Port **skipped**. Diligence pack refreshed. Not tape-out |
 
 SoftNPU path-B opcodes stay Aether-native. `PartnerNpuStub`
 (`backend = 2`) stays a labeled no-op. Path B is canonical. Soft
@@ -79,12 +80,12 @@ tape-out.
 M0 now (Sep)     sell pack + call pack live; capture feedback; DESIGN_WIN from real tables
 M1–M2 (Oct–Nov)  Done — heap refuse #80, MP consumer #83, PJRT Add/Relu #84
 M3–M4 (Dec–Jan)  Done — GreenCtx interference clip + SoftCCT/Event fence counts; CapTable skipped (no alias)
-M5–M6 (Feb–Mar)  opcode v2 or ABI-freeze checkpoint; diligence refresh; one port iff path B doorbell fails
+M5–M6 (Feb–Mar)  Done — freeze-v1 (research IreeHalCmd v1 stays); diligence refresh; port skipped
 ```
 
 2028 handoff language does **not** move: a signed opcode list from a
-real partner CP, or freeze the research ABI. That decision is named
-at M5–M6 as a **checkpoint**, not as tape-out.
+real partner CP, or freeze the research ABI. M5–M6 **named** that
+fork (freeze-v1). It is not tape-out.
 
 ### M0 — now (Sep 2026)
 
@@ -172,27 +173,45 @@ CCT/Event host tests still measure fence **counts**; CapTable skipped
 
 ### M5–M6 — Feb–Mar 2027
 
-Decision checkpoint. Not a foundry date.
+**Done (this PR).** Decision checkpoint. Not a foundry date. Not
+tape-out. `PartnerNpuStub` stays a labeled no-op.
 
-1. **Partner opcode table v2 or ABI freeze checkpoint.** Either a
-   filled [DESIGN_WIN.md](DESIGN_WIN.md) from a real table forces a
-   dual-update v2, or we write down “research `IreeHalCmd` v1 stays.”
-   2028 handoff language is unchanged: signed opcode list **or**
-   freeze the research ABI. This month **names** that fork. It does
-   not tape out.
-2. **Diligence pack refresh** ([DILIGENCE.md](DILIGENCE.md) +
-   [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) + [SELL_GOALS.md](SELL_GOALS.md)).
-   Still not a partnership announcement. Still not a booked bring-up.
-3. **One port** — RISC-V virtio-mmio **or** aarch64 GIC SoftNPU IRQ —
-   **only if** the path B doorbell (PLIC UART-THRE on RISC-V;
-   CNTV/kthread drain on aarch64) fails a partner ask. Hard defer
-   otherwise. Do not schedule both. Neither port is a product-class
-   second kernel.
+**Fork named: research `IreeHalCmd` v1 stays.** There is no real
+partner opcode table in-tree. [DESIGN_WIN.md](DESIGN_WIN.md) is still
+a blank worksheet. The filled sample is the IREE HAL **research
+stand-in**
+([design-win/iree-hal-standin.md](design-win/iree-hal-standin.md)),
+explicitly not a partner. Path B doorbell (PLIC UART-THRE on RISC-V;
+CNTV/kthread drain on aarch64) has **not** failed a partner ask.
 
-**Done when:** the checkpoint is written (v2 dual-update **or**
-explicit freeze-v1); diligence pack matches the demos we can still
-run; the port is either skipped or one doorbell path that a partner
-actually asked for.
+Therefore:
+
+1. **freeze-v1 checkpoint.** Research `IreeHalCmd` v1 stays until a
+   real partner table forces a dual update of [ACCEL.md](ACCEL.md) +
+   `drivers/src/ireecp.rs` + host pack/unpack. Do **not** invent a
+   vendor table. Do **not** dual-update the packet to look busy.
+   Magic `0xAE7E1EE1`, 96-byte LE, `backend = 4`, executable
+   `0x0001EE00`, TRANSFER reserved — unchanged. Freeze proof:
+   `make design-win-standin` (`examples/design-win-check` re-packs
+   sentinels through `IreeHalCmd::to_le_bytes` and asserts ACCEL.md
+   offsets). 2028 H2 language does **not** move: signed opcode list
+   **or** freeze the research ABI. This month **names** the fork. It
+   does not tape out, does not claim a foundry date, does not retire
+   `PartnerNpuStub` as anything but a labeled no-op.
+2. **Diligence pack refresh.** [DILIGENCE.md](DILIGENCE.md) +
+   [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) +
+   [SELL_GOALS.md](SELL_GOALS.md) list the demos we can still run
+   (see those files). Still not a partnership announcement. Still
+   not a booked bring-up.
+3. **Port skipped.** RISC-V virtio-mmio / aarch64 GIC stay hard
+   deferred. Gate unchanged: only if path B doorbell fails a partner
+   ask. Do not schedule both. Neither is a product-class second
+   kernel.
+
+**Done when:** met. freeze-v1 written; diligence pack matches the
+demos we can still run; port skipped (no partner doorbell-fail ask).
+No new syscall. Path B / `make qemu` unchanged. `IreeHalCmd`
+offsets unchanged.
 
 ## Kill forever as calendar
 
@@ -236,9 +255,10 @@ Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 H2 2026 leftovers / Event / fabric-class / `ATOMIC_ADD` / SoftSFI
 heap refuse / path-A IOVA / the sell set / MP-shaped thin consumer
 (PR #83) / PJRT Add/Relu more ops (PR #84) / SoftGreenCtx interference
-clip / SoftCCT/Event fence-count polish. CapTable stays gated (no
-alias). Do not sequence against the SpecForge
-Y1H1–Y2H2 appendix.
+clip / SoftCCT/Event fence-count polish / M5–M6 freeze-v1
+checkpoint / diligence refresh. Port stays skipped (no doorbell-fail
+ask). CapTable stays gated (no alias). Do not sequence against the
+SpecForge Y1H1–Y2H2 appendix.
 
 [ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in M0–M6
 below remain **technical leftovers**, not calendar.
@@ -257,8 +277,10 @@ below remain **technical leftovers**, not calendar.
 4. M3–M4 — **landed:** SoftGreenCtx interference clip + SoftCCT/Event
    fence-count polish (PR #85). CapTable **skipped** (no shim-tenant
    slot alias; gate still closed). Do not re-schedule the clips.
-5. M5–M6: opcode v2 **or** freeze-v1 checkpoint; diligence refresh;
-   **one** port **only if** path B doorbell fails a partner ask
+5. M5–M6 — **landed (this PR):** freeze-v1 (research `IreeHalCmd` v1
+   stays until a real partner table forces a dual update); diligence
+   pack refresh; port **skipped** (path B doorbell has not failed a
+   partner ask). Do not invent a vendor table. Do not re-schedule.
 
 Site refreshes may land beside any of the above. They are not
 numbered.
@@ -273,9 +295,9 @@ numbered.
 | SoftGreenCtx leave-behind (**landed**, PR #85) | [DILIGENCE.md](DILIGENCE.md), `examples/diligence-demo/`; `[greenctx] interference partitioned 70/30 vs unpartitioned`. Host tests already in `core/src/greenctx.rs` |
 | SoftCCT / Event polish (**landed**, PR #85) | `core/src/chipsync.rs`, `host/aether-pjrt` `EventFenceCounts` / `cct_vs_broadcast`; `[softcct] package fences=` + `[event] fence counts`. [HOST.md](HOST.md) |
 | Per-task CapTable (**skipped**, no alias) | `core/src/caps.rs`, kernel World; gate still closed. `SYS_REVOKE` only with unbind/FLR demo |
-| Opcode v2 / freeze checkpoint | [ACCEL.md](ACCEL.md) **and** `drivers/src/ireecp.rs` **and** host pack/unpack **or** a written freeze-v1 note in this file |
-| Diligence refresh | [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
-| One port (if needed) | `kernel/src/arch/riscv64/` virtio-mmio **or** `kernel/src/arch/aarch64/` GIC IRQ — not both |
+| Opcode v2 / freeze checkpoint | **Done this PR (freeze-v1).** Written note in this file + [ACCEL.md](ACCEL.md) ADR pointer. Packet untouched. Dual ACCEL.md + `ireecp` + host pack/unpack only if a real partner table arrives |
+| Diligence refresh | **Done this PR.** [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
+| One port (if needed) | **Skipped.** No partner ask that path B doorbell failed. Gate stays. |
 
 Cross-cutting: this file, ROADMAP / TWO_YEAR_PLAN status pointers,
 [SELL_GOALS.md](SELL_GOALS.md). CI only if a new host-test target

@@ -771,7 +771,8 @@ Host tests: `admit_light_two_tenants_refuse_heavy`,
 
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
-**Status:** Accepted 2026-09-07.
+**Status:** Accepted 2026-09-07. **M5–M6 freeze-v1 (this PR):**
+research `IreeHalCmd` v1 stays. Offsets frozen.
 
 **Context.** Falsifier-revised spine item: land a partner-shaped
 `AccelDevice` whose frozen command packet uses a **concrete public ISA
@@ -861,6 +862,16 @@ offset/width is a dual `ireecp.rs` + this ADR + host pack/unpack test
 update. PJRT shim (#41), the doorbell client (`examples/accel-client`),
 and the MP-shaped sketch (`host/aether-mp-shim`) consume this image;
 none may fork the layout.
+
+**M5–M6 freeze-v1.** Research `IreeHalCmd` v1 stays until a real
+partner table forces that dual update. Magic `0xAE7E1EE1`, 96-byte
+LE, `backend = 4`, executable `0x0001EE00`, TRANSFER reserved —
+unchanged. Freeze proof: `make design-win-standin`
+(`examples/design-win-check` re-packs sentinels through
+`IreeHalCmd::to_le_bytes` and asserts these offsets). 2028 H2
+language does not move (signed opcode list **or** freeze the
+research ABI). This names the fork; it does not tape out. See
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
 
 ```text
 offset  type   field                 IREE HAL noun

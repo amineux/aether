@@ -25,9 +25,11 @@ Public vocabulary is cited from IREE HAL headers on
 and from OpenXLA PJRT. Aether does not claim those projects.
 
 **Do not change frozen `IreeHalCmd` offsets.** The v1 image is the
-architectural contract ([ACCEL.md](ACCEL.md) ADR). A dual update of
-`drivers/src/ireecp.rs` + that ADR + host pack/unpack is required to
-move a field; this worksheet never relocates one.
+architectural contract ([ACCEL.md](ACCEL.md) ADR). **M5–M6
+freeze-v1:** research `IreeHalCmd` v1 stays until a real partner
+table forces a dual update of `drivers/src/ireecp.rs` + that ADR +
+host pack/unpack. This worksheet never relocates one. Freeze proof:
+`make design-win-standin`. See [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
 
 How to check a filled copy:
 
