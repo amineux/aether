@@ -43,9 +43,11 @@ product kernel.
 
 ## Month 5–6 (this cut): Portability & partners
 
-**What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
-Partner-facing demos: [SELL_GOALS.md](SELL_GOALS.md). Horizon:
+**Next-12-month industry calendar:**
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed). Partner-facing demos:
+[SELL_GOALS.md](SELL_GOALS.md). Horizon:
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028).
 [MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record.
 SoftGreenCtx (**landed**). SoftCmdFirewall (**landed**). SoftCCT
@@ -832,9 +834,11 @@ kernel thread queue sleeps.
 
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed Falsifier
 M1–M4 calendar after Year-1 + hardening (through PR #37) and the M1
-opcode device (PR #38). **What to sequence next:**
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
-Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Closed Month 5
+opcode device (PR #38). **Next-12-month industry calendar:**
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Closed Month 5
 record: [MONTH5_PLAN.md](MONTH5_PLAN.md). Partner demos:
 [SELL_GOALS.md](SELL_GOALS.md).
 
@@ -894,8 +898,10 @@ record: [MONTH5_PLAN.md](MONTH5_PLAN.md). Partner demos:
 
 ## Suggested next cuts (technical, not calendar)
 
-The near-term Kernel **calendar** is
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027).
+The next-12-month industry **calendar** is
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the **closed**
+Sep 2026 → Mar 2027 record (M0–M6 landed).
 Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) (Sep 2026 → Sep 2028;
 M1–M4 + SoftChipletSync + SoftCCT closed in
 [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md); SoftGreenCtx, SoftCmdFirewall,
@@ -905,8 +911,10 @@ H2 2026 leftovers **landed** (SoftNoI #60, PASID #62, OperatorInject
 heap refuse #80, path-A IOVA #78, sell set #65–#72 / #77). The list
 below is leftover engineering, not a fifth digest.
 
-1. **Forward M0–M6** (see [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-   and [SELL_GOALS.md](SELL_GOALS.md)): sell/call pack live;
+1. **Forward M0–M6** (**landed** — closed record in
+   [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md); next twelve months
+   in [YEAR_AHEAD.md](YEAR_AHEAD.md) and [SELL_GOALS.md](SELL_GOALS.md)):
+   sell/call pack live;
    SoftGreenCtx interference leave-behind **landed**; SoftCCT/Event
    fence-count polish **landed**; CapTable **skipped** (no shim-tenant
    slot alias; gate still closed); M5–M6 **Done** — freeze-v1
@@ -959,10 +967,12 @@ below is leftover engineering, not a fifth digest.
 
 ## Two-year plan
 
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the near-term
-calendar (Sep 2026 → Mar 2027). [SELL_GOALS.md](SELL_GOALS.md) is
-the partner demo list. [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the
-horizon (Sep 2026 → Sep 2028). [YEAR2_PLAN.md](YEAR2_PLAN.md) holds
+[YEAR_AHEAD.md](YEAR_AHEAD.md) is the next-12-month industry
+calendar (Sep 2026 → Sep 2027). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the **closed** Sep 2026 → Mar 2027 record (M0–M6 landed).
+[SELL_GOALS.md](SELL_GOALS.md) is the partner demo list.
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) is the horizon (Sep 2026 → Sep 2028).
+[YEAR2_PLAN.md](YEAR2_PLAN.md) holds
 both historical tracks (2026-09-06). The Falsifier ACTIVE track
 through PR #37 is **complete as research slices**; do not sequence
 new work against it. Closed M1–M4 calendar:
@@ -1024,6 +1034,7 @@ pitch. Lead with the working QEMU slice (Year-1 + hardening landed),
 not a v0.1 prototype disclaimer. HAL-path and roadmap copy should
 match the landed Year-1 track, [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md),
 [MONTH5_PLAN.md](MONTH5_PLAN.md),
+[YEAR_AHEAD.md](YEAR_AHEAD.md),
 [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md),
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md), [SELL_GOALS.md](SELL_GOALS.md),
 and [DILIGENCE.md](DILIGENCE.md)

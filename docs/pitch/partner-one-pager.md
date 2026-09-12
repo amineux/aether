@@ -9,8 +9,10 @@ radius), not FLOPs. Research prototype. Clone and run.
 research ABI. Not tape-out. Not a foundry date.
 
 Full leave-behind: [SELL_PACK.md](../SELL_PACK.md). Week 1 call:
-[WEEK1_CALL.md](../WEEK1_CALL.md). Site:
-[https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell).
+[WEEK1_CALL.md](../WEEK1_CALL.md). Next year:
+[YEAR_AHEAD.md](../YEAR_AHEAD.md). Site:
+[https://amineux.github.io/aether/#sell](https://amineux.github.io/aether/#sell)
+· [https://amineux.github.io/aether/#roadmap](https://amineux.github.io/aether/#roadmap).
 
 ---
 
@@ -18,7 +20,7 @@ Full leave-behind: [SELL_PACK.md](../SELL_PACK.md). Week 1 call:
 
 | Surface | Honest reading |
 | --- | --- |
-| Frozen `IreeHalCmd` | 96-byte LE, magic `0xAE7E1EE1`, `backend = 4`. Research opcodes. Not a signed vendor. |
+| Frozen `IreeHalCmd` | 96-byte LE, magic `0xAE7E1EE1`, `backend = 4`. **freeze-v1** (research v1 stays). Not a signed vendor. |
 | PJRT-shaped host nouns | Device / MemorySpace / Buffer / Executable / Event. Event create/record/wait on existing SoftChipletSync fences. Not `GetPjRtApi`. |
 | Soft SMMU SID | STE→CD→Stage-1/2 software walk. SET_SID at submit. A real device can DMA past it. |
 | Blast-radius refuse | Two tenants. CrossCut + wrong-SID abort. |
@@ -48,13 +50,16 @@ Doorbell (not a Makefile target): `cargo run -p aether-accel-client`.
 
 ---
 
-## Six-month sell (Sep 2026 → Mar 2027)
+## Next year (Sep 2026 → Sep 2027)
+
+M0–M6 **landed**. Sell the demos. Wait for a real opcode table.
+2028 (handoff or freeze) is the horizon, not this year’s climax.
+Spine: [YEAR_AHEAD.md](../YEAR_AHEAD.md).
 
 1. Every first meeting runs the host clips. No QEMU required.
 2. Collect a filled [DESIGN_WIN.md](../DESIGN_WIN.md) — or a written no.
 3. Leave the frozen packet. Path-A IOVA is optional (`make accel-test`).
-4. Hold 2028: handoff or freeze. M5–M6 freeze-v1 named (research
-   `IreeHalCmd` v1 stays). Hardware SMMU is partner silicon.
+4. Hold 2028: signed list or ABI freeze. Hardware SMMU is partner silicon.
 
 ---
 

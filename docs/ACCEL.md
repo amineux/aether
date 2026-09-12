@@ -871,7 +871,8 @@ unchanged. Freeze proof: `make design-win-standin`
 `IreeHalCmd::to_le_bytes` and asserts these offsets). 2028 H2
 language does not move (signed opcode list **or** freeze the
 research ABI). This names the fork; it does not tape out. See
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+[YEAR_AHEAD.md](YEAR_AHEAD.md) and
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (closed M5–M6 record).
 
 ```text
 offset  type   field                 IREE HAL noun

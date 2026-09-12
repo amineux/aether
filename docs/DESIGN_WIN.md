@@ -29,7 +29,8 @@ architectural contract ([ACCEL.md](ACCEL.md) ADR). **M5–M6
 freeze-v1:** research `IreeHalCmd` v1 stays until a real partner
 table forces a dual update of `drivers/src/ireecp.rs` + that ADR +
 host pack/unpack. This worksheet never relocates one. Freeze proof:
-`make design-win-standin`. See [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+`make design-win-standin`. See [YEAR_AHEAD.md](YEAR_AHEAD.md) and
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (closed M5–M6 record).
 
 How to check a filled copy:
 

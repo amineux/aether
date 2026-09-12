@@ -6,14 +6,16 @@ and Month 5 digests 1–4 landed on main. Status pointer refreshed
 2026-09-10: H2 2026 leftovers **landed**.
 
 **This is the Kernel horizon** for Sep 2026 → Sep 2028.
-**What to sequence next:** [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-(Sep 2026 → Mar 2027). Partner-facing demos:
-[SELL_GOALS.md](SELL_GOALS.md). [MONTH5_PLAN.md](MONTH5_PLAN.md) is
-the closed Month 5 record (four digests landed).
-[SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed M1–M4 record.
-[YEAR2_PLAN.md](YEAR2_PLAN.md) stays the 2026-09-06 Falsifier ACTIVE
-track (done through PR #37) plus the SpecForge appendix (aspirational
-only). Do not sequence new work against those closed files.
+**Next-12-month industry calendar:** [YEAR_AHEAD.md](YEAR_AHEAD.md)
+(Sep 2026 → Sep 2027). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+is the **closed** Sep 2026 → Mar 2027 record (M0–M6 landed).
+Partner-facing demos: [SELL_GOALS.md](SELL_GOALS.md).
+[MONTH5_PLAN.md](MONTH5_PLAN.md) is the closed Month 5 record (four
+digests landed). [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) is the closed
+M1–M4 record. [YEAR2_PLAN.md](YEAR2_PLAN.md) stays the 2026-09-06
+Falsifier ACTIVE track (done through PR #37) plus the SpecForge
+appendix (aspirational only). Do not sequence new work against those
+closed files.
 
 Research prototype. Path B is canonical. Soft SMMU is software.
 Frozen `IreeHalCmd`. No fake NVIDIA partnership, no FLOP benchmarks,
@@ -80,8 +82,9 @@ OperatorInject #61, Event #74, fabric-class #75, SoftSFI
 set #65–#72 / #77). Thin MP-shaped consumer **landed** (PR #83).
 PJRT Add/Relu more ops **landed** (PR #84).
 M5–M6 freeze-v1 **landed** (research `IreeHalCmd` v1 stays; port
-skipped). Do not re-schedule them. Near-term sequencing is
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md).
+skipped). Do not re-schedule them. Next-12-month industry sequencing
+is [YEAR_AHEAD.md](YEAR_AHEAD.md). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
+stays the closed Sep 2026 → Mar 2027 record.
 
 ## H2 2026 (closed) — partner-HAL leftovers **landed**
 
@@ -175,9 +178,10 @@ OK as leave-behinds. **Not** milestones. PR #37 / #46 / #50 / #52
 
 ## 2027 H1 — deepen isolation + compiler contract
 
-Near-term sequencing for Sep 2026 → Mar 2027 lives in
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md). Do not open a new ISA.
-Do not port the kernel.
+Sep 2026 → Mar 2027 M0–M6 **landed** in
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (closed record). The
+next-12-month industry calendar is [YEAR_AHEAD.md](YEAR_AHEAD.md).
+Do not open a new ISA. Do not port the kernel.
 
 - **PJRT Event timeline polish** (**landed**, PR #74)
   (`host/aether-pjrt` Event create / record / wait on the existing
@@ -311,10 +315,11 @@ site-as-milestone.
 | [YEAR2_PLAN.md](YEAR2_PLAN.md) | Historical Falsifier ACTIVE track through PR #37 + SpecForge appendix (aspirational) |
 | [SIX_MONTH_PLAN.md](SIX_MONTH_PLAN.md) | Closed M1–M4 + SoftChipletSync record |
 | [MONTH5_PLAN.md](MONTH5_PLAN.md) | Closed Month 5 record (SoftGreenCtx / SoftCmdFirewall / SoftCCT / SoftSFI) |
-| [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) | **Near-term calendar** Sep 2026 → Mar 2027 |
+| [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) | **Closed** Sep 2026 → Mar 2027 record (M0–M6 landed) |
+| [YEAR_AHEAD.md](YEAR_AHEAD.md) | **Next-12-month industry calendar** Sep 2026 → Sep 2027 |
 | [SELL_GOALS.md](SELL_GOALS.md) | Partner-facing demos / ask / non-claims for this quarter |
 | **This file** | Kernel horizon Sep 2026 → Sep 2028. H2 2026 leftovers **landed** |
-| [ROADMAP.md](ROADMAP.md) | Landed status, stubs, technical leftovers. Points at SIX_MONTH_FORWARD for what to sequence next |
+| [ROADMAP.md](ROADMAP.md) | Landed status, stubs, technical leftovers. Points at YEAR_AHEAD for the next twelve months |
 
 Do not re-schedule Soft SMMU / Soft-CP / SMP / PML4 / `IreeShapedCp`
 / XQueue / SID-at-submit / SoftChipletSync / Month 5 digests 1–4 /
@@ -323,8 +328,9 @@ doorbell-fail ask). Do not sequence against the SpecForge
 Y1H1–Y2H2 appendix.
 
 [ROADMAP.md](ROADMAP.md) suggested-next-cuts that are not in
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) M0–M6 or a later
-half-year below remain **technical leftovers**, not calendar.
+[YEAR_AHEAD.md](YEAR_AHEAD.md) or a later half-year below remain
+**technical leftovers**, not calendar. SIX_MONTH_FORWARD M0–M6
+stay closed.
 
 ## Kernel PR order (this horizon)
 
@@ -338,9 +344,10 @@ half-year below remain **technical leftovers**, not calendar.
    #77)
 3. Thin MP-shaped `IreeHalCmd` consumer — **landed** (PR #83;
    `host/aether-mp-shim`). PJRT Add/Relu more ops — **landed**
-   (PR #84). Near-term remainder (Sep 2026 → Mar 2027) is
-   [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) +
-   [SELL_GOALS.md](SELL_GOALS.md)
+   (PR #84). Next-12-month industry remainder is
+   [YEAR_AHEAD.md](YEAR_AHEAD.md) + [SELL_GOALS.md](SELL_GOALS.md).
+   [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the closed
+   Sep 2026 → Mar 2027 record
 4. 2027 H1 leftovers not pulled forward: gated `SYS_REVOKE` with
    unbind/FLR demo; blast-radius clips as needed
 5. 2027 H2 remainder: M5–M6 **landed** (freeze-v1; diligence
@@ -372,7 +379,8 @@ numbered.
 | One port (if needed) | **Skipped at M5–M6.** Gate stays: only if path B doorbell fails a partner ask |
 | Diligence refresh | **Landed at M5–M6.** [DILIGENCE.md](DILIGENCE.md), [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md), [SELL_GOALS.md](SELL_GOALS.md) |
 
-Cross-cutting: this file, [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md),
+Cross-cutting: this file, [YEAR_AHEAD.md](YEAR_AHEAD.md),
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (closed record),
 [SELL_GOALS.md](SELL_GOALS.md), ROADMAP / SIX_MONTH_PLAN / YEAR2_PLAN
 status pointers. CI only if a new host-test target appears. ABI
 0–11 frozen. Path B canonical.

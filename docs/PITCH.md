@@ -16,9 +16,11 @@ leave-behind: [SELL_PACK.md](SELL_PACK.md) (printable:
 [pitch/partner-one-pager.md](pitch/partner-one-pager.md); site
 `#sell`). Diligence pack: [DILIGENCE.md](DILIGENCE.md). Call
 worksheet: [DESIGN_WIN.md](DESIGN_WIN.md). Week 1 20-minute pack:
-[WEEK1_CALL.md](WEEK1_CALL.md). Calendar:
-[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) (Sep 2026 → Mar 2027);
-horizon [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
+[WEEK1_CALL.md](WEEK1_CALL.md). Next-twelve-month calendar:
+[YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027; site
+`#roadmap`). [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the
+closed Sep 2026 → Mar 2027 record. Horizon:
+[TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md). Serial lines you can point at:
 [pitch/transcript.txt](pitch/transcript.txt) (copied from in-tree
 prints / golden greps). Captured host runs:
 [pitch/diligence-demo.log](pitch/diligence-demo.log),
@@ -267,17 +269,19 @@ non-claims and stop. Do not paper over it.
 
 ## 6:30–8:00 — Two-year close
 
-**Calendar:** [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md)
-(Sep 2026 → Mar 2027). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
+**Calendar:** [YEAR_AHEAD.md](YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) is the closed Sep 2026 →
+Mar 2027 record (M0–M6 landed). Horizon: [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md)
 (Sep 2026 → Sep 2028). Sell demos: [SELL_GOALS.md](SELL_GOALS.md).
+Site: `#sell` · `#roadmap`.
 
 **Say:**
 
-> 2027 deepens what already shipped: PJRT `Add` / `Relu` on the frozen
-> packet (PR #84), SoftSFI widen with honest leftovers (`atomic_add`
-> SID-proved; tensor `Unmodeled`; heap named refuse, PR #80), a
-> MicroPerceptron-shaped thin consumer of the **frozen** packet
-> (PR #83). M5–M6 named freeze-v1: research `IreeHalCmd` v1 stays
+> Next twelve months are [YEAR_AHEAD.md](YEAR_AHEAD.md): sell the
+> demos we can run. M0–M6 already landed — PJRT `Add` / `Relu` (PR
+> #84), SoftSFI heap named refuse (PR #80), a MicroPerceptron-shaped
+> thin consumer (PR #83), GreenCtx interference and SoftCCT/Event
+> counts (PR #85), freeze-v1 (PR #86). Research `IreeHalCmd` v1 stays
 > until a real partner table forces a dual update of ACCEL.md,
 > `ireecp`, and host pack/unpack. Port skipped. Hardware SMMU is not
 > a software milestone.
@@ -321,7 +325,8 @@ is [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 | Compiler boundary | [HOST.md](HOST.md), [ABI.md](ABI.md) |
 | Isolation invariants | [SECURITY.md](SECURITY.md), [BLAST.md](BLAST.md) |
 | What is stubbed | [DILIGENCE.md](DILIGENCE.md), [ROADMAP.md](ROADMAP.md) |
-| Next six months | [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) / [SELL_GOALS.md](SELL_GOALS.md) |
+| Next twelve months | [YEAR_AHEAD.md](YEAR_AHEAD.md) / [SELL_GOALS.md](SELL_GOALS.md) · site `#roadmap` |
+| Closed Sep → Mar record | [SIX_MONTH_FORWARD.md](SIX_MONTH_FORWARD.md) |
 | Next two years | [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) |
 | 60–90 min silicon agenda | [DEEP_DIVE_AGENDA.md](DEEP_DIVE_AGENDA.md) |
 | Partner landing page | [PARTNER.md](PARTNER.md) / `make partner-hello` |

@@ -7,7 +7,9 @@ GitHub Actions to Pages (kernel `docs/` are untouched).
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
 **Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
-Site: [`#sell`](https://amineux.github.io/aether/#sell).
+Site: [`#sell`](https://amineux.github.io/aether/#sell) ·
+[`#roadmap`](https://amineux.github.io/aether/#roadmap).
+Next year: [`docs/YEAR_AHEAD.md`](docs/YEAR_AHEAD.md).
 
 **An accelerator-first fabric kernel** — a research prototype for how operating
 systems should look when the package is a mesh of CPU, NPU, GPU, and custom
@@ -337,9 +339,11 @@ not NVVM; tensor `Unmodeled`; heap/alloc is a named `Unmodeled` refuse,
 not a bump allocator; `atomic_add` is a sequential toy RMW, not a
 hardware atomic). Optional Soft SMMU kit is PR #48 (software tables). Path-A
 guest bind stays gated. Closed Month 5 record:
-[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). **What to sequence next:**
-[docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) (Sep 2026 →
-Mar 2027). Horizon: [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
+[docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md). **Next-12-month industry calendar:**
+[docs/YEAR_AHEAD.md](docs/YEAR_AHEAD.md) (Sep 2026 → Sep 2027).
+[docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) is the closed
+Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
+[docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
 (Sep 2026 → Sep 2028). Partner demos:
 [docs/SELL_GOALS.md](docs/SELL_GOALS.md). One-page leave-behind:
 [docs/SELL_PACK.md](docs/SELL_PACK.md). H2 2026 leftovers **landed**.
@@ -369,7 +373,8 @@ Mar 2027). Horizon: [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md)
 - [docs/ROADMAP.md](docs/ROADMAP.md) — landed status, stubs, technical leftovers
 - [docs/SIX_MONTH_PLAN.md](docs/SIX_MONTH_PLAN.md) — closed M1–M4 calendar
 - [docs/MONTH5_PLAN.md](docs/MONTH5_PLAN.md) — closed Month 5 record (four digests landed)
-- [docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) — near-term calendar Sep 2026 → Mar 2027
+- [docs/YEAR_AHEAD.md](docs/YEAR_AHEAD.md) — next-12-month industry calendar Sep 2026 → Sep 2027
+- [docs/SIX_MONTH_FORWARD.md](docs/SIX_MONTH_FORWARD.md) — closed Sep 2026 → Mar 2027 record (M0–M6 landed)
 - [docs/SELL_GOALS.md](docs/SELL_GOALS.md) — partner-facing demos / ask / non-claims
 - [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) — Kernel horizon Sep 2026 → Sep 2028
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
@@ -383,6 +388,7 @@ deploys from `.github/workflows/pages.yml` on pushes to `main` that touch
 GitHub Actions** if it is not already on. The live URL is
 [https://amineux.github.io/aether/](https://amineux.github.io/aether/)
 (sell / design-win: [`#sell`](https://amineux.github.io/aether/#sell);
+roadmap: [`#roadmap`](https://amineux.github.io/aether/#roadmap);
 8-minute script: [`#pitch`](https://amineux.github.io/aether/#pitch)).
 
 Open `site/index.html` locally, or `python3 -m http.server -d site`, to
