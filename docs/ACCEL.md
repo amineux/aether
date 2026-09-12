@@ -43,10 +43,12 @@ SoftNPU `AccelOp` (path B):
 | `Wave` | matmul + optional bias (stand-in for a fused wave) |
 | `Add` | elementwise `C = A + B` (m×n; `k` unused / typically 1) |
 | `Relu` | elementwise `C = max(A, 0)` (m×n; `B` unused) |
+| `Mul` | elementwise `C = A * B` (m×n; `k` unused / typically 1) |
 
-`Add` / `Relu` are additive research opcodes. They pack into the same
+`Add` / `Relu` / `Mul` are additive research opcodes. They pack into the same
 `IreeHalCmd` / `CpCmd` / `AccelJobDesc` — not a second IR. Frozen
-`IreeHalCmd` offsets are unchanged.
+`IreeHalCmd` offsets are unchanged. Not a vendor opcode ROM, not a FLOPs
+claim, not freeze-v2.
 
 `DType` values (additive; `I32 = 0` unchanged):
 
@@ -276,8 +278,9 @@ cover refuse (foreign bank / foreign tenant) and transfer-then-admit.
 - F16 / F32 use integer-only software IEEE (`core/src/softfloat.rs`);
   subnormals flush to zero. Not libm, not a vendor FLOP claim.
 - `Wave` adds an optional bias vector (same dtype as the job)
-- `Add` / `Relu` are elementwise on the same dtype (I32 overflow →
-  `Overflow`; F16/F32 relu flushes a negative sign bit to +0)
+- `Add` / `Relu` / `Mul` are elementwise on the same dtype (I32 overflow →
+  `Overflow`; F16/F32 relu flushes a negative sign bit to +0; Mul uses
+  software IEEE mul / FTZ — not a vendor FLOP)
 - A DMA view without `load_u16` refuses F16 (`UnsupportedDType`)
 
 It is a **model of a matmul/wave/elementwise engine**, not a product NPU.
@@ -316,7 +319,7 @@ opcode/packet ADR below.
 ```text
 offset  type   field
 0x00    u32    magic        0xAE7E0C01
-0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2, Add=3, Relu=4)
+0x04    u8     opcode       AccelOp (Nop=0, MatMul=1, Wave=2, Add=3, Relu=4, Mul=5)
 0x05    u8     dtype        DType (I32=0, F16=1, F32=2)
 0x06    u8     space        MemorySpace
 0x07    u8     phase        Phase (Compute=0, Exchange=1, Barrier=2)
@@ -580,7 +583,7 @@ escapes the SID window (`Oob`).
 
 **Honest remaining holes (named `SfiError::Unmodeled`, not “safe”):**
 
-- Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` /
+- Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` / `Mul` /
   TMA-shaped ops are **refused**, not modeled.
 - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
   allocator and not a sandbox. Prefer refuse over fake safety.
@@ -814,6 +817,7 @@ does **not** parse IREE VM bytecode):
 | `op = Wave` | `DISPATCH`, `function = 1` (fused export) |
 | `op = Add` | `DISPATCH`, `function = 2` (elementwise add) |
 | `op = Relu` | `DISPATCH`, `function = 3` (elementwise relu) |
+| `op = Mul` | `DISPATCH`, `function = 4` (elementwise mul) |
 | `dtype` I32 / F16 / F32 | `IREE_HAL_ELEMENT_TYPE_{INT_32,FLOAT_16,FLOAT_32}` = `0x10000020` / `0x21000010` / `0x21000020` |
 | `m,n,k` | `workgroup_count_x/y/z` (shape stand-in) |
 | `a,b,c,bias` after Soft SMMU | `binding[0..3].offset` = IOVA; `.length` = `job.bytes_*()` byte spans (dtype-aware), not element counts |
@@ -837,15 +841,15 @@ other `isa_blob_id` values must be refused (the kernel does not parse IREE VM
 bytecode).
 
 `command_categories` and `function` are **not** `AccelOp` (`MatMul = 1`,
-`Wave = 2`, `Add = 3`, `Relu = 4`). Soft-CP's `CpCmd.opcode` still is.
+`Wave = 2`, `Add = 3`, `Relu = 4`, `Mul = 5`). Soft-CP's `CpCmd.opcode` still is.
 That is the point of this backend. Unknown DISPATCH `function` is
 Unsupported (not a silent MatMul).
 
 v1 decode keys off the **DISPATCH** bit first. `categories = 0` is Nop
-and **ignores** `function` (pack writes 0). DISPATCH `function` 0/1/2/3
-is MatMul / Wave / Add / Relu; any other export is Unsupported. v1 pack
+and **ignores** `function` (pack writes 0). DISPATCH `function` 0/1/2/3/4
+is MatMul / Wave / Add / Relu / Mul; any other export is Unsupported. v1 pack
 emits **0 or DISPATCH only**; `TRANSFER` alone is `HalError::Fault` /
-not defined.
+not defined. Mul is additive on the frozen 96-byte image — not freeze-v2.
 `workgroup_count_*` are AccelJobDesc `m,n,k` shape stand-ins — not
 compiler tile sizes or IREE launch geometry. Binding `.length` fields
 are dtype-aware **byte spans**, not element counts. The only accepted

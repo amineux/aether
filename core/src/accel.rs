@@ -2,7 +2,7 @@
 //!
 //! The descriptor is the contract silicon partners implement. SoftNpu is the
 //! reference model: I32 matmul, a "wave" that is a batched matmul plus a
-//! bias add, elementwise `Add` / `Relu`, plus software IEEE-754 F16/F32 of
+//! bias add, elementwise `Add` / `Relu` / `Mul`, plus software IEEE-754 F16/F32 of
 //! the same ops. Enough to show ownership + completion, not a BLAS and not
 //! a tensor ISA.
 //!
@@ -25,6 +25,8 @@ pub enum AccelOp {
     Add = 3,
     /// Elementwise `C = max(A, 0)` (m×n; `k` unused / typically 1). `B` unused.
     Relu = 4,
+    /// Elementwise `C = A * B` (m×n; `k` unused / typically 1).
+    Mul = 5,
 }
 
 impl AccelOp {
@@ -35,13 +37,14 @@ impl AccelOp {
             2 => Some(Self::Wave),
             3 => Some(Self::Add),
             4 => Some(Self::Relu),
+            5 => Some(Self::Mul),
             _ => None,
         }
     }
 
-    /// `Add` / `Relu` use m×n spans on A/B/C. Not a second IR.
+    /// `Add` / `Relu` / `Mul` use m×n spans on A/B/C. Not a second IR.
     pub const fn is_elementwise(self) -> bool {
-        matches!(self, Self::Add | Self::Relu)
+        matches!(self, Self::Add | Self::Relu | Self::Mul)
     }
 }
 
@@ -211,6 +214,13 @@ impl AccelJobDesc {
         j
     }
 
+    /// Elementwise `C = A * B`. `k` is a workgroup stand-in (typically 1).
+    pub fn mul_i32(m: u32, n: u32, a: PhysAddr, b: PhysAddr, c: PhysAddr, tenant: u32) -> Self {
+        let mut j = Self::add_i32(m, n, a, b, c, tenant);
+        j.op = AccelOp::Mul;
+        j
+    }
+
     pub fn elem_bytes(&self) -> u64 {
         self.dtype.size_bytes() as u64
     }
@@ -343,7 +353,7 @@ impl SoftNpu {
                 DType::F32 => self.matmul_f32(job, mem, job.op == AccelOp::Wave)?,
                 DType::F16 => self.matmul_f16(job, mem, job.op == AccelOp::Wave)?,
             },
-            AccelOp::Add | AccelOp::Relu => match job.dtype {
+            AccelOp::Add | AccelOp::Relu | AccelOp::Mul => match job.dtype {
                 DType::I32 => self.elementwise_i32(job, mem)?,
                 DType::F32 => self.elementwise_f32(job, mem)?,
                 DType::F16 => self.elementwise_f16(job, mem)?,
@@ -489,6 +499,11 @@ impl SoftNpu {
                         av.checked_add(mem.load_i32(b_addr)?)
                             .ok_or(AccelError::Overflow)?
                     }
+                    AccelOp::Mul => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        av.checked_mul(mem.load_i32(b_addr)?)
+                            .ok_or(AccelError::Overflow)?
+                    }
                     AccelOp::Relu => av.max(0),
                     _ => return Err(AccelError::BadOp),
                 };
@@ -514,6 +529,10 @@ impl SoftNpu {
                     AccelOp::Add => {
                         let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
                         add_f32(av, mem.load_i32(b_addr)? as u32)
+                    }
+                    AccelOp::Mul => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        mul_f32(av, mem.load_i32(b_addr)? as u32)
                     }
                     // Sign bit → +0. Research FTZ; not a vendor FLOP.
                     AccelOp::Relu => {
@@ -547,6 +566,10 @@ impl SoftNpu {
                     AccelOp::Add => {
                         let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
                         add_f16(av, mem.load_u16(b_addr)?)
+                    }
+                    AccelOp::Mul => {
+                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        mul_f16(av, mem.load_u16(b_addr)?)
                     }
                     AccelOp::Relu => {
                         if av & 0x8000 != 0 {
@@ -863,11 +886,14 @@ mod tests {
         assert_eq!(AccelOp::Wave as u32, 2);
         assert_eq!(AccelOp::Add as u32, 3);
         assert_eq!(AccelOp::Relu as u32, 4);
+        assert_eq!(AccelOp::Mul as u32, 5);
         assert_eq!(AccelOp::from_u32(3), Some(AccelOp::Add));
         assert_eq!(AccelOp::from_u32(4), Some(AccelOp::Relu));
-        assert_eq!(AccelOp::from_u32(5), None);
+        assert_eq!(AccelOp::from_u32(5), Some(AccelOp::Mul));
+        assert_eq!(AccelOp::from_u32(6), None);
         assert!(AccelOp::Add.is_elementwise());
         assert!(AccelOp::Relu.is_elementwise());
+        assert!(AccelOp::Mul.is_elementwise());
         assert!(!AccelOp::MatMul.is_elementwise());
     }
 
@@ -917,5 +943,76 @@ mod tests {
             out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [0, 2, 0, 4]);
+    }
+
+    #[test]
+    fn softnpu_mul_via_dma() {
+        let mut buf = [0u8; 256];
+        let a = [2i32, 3, 4, 5];
+        let b = [6i32, 7, 8, 9];
+        for (i, v) in a.iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in b.iter().enumerate() {
+            buf[16 + i * 4..16 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut buf,
+        };
+        let job = AccelJobDesc::mul_i32(2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        SoftNpu::new().execute(&job, &mut mem).unwrap();
+        let mut out = [0i32; 4];
+        for i in 0..4 {
+            let off = 32 + i * 4;
+            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+        }
+        assert_eq!(out, [12, 21, 32, 45]);
+    }
+
+    #[test]
+    fn softnpu_mul_i32_overflow() {
+        let mut buf = [0u8; 64];
+        for (i, v) in [i32::MAX, 2].iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [2i32, 3].iter().enumerate() {
+            buf[8 + i * 4..8 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut buf,
+        };
+        let job = AccelJobDesc::mul_i32(1, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+        assert_eq!(
+            SoftNpu::new().execute(&job, &mut mem).unwrap_err(),
+            AccelError::Overflow
+        );
+    }
+
+    #[test]
+    fn softnpu_mul_f32_ftz() {
+        // 2.0 * 3.0 = 6.0; (-0.0) * 4.0 → +0 under FTZ mul (sign of product
+        // with zero is research soft-float — check bit pattern of mul_f32).
+        let mut buf = [0u8; 64];
+        let a = [0x4000_0000u32, 0x8000_0000u32]; // 2.0, -0.0
+        let b = [0x4040_0000u32, 0x4080_0000u32]; // 3.0, 4.0
+        for (i, v) in a.iter().enumerate() {
+            buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in b.iter().enumerate() {
+            buf[8 + i * 4..8 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut buf,
+        };
+        let mut job = AccelJobDesc::mul_i32(1, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+        job.dtype = DType::F32;
+        SoftNpu::new().execute(&job, &mut mem).unwrap();
+        let c0 = u32::from_le_bytes(buf[16..20].try_into().unwrap());
+        let c1 = u32::from_le_bytes(buf[20..24].try_into().unwrap());
+        assert_eq!(c0, 0x40c0_0000); // 6.0
+        assert_eq!(c1, mul_f32(0x8000_0000, 0x4080_0000));
     }
 }

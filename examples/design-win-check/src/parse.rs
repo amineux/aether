@@ -203,11 +203,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sample_toml_has_five_opcodes() {
+    fn sample_toml_has_six_opcodes() {
         let w = parse_worksheet(include_str!("../sample.toml")).unwrap();
-        assert_eq!(w.opcodes.len(), 5);
+        assert_eq!(w.opcodes.len(), 6);
         assert_eq!(w.opcodes[1].their_name, "gemm");
         assert_eq!(w.opcodes[3].accel_op, "Add");
         assert_eq!(w.opcodes[4].accel_op, "Relu");
+        assert_eq!(w.opcodes[5].accel_op, "Mul");
     }
 }

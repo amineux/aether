@@ -52,11 +52,12 @@ pub const IREE_HAL_COMMAND_CATEGORY_DISPATCH: u16 = 1 << 1;
 /// IREE `iree_hal_executable_function_t` export ordinals on
 /// [`IREE_REF_EXECUTABLE`]. These are **not** [`AccelOp`] values.
 /// First real dispatch export is 0 (IREE convention); fused wave is 1;
-/// elementwise add is 2; relu is 3. Unknown DISPATCH function is Unsupported.
+/// elementwise add is 2; relu is 3; mul is 4. Unknown DISPATCH function is Unsupported.
 pub const HAL_FN_MATMUL: u32 = 0;
 pub const HAL_FN_FUSED: u32 = 1;
 pub const HAL_FN_ADD: u32 = 2;
 pub const HAL_FN_RELU: u32 = 3;
+pub const HAL_FN_MUL: u32 = 4;
 
 /// IREE `iree_hal_element_type_t` packing from
 /// `runtime/src/iree/hal/buffer_view.h`:
@@ -99,7 +100,7 @@ pub fn element_type_from_dtype(dtype: DType) -> u32 {
 pub fn categories_from_op(op: AccelOp) -> u16 {
     match op {
         AccelOp::Nop => 0,
-        AccelOp::MatMul | AccelOp::Wave | AccelOp::Add | AccelOp::Relu => {
+        AccelOp::MatMul | AccelOp::Wave | AccelOp::Add | AccelOp::Relu | AccelOp::Mul => {
             IREE_HAL_COMMAND_CATEGORY_DISPATCH
         }
     }
@@ -111,6 +112,7 @@ pub fn function_from_op(op: AccelOp) -> u32 {
         AccelOp::Wave => HAL_FN_FUSED,
         AccelOp::Add => HAL_FN_ADD,
         AccelOp::Relu => HAL_FN_RELU,
+        AccelOp::Mul => HAL_FN_MUL,
     }
 }
 
@@ -127,6 +129,7 @@ pub fn op_from_hal(categories: u16, function: u32) -> Result<AccelOp, HalError> 
             HAL_FN_FUSED => Ok(AccelOp::Wave),
             HAL_FN_ADD => Ok(AccelOp::Add),
             HAL_FN_RELU => Ok(AccelOp::Relu),
+            HAL_FN_MUL => Ok(AccelOp::Mul),
             _ => Err(HalError::Unsupported),
         },
         _ => Err(HalError::Fault),
@@ -860,6 +863,7 @@ mod tests {
         assert_ne!(HAL_FN_FUSED, AccelOp::Wave as u32);
         assert_ne!(HAL_FN_ADD, AccelOp::Add as u32);
         assert_ne!(HAL_FN_RELU, AccelOp::Relu as u32);
+        assert_ne!(HAL_FN_MUL, AccelOp::Mul as u32);
     }
 
     #[test]
@@ -1170,6 +1174,10 @@ mod tests {
             AccelOp::Relu
         );
         assert_eq!(
+            op_from_hal(IREE_HAL_COMMAND_CATEGORY_DISPATCH, HAL_FN_MUL).unwrap(),
+            AccelOp::Mul
+        );
+        assert_eq!(
             op_from_hal(IREE_HAL_COMMAND_CATEGORY_DISPATCH, 99).unwrap_err(),
             HalError::Unsupported
         );
@@ -1202,12 +1210,17 @@ mod tests {
             categories_from_op(AccelOp::Relu),
             IREE_HAL_COMMAND_CATEGORY_DISPATCH
         );
+        assert_eq!(
+            categories_from_op(AccelOp::Mul),
+            IREE_HAL_COMMAND_CATEGORY_DISPATCH
+        );
         assert_eq!(function_from_op(AccelOp::Add), HAL_FN_ADD);
         assert_eq!(function_from_op(AccelOp::Relu), HAL_FN_RELU);
+        assert_eq!(function_from_op(AccelOp::Mul), HAL_FN_MUL);
     }
 
     #[test]
-    fn submit_add_and_relu_pack_function_ordinals() {
+    fn submit_add_relu_mul_pack_function_ordinals() {
         let mut backing = [0u8; 256];
         for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
             backing[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
@@ -1262,6 +1275,35 @@ mod tests {
         }
         let relu0 = i32::from_le_bytes(backing[80..84].try_into().unwrap());
         assert_eq!(relu0, 0);
+
+        for (i, v) in [2i32, 3, 4, 5].iter().enumerate() {
+            backing[96 + i * 4..96 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        for (i, v) in [6i32, 7, 8, 9].iter().enumerate() {
+            backing[112 + i * 4..112 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+        }
+        let mut mul = AccelJobDesc::mul_i32(2, 2, PhysAddr(96), PhysAddr(112), PhysAddr(128), 1);
+        mul.place = mul.place.with_tile(2);
+        {
+            let mem = SliceMem {
+                base: PhysAddr(0),
+                bytes: &mut backing,
+            };
+            let mut d = IreeShapedCp::new(mem);
+            pin_job(&mut d, &mul);
+            d.submit(&mul).unwrap();
+            let cmd = d.last_cmd().unwrap();
+            assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+            assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+            assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
+            assert_eq!(cmd.function, HAL_FN_MUL);
+            assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+            assert_eq!(cmd.workgroup_count_z, 1, "k is shape, not tiles");
+            assert_eq!(cmd.decode_op().unwrap(), AccelOp::Mul);
+            assert_eq!(d.service().unwrap().status, 0);
+        }
+        let mul0 = i32::from_le_bytes(backing[128..132].try_into().unwrap());
+        assert_eq!(mul0, 12);
     }
 
     #[test]
