@@ -129,6 +129,67 @@ impl PartitionProfile {
     }
 }
 
+/// Host red-team hops clip: two partitions / two slices.
+/// In-budget hops admit; over [`BlastRadius::max_hops`] → [`PartitionError::BlastRadius`].
+/// Not a `[blast]` serial line — sell needle is `[redteam] attack=blast-hops`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlastHopsReport {
+    pub two_slice: bool,
+    pub in_budget: bool,
+    pub over_hops: bool,
+}
+
+impl BlastHopsReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_slice && self.in_budget && self.over_hops
+    }
+}
+
+/// Two tenants, distinct chiplet slices, `max_hops = 1`.
+pub fn run_blast_hops_demo() -> BlastHopsReport {
+    let a = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let b = PartitionProfile::new(
+        PartitionId(2),
+        SpatialSlice::single_chiplet(ChipletId(1), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+
+    let two_slice = a.admit_chiplet(ChipletId(0)).is_ok()
+        && b.admit_chiplet(ChipletId(1)).is_ok()
+        && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
+        && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
+
+    let in_budget =
+        a.admit_hops(0).is_ok() && a.admit_hops(1).is_ok() && b.admit_hops(1).is_ok();
+
+    let over_hops = a.admit_hops(2) == Err(PartitionError::BlastRadius)
+        && b.admit_hops(2) == Err(PartitionError::BlastRadius);
+
+    BlastHopsReport {
+        two_slice,
+        in_budget,
+        over_hops,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +223,14 @@ mod tests {
         let mut t = CapTable::new(TenantId(1));
         let c = p.mint(&mut t).unwrap();
         assert_eq!(t.lookup(c).unwrap().kind, CapKind::Partition);
+    }
+
+    #[test]
+    fn blast_hops_demo_two_slice_refuse() {
+        let r = run_blast_hops_demo();
+        assert!(r.two_slice, "two tenants / two slices");
+        assert!(r.in_budget, "in-budget hops admit");
+        assert!(r.over_hops, "over max_hops → BlastRadius");
+        assert!(r.all_ok());
     }
 }

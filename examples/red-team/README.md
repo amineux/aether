@@ -1,8 +1,9 @@
 # Red-team diligence clip
 
-Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_firewall_demo`,
-`run_softsfi_demo`, `run_softnoi_demo`, and `run_sva_demo`. Not a new
-isolator, not a QEMU guest, not a slide.
+Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
+`run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, and `run_sva_demo`.
+Not a new isolator, not a QEMU guest, not a slide. Blast hops needle:
+`[redteam] attack=blast-hops result=refused` (`admit_hops` → `BlastRadius`).
 
 From the repo root:
 

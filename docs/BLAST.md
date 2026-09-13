@@ -31,6 +31,18 @@ The combined buyer stdout is `make red-team` ([DILIGENCE.md](DILIGENCE.md)):
 wrong-SID/CrossCut plus SoftCmdFirewall, SoftSFI, SoftNoI-IS, and
 PASID/SVA, each as `[redteam] attack=… result=refused`.
 
+## Blast hops (red-team needle)
+
+`PartitionProfile::admit_hops` is unit-tested in `partition.rs`. The sell
+surface is host red-team only — **not** a fourth `[blast]` serial line:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two tenants / two slices; in-budget hops admit; over `max_hops` refuse | `run_blast_hops_demo` → `PartitionError::BlastRadius` | `[redteam] attack=blast-hops result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. No World CapTable
+split, no new syscall, no opcode churn.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).
