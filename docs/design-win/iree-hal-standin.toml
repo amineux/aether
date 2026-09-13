@@ -61,6 +61,15 @@ dtype = "I32"
 iree_element_type = 0x10000020
 queue_affinity = 0
 
+[[opcode]]
+their_name = "iree_hal_command_buffer_dispatch_mul"
+iree_command_categories = 2
+iree_function = 4
+accel_op = "Mul"
+dtype = "I32"
+iree_element_type = 0x10000020
+queue_affinity = 0
+
 [executable]
 # iree_hal_executable_t / abi::Executable.isa_blob_id
 isa_blob_id = 0x0001EE00

@@ -2,7 +2,7 @@
 
 Optional custom QEMU device that exposes the **frozen** virtqueue BAR
 from [docs/ACCEL.md](../docs/ACCEL.md). SoftNPU (I32 Nop / MatMul / Wave;
-Add / Relu additive on the same engine) sits behind the doorbell and
+Add / Relu / Mul additive on the same engine) sits behind the doorbell and
 DMA-reads tensor addresses from
 `AccelJobWire`.
 

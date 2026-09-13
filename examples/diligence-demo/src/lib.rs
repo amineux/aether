@@ -116,6 +116,7 @@ fn op_name(op: AccelOp) -> &'static str {
         AccelOp::Wave => "Wave",
         AccelOp::Add => "Add",
         AccelOp::Relu => "Relu",
+        AccelOp::Mul => "Mul",
     }
 }
 

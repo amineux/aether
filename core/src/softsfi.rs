@@ -15,7 +15,7 @@
 //! hardware atomic.
 //!
 //! Honest remaining holes (named [`SfiError::Unmodeled`], not “safe”):
-//! - Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` are
+//! - Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` / `Mul` are
 //!   **refused**, not modeled.
 //! - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
 //!   allocator and not a sandbox. Prefer refuse over fake safety.
