@@ -35,8 +35,8 @@ mapped the way `IreeShapedCp` already packs. v1 emits
 not a defined v1 packet (`IreeHalCmd::check_v1` → `HalError::Fault`).
 
 `command_categories` and `function` are **not** `AccelOp` bytes
-(`Nop=0`, `MatMul=1`, `Wave=2`, `Add=3`, `Relu=4`, `Mul=5`). Decode keys off
-the DISPATCH bit first; `categories = 0` ignores `function` (pack
+(`Nop=0`, `MatMul=1`, `Wave=2`, `Add=3`, `Relu=4`, `Mul=5`, `Max=6`). Decode
+keys off the DISPATCH bit first; `categories = 0` ignores `function` (pack
 writes 0). Unknown DISPATCH `function` is Unsupported.
 
 | Their opcode name (IREE HAL noun) | IREE `iree_hal_command_category_t` | IREE `iree_hal_executable_function_t` | Maps to `AccelOp` | IREE `iree_hal_element_type_t` / Aether `DType` | IREE `iree_hal_queue_affinity_t` (low 32: `chiplet<<16 \| tile`) |
@@ -47,6 +47,7 @@ writes 0). Unknown DISPATCH `function` is Unsupported.
 | `iree_hal_command_buffer_dispatch_add` | `DISPATCH` (`1<<1` = `2`) | `2` (`HAL_FN_ADD`) | `Add` | `INT_32` `0x10000020` / `I32` | `0` |
 | `iree_hal_command_buffer_dispatch_relu` | `DISPATCH` (`1<<1` = `2`) | `3` (`HAL_FN_RELU`) | `Relu` | `INT_32` `0x10000020` / `I32` | `0` |
 | `iree_hal_command_buffer_dispatch_mul` | `DISPATCH` (`1<<1` = `2`) | `4` (`HAL_FN_MUL`) | `Mul` | `INT_32` `0x10000020` / `I32` | `0` |
+| `iree_hal_command_buffer_dispatch_max` | `DISPATCH` (`1<<1` = `2`) | `5` (`HAL_FN_MAX`) | `Max` | `INT_32` `0x10000020` / `I32` | `0` |
 | `iree_hal_command_buffer` TRANSFER (`copy_buffer` shape) | `TRANSFER` (`1<<0` = `1`) | — | **reserved / refused** | — | — |
 
 `workgroup_count_x/y/z` are `AccelJobDesc` `m,n,k` **shape stand-ins**,

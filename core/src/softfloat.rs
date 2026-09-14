@@ -1,6 +1,6 @@
 //! Software IEEE-754 helpers for SoftNPU.
 //!
-//! Integer-only `binary32` add/mul and `binary16` ↔ `binary32` conversion.
+//! Integer-only `binary32` add/mul/max and `binary16` ↔ `binary32` conversion.
 //! This is a **reference model** for F16/F32 jobs, not a tensor ISA, not
 //! libm, and not a hard-float HAL. Round-to-nearest-even. Canonical qNaN.
 //! Subnormals flush to signed zero (FTZ).
@@ -424,6 +424,38 @@ pub fn add_f16(a: u16, b: u16) -> u16 {
     f32_to_f16(add_f32(f16_to_f32(a), f16_to_f32(b)))
 }
 
+/// IEEE-754-ish binary32 max (software), FTZ. Prefer number over NaN;
+/// `max(+0, −0) = +0`. Research SoftNPU — not a vendor FLOP.
+pub fn max_f32(a: u32, b: u32) -> u32 {
+    let a = flush32(a);
+    let b = flush32(b);
+    if is_nan32(a) {
+        return if is_nan32(b) { F32_QNAN } else { b };
+    }
+    if is_nan32(b) {
+        return a;
+    }
+    let a_neg = f32_sign(a) != 0;
+    let b_neg = f32_sign(b) != 0;
+    if a_neg != b_neg {
+        return if a_neg { b } else { a };
+    }
+    let am = a & !F32_SIGN;
+    let bm = b & !F32_SIGN;
+    if a_neg {
+        if am <= bm { a } else { b }
+    } else if am >= bm {
+        a
+    } else {
+        b
+    }
+}
+
+/// Max two F16 values via F32 software math, then round back.
+pub fn max_f16(a: u16, b: u16) -> u16 {
+    f32_to_f16(max_f32(f16_to_f32(a), f16_to_f32(b)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -457,6 +489,18 @@ mod tests {
     }
 
     #[test]
+    fn max_known() {
+        close_bits(max_f32(bits(1.0), bits(2.0)), bits(2.0));
+        close_bits(max_f32(bits(-1.0), bits(1.0)), bits(1.0));
+        close_bits(max_f32(bits(-3.0), bits(-1.0)), bits(-1.0));
+        close_bits(max_f32(0, F32_SIGN), 0);
+        close_bits(max_f32(F32_SIGN, 0), 0);
+        close_bits(max_f32(F32_POS_INF, bits(1.0)), F32_POS_INF);
+        close_bits(max_f32(F32_QNAN, bits(2.0)), bits(2.0));
+        assert_eq!(max_f16(0x3c00, 0x4000), 0x4000);
+    }
+
+    #[test]
     fn add_known() {
         close_bits(add_f32(bits(1.0), bits(2.0)), bits(3.0));
         close_bits(add_f32(bits(-1.0), bits(1.0)), bits(0.0));
@@ -477,6 +521,7 @@ mod tests {
             for &b in &vals {
                 close_bits(mul_f32(bits(a), bits(b)), bits(a * b));
                 close_bits(add_f32(bits(a), bits(b)), bits(a + b));
+                close_bits(max_f32(bits(a), bits(b)), bits(a.max(b)));
             }
         }
     }

@@ -606,6 +606,7 @@ impl Client {
                 | AccelOp::Add
                 | AccelOp::Relu
                 | AccelOp::Mul
+                | AccelOp::Max
         ) {
             return Err(Error::Unsupported);
         }
@@ -1061,6 +1062,28 @@ impl Dispatch {
             wait_for: None,
         }
     }
+
+    /// Elementwise `C = max(A, B)`. `k` is 1 (shape stand-in, not tiles).
+    pub fn max(
+        executable: ExecutableId,
+        m: u32,
+        n: u32,
+        a: BufferId,
+        b: BufferId,
+        c: BufferId,
+    ) -> Self {
+        Self {
+            executable,
+            m,
+            n,
+            k: 1,
+            a,
+            b,
+            c,
+            bias: None,
+            wait_for: None,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1070,7 +1093,7 @@ mod tests {
     use aether_core::iommu::{StreamId, SOFT_SMMU_IOVA_BASE};
     use aether_core::types::{ChipletId, PhysAddr, TileId};
     use aether_drivers::ireecp::{
-        HAL_FN_ADD, HAL_FN_MUL, HAL_FN_RELU, IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+        HAL_FN_ADD, HAL_FN_MAX, HAL_FN_MUL, HAL_FN_RELU, IREE_HAL_COMMAND_CATEGORY_DISPATCH,
         IREE_HAL_COMMAND_CATEGORY_TRANSFER,
     };
     use aether_hal::{
@@ -1266,7 +1289,28 @@ mod tests {
     }
 
     #[test]
-    fn iree_add_relu_mul_pack_frozen_function_ordinals() {
+    fn submit_max_wait_event() {
+        for kind in each_backend() {
+            let mut c = Client::new(kind).unwrap();
+            let a = c.allocate(MemorySpace::Host, 16).unwrap();
+            let b = c.allocate(MemorySpace::Host, 16).unwrap();
+            let out = c.allocate(MemorySpace::Host, 16).unwrap();
+            c.copy_i32_from_host(a, &[1, 8, -3, 4]).unwrap();
+            c.copy_i32_from_host(b, &[5, 2, -1, 9]).unwrap();
+            let exec = c.load_executable(AccelOp::Max, DType::I32).unwrap();
+            let ev = c.execute(Dispatch::max(exec, 2, 2, a, b, out)).unwrap();
+            assert!(!c.fence_ready(ev), "submit does not execute");
+            let cpl = c.wait(ev).unwrap();
+            assert_eq!(cpl.status, 0);
+            assert!(c.fence_ready(ev));
+            let mut got = [0i32; 4];
+            c.copy_i32_to_host(out, &mut got).unwrap();
+            assert_eq!(got, [5, 8, -1, 9], "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn iree_add_relu_mul_max_pack_frozen_function_ordinals() {
         let mut c = Client::iree_shaped().unwrap();
         let a = c.allocate(MemorySpace::Host, 16).unwrap();
         let b = c.allocate(MemorySpace::Host, 16).unwrap();
@@ -1305,6 +1349,20 @@ mod tests {
         let cmd = c.last_iree_cmd().unwrap();
         assert_eq!(cmd.function, HAL_FN_MUL);
         assert_eq!(cmd.decode_op().unwrap(), AccelOp::Mul);
+        assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
+        assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
+        assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
+        assert_eq!(cmd.command_categories, IREE_HAL_COMMAND_CATEGORY_DISPATCH);
+        assert_eq!(cmd.workgroup_count_z, 1, "k is shape, not tiles");
+        c.wait(ev).unwrap();
+
+        c.copy_i32_from_host(a, &[1, 8, -3, 4]).unwrap();
+        c.copy_i32_from_host(b, &[5, 2, -1, 9]).unwrap();
+        let maxe = c.load_executable(AccelOp::Max, DType::I32).unwrap();
+        let ev = c.execute(Dispatch::max(maxe, 2, 2, a, b, out)).unwrap();
+        let cmd = c.last_iree_cmd().unwrap();
+        assert_eq!(cmd.function, HAL_FN_MAX);
+        assert_eq!(cmd.decode_op().unwrap(), AccelOp::Max);
         assert_eq!(cmd.executable, IREE_REF_EXECUTABLE);
         assert_eq!(cmd.magic, IREE_HAL_PKT_MAGIC);
         assert_eq!(cmd.to_le_bytes().len(), IREE_HAL_CMD_SIZE);
