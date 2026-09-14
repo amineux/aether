@@ -56,6 +56,20 @@ red-team only — existing path; **not** a new isolator:
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay
 on `attack=blast-hops`. No CapTable split, no new syscall, no opcode churn.
 
+## QoS credits (red-team needle)
+
+`PartitionProfile::charge_credits` meters [`QosBudget::credits`](../core/src/partition.rs).
+In-budget admits; over credits → [`PartitionError::QosExceeded`](../core/src/partition.rs).
+Host red-team only — **not** EventRing theater, not a `[blast]` serial line:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two tenants / two slices; in-budget credit charge admits; over credits refuse | `run_qos_credits_demo` → `PartitionError::QosExceeded` | `[redteam] attack=qos-credits result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
+`attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable
+split, no new syscall, no opcode churn.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).

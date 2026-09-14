@@ -142,7 +142,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / bank-color / SoftCmdFirewall / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / bank-color / qos-credits / SoftCmdFirewall / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -158,6 +158,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=pasid-stale result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=blast-hops result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=bank-color result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=qos-credits result=refused" $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] fabric-class admit/refuse" $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] ATOMIC_ADD accept/reject" $(REDTEAM_LOG)
 	grep -F -x -q "[softsfi] heap=refused" $(REDTEAM_LOG)

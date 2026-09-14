@@ -127,6 +127,18 @@ impl PartitionProfile {
             Err(PartitionError::BlastRadius)
         }
     }
+
+    /// Charge `amount` against [`QosBudget::credits`].
+    /// In-budget admits; over credits → [`PartitionError::QosExceeded`].
+    /// Software meter today — not EventRing theater, not fence in-flight
+    /// ([`PartitionError::CreditExhausted`]).
+    pub fn charge_credits(&self, amount: u32) -> Result<(), PartitionError> {
+        if amount <= self.qos.credits {
+            Ok(())
+        } else {
+            Err(PartitionError::QosExceeded)
+        }
+    }
 }
 
 /// Host red-team hops clip: two partitions / two slices.
@@ -190,6 +202,70 @@ pub fn run_blast_hops_demo() -> BlastHopsReport {
     }
 }
 
+
+/// Host red-team QoS credits clip: two partitions / two slices.
+/// In-budget [`PartitionProfile::charge_credits`] admits; over
+/// [`QosBudget::credits`] → [`PartitionError::QosExceeded`].
+/// Sell needle is `[redteam] attack=qos-credits` — not EventRing theater.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct QosCreditsReport {
+    pub two_slice: bool,
+    pub in_budget: bool,
+    pub over_credits: bool,
+}
+
+impl QosCreditsReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_slice && self.in_budget && self.over_credits
+    }
+}
+
+/// Two tenants, distinct chiplet slices, `credits = 4`.
+pub fn run_qos_credits_demo() -> QosCreditsReport {
+    let a = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let b = PartitionProfile::new(
+        PartitionId(2),
+        SpatialSlice::single_chiplet(ChipletId(1), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+
+    let two_slice = a.admit_chiplet(ChipletId(0)).is_ok()
+        && b.admit_chiplet(ChipletId(1)).is_ok()
+        && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
+        && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
+
+    let in_budget = a.charge_credits(1).is_ok()
+        && a.charge_credits(4).is_ok()
+        && b.charge_credits(4).is_ok();
+
+    let over_credits = a.charge_credits(5) == Err(PartitionError::QosExceeded)
+        && b.charge_credits(5) == Err(PartitionError::QosExceeded);
+
+    QosCreditsReport {
+        two_slice,
+        in_budget,
+        over_credits,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -220,6 +296,8 @@ mod tests {
             Err(PartitionError::OutsideSlice)
         );
         assert_eq!(p.admit_hops(2), Err(PartitionError::BlastRadius));
+        assert!(p.charge_credits(4).is_ok());
+        assert_eq!(p.charge_credits(5), Err(PartitionError::QosExceeded));
         let mut t = CapTable::new(TenantId(1));
         let c = p.mint(&mut t).unwrap();
         assert_eq!(t.lookup(c).unwrap().kind, CapKind::Partition);
@@ -231,6 +309,15 @@ mod tests {
         assert!(r.two_slice, "two tenants / two slices");
         assert!(r.in_budget, "in-budget hops admit");
         assert!(r.over_hops, "over max_hops → BlastRadius");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn qos_credits_demo_in_budget_and_refuse() {
+        let r = run_qos_credits_demo();
+        assert!(r.two_slice, "two tenants / two slices");
+        assert!(r.in_budget, "in-budget credit charge admits");
+        assert!(r.over_credits, "over credits → QosExceeded");
         assert!(r.all_ok());
     }
 }
