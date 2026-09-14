@@ -58,13 +58,14 @@ on `attack=blast-hops`. No CapTable split, no new syscall, no opcode churn.
 
 ## QoS credits (red-team needle)
 
-`PartitionProfile::charge_credits` meters [`QosBudget::credits`](../core/src/partition.rs).
-In-budget admits; over credits → [`PartitionError::QosExceeded`](../core/src/partition.rs).
-Host red-team only — **not** EventRing theater, not a `[blast]` serial line:
+[`Timeline::submit`](../core/src/fence.rs) meters [`QosBudget::credits`](../core/src/partition.rs).
+In-budget submits admit; `in_flight >= credits` → [`PartitionError::CreditExhausted`](../core/src/partition.rs).
+Complete / timeout frees a credit and admit resumes. Host red-team only —
+**not** EventRing theater, not a second charge API, not a `[blast]` serial line:
 
 | Proof | Mechanism | Grep |
 | --- | --- | --- |
-| Two tenants / two slices; in-budget credit charge admits; over credits refuse | `run_qos_credits_demo` → `PartitionError::QosExceeded` | `[redteam] attack=qos-credits result=refused` |
+| Two tenants / two slices; in-budget submits admit; over credits refuse; complete/timeout resume | `run_qos_credits_demo` → `PartitionError::CreditExhausted` | `[redteam] attack=qos-credits result=refused` |
 
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable

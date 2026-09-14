@@ -12,8 +12,9 @@
 //! `[softsfi] heap=refused` (named `Unmodeled`, not a bump allocator).
 //! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius`. Bank
 //! color is `admit_wave` → `ColorError::ForeignBank` (not a rehash of
-//! CrossCut / hops). QoS credits is `PartitionProfile::charge_credits`
-//! → `QosExceeded` (not EventRing theater). The closer names what this
+//! CrossCut / hops). QoS credits is `Timeline::submit` →
+//! `CreditExhausted` when `in_flight >= qos.credits` (not EventRing
+//! theater, not a second charge API). The closer names what this
 //! is **not**: confidential GPU, HW MIG, hardware SMMU (Soft SMMU is
 //! software).
 //!
@@ -105,8 +106,8 @@ fn run_redteam() -> RedTeamReport {
         // admit_wave: same-color Compute OK; foreign bank → ForeignBank; Exchange OK.
         // Existing path only — not CrossCut / hops.
         bank_color: color.all_ok(),
-        // PartitionProfile::charge_credits: in-budget OK; over credits → QosExceeded.
-        // Not EventRing theater; fence in-flight stays CreditExhausted.
+        // Timeline::submit: in-budget OK; in_flight >= credits → CreditExhausted;
+        // complete/timeout frees credit and admit resumes. Existing fence meter.
         qos_credits: qos.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
@@ -179,7 +180,7 @@ mod tests {
         assert!(r.pasid, "PASID stale translate after unmap");
         assert!(r.blast_hops, "admit_hops over max_hops → BlastRadius");
         assert!(r.bank_color, "admit_wave foreign bank → ForeignBank");
-        assert!(r.qos_credits, "charge_credits over budget → QosExceeded");
+        assert!(r.qos_credits, "Timeline::submit over credits → CreditExhausted");
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.heap, "SoftSFI heap/alloc named refuse");
