@@ -1,23 +1,24 @@
 //! Host red-team diligence clip — scripted stdout a buyer can grep.
 //!
 //! Reuses the same refuse paths the kernel self-check already runs
-//! (`run_blast_demo`, `run_blast_hops_demo`, `run_firewall_demo`,
-//! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`). This crate
-//! does not invent a new isolation mechanism.
+//! (`run_blast_demo`, `run_blast_hops_demo`, `run_bank_color_demo`,
+//! `run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`,
+//! `run_sva_demo`). This crate does not invent a new isolation mechanism.
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
 //! each from the same clips. SoftSFI heap/alloc prints
 //! `[softsfi] heap=refused` (named `Unmodeled`, not a bump allocator).
-//! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius` (not
-//! a rehash of CrossCut / wrong-SID). The closer names what this is
-//! **not**: confidential GPU, HW MIG, hardware SMMU (Soft SMMU is
-//! software).
+//! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius`. Bank
+//! color is `admit_wave` → `ColorError::ForeignBank` (not a rehash of
+//! CrossCut / hops). The closer names what this is **not**: confidential
+//! GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
 use aether_core::blast::run_blast_demo;
 use aether_core::noi::run_softnoi_demo;
+use aether_core::color::run_bank_color_demo;
 use aether_core::partition::run_blast_hops_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
@@ -30,6 +31,7 @@ const LINE_SFI: &str = "[redteam] attack=softsfi-oob result=refused";
 const LINE_NOI: &str = "[redteam] attack=softnoi-is result=refused";
 const LINE_PASID: &str = "[redteam] attack=pasid-stale result=refused";
 const LINE_BLAST_HOPS: &str = "[redteam] attack=blast-hops result=refused";
+const LINE_BANK_COLOR: &str = "[redteam] attack=bank-color result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_HEAP: &str = "[softsfi] heap=refused";
@@ -45,6 +47,7 @@ struct RedTeamReport {
     noi: bool,
     pasid: bool,
     blast_hops: bool,
+    bank_color: bool,
     class: bool,
     atomic: bool,
     heap: bool,
@@ -58,6 +61,7 @@ impl RedTeamReport {
             && self.noi
             && self.pasid
             && self.blast_hops
+            && self.bank_color
             && self.class
             && self.atomic
             && self.heap
@@ -68,6 +72,7 @@ impl RedTeamReport {
 fn run_redteam() -> RedTeamReport {
     let blast = run_blast_demo();
     let hops = run_blast_hops_demo();
+    let color = run_bank_color_demo();
     let firewall = run_firewall_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
@@ -90,6 +95,9 @@ fn run_redteam() -> RedTeamReport {
         // PartitionProfile::admit_hops: two slices OK; over max_hops → BlastRadius.
         // Not a rehash of CrossCut / wrong-SID (those stay on LINE_CROSSCUT).
         blast_hops: hops.all_ok(),
+        // admit_wave: same-color Compute OK; foreign bank → ForeignBank; Exchange OK.
+        // Existing path only — not CrossCut / hops.
+        bank_color: color.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -125,6 +133,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.noi, LINE_NOI);
     emit(r.pasid, LINE_PASID);
     emit(r.blast_hops, LINE_BLAST_HOPS);
+    emit(r.bank_color, LINE_BANK_COLOR);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.heap, LINE_HEAP);
@@ -158,6 +167,7 @@ mod tests {
         assert!(r.noi, "SoftNoI-IS overload admit");
         assert!(r.pasid, "PASID stale translate after unmap");
         assert!(r.blast_hops, "admit_hops over max_hops → BlastRadius");
+        assert!(r.bank_color, "admit_wave foreign bank → ForeignBank");
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.heap, "SoftSFI heap/alloc named refuse");
@@ -172,6 +182,7 @@ mod tests {
         assert!(LINE_NOI.contains("attack=softnoi-is"));
         assert!(LINE_PASID.contains("attack=pasid-stale"));
         assert_eq!(LINE_BLAST_HOPS, "[redteam] attack=blast-hops result=refused");
+        assert_eq!(LINE_BANK_COLOR, "[redteam] attack=bank-color result=refused");
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_HEAP, "[softsfi] heap=refused");
@@ -182,6 +193,7 @@ mod tests {
             LINE_NOI,
             LINE_PASID,
             LINE_BLAST_HOPS,
+            LINE_BANK_COLOR,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

@@ -82,6 +82,41 @@ pub fn admit_arena_wave(
     admit_wave(job_tenant, phase, Some(arena.color), tile_home)
 }
 
+/// Host red-team bank-color clip: Compute foreign bank refused; Exchange still OK.
+/// Sell needle is `[redteam] attack=bank-color` — existing [`admit_wave`] only.
+/// Not a CrossCut / hops rehash and not a new isolator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BankColorReport {
+    pub same_ok: bool,
+    pub foreign_bank: bool,
+    pub exchange_ok: bool,
+}
+
+impl BankColorReport {
+    pub fn all_ok(&self) -> bool {
+        self.same_ok && self.foreign_bank && self.exchange_ok
+    }
+}
+
+/// Same-color Compute admits; foreign bank → [`ColorError::ForeignBank`];
+/// [`Phase::Exchange`] still admits the foreign bank.
+pub fn run_bank_color_demo() -> BankColorReport {
+    let home = BankId(0);
+    let same = BankColor::new(TenantId(1), home);
+    let foreign = BankColor::new(TenantId(1), BankId(1));
+
+    let same_ok = admit_wave(1, Phase::Compute, Some(same), home).is_ok();
+    let foreign_bank =
+        admit_wave(1, Phase::Compute, Some(foreign), home) == Err(ColorError::ForeignBank);
+    let exchange_ok = admit_wave(1, Phase::Exchange, Some(foreign), home).is_ok();
+
+    BankColorReport {
+        same_ok,
+        foreign_bank,
+        exchange_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,5 +167,14 @@ mod tests {
             .unwrap_err(),
             ColorError::Uncolored
         );
+    }
+
+    #[test]
+    fn bank_color_demo_foreign_bank_refuse() {
+        let r = run_bank_color_demo();
+        assert!(r.same_ok, "same-color Compute admits");
+        assert!(r.foreign_bank, "foreign bank Compute → ForeignBank");
+        assert!(r.exchange_ok, "Exchange still admits foreign bank");
+        assert!(r.all_ok());
     }
 }
