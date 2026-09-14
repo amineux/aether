@@ -435,6 +435,10 @@ pub fn max_f32(a: u32, b: u32) -> u32 {
     if is_nan32(b) {
         return a;
     }
+    // SoftNPU policy: any zero vs zero yields +0 (incl. max(+0, −0)).
+    if is_zero32(a) && is_zero32(b) {
+        return 0;
+    }
     let a_neg = f32_sign(a) != 0;
     let b_neg = f32_sign(b) != 0;
     if a_neg != b_neg {
@@ -521,7 +525,14 @@ mod tests {
             for &b in &vals {
                 close_bits(mul_f32(bits(a), bits(b)), bits(a * b));
                 close_bits(add_f32(bits(a), bits(b)), bits(a + b));
-                close_bits(max_f32(bits(a), bits(b)), bits(a.max(b)));
+                // SoftNPU max(+0, −0) = +0. Host f32::max may return either
+                // signed zero when magnitudes compare equal — don't bind to it.
+                let expect_max = if a == 0.0 && b == 0.0 {
+                    0u32
+                } else {
+                    bits(a.max(b))
+                };
+                close_bits(max_f32(bits(a), bits(b)), expect_max);
             }
         }
     }
