@@ -44,7 +44,8 @@ A third, MicroPerceptron-**shaped** thin consumer lives in
 `host/aether-mp-shim` (`aether-mp-shim`; **landed**, PR #83).
 MicroPerceptron is an inspiration name only. The crate is secondary
 to this PJRT shim, not a port, and not a vendor. Opcode surface is
-memcpy (host copy; v1 `TRANSFER` reserved) / matmul / wave. Submit
+memcpy (host copy; v1 `TRANSFER` reserved) / matmul / wave / mul / max
+(additive research elementwise on freeze-v1; same 96-byte packet). Submit
 is doorbell (`IreeShapedCp`) or Soft-CP (SoftCmdFirewall still
 applies). Same refuse rules. A full MicroPerceptron / virtio-accel
 port stays later and optional. See [ACCEL.md](ACCEL.md),

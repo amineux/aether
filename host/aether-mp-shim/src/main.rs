@@ -1,4 +1,4 @@
-//! MicroPerceptron-shaped thin consumer: memcpy / matmul / wave on frozen
+//! MicroPerceptron-shaped thin consumer: memcpy / matmul / wave / mul / max on frozen
 //! `IreeHalCmd`. Inspiration name only. Secondary to `aether-pjrt`.
 //!
 //! ```text
@@ -69,6 +69,31 @@ fn main() {
     shim.copy_i32_to_host(out, &mut wgot).unwrap();
     println!("wave 2x2+bias -> {wgot:?}");
     assert_eq!(wgot, [11, 22, 13, 24]);
+
+    // Additive research elementwise on freeze-v1 (same 96-byte IreeHalCmd; not a new IR).
+    shim.copy_i32_from_host(a, &[2, 3, 4, 5]).unwrap();
+    shim.copy_i32_from_host(b, &[6, 7, 8, 9]).unwrap();
+    let ev = shim.submit_mul(2, 2, a, b, out).unwrap();
+    let cmd = shim.last_cmd().expect("packed mul IreeHalCmd");
+    assert_eq!(cmd.decode_op().unwrap(), aether_core::accel::AccelOp::Mul);
+    assert_eq!(cmd.function, aether_drivers::ireecp::HAL_FN_MUL);
+    shim.wait(ev).unwrap();
+    let mut mgot = [0i32; 4];
+    shim.copy_i32_to_host(out, &mut mgot).unwrap();
+    println!("mul 2x2 -> {mgot:?} (additive research op; function=4)");
+    assert_eq!(mgot, [12, 21, 32, 45]);
+
+    shim.copy_i32_from_host(a, &[1, 8, -3, 4]).unwrap();
+    shim.copy_i32_from_host(b, &[5, 2, -1, 9]).unwrap();
+    let ev = shim.submit_max(2, 2, a, b, out).unwrap();
+    let cmd = shim.last_cmd().expect("packed max IreeHalCmd");
+    assert_eq!(cmd.decode_op().unwrap(), aether_core::accel::AccelOp::Max);
+    assert_eq!(cmd.function, aether_drivers::ireecp::HAL_FN_MAX);
+    shim.wait(ev).unwrap();
+    let mut xgot = [0i32; 4];
+    shim.copy_i32_to_host(out, &mut xgot).unwrap();
+    println!("max 2x2 -> {xgot:?} (additive research op; function=5; last SoftNPU elementwise)");
+    assert_eq!(xgot, [5, 8, -1, 9]);
 
     let mut bad = MpShim::doorbell().expect("IreeShapedCp probe");
     let pin = bad.allocate(256).unwrap();

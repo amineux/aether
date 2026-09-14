@@ -93,7 +93,7 @@ and [qemu/README.md](../qemu/README.md).
 | SoftSFI `ATOMIC_ADD` | SID-proved toy fetch-add (PR #73). In-range accept; cross-tenant `Oob`. Tensor stays `Unmodeled`. Not a hardware atomic. | `make red-team` · `ATOMIC_ADD` |
 | SoftSFI heap refuse | Named `SoftOp::Heap` is `SfiError::Unmodeled` (PR #80). Not a bump allocator. | `make red-team` · `[softsfi] heap=refused` |
 | MP-shaped shim | Thin consumer of the **same** frozen image (PR #83). `make mp-shim`. Inspiration name only. Secondary to PJRT. Not a MicroPerceptron port. | `make mp-shim` |
-| PJRT Add / Relu | Extra research opcodes on the frozen packet (PR #84). Still not FLOPs. Still not a plugin. | `host/aether-pjrt` |
+| PJRT Add / Relu / Mul / Max | Extra research opcodes on the frozen packet (PR #84 / #88 / #92). Still not FLOPs. Still not a plugin. Max is last SoftNPU elementwise. | `host/aether-pjrt` / `make mp-shim` |
 | Path-A IOVA | Job wire carries non-identity IOVAs; DMA walks ssid 4; wrong SID aborts (PR #78). Host `PathABar`. Kernel PCI bind still optional. | `make accel-test` |
 | Week 1 call pack | Isolation → packet → wait → admit class → sandbox hole (PR #77). | [WEEK1_CALL.md](WEEK1_CALL.md) |
 
@@ -128,7 +128,7 @@ Open on the next-year calendar ([YEAR_AHEAD.md](YEAR_AHEAD.md)):
 guest PCI BAR0 bind; gated `CapTable` / `SYS_REVOKE` only if two
 shim tenants alias slots. M5–M6 **Done:** freeze-v1 (research
 `IreeHalCmd` v1 stays); port **skipped** (path B doorbell has not
-failed a partner ask). Those are not this page’s asks. PJRT Add/Relu,
+failed a partner ask). Those are not this page’s asks. PJRT Add/Relu/Mul/Max,
 GreenCtx interference, and SoftCCT/Event counts already landed.
 2028 (signed list or ABI freeze) lives on
 [TWO_YEAR_PLAN.md](TWO_YEAR_PLAN.md) — not this year’s climax.

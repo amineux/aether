@@ -4,7 +4,7 @@
 //! is not a MicroPerceptron port, not a vendor, not a PJRT plugin, and not a
 //! second compiler story. [`aether_pjrt`](https://github.com/amineux/aether/blob/main/host/aether-pjrt)
 //! stays the compiler-facing shim. This is a research sketch: a small opcode
-//! surface (`memcpy` / `matmul` / `wave`) that submits the same 96-byte
+//! surface (`memcpy` / `matmul` / `wave` / `mul` / `max`) that submits the same 96-byte
 //! little-endian image (magic `0xAE7E1EE1`, `executable = 0x0001EE00`)
 //! through [`IreeShapedCp`] (doorbell) or Soft-CP (SoftCmdFirewall still
 //! applies). Bad `isa_blob_id` and unbound SID are refused.
@@ -127,6 +127,10 @@ pub enum Opcode {
     Memcpy,
     MatMul,
     Wave,
+    /// Additive research elementwise on freeze-v1 (`HAL_FN_MUL` = 4). Not a new IR.
+    Mul,
+    /// Additive research elementwise on freeze-v1 (`HAL_FN_MAX` = 5). Last SoftNPU elementwise.
+    Max,
 }
 
 /// Where the frozen 96-byte image is submitted.
@@ -478,6 +482,66 @@ impl MpShim {
         self.submit_job(job)
     }
 
+    /// Elementwise `C = A * B` on frozen `IreeHalCmd` (`function = 4`). Additive research op.
+    pub fn submit_mul(
+        &mut self,
+        m: u32,
+        n: u32,
+        a: BufId,
+        b: BufId,
+        c: BufId,
+    ) -> Result<AbiEvent, Error> {
+        if m == 0 || n == 0 {
+            return Err(Error::Accel(AccelError::BadShape));
+        }
+        let (pa_a, pa_b, pa_c) = {
+            let aa = self.alloc(a)?;
+            let bb = self.alloc(b)?;
+            let cc = self.alloc(c)?;
+            let es = 4u64;
+            let cells = es * m as u64 * n as u64;
+            if cells > aa.len || cells > bb.len || cells > cc.len {
+                return Err(Error::Hal(HalError::BadArg));
+            }
+            (aa.guest_pa, bb.guest_pa, cc.guest_pa)
+        };
+        let mut job = AccelJobDesc::mul_i32(m, n, pa_a, pa_b, pa_c, 1);
+        job.space = MemorySpace::Host;
+        job.place = job.place.with_tile(0);
+        job.partition = self.profile.id;
+        self.submit_job(job)
+    }
+
+    /// Elementwise `C = max(A, B)` on frozen `IreeHalCmd` (`function = 5`). Additive research op.
+    pub fn submit_max(
+        &mut self,
+        m: u32,
+        n: u32,
+        a: BufId,
+        b: BufId,
+        c: BufId,
+    ) -> Result<AbiEvent, Error> {
+        if m == 0 || n == 0 {
+            return Err(Error::Accel(AccelError::BadShape));
+        }
+        let (pa_a, pa_b, pa_c) = {
+            let aa = self.alloc(a)?;
+            let bb = self.alloc(b)?;
+            let cc = self.alloc(c)?;
+            let es = 4u64;
+            let cells = es * m as u64 * n as u64;
+            if cells > aa.len || cells > bb.len || cells > cc.len {
+                return Err(Error::Hal(HalError::BadArg));
+            }
+            (aa.guest_pa, bb.guest_pa, cc.guest_pa)
+        };
+        let mut job = AccelJobDesc::max_i32(m, n, pa_a, pa_b, pa_c, 1);
+        job.space = MemorySpace::Host;
+        job.place = job.place.with_tile(0);
+        job.partition = self.profile.id;
+        self.submit_job(job)
+    }
+
     /// Pack the frozen image, then submit on the bound path.
     pub fn submit_job(&mut self, mut job: AccelJobDesc) -> Result<AbiEvent, Error> {
         job.partition = self.profile.id;
@@ -640,8 +704,8 @@ mod tests {
     use super::*;
     use aether_core::iommu::{StreamState, SOFT_SMMU_IOVA_BASE};
     use aether_drivers::ireecp::{
-        HAL_FN_FUSED, IREE_HAL_COMMAND_CATEGORY_DISPATCH, IREE_HAL_COMMAND_CATEGORY_TRANSFER,
-        IREE_HAL_PKT_MAGIC,
+        HAL_FN_FUSED, HAL_FN_MAX, HAL_FN_MUL, IREE_HAL_COMMAND_CATEGORY_DISPATCH,
+        IREE_HAL_COMMAND_CATEGORY_TRANSFER, IREE_HAL_PKT_MAGIC,
     };
     use aether_hal::{
         ACCEL_BACKEND_PARTNER_STUB, ACCEL_BACKEND_SOFTNPU, ACCEL_BACKEND_VIRTIO_SOFTNPU,
@@ -774,6 +838,54 @@ mod tests {
             let mut got = [0i32; 4];
             d.copy_i32_to_host(out, &mut got).unwrap();
             assert_eq!(got, [11, 22, 13, 24], "{path:?}");
+        }
+    }
+
+    #[test]
+    fn submit_mul_wait_event_both_paths() {
+        for path in [SubmitPath::Doorbell, SubmitPath::SoftCp] {
+            let mut d = MpShim::new(path).unwrap();
+            let a = d.allocate(16).unwrap();
+            let b = d.allocate(16).unwrap();
+            let out = d.allocate(16).unwrap();
+            d.copy_i32_from_host(a, &[2, 3, 4, 5]).unwrap();
+            d.copy_i32_from_host(b, &[6, 7, 8, 9]).unwrap();
+            let ev = d.submit_mul(2, 2, a, b, out).unwrap();
+            let cmd = d.last_cmd().unwrap();
+            assert_eq!(cmd.decode_op().unwrap(), AccelOp::Mul, "{path:?}");
+            assert_eq!(cmd.function, HAL_FN_MUL, "{path:?}");
+            assert_eq!(cmd.executable, IREE_REF_EXECUTABLE, "{path:?}");
+            if path == SubmitPath::SoftCp {
+                assert!(d.last_firewall_sim().unwrap().noted(), "{path:?}");
+            }
+            d.wait(ev).unwrap();
+            let mut got = [0i32; 4];
+            d.copy_i32_to_host(out, &mut got).unwrap();
+            assert_eq!(got, [12, 21, 32, 45], "{path:?}");
+        }
+    }
+
+    #[test]
+    fn submit_max_wait_event_both_paths() {
+        for path in [SubmitPath::Doorbell, SubmitPath::SoftCp] {
+            let mut d = MpShim::new(path).unwrap();
+            let a = d.allocate(16).unwrap();
+            let b = d.allocate(16).unwrap();
+            let out = d.allocate(16).unwrap();
+            d.copy_i32_from_host(a, &[1, 8, -3, 4]).unwrap();
+            d.copy_i32_from_host(b, &[5, 2, -1, 9]).unwrap();
+            let ev = d.submit_max(2, 2, a, b, out).unwrap();
+            let cmd = d.last_cmd().unwrap();
+            assert_eq!(cmd.decode_op().unwrap(), AccelOp::Max, "{path:?}");
+            assert_eq!(cmd.function, HAL_FN_MAX, "{path:?}");
+            assert_eq!(cmd.executable, IREE_REF_EXECUTABLE, "{path:?}");
+            if path == SubmitPath::SoftCp {
+                assert!(d.last_firewall_sim().unwrap().noted(), "{path:?}");
+            }
+            d.wait(ev).unwrap();
+            let mut got = [0i32; 4];
+            d.copy_i32_to_host(out, &mut got).unwrap();
+            assert_eq!(got, [5, 8, -1, 9], "{path:?}");
         }
     }
 
