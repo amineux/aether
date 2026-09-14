@@ -294,7 +294,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
 | MP-shaped shim | `make mp-shim-ci` | Thin MicroPerceptron-shaped consumer of the same image; Soft-CP firewall; no QEMU |
 | Path-A IOVA | `make accel-test` | Host Soft-SMMU IOVA / wrong-SID on `PathABar`. No QEMU rebuild |
-| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
+| x86_64 boot | `make qemu-ci` | Ring-3 `/init` + virtqueue demo + LAPIC SoftNPU used-ring IRQ; greps Multiboot mmap + SMEP/SMAP + aspace isolate + `[mm] pcid` + embedded ramfs |
 | x86_64 virtio-blk | `make qemu-blk-ci` | `-drive` AETHFS01; greps `[blk] virtio-blk seed /init` + SoftNPU |
 | x86_64 PCID on | `make qemu-pcid-ci` | requests `+pcid,+invpcid`; TCG cannot advertise it (warn + fallback). `[mm] pcid ok` if KVM implements PCID |
 | x86_64 PCID off | `make qemu-nopcid-ci` | `-cpu qemu64,-pcid`; greps `[mm] pcid fallback` |

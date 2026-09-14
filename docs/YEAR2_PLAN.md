@@ -246,6 +246,7 @@ After AccelDevice bites a real-shaped path — not before:
 | Hardware fence/timeline | `core/src/fence.rs`, `drivers/src/{fakecp,softnpu}.rs`, `docs/{ACCEL,ARCHITECTURE,ROADMAP}.md` |
 | AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
 | Virtio path B (golden MMIO) | `drivers/src/{mmio,virtio_accel,softnpu}.rs`, `docs/{ACCEL,ROADMAP,YEAR2_PLAN}.md` |
+| x86 LAPIC SoftNPU used-ring IRQ | `kernel/src/arch/x86_64/{softnpu_irq,idt,kpti,apic}.rs`, `kernel/src/{world,task}.rs`, `Makefile`, `docs/ACCEL.md` |
 | RISC-V PLIC SoftNPU doorbell | `kernel/src/arch/riscv64/{plic,idt}.rs`, `kernel/src/{world,task}.rs`, `Makefile` |
 | TypedWindow stub (Exploration E) | `core/src/{window,iommu,cut,demo}.rs`, `docs/WINDOW.md` |
 

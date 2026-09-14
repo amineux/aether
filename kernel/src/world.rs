@@ -472,6 +472,8 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
     println!("[accel] virtqueue doorbell kick (SoftNPU deferred to IRQ)");
     #[cfg(target_arch = "riscv64")]
     crate::arch::riscv64::plic::raise_softnpu_doorbell();
+    #[cfg(target_arch = "x86_64")]
+    crate::arch::x86_64::softnpu_irq::raise_softnpu_doorbell();
     Ok(0)
 }
 

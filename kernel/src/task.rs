@@ -553,10 +553,10 @@ fn kthread_b() -> ! {
                 println!("[sched] kthread-B fabric ping posted");
             }
         }
-        // x86: kthread poll is the used-ring path (PIC has no SoftNPU line).
-        // RISC-V: PLIC/SSIP (or the timer fallback in trap_dispatch) services
-        // AccelMmio. Do not poll here — SIE is on and WORLD is a spinlock.
-        #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+        // x86: SoftNPU retires from LAPIC self-IPI vec 49 (KPTI-gated) or
+        // the PIT last-resort drain — do not poll here. RISC-V: PLIC/SSIP.
+        // aarch64: still CNTV tick / kthread poll (no GIC SoftNPU line yet).
+        #[cfg(target_arch = "aarch64")]
         crate::world::run_pending_accel();
         unsafe {
             #[cfg(target_arch = "x86_64")]

@@ -95,7 +95,7 @@ Path:
 
 ```text
 AccelDevice::submit  → write avail[i], avail_idx++, doorbell=1
-SoftNpuDevice::service (IRQ / kthread poll)
+SoftNpuDevice::service (IRQ — x86 LAPIC self-IPI / RISC-V PLIC; aarch64 kthread poll)
                      → take avail, execute SoftNPU, write used, irq_status|=1
 AccelDevice::poll    → read used[i], ack IRQ
 ```
@@ -1065,16 +1065,24 @@ claim a device IRQ. SoftCommandProcessor, IreeShapedCp, and SoftNPU
 all retire through this API. SoftChipletSync adds scoped (wave / CU /
 chiplet / package) timelines on the same seq model; SoftCCT is the
 CPElide-shaped elision layer (not a coherence protocol, not Vulkan /
-ROCm). QEMU's used-ring IRQ is still software on x86
-(kthread poll after the PIC timer). On RISC-V the same AccelMmio
-BAR is serviced from a **PLIC claim** (UART THRE software doorbell,
-source 10) — a real interrupt path, still path B, still not a
-virtio-mmio `-device`.
+ROCm). On x86 the same AccelMmio BAR is serviced from a **LAPIC
+self-IPI** (vector 49, KPTI shadow-IDT gate) — a real interrupt path,
+still path B, still SoftNPU software BAR (not HW SMMU, not
+virtio-mmio). On RISC-V it is a **PLIC claim** (UART THRE, source 10).
+aarch64 still drains on the CNTV tick / kthread poll (no GIC SoftNPU
+line yet). Stock `make qemu` / `make qemu-ci` stay path B.
+
+**Landed (this slice):** x86 SoftNPU used-ring retire via LAPIC
+self-IPI instead of kthread poll. The KPTI trampoline IDT carries a
+dedicated vec-49 stub (generic pushes `0xFF` and would drop the claim).
+Serial greps `[apic] claim vec=49 SoftNPU used-ring` and
+`[accel] used-ring IRQ job#`. Honesty: still SoftNPU software BAR,
+not HW SMMU, not a virtio-mmio `-device`.
 
 A later cut should:
 
-- let a virtio-mmio / MSI-X device IRQ write the seq (RISC-V already
-  retires from a PLIC claim on the path-B BAR; x86 is still kthread poll)
+- let a virtio-mmio / MSI-X device IRQ write the seq (x86 LAPIC + RISC-V
+  PLIC already retire from a software doorbell on the path-B BAR)
 - meter HBM bandwidth as the partition QoS budget already names
 - replace Soft SMMU with a hardware SMMU page table (program a real SID).
   Soft SMMU now walks STE→CD→Stage-1/2 in software; that is not silicon.

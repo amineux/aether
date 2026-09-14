@@ -71,7 +71,7 @@ help:
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
 	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
-	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID-or-fallback + COW + SMEP/SMAP + aspace greps; embedded ramfs)"
+	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID-or-fallback + COW + SMEP/SMAP + APIC SoftNPU IRQ + aspace greps; embedded ramfs)"
 	@echo "  make qemu-blk     - x86_64 + virtio-blk AETHFS01 drive (seeds /init /probe)"
 	@echo "  make qemu-blk-ci  - virtio-blk required; greps [blk] seed + SoftNPU /init"
 	@echo "  make qemu-pcid-ci - request -cpu qemu64,+pcid,+invpcid (TCG cannot advertise PCID; KVM may print pcid ok)"
@@ -384,8 +384,11 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[boot\\] APIC SoftNPU doorbell = self-IPI vec 49" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[apic\\] claim vec=49 SoftNPU used-ring" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/qemu-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/qemu-serial.log; then \
-		echo "qemu-ci: /init + ramfs embedded + clone + mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID + COW + SMEP/SMAP + per-task PML4 + CDT ok (qemu exit $$ec)"; \
+		echo "qemu-ci: /init + ramfs embedded + clone + mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID + COW + SMEP/SMAP + APIC SoftNPU IRQ + per-task PML4 + CDT ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-ci: demo/aspace banner missing or bad exit (qemu exit $$ec)"; \

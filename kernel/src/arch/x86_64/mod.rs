@@ -6,6 +6,7 @@ pub mod io;
 pub mod pci;
 pub mod kpti;
 pub mod serial;
+pub mod softnpu_irq;
 pub mod smp;
 pub mod syscall;
 pub mod timer;

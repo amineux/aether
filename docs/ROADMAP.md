@@ -741,6 +741,28 @@ Honest limits (do not market these as done):
   virtio-mmio, no MSI-X, no write path, no general FS.
 - One boot-time read. Not a user block device.
 
+## x86 LAPIC SoftNPU used-ring IRQ (this cut)
+
+Landed as a **freeze-honest path B** cut — not virtio-mmio, not MSI-X,
+not guest PCI BAR0 productization, not HW SMMU:
+
+- SoftNPU stays the **in-kernel AccelMmio BAR** (stock `make qemu`).
+- Software doorbell: after `AccelDevice::submit` kicks the BAR, the
+  kernel sends a LAPIC **self-IPI** on vector 49
+  (`kernel/src/arch/x86_64/softnpu_irq.rs`). The KPTI shadow IDT gates
+  that vector (`kpti_isr_49`); without it the generic trampoline pushes
+  `0xFF` and the claim is lost. The ISR EOIs and
+  `World::run_pending_accel` retires the used ring. PIT IRQ0 remains a
+  last-resort drain.
+- kthread-B no longer polls SoftNPU on x86 (fabric ping only).
+- `make qemu` / `make qemu-ci` greps
+  `[boot] APIC SoftNPU doorbell = self-IPI vec 49`,
+  `[apic] claim vec=49 SoftNPU used-ring`, and
+  `[accel] used-ring IRQ job#`.
+
+Still stubbed on this HAL: virtio-mmio / MSI-X device IRQ, hardware
+SMMU, CapTable / partner opcode / ABI renumber work.
+
 ## RISC-V PLIC + SoftNPU doorbell (this cut)
 
 Landed as a **documented subset**, not virtio-mmio, not a QEMU
@@ -754,7 +776,7 @@ Landed as a **documented subset**, not virtio-mmio, not a QEMU
 - Software doorbell: after `AccelDevice::submit` kicks the BAR,
   the kernel raises UART0 THRE → PLIC source 10. The SEI handler
   claims source 10, acks THRE, and `World::run_pending_accel`
-  services the same used ring the x86 kthread poll path does.
+  services the same used ring x86 retires from LAPIC self-IPI vec 49.
   SSIP remains enabled as a spare trap; it is not the doorbell.
 - `make qemu-riscv` / `make qemu-riscv-ci` greps
   `[boot] PLIC hart0 S-mode`,

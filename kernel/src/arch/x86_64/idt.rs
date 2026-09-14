@@ -1,4 +1,7 @@
 //! IDT + PIC remap. Handlers are `extern "C"` + `global_asm` (stable rustc).
+//!
+//! SoftNPU used-ring retire on path B: LAPIC self-IPI → vector 49
+//! (`softnpu_irq`). KPTI shadow IDT must also gate vec 49. Not virtio-mmio.
 
 use core::arch::global_asm;
 use core::sync::atomic::{AtomicU64, Ordering};
@@ -64,6 +67,7 @@ extern "C" {
     fn isr_stub_14();
     fn isr_stub_32();
     fn isr_stub_33();
+    fn isr_stub_49();
     fn isr_stub_48();
     fn isr_stub_generic();
 }
@@ -88,12 +92,14 @@ pub fn init() {
     set_gate(14, isr_stub_14, true);
     set_gate(32, isr_stub_32, false);
     set_gate(33, isr_stub_33, false);
+    set_gate(49, isr_stub_49, false);
     set_gate(48, isr_stub_48, false);
 
     remap_pic();
+    crate::arch::x86_64::softnpu_irq::init();
     load();
     irq::enable();
-    crate::println!("[boot] IDT loaded, PIC remapped (IRQ0-15 -> 32-47), IPI vec 48");
+    crate::println!("[boot] IDT loaded, PIC remapped (IRQ0-15 -> 32-47), SoftNPU IPI vec 49, SMP IPI vec 48");
 }
 
 fn remap_pic() {
@@ -179,11 +185,23 @@ pub extern "C" fn isr_dispatch(frame: &mut InterruptFrame) {
         32 => {
             irq::inc_ticks();
             eoi(0);
+            // Last-resort SoftNPU drain if the LAPIC doorbell was missed.
+            crate::world::run_pending_accel();
             crate::task::on_timer(frame);
         }
         33 => {
             let _sc = inb(0x60);
             eoi(1);
+        }
+        49 => {
+            use crate::arch::x86_64::softnpu_irq;
+            softnpu_irq::ack_softnpu_doorbell();
+            crate::console::write_str("[apic] claim vec=");
+            crate::console::write_u64(softnpu_irq::SOFTNPU_VEC as u64);
+            crate::console::write_str(" SoftNPU used-ring");
+            crate::console::nl();
+            crate::world::run_pending_accel();
+            crate::arch::x86_64::apic::eoi();
         }
         48 => {
             crate::arch::x86_64::cpu::inc_local_ticks();
@@ -300,6 +318,12 @@ global_asm!(
     isr_stub_33:
         push 0
         push 33
+        jmp isr_common
+
+    .global isr_stub_49
+    isr_stub_49:
+        push 0
+        push 49
         jmp isr_common
 
     .global isr_stub_48
