@@ -43,6 +43,19 @@ surface is host red-team only — **not** a fourth `[blast]` serial line:
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. No World CapTable
 split, no new syscall, no opcode churn.
 
+
+## Bank color (red-team needle)
+
+`admit_wave` is unit-tested in `color.rs`. The sell surface is host
+red-team only — existing path; **not** a new isolator:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Same-color Compute admits; foreign bank refuse; Exchange still OK | `run_bank_color_demo` → `ColorError::ForeignBank` | `[redteam] attack=bank-color result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay
+on `attack=blast-hops`. No CapTable split, no new syscall, no opcode churn.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).

@@ -323,6 +323,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Fabric-class tag at admit | `run_softnoi_demo` — Gradient admits; second Curl refuses the reserved ring | admit / refuse |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
 | Over `max_hops` flood | `run_blast_hops_demo` — `PartitionProfile::admit_hops` → `PartitionError::BlastRadius` (two slices; in-budget admits). Not a CrossCut / wrong-SID rehash | refused |
+| Foreign bank Compute wave | `run_bank_color_demo` — `admit_wave` → `ColorError::ForeignBank` (Exchange still OK). Existing path; not CrossCut / hops | refused |
 
 Expected stdout (CI greps these):
 
@@ -333,6 +334,7 @@ Expected stdout (CI greps these):
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
 [redteam] attack=blast-hops result=refused
+[redteam] attack=bank-color result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
