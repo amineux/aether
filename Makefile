@@ -210,12 +210,14 @@ mp-shim-ci:
 	grep -Fq "magic=0xAE7E1EE1 size=96 backend=4 executable=0x0001EE00 ssid=2" $(MP_SHIM_LOG)
 	grep -Fq "matmul 2x2 -> [19, 22, 43, 50]" $(MP_SHIM_LOG)
 	grep -Fq "wave 2x2+bias -> [11, 22, 13, 24]" $(MP_SHIM_LOG)
+	grep -Fq "mul 2x2 -> [12, 21, 32, 45]" $(MP_SHIM_LOG)
+	grep -Fq "max 2x2 -> [5, 8, -1, 9]" $(MP_SHIM_LOG)
 	grep -Fq "memcpy host-copy [9, 8, 7, 6] (not a v1 TRANSFER packet)" $(MP_SHIM_LOG)
 	grep -Fq "bad executable 0xDEAD refused" $(MP_SHIM_LOG)
 	grep -Fq "soft-cp path firewall" $(MP_SHIM_LOG)
 	grep -Fq "path B remains canonical" $(MP_SHIM_LOG)
 	grep -Fq "[mp-shim] ok" $(MP_SHIM_LOG)
-	@echo "mp-shim-ci: thin MP-shaped IreeHalCmd consumer + firewall ok"
+	@echo "mp-shim-ci: thin MP-shaped IreeHalCmd consumer (matmul/wave/mul/max) + firewall ok"
 
 # Optional M2 leave-behind: software-table dump/replay. Not a Soft-SMMU redo.
 smmu-bringup:

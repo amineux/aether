@@ -734,7 +734,7 @@
               <span class="badge done">sketch</span>
             </div>
             <h3>MP-shaped consumer</h3>
-            <p>Thin third caller of frozen <code>IreeHalCmd</code> (PR #83). Inspiration name only. Secondary to PJRT. Not a MicroPerceptron port. No QEMU rebuild.</p>
+            <p>Thin third caller of frozen <code>IreeHalCmd</code> (PR #83). Exercises <code>Mul</code> / <code>Max</code> additive research ops on freeze-v1 (same 96-byte packet). Inspiration name only. Secondary to PJRT. Not a MicroPerceptron port. No QEMU rebuild.</p>
           </article>
           <article class="proof-card" data-reveal data-d="6">
             <div class="proof-head">
@@ -742,7 +742,7 @@
               <span class="badge stub">optional</span>
             </div>
             <h3>Path-B guest</h3>
-            <p>Stock QEMU, in-kernel SoftNPU BAR. Use if they want the bootable slice. Skip if the laptop has no QEMU. PJRT <code>Add</code> / <code>Relu</code> / <code>Mul</code> / <code>Max</code> (PR #84 / #88 / this PR) stay additive research opcodes on freeze-v1 — same 96-byte packet, not FLOPs, not freeze-v2. Max is the last SoftNPU elementwise on freeze-v1.</p>
+            <p>Stock QEMU, in-kernel SoftNPU BAR. Use if they want the bootable slice. Skip if the laptop has no QEMU. PJRT <code>Add</code> / <code>Relu</code> / <code>Mul</code> / <code>Max</code> (PR #84 / #88 / #92) stay additive research opcodes on freeze-v1 — same 96-byte packet, not FLOPs, not freeze-v2. Max is the last SoftNPU elementwise on freeze-v1.</p>
           </article>
         </div>
 

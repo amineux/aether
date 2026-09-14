@@ -33,8 +33,8 @@ call. Stock `make qemu` stays the path-B guest demo if they want it.
 | Named attacks | `make red-team` | wrong-SID / SoftCmdFirewall / SoftSFI-OOB / SoftNoI-IS / PASID-stale **refused**. Fabric-class admit/refuse. `ATOMIC_ADD` accept/reject. `[softsfi] heap=refused`. |
 | Frozen packet | `make partner-hello` | 96-byte `IreeHalCmd` → `IreeShapedCp`. Magic `0xAE7E1EE1`. 2×2 I32 matmul. Unknown executable refused. |
 | Doorbell (second caller) | `cargo run -p aether-accel-client` | Same 96-byte image. Not a Makefile target. Not a MicroPerceptron port. |
-| MP-shaped thin consumer | `make mp-shim` | `host/aether-mp-shim` (PR #83). Same frozen image. memcpy / matmul / wave. Inspiration name only. Secondary to PJRT. Not a port. |
-| PJRT Add/Relu | `cargo test -p aether-pjrt` | Additive `Add=3` / `Relu=4` on the frozen `IreeHalCmd` (`function` 2 / 3; PR #84). Offsets unchanged. Not `GetPjRtApi`. |
+| MP-shaped thin consumer | `make mp-shim` | `host/aether-mp-shim` (PR #83 + Mul/Max consumer parity). Same frozen image. memcpy / matmul / wave / mul / max (additive research ops). Inspiration name only. Secondary to PJRT. Not a port. |
+| PJRT Add/Relu/Mul/Max | `cargo test -p aether-pjrt` | Additive `Add=3` / `Relu=4` / `Mul=5` / `Max=6` on the frozen `IreeHalCmd` (`function` 2 / 3 / 4 / 5; PR #84 / #88 / #92). Offsets unchanged. Not `GetPjRtApi`. |
 | Worksheet | `make design-win-check` / `make design-win-standin` | Blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
 | Path-A IOVA | `make accel-test` | Soft-SMMU IOVA on the optional BAR; wrong SID aborts. Stock `make qemu` stays B. Do not rebuild QEMU. |
 | Guest Path B | `make qemu` | In-kernel SoftNPU BAR. Optional. Not required for the call. |
@@ -54,7 +54,7 @@ Makefile targets.
 | Diligence narrative | `make diligence-demo` — blast / pjrt / event / softcct / firewall / greenctx |
 | Partner hello | `make partner-hello` — frozen packet, no QEMU |
 | MP-shaped thin consumer | `make mp-shim` — same frozen `IreeHalCmd`; inspiration name only |
-| PJRT Add/Relu | `cargo test -p aether-pjrt` — same frozen packet; `function` 2 / 3; PR #84 |
+| PJRT Add/Relu/Mul/Max | `cargo test -p aether-pjrt` — same frozen packet; `function` 2 / 3 / 4 / 5; PR #84 / #88 / #92 |
 | Path-A IOVA | `make accel-test` — Soft-SMMU IOVA / wrong-SID on the optional BAR |
 | Event wait | `make diligence-demo` — grep `[event] SoftChipletSync create/record/wait` |
 | Event fence counts | `make diligence-demo` — grep `[event] fence counts chiplet-local vs package` |
@@ -96,7 +96,7 @@ paint, or site-as-milestone.
 | When | Sell slice | Honest bound |
 | --- | --- | --- |
 | **M0 now (Sep)** | Sell pack + call pack live. Capture feedback. Fill DESIGN_WIN from a **real** table when one appears. | Pack is already in tree. Do not invent a vendor table. |
-| **M1–M2 (Oct–Nov)** | **Done.** Thin MP-shaped consumer (PR #83; `make mp-shim`). SoftSFI heap refuse (PR #80; named `Unmodeled`, not a bump allocator). PJRT Add/Relu more ops (PR #84; same frozen packet, `function` 2 / 3). | Same packet. Dual ACCEL.md + `ireecp` + host pack/unpack if the image moves. |
+| **M1–M2 (Oct–Nov)** | **Done.** Thin MP-shaped consumer (PR #83; `make mp-shim`; Mul/Max consumer parity). SoftSFI heap refuse (PR #80; named `Unmodeled`, not a bump allocator). PJRT Add/Relu/Mul/Max more ops (PR #84 / #88 / #92; same frozen packet, `function` 2 / 3 / 4 / 5). | Same packet. Dual ACCEL.md + `ireecp` + host pack/unpack if the image moves. |
 | **M3–M4 (Dec–Jan)** | **Done.** SoftGreenCtx interference clip (`[greenctx] interference partitioned 70/30 vs unpartitioned`). SoftCCT / Event fence-**count** polish (`[softcct] package fences=` + `[event] fence counts`). CapTable **skipped** (no shim-tenant slot alias; gate still closed). | Not HW MIG. Not a latency claim from single-die numbers. |
 | **M5–M6 (Feb–Mar)** | **Done.** freeze-v1: research `IreeHalCmd` v1 stays (no real partner table). Diligence pack refresh. Port **skipped** (path B doorbell has not failed a partner ask). | 2028 language unchanged: signed list or freeze research ABI. Not tape-out. |
 

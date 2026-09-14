@@ -48,7 +48,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
 | `cargo run -p aether-accel-client` | doorbell; same 96-byte image. Not a Makefile target. |
 | `make accel-test` | path-A Soft-SMMU IOVA / wrong-SID (optional). Stock `make qemu` stays B. |
-| `cargo test -p aether-pjrt` | PJRT Add/Relu/Mul (`function` 2 / 3 / 4) as research ops on the frozen packet |
+| `cargo test -p aether-pjrt` | PJRT Add/Relu/Mul/Max (`function` 2 / 3 / 4 / 5) as research ops on the frozen packet |
 
 Still not a partnership announcement. Still not a booked bring-up.
 
@@ -105,7 +105,7 @@ clip is a sibling: `make red-team` (fabric-class + `ATOMIC_ADD`; see
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
 | SoftNoI-IS | **Landed** (PR #60). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`. Fabric-class tag (PR #75): tree → Gradient, ring → Curl, persistent → Harmonic; second Curl refuses reserved ring even at IS = 1.0. PARL/NoI inspiration; admit control, not topology synth, not UniCNet | `core/src/noi.rs`, `drivers/src/noi.rs` |
 | Partner sketch `PartnerNpuStub` | No-op `AccelDevice` (not a CP path) | `drivers/src/partner.rs` |
-| PJRT/IREE-shaped host nouns | Types + working host session; Event create/record/wait on existing SoftChipletSync fences (PR #74); Add / Relu / Mul on the frozen packet (PR #84 / #88); no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `docs/{ABI,HOST}.md` |
+| PJRT/IREE-shaped host nouns | Types + working host session; Event create/record/wait on existing SoftChipletSync fences (PR #74); Add / Relu / Mul / Max on the frozen packet (PR #84 / #88 / #92); mp-shim exercises Mul/Max too; no graph IR | `core/src/abi.rs`, `host/aether-pjrt`, `host/aether-mp-shim`, `docs/{ABI,HOST}.md` |
 | MP-shaped thin `IreeHalCmd` consumer | Research sketch (PR #83); memcpy / matmul / wave; doorbell or Soft-CP; inspiration name only | `host/aether-mp-shim`, `make mp-shim` |
 | Design-win worksheet | Fill-in call artifact + host checker (not a signed vendor) | `docs/DESIGN_WIN.md`, `examples/design-win-check` |
 | IREE HAL research stand-in | Filled public-noun mapping; **not a partner** | [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md), `make design-win-standin` |
