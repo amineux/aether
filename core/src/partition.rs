@@ -60,6 +60,8 @@ pub struct BlastRadius {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartitionError {
     OutsideSlice,
+    /// Reserved; QoS credit refuse uses [`Self::CreditExhausted`] via
+    /// [`crate::fence::Timeline::submit`].
     QosExceeded,
     BlastRadius,
     Unbound,
@@ -127,18 +129,6 @@ impl PartitionProfile {
             Err(PartitionError::BlastRadius)
         }
     }
-
-    /// Charge `amount` against [`QosBudget::credits`].
-    /// In-budget admits; over credits → [`PartitionError::QosExceeded`].
-    /// Software meter today — not EventRing theater, not fence in-flight
-    /// ([`PartitionError::CreditExhausted`]).
-    pub fn charge_credits(&self, amount: u32) -> Result<(), PartitionError> {
-        if amount <= self.qos.credits {
-            Ok(())
-        } else {
-            Err(PartitionError::QosExceeded)
-        }
-    }
 }
 
 /// Host red-team hops clip: two partitions / two slices.
@@ -202,26 +192,31 @@ pub fn run_blast_hops_demo() -> BlastHopsReport {
     }
 }
 
-
 /// Host red-team QoS credits clip: two partitions / two slices.
-/// In-budget [`PartitionProfile::charge_credits`] admits; over
-/// [`QosBudget::credits`] → [`PartitionError::QosExceeded`].
-/// Sell needle is `[redteam] attack=qos-credits` — not EventRing theater.
+/// [`crate::fence::Timeline::submit`] meters [`QosBudget::credits`]:
+/// in-budget submits admit; `in_flight >= credits` →
+/// [`PartitionError::CreditExhausted`]. Complete / timeout frees a credit
+/// and admit resumes. Sell needle is `[redteam] attack=qos-credits` —
+/// existing fence meter, not a second charge API / EventRing theater.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct QosCreditsReport {
     pub two_slice: bool,
     pub in_budget: bool,
     pub over_credits: bool,
+    pub resume: bool,
 }
 
 impl QosCreditsReport {
     pub fn all_ok(&self) -> bool {
-        self.two_slice && self.in_budget && self.over_credits
+        self.two_slice && self.in_budget && self.over_credits && self.resume
     }
 }
 
 /// Two tenants, distinct chiplet slices, `credits = 4`.
+/// Uses [`crate::fence::Timeline`] + [`PartitionProfile`] only.
 pub fn run_qos_credits_demo() -> QosCreditsReport {
+    use crate::fence::Timeline;
+
     let a = PartitionProfile::new(
         PartitionId(1),
         SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
@@ -252,17 +247,49 @@ pub fn run_qos_credits_demo() -> QosCreditsReport {
         && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
         && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
 
-    let in_budget = a.charge_credits(1).is_ok()
-        && a.charge_credits(4).is_ok()
-        && b.charge_credits(4).is_ok();
+    let mut ta = Timeline::new(PartitionId(1));
+    let mut tb = Timeline::new(PartitionId(2));
 
-    let over_credits = a.charge_credits(5) == Err(PartitionError::QosExceeded)
-        && b.charge_credits(5) == Err(PartitionError::QosExceeded);
+    // Fill each timeline to qos.credits — all admit.
+    let a0 = ta.submit(&a, None);
+    let a1 = ta.submit(&a, None);
+    let a2 = ta.submit(&a, None);
+    let a3 = ta.submit(&a, None);
+    let b0 = tb.submit(&b, None);
+    let b1 = tb.submit(&b, None);
+    let b2 = tb.submit(&b, None);
+    let b3 = tb.submit(&b, None);
+    let in_budget = a0.is_ok()
+        && a1.is_ok()
+        && a2.is_ok()
+        && a3.is_ok()
+        && b0.is_ok()
+        && b1.is_ok()
+        && b2.is_ok()
+        && b3.is_ok()
+        && ta.in_flight() == a.qos.credits
+        && tb.in_flight() == b.qos.credits;
+
+    // One over budget → CreditExhausted (existing Timeline meter).
+    let over_credits = ta.submit(&a, None) == Err(PartitionError::CreditExhausted)
+        && tb.submit(&b, None) == Err(PartitionError::CreditExhausted);
+
+    // complete / timeout frees a credit; next submit admits again.
+    let resume = match (a0, b0) {
+        (Ok(af), Ok(bf)) => {
+            ta.complete(af.id).is_ok()
+                && ta.submit(&a, None).is_ok()
+                && tb.timeout(bf.id).is_ok()
+                && tb.submit(&b, None).is_ok()
+        }
+        _ => false,
+    };
 
     QosCreditsReport {
         two_slice,
         in_budget,
         over_credits,
+        resume,
     }
 }
 
@@ -296,8 +323,6 @@ mod tests {
             Err(PartitionError::OutsideSlice)
         );
         assert_eq!(p.admit_hops(2), Err(PartitionError::BlastRadius));
-        assert!(p.charge_credits(4).is_ok());
-        assert_eq!(p.charge_credits(5), Err(PartitionError::QosExceeded));
         let mut t = CapTable::new(TenantId(1));
         let c = p.mint(&mut t).unwrap();
         assert_eq!(t.lookup(c).unwrap().kind, CapKind::Partition);
@@ -316,8 +341,9 @@ mod tests {
     fn qos_credits_demo_in_budget_and_refuse() {
         let r = run_qos_credits_demo();
         assert!(r.two_slice, "two tenants / two slices");
-        assert!(r.in_budget, "in-budget credit charge admits");
-        assert!(r.over_credits, "over credits → QosExceeded");
+        assert!(r.in_budget, "in-budget Timeline::submit admits");
+        assert!(r.over_credits, "over credits → CreditExhausted");
+        assert!(r.resume, "complete/timeout frees credit; admit resumes");
         assert!(r.all_ok());
     }
 }

@@ -5,7 +5,7 @@ Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_softnoi_demo`, and `run_sva_demo`. Not a new isolator, not a QEMU guest, not a
 slide. Bank-color needle: `[redteam] attack=bank-color result=refused` (`admit_wave` →
 `ColorError::ForeignBank`; Exchange still OK). QoS credits needle:
-`[redteam] attack=qos-credits result=refused` (`charge_credits` → `QosExceeded`).
+`[redteam] attack=qos-credits result=refused` (`Timeline::submit` → `CreditExhausted`).
 
 From the repo root:
 

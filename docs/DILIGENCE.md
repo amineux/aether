@@ -324,7 +324,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
 | Over `max_hops` flood | `run_blast_hops_demo` — `PartitionProfile::admit_hops` → `PartitionError::BlastRadius` (two slices; in-budget admits). Not a CrossCut / wrong-SID rehash | refused |
 | Foreign bank Compute wave | `run_bank_color_demo` — `admit_wave` → `ColorError::ForeignBank` (Exchange still OK). Existing path; not CrossCut / hops | refused |
-| Over QoS credits | `run_qos_credits_demo` — `PartitionProfile::charge_credits` → `PartitionError::QosExceeded` (in-budget admits). Not EventRing theater | refused |
+| Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 
 Expected stdout (CI greps these):
 
