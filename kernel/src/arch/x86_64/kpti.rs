@@ -62,6 +62,7 @@ extern "C" {
     fn kpti_isr_32();
     fn kpti_isr_33();
     fn kpti_isr_48();
+    fn kpti_isr_49();
     fn isr_common();
     fn syscall_entry();
 }
@@ -218,6 +219,8 @@ fn install_identity_idt() {
     write_idt_gate(32, tramp_pa(kpti_isr_32), false);
     write_idt_gate(33, tramp_pa(kpti_isr_33), false);
     write_idt_gate(48, tramp_pa(kpti_isr_48), false);
+    // SoftNPU LAPIC self-IPI (path B). Generic stub pushes 0xFF — must be dedicated.
+    write_idt_gate(49, tramp_pa(kpti_isr_49), false);
     let idtr = DescPtr {
         limit: 4096 - 1,
         base: KPTI_TRAMP_IDT,
@@ -351,6 +354,12 @@ global_asm!(
     kpti_isr_48:
         push 0
         push 48
+        KPTI_ISR_ENTER
+
+    .global kpti_isr_49
+    kpti_isr_49:
+        push 0
+        push 49
         KPTI_ISR_ENTER
 
     .global kpti_iret_user

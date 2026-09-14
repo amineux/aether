@@ -1,4 +1,7 @@
 //! 16550 UART on COM1 (0x3F8).
+//!
+//! Console is polled TX. SoftNPU used-ring retire is LAPIC self-IPI
+//! (`softnpu_irq`), not a COM1 line — keep IER at 0.
 
 use super::io::{inb, outb};
 

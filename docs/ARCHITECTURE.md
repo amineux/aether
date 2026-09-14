@@ -159,7 +159,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 
 | Path | Responsibility |
 | --- | --- |
-| `kernel/src/arch/x86_64` | UART, IDT/PIC, PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
+| `kernel/src/arch/x86_64` | UART, IDT/PIC, SoftNPU LAPIC self-IPI (vec 49 + KPTI gate), PIT, GDT/TSS, SYSCALL MSRs, SMP (`gs` / APIC) |
 | `kernel/src/mm` | Multiboot mmap → frames, bump heap, HH + per-task PML4 clone, SMEP/SMAP, USER bits |
 | `core/src/mmap.rs` | Host-tested Multiboot1 / Multiboot2 mmap parser + frame plan |
 | `kernel/src/syscall.rs` | Numbered ABI; ring-3 trap dispatch + cap checks |

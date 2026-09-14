@@ -97,3 +97,11 @@ pub fn init_sipi(apic_id: u32, trampoline_phys: u64) {
 pub fn ipi(apic_id: u32, vector: u8) {
     send_icr(apic_id, ICR_FIXED | vector as u32);
 }
+
+/// Fixed IPI to this CPU (ICR destination shorthand = self).
+pub fn ipi_self(vector: u8) {
+    const ICR_DEST_SELF: u32 = 1 << 18;
+    icr_idle();
+    write(APIC_ICR_LOW, ICR_FIXED | ICR_DEST_SELF | vector as u32);
+    icr_idle();
+}
