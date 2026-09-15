@@ -264,6 +264,9 @@ not an eigensolver:
   frozen). No QEMU collective engine.
 - Host tests lock drop / keep / Gradient-Curl / refuse. Boot demo
   + serial `[sparsify] below-threshold DROP + above KEEP + harmonic-tree REFUSE`.
+- Soft-CP opt-in: `submit_xqueue_sparsify` consults `decide_header`
+  before XQueue enqueue. Host needle `[softcp] sparsify DROP`
+  (distinct from the qemu `[sparsify]` line). DROP ≠ Hodge refuse.
 
 ## Hardware fence/timeline (this cut)
 

@@ -13,6 +13,8 @@
 //! (memcpy / saxpy + hot-add scale; GPUOS / Mirage MPK inspiration).
 //! SoftNoI-IS (`noi`) is Interference Score admit on a fake shared NoI
 //! plus a software fabric-class tag (Curl reserved ring).
+//! Soft-CP sparsify (`sparsify`) consults `decide_header` before XQueue
+//! enqueue when a descriptor carries FlowClass (DROP ≠ Hodge refuse).
 //! [`IreeShapedCp`] is the partner-shaped HAL spine: an IREE HAL dispatch
 //! packet, not Soft-CP 2.0 (still a single mailbox; optional scoped
 //! timelines). [`PartnerNpuStub`] remains a documented no-op sketch.
@@ -25,6 +27,7 @@ pub mod ireecp;
 pub mod mmio;
 pub mod noi;
 pub mod opinject;
+pub mod sparsify;
 pub mod partner;
 pub mod path_a;
 pub mod softnpu;
@@ -48,3 +51,5 @@ pub use partner::{PartnerCmd, PartnerNpuStub};
 pub use path_a::{path_a_sid, PathABar, PATH_A_PCI_DEVICE, PATH_A_SSID};
 pub use softnpu::{IdentityDma, KernelDma, SoftNpuDevice};
 pub use virtio_accel::{VirtioAccelQueue, VIRTIO_ACCEL_MAGIC, VIRTIO_ACCEL_VERSION};
+
+pub use sparsify::{run_softcp_sparsify_demo, SoftcpSparsifyReport};

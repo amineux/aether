@@ -133,7 +133,10 @@ decide(Ring, Curl, any energy)         → Keep; RING_RESERVE unchanged
 
 Hodge refuse runs first: a below-threshold harmonic on a Tree is still
 refused, not dropped. Caps stay on `CapKind::OperatorKernel`. Host
-tests in `core/src/sparsify.rs` lock the matrix. No new syscall.
+tests in `core/src/sparsify.rs` lock the matrix. Soft-CP
+`submit_xqueue_sparsify` (`drivers/src/sparsify.rs`) calls the same
+`decide_header` before enqueue; host needle `[softcp] sparsify DROP`.
+No new syscall.
 
 ## Related
 
