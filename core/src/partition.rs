@@ -293,6 +293,71 @@ pub fn run_qos_credits_demo() -> QosCreditsReport {
     }
 }
 
+
+/// Host red-team outside-slice clip: two partitions / two chiplet slices.
+/// Own chiplet admits via [`PartitionProfile::admit_chiplet`]; foreign
+/// chiplet → [`PartitionError::OutsideSlice`]. Sell needle is
+/// `[redteam] attack=outside-slice` — existing path only; **not** hops /
+/// qos / CrossCut / bank-color.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutsideSliceReport {
+    pub two_slice: bool,
+    pub in_slice: bool,
+    pub outside: bool,
+}
+
+impl OutsideSliceReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_slice && self.in_slice && self.outside
+    }
+}
+
+/// Two tenants, distinct chiplet slices. Existing `admit_chiplet` only.
+pub fn run_outside_slice_demo() -> OutsideSliceReport {
+    let a = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let b = PartitionProfile::new(
+        PartitionId(2),
+        SpatialSlice::single_chiplet(ChipletId(1), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+
+    let two_slice = a.slice.chiplet_lo == ChipletId(0)
+        && a.slice.chiplet_hi == ChipletId(0)
+        && b.slice.chiplet_lo == ChipletId(1)
+        && b.slice.chiplet_hi == ChipletId(1)
+        && a.slice.chiplet_lo != b.slice.chiplet_lo;
+
+    let in_slice =
+        a.admit_chiplet(ChipletId(0)).is_ok() && b.admit_chiplet(ChipletId(1)).is_ok();
+
+    let outside = a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
+        && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
+
+    OutsideSliceReport {
+        two_slice,
+        in_slice,
+        outside,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -344,6 +409,15 @@ mod tests {
         assert!(r.in_budget, "in-budget Timeline::submit admits");
         assert!(r.over_credits, "over credits → CreditExhausted");
         assert!(r.resume, "complete/timeout frees credit; admit resumes");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn outside_slice_demo_own_admit_foreign_refuse() {
+        let r = run_outside_slice_demo();
+        assert!(r.two_slice, "two tenants / two chiplet slices");
+        assert!(r.in_slice, "own chiplet admit_chiplet admits");
+        assert!(r.outside, "foreign chiplet → OutsideSlice");
         assert!(r.all_ok());
     }
 }

@@ -71,6 +71,20 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable
 split, no new syscall, no opcode churn.
 
+## Outside slice (red-team needle)
+
+`PartitionProfile::admit_chiplet` is unit-tested in `partition.rs`. The sell
+surface is host red-team only — existing path; **not** hops / qos / CrossCut /
+bank-color:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two tenants / two chiplet slices; own chiplet admits; foreign chiplet refuse | `run_outside_slice_demo` → `PartitionError::OutsideSlice` | `[redteam] attack=outside-slice result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
+`attack=blast-hops`. Bank color stays on `attack=bank-color`. QoS credits stays
+on `attack=qos-credits`. No CapTable split, no new syscall, no opcode churn.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).
