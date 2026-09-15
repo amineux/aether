@@ -2,13 +2,16 @@
 //!
 //! EL1 kernel + EL0 `/init` via `eret` / `svc`. TTBR0 task isolate
 //! (AP_EL0 on one 2 MiB window). SoftNPU is the in-kernel virtqueue
-//! (path B), drained on the CNTV tick / kthread poll — not a GIC
-//! doorbell and not virtio-mmio. Extra PEs stay parked.
+//! (path B), retired from a **GICv2 SPI 40** software doorbell (same
+//! class as x86 LAPIC self-IPI / RISC-V PLIC) — not virtio-mmio, not
+//! GICv3. CNTV remains the scheduler tick + last-resort drain. Extra
+//! PEs stay parked.
 
 use core::arch::global_asm;
 
 pub mod idt;
 pub mod serial;
+pub mod softnpu_irq;
 pub mod timer;
 
 global_asm!(include_str!("../../../../boot/aarch64/trampoline.S"));

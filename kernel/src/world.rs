@@ -474,6 +474,8 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
     crate::arch::riscv64::plic::raise_softnpu_doorbell();
     #[cfg(target_arch = "x86_64")]
     crate::arch::x86_64::softnpu_irq::raise_softnpu_doorbell();
+    #[cfg(target_arch = "aarch64")]
+    crate::arch::aarch64::softnpu_irq::raise_softnpu_doorbell();
     Ok(0)
 }
 

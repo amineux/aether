@@ -95,7 +95,7 @@ Path:
 
 ```text
 AccelDevice::submit  → write avail[i], avail_idx++, doorbell=1
-SoftNpuDevice::service (IRQ — x86 LAPIC self-IPI / RISC-V PLIC; aarch64 kthread poll)
+SoftNpuDevice::service (IRQ — x86 LAPIC self-IPI / RISC-V PLIC / aarch64 GIC SPI)
                      → take avail, execute SoftNPU, write used, irq_status|=1
 AccelDevice::poll    → read used[i], ack IRQ
 ```
@@ -1069,20 +1069,24 @@ ROCm). On x86 the same AccelMmio BAR is serviced from a **LAPIC
 self-IPI** (vector 49, KPTI shadow-IDT gate) — a real interrupt path,
 still path B, still SoftNPU software BAR (not HW SMMU, not
 virtio-mmio). On RISC-V it is a **PLIC claim** (UART THRE, source 10).
-aarch64 still drains on the CNTV tick / kthread poll (no GIC SoftNPU
-line yet). Stock `make qemu` / `make qemu-ci` stay path B.
+On aarch64 it is a **GICv2 SPI claim** (intid 40, software-pended via
+`GICD_ISPENDR`) — same class as the LAPIC self-IPI, still path B.
+CNTV remains the scheduler tick and a last-resort drain. Stock
+`make qemu` / `make qemu-ci` / `make qemu-aarch64-ci` stay path B.
 
-**Landed (this slice):** x86 SoftNPU used-ring retire via LAPIC
-self-IPI instead of kthread poll. The KPTI trampoline IDT carries a
-dedicated vec-49 stub (generic pushes `0xFF` and would drop the claim).
-Serial greps `[apic] claim vec=49 SoftNPU used-ring` and
+**Landed (this slice):** aarch64 SoftNPU used-ring retire via GICv2
+SPI 40 instead of CNTV/kthread poll. After AccelMmio doorbell the
+kernel writes `GICD_ISPENDR`; the IRQ handler claims intid 40, clears
+pending, and `World::run_pending_accel` retires the used ring. Serial
+greps `[gic] claim irq=40 SoftNPU used-ring` and
 `[accel] used-ring IRQ job#`. Honesty: still SoftNPU software BAR,
-not HW SMMU, not a virtio-mmio `-device`.
+not HW SMMU, not a virtio-mmio `-device`, not GICv3.
 
 A later cut should:
 
 - let a virtio-mmio / MSI-X device IRQ write the seq (x86 LAPIC + RISC-V
-  PLIC already retire from a software doorbell on the path-B BAR)
+  PLIC + aarch64 GIC SPI already retire from a software doorbell on the
+  path-B BAR)
 - meter HBM bandwidth as the partition QoS budget already names
 - replace Soft SMMU with a hardware SMMU page table (program a real SID).
   Soft SMMU now walks STE→CD→Stage-1/2 in software; that is not silicon.

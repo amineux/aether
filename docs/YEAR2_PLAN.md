@@ -74,8 +74,8 @@ unscheduled Y2H1 security work (parent/child edges + `revoke_in`;
 not a seL4 CNode, not a calendar milestone). An aarch64 thin HAL
 (`make qemu-aarch64`) is **done** as a RISC-V-shaped bring-up (PL011
 + GICv2 + TTBR). The later EL0 userspace cut (`eret`/`svc` `/init` +
-TTBR0 isolate + in-kernel SoftNPU) is **done** as a documented
-subset — not product-class. Multiboot mmap → frames
+TTBR0 isolate + in-kernel SoftNPU + GICv2 SPI 40 doorbell) is
+**done** as a documented subset — not product-class. Multiboot mmap → frames
 is **done** as a documented x86 subset (clip 16 MiB, 128 MiB bitmap
 cap; explicit fallback on RISC-V / aarch64; not a general MM).
 OperatorKernelHandle is **done** as an unscheduled research kernel
@@ -197,7 +197,8 @@ After AccelDevice bites a real-shaped path — not before:
   trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH.
   Growable `SYS_MMAP` at `0x02C0_0000` is user-only, not an identity
   island.
-- aarch64 GICv3 / virtio-mmio (EL0 `/init` landed; virtqueue BAR is
+- aarch64 GICv3 / virtio-mmio (EL0 `/init` + GICv2 SPI 40 path-B
+  doorbell landed; virtqueue BAR is
   in-kernel, not a `-device`).
 
 ### PR order for Kernel (revised)
@@ -247,6 +248,7 @@ After AccelDevice bites a real-shaped path — not before:
 | AffinityLaplacian n≤32 | `core/src/{laplacian,cut,sched}.rs`, `docs/{CUT,ROADMAP,YEAR2_PLAN}.md` |
 | Virtio path B (golden MMIO) | `drivers/src/{mmio,virtio_accel,softnpu}.rs`, `docs/{ACCEL,ROADMAP,YEAR2_PLAN}.md` |
 | x86 LAPIC SoftNPU used-ring IRQ | `kernel/src/arch/x86_64/{softnpu_irq,idt,kpti,apic}.rs`, `kernel/src/{world,task}.rs`, `Makefile`, `docs/ACCEL.md` |
+| aarch64 GIC SoftNPU used-ring IRQ | `kernel/src/arch/aarch64/{softnpu_irq,idt,timer}.rs`, `kernel/src/{world,task}.rs`, `Makefile`, `docs/ACCEL.md` |
 | RISC-V PLIC SoftNPU doorbell | `kernel/src/arch/riscv64/{plic,idt}.rs`, `kernel/src/{world,task}.rs`, `Makefile` |
 | TypedWindow stub (Exploration E) | `core/src/{window,iommu,cut,demo}.rs`, `docs/WINDOW.md` |
 
@@ -381,7 +383,8 @@ for new qemu/smp targets.
    slice is landed behind host + boot-demo tests; still land any
    later CXL/multi-chiplet demos on that API, not a new tree.
 6. **RISC-V / aarch64 temptation:** RISC-V U-mode `/init` + PLIC
-   SoftNPU doorbell and aarch64 EL0 `/init` landed as subsets; do
+   SoftNPU doorbell and aarch64 EL0 `/init` + GICv2 SPI 40 doorbell
+   landed as subsets; do
    not block Y1 on virtio-mmio or GICv3. Neither port is a second
    kernel.
 
