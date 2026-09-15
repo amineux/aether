@@ -84,6 +84,8 @@ fn gic_init() {
 
 pub fn init() {
     gic_init();
+    // SoftNPU SPI after distributor/CPU iface are on (ISPENDR doorbell).
+    crate::arch::aarch64::softnpu_irq::init();
     set_hz(TICK_HZ as u32);
     cntv_enable();
     crate::arch::irq::enable();

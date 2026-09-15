@@ -189,7 +189,7 @@ gaps:
 | Hardware SMMU | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate) but is still software only; a real device can still DMA past it. Partner silicon required. |
 | Custom QEMU virtio-accel | Path-A Soft-SMMU IOVA host proof **landed** (PR #78; `make accel-test` / `PathABar`; wrong SID aborts). Path B is still what stock `make qemu` runs. CI does not rebuild QEMU. Guest does not yet bind PCI BAR0 |
 | RISC-V userspace is a subset | U-mode `/init` + `ecall`/`sret` + Sv39 isolate + in-kernel SoftNPU. PLIC software doorbell (UART THRE); no virtio-mmio `-device` |
-| aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). No GICv3, no virtio-mmio |
+| aarch64 userspace is a subset | EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (GICv2 SPI 40 doorbell). No GICv3, no virtio-mmio |
 | Fiedler is integer power iteration | n≤32 host-tested median-cut; enum stays n≤8. Not GiFt-Placer |
 | ChipletFleet | KILL as calendar. Thin `ChipletTaskScope` host stub; not a Year-1 pillar, not a partner ask |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |

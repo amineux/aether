@@ -327,7 +327,7 @@ SoftGreenCtx  →  SoftCmdFirewall  →  SoftCCT  →  SoftSFI  →  SoftNoI-IS
 ### Ports (hard defer unless a digest needs them)
 
 - RISC-V virtio-mmio SoftNPU (PLIC software doorbell is enough).
-- aarch64 GIC SoftNPU IRQ (EL0 `/init` drains on timer/kthread).
+- aarch64 GIC SoftNPU IRQ (**done**: GICv2 SPI 40 path-B doorbell; GICv3 / virtio-mmio still open).
 
 ## Explicitly killed / skip
 

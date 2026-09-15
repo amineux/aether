@@ -14,7 +14,7 @@
 
 use core::arch::global_asm;
 
-use crate::arch::aarch64::timer;
+use crate::arch::aarch64::{softnpu_irq, timer};
 use crate::arch::irq;
 
 /// SPSR_EL1.M EL1h (SP_ELx).
@@ -81,9 +81,20 @@ pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
     if esr == 0xFFFF_FFFF {
         let iar = timer::ack();
         let id = iar & 0x3FF;
+        if id == softnpu_irq::SOFTNPU_IRQ {
+            softnpu_irq::ack_softnpu_doorbell();
+            crate::console::write_str("[gic] claim irq=");
+            crate::console::write_u64(softnpu_irq::SOFTNPU_IRQ as u64);
+            crate::console::write_str(" SoftNPU used-ring");
+            crate::console::nl();
+            crate::world::run_pending_accel();
+            timer::eoi(iar);
+            return;
+        }
         if id == timer::TIMER_IRQ {
             irq::inc_ticks();
             timer::rearm();
+            // Last-resort SoftNPU drain if the GIC SPI doorbell was missed.
             crate::world::run_pending_accel();
             crate::task::on_timer(frame);
         }

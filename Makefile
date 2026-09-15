@@ -70,7 +70,7 @@ help:
 	@echo "  make test         - host unit tests + Soft SMMU scripts + diligence-demo + design-win-check + design-win-standin + partner-hello"
 	@echo "  make qemu         - x86_64 /init + kernel, boot under QEMU"
 	@echo "  make qemu-riscv   - RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ"
-	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret)"
+	@echo "  make qemu-aarch64 - aarch64 virt EL1 + EL0 /init (svc/eret) + GIC SoftNPU IRQ"
 	@echo "  make qemu-ci      - x86_64 finite CI boot (mmap grow + HH + KASLR + PIE-reloc + identity-teardown + KPTI + PCID-or-fallback + COW + SMEP/SMAP + APIC SoftNPU IRQ + aspace greps; embedded ramfs)"
 	@echo "  make qemu-blk     - x86_64 + virtio-blk AETHFS01 drive (seeds /init /probe)"
 	@echo "  make qemu-blk-ci  - virtio-blk required; greps [blk] seed + SoftNPU /init"
@@ -79,7 +79,7 @@ help:
 	@echo "  make qemu-smp     - x86_64 boot with -smp 2 (INIT-SIPI smoke)"
 	@echo "  make qemu-smp-ci  - SMP smoke; greps AP online + work-steal + fabric"
 	@echo "  make qemu-riscv-ci - RISC-V CI boot; greps U-mode /init + PLIC SoftNPU + fabric"
-	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + aspace + fabric"
+	@echo "  make qemu-aarch64-ci - aarch64 CI boot; greps EL0 /init + GIC SoftNPU + fabric"
 	@echo "  make accel-test   - path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)"
 	@echo "  make qemu-accel   - accel-test + path_a tests; if QEMU_ACCEL is set, boot with -device aether-accel"
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
@@ -717,9 +717,11 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[boot\\] GIC SoftNPU doorbell = SPI 40" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[gic\\] claim irq=40 SoftNPU used-ring" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/aarch64-serial.log \
 	   && grep -q "EL0 /init VIA SVC/ERET" $(BUILD)/aarch64-serial.log; then \
-		echo "qemu-aarch64-ci: EL0 /init + aspace + clone + demo ok (qemu exit $$ec)"; \
+		echo "qemu-aarch64-ci: EL0 /init + aspace + GIC SoftNPU IRQ + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
 	fi; \
 	echo "qemu-aarch64-ci: userspace/demo banner missing (qemu exit $$ec)"; \

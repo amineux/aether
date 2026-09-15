@@ -553,11 +553,8 @@ fn kthread_b() -> ! {
                 println!("[sched] kthread-B fabric ping posted");
             }
         }
-        // x86: SoftNPU retires from LAPIC self-IPI vec 49 (KPTI-gated) or
-        // the PIT last-resort drain — do not poll here. RISC-V: PLIC/SSIP.
-        // aarch64: still CNTV tick / kthread poll (no GIC SoftNPU line yet).
-        #[cfg(target_arch = "aarch64")]
-        crate::world::run_pending_accel();
+        // SoftNPU retires from the arch doorbell (x86 LAPIC / RISC-V PLIC /
+        // aarch64 GIC SPI) or the timer last-resort drain — do not poll here.
         unsafe {
             #[cfg(target_arch = "x86_64")]
             core::arch::asm!("sti; hlt", options(nomem, nostack));

@@ -195,7 +195,7 @@ linked into the kernel); see [HOST.md](HOST.md).
 | `core/src/cut.rs` | ChipletSpectralCut + affinity graph (n≤32 Fiedler; enum n≤8) |
 | `core/src/laplacian.rs` | `AffinityLaplacian` (`L = D − A`; n≤32 prototype placement) |
 | `kernel/src/arch/riscv64` | UART0, stvec, SBI timer, PLIC + SoftNPU doorbell, Sv39 isolate, `sret`/`ecall` |
-| `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV, TTBR0 isolate, EL0 `svc`/`eret` |
+| `kernel/src/arch/aarch64` | PL011, VBAR, GICv2 + CNTV + SoftNPU SPI 40, TTBR0 isolate, EL0 `svc`/`eret` |
 | `core/src/hodge.rs` | FlowHodgeQuota policy + quotas |
 | `core/src/opkernel.rs` | OperatorKernelHandle (collective × Hodge class) |
 | `core/src/sparsify.rs` | SparsifiedCollective (drop below-threshold harmonic) |
@@ -283,7 +283,7 @@ boot/aarch64/trampoline.S
         │  TTBR0 identity-map 4 GiB (1 GiB blocks)
         ▼
 kernel::kmain  (Rust, aarch64-unknown-none)
-        │  UART, frames, heap, VBAR, GICv2 + CNTV
+        │  UART, frames, heap, VBAR, GICv2 + CNTV + SoftNPU SPI 40
         │  load /init @ 0x42000000 (own TTBR0, AP_EL0 on 2 MiB)
         ▼
 eret → EL0 /init   (svc #0, numbers 0–10)
@@ -308,8 +308,9 @@ Physical sketch (128 MiB guest, RAM at `0x40000000`):
 | `0x42000000–0x42200000` | `/init` ELF + user stack (AP_EL0 2 MiB in task TTBR0) |
 | `0x43000000–0x44000000` | SoftNPU arena banks (identity; reserved) |
 
-SoftNPU stays the in-kernel BAR (no virtio-mmio `-device`, no GICv3
-doorbell, no `/probe`, no FDT mmap parser). Extra PEs stay parked.
+SoftNPU stays the in-kernel BAR with a GICv2 SPI 40 software doorbell
+(no virtio-mmio `-device`, no GICv3, no `/probe`, no FDT mmap parser).
+Extra PEs stay parked.
 Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)`,
 `[mm] aspace isolate ok`, and `[init] EL0 /init`.
 
@@ -322,8 +323,8 @@ RISC-V and aarch64 are the HAL-split test:
 3. Keep `aether-core` / `aether-hal` unchanged.
 
 The fabric does not encode x86. aarch64 now also has EL0 `/init` +
-`svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread
-drain, not a GIC doorbell). RISC-V has U-mode `/init` + in-kernel
+`svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (retire via GICv2
+SPI 40). RISC-V has U-mode `/init` + in-kernel
 SoftNPU + a PLIC software doorbell. Neither port is product-class.
 
 ## SMP

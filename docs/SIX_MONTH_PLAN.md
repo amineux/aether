@@ -304,7 +304,7 @@ Parked. Pull only when M3 (or the host shim) needs them.
 | Per-task `CapTable` | World still shares one table; isolate only if the shim has two tenants that must not alias slots |
 | `SYS_REVOKE` | Internal `revoke` / `revoke_in` exist; a user syscall is not the partner ask |
 | RISC-V virtio-mmio SoftNPU | PLIC software doorbell on path B is enough until a `-device` is required |
-| aarch64 GIC SoftNPU IRQ | EL0 `/init` drains on timer/kthread; GICv3 is not the shim |
+| aarch64 GIC SoftNPU IRQ | **done** (GICv2 SPI 40 path-B doorbell); GICv3 / virtio-mmio still open |
 | MicroPerceptron interop | Secondary to PJRT/IREE; do not build a second compiler story. Thin sketch landed as `host/aether-mp-shim` (inspiration name only). Doorbell sketch is `examples/accel-client`. Full port stays later |
 
 ## Exploration digests (not milestones)

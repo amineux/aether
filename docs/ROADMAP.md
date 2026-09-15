@@ -97,7 +97,8 @@ cut (below) adds `eret` / `svc` `/init`.
 - `boot/aarch64` trampoline + TTBR0 identity map (4 GiB, 1 GiB
   blocks). Drops EL2→EL1 when QEMU starts us in the hypervisor.
 - `kernel/src/arch/aarch64`: PL011 UART, GICv2 + CNTV (PPI 27),
-  VBAR_EL1. `make qemu-aarch64` / `make qemu-aarch64-ci` use QEMU
+  SoftNPU SPI 40 doorbell, VBAR_EL1. `make qemu-aarch64` /
+  `make qemu-aarch64-ci` use QEMU
   `-machine virt,gic-version=2 -cpu cortex-a72` (documented in the
   Makefile).
 - Same `aether_core` self-check as x86 / RISC-V (Soft SMMU pin
@@ -805,10 +806,14 @@ architecture, not GICv3, not virtio-mmio, not `/probe` on this HAL:
   Host twin in `core/src/aspace.rs` (`Ttbr0As`). No PAN (cortex-a72
   is v8.0); EL1 copies do not need a SUM analogue.
 - SoftNPU / virtqueue is the **in-kernel BAR** (same as x86).
-  Completions drain on the CNTV tick and kthread poll — not a GIC
-  SPI doorbell. No virtio-mmio device, no FDT mmap. Extra PEs stay
-  parked. No `/probe` ELF on this arch.
+  Completions retire from a **GICv2 SPI 40** software doorbell
+  (`GICD_ISPENDR` → claim → used-ring), same class as x86 LAPIC
+  self-IPI / RISC-V PLIC. CNTV is the scheduler tick + last-resort
+  drain; kthread-B no longer polls SoftNPU. No virtio-mmio device,
+  no FDT mmap. Extra PEs stay parked. No `/probe` ELF on this arch.
 - `make qemu-aarch64` / `make qemu-aarch64-ci` greps
+  `[boot] GIC SoftNPU doorbell = SPI 40`,
+  `[gic] claim irq=40 SoftNPU used-ring`,
   `[init] EL0 /init`, `svc debug_print ok`,
   `EL0 /init VIA SVC/ERET`, aspace isolate, and
   `[accel] used-ring IRQ job#`.
@@ -816,6 +821,27 @@ architecture, not GICv3, not virtio-mmio, not `/probe` on this HAL:
 Still stubbed: GICv3, real virtio-mmio, FDT mmap, extra-PE SMP,
 `/probe`, product-class second kernel. x86 HH and RISC-V
 U-mode / PLIC are untouched.
+
+## aarch64 GIC SoftNPU used-ring IRQ (this cut)
+
+Landed as a **freeze-honest path B** cut — not virtio-mmio, not GICv3,
+not a gated QEMU `-device` port, not HW SMMU:
+
+- SoftNPU stays the **in-kernel AccelMmio BAR** (stock
+  `make qemu-aarch64`).
+- Software doorbell: after `AccelDevice::submit` kicks the BAR, the
+  kernel writes `GICD_ISPENDR` for SPI intid 40
+  (`kernel/src/arch/aarch64/softnpu_irq.rs`). The IRQ handler claims
+  that id, clears pending, and `World::run_pending_accel` retires the
+  used ring. CNTV PPI 27 remains a last-resort drain.
+- kthread-B no longer polls SoftNPU on aarch64 (fabric ping only).
+- `make qemu-aarch64` / `make qemu-aarch64-ci` greps
+  `[boot] GIC SoftNPU doorbell = SPI 40`,
+  `[gic] claim irq=40 SoftNPU used-ring`, and
+  `[accel] used-ring IRQ job#`.
+
+Still stubbed on this HAL: virtio-mmio / GICv3 device IRQ, hardware
+SMMU, CapTable / partner opcode / ABI renumber work.
 
 ## STUB markers in the tree
 
@@ -829,7 +855,7 @@ Search for `// STUB:` / `STUB` :
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate); program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |
 | Cap derivation tree | `core/src/caps.rs` | **done** (small parent/child + `revoke_in`; not a seL4 CNode) |
-| aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | **done** as EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (timer/kthread drain). GICv3 / virtio-mmio still stub |
+| aarch64 EL0 / GICv3 / virtio | `kernel/src/arch/aarch64` | **done** as EL0 `/init` + `svc`/`eret` + TTBR0 isolate + in-kernel SoftNPU (GICv2 SPI 40 doorbell). GICv3 / virtio-mmio still stub |
 | RISC-V ring-3 / PLIC virtio | `kernel/src/arch/riscv64` | **done** as U-mode + PLIC software doorbell (path B AccelMmio; UART THRE → source 10). Real virtio-mmio still stub |
 | Production Fiedler | `core/src/laplacian.rs` | **done** as a prototype (n≤32 host-tested median-cut + sched bind). Not GiFt-Placer; enum stays n≤8 |
 | ChipletFleet | `core/src/sched.rs` | **KILL as calendar.** Thin host stub (`ChipletTaskScope` affinity / steal). Not a Year-1 pillar, not a partner ask |
@@ -975,7 +1001,8 @@ below is leftover engineering, not a fifth digest.
 6. **Per-task cap tables.** Kernel World still shares one `CapTable`.
    Intra-table + named-table `revoke_in` landed; a user syscall did not.
 7. **aarch64 GICv3 / virtio-mmio.** EL0 `/init` + in-kernel SoftNPU
-   landed; a real virtio-mmio BAR behind GICv3 is still open.
+   (GICv2 SPI 40 path-B doorbell) landed; a real virtio-mmio BAR
+   behind GICv3 is still open.
 8. **`CLONE_*` / TLS / per-thread exit.** `SYS_CLONE` shares aspace
    with `flags=0`. A new aspace (`fork`) and a thread-local `exit`
    that does not kill the guest are still open.
