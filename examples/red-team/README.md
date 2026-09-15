@@ -9,6 +9,8 @@ Not a new isolator, not a QEMU guest, not a slide. Bank-color needle:
 `[redteam] attack=qos-credits result=refused` (`Timeline::submit` → `CreditExhausted`).
 Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 (`admit_chiplet` → `OutsideSlice`; not hops / qos / CrossCut / bank-color).
+SoftSFI tensor needle: `[softsfi] tensor=refused` (`SoftOp::Tensor` → `Unmodeled`;
+heap line stays separate).
 
 From the repo root:
 
@@ -18,5 +20,5 @@ make red-team
 
 or `cargo run -p aether-redteam`. CI greps `[redteam] attack=… result=refused`
 plus `[redteam] fabric-class admit/refuse`, `[redteam] ATOMIC_ADD accept/reject`,
-`[softsfi] heap=refused`, and the “what this is not” closer. See
+`[softsfi] tensor=refused`, `[softsfi] heap=refused`, and the “what this is not” closer. See
 [docs/DILIGENCE.md](../../docs/DILIGENCE.md).

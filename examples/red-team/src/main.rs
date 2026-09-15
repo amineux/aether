@@ -8,8 +8,9 @@
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
-//! each from the same clips. SoftSFI heap/alloc prints
-//! `[softsfi] heap=refused` (named `Unmodeled`, not a bump allocator).
+//! each from the same clips. SoftSFI tensor and heap/alloc print
+//! `[softsfi] tensor=refused` and `[softsfi] heap=refused` (named
+//! `Unmodeled`; heap is not a bump allocator).
 //! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius`. Bank
 //! color is `admit_wave` → `ColorError::ForeignBank` (not a rehash of
 //! CrossCut / hops). QoS credits is `Timeline::submit` →
@@ -43,6 +44,7 @@ const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
+const LINE_TENSOR: &str = "[softsfi] tensor=refused";
 const LINE_HEAP: &str = "[softsfi] heap=refused";
 const LINE_NOT: &str =
     "[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software";
@@ -61,6 +63,7 @@ struct RedTeamReport {
     outside_slice: bool,
     class: bool,
     atomic: bool,
+    tensor: bool,
     heap: bool,
 }
 
@@ -77,6 +80,7 @@ impl RedTeamReport {
             && self.outside_slice
             && self.class
             && self.atomic
+            && self.tensor
             && self.heap
     }
 }
@@ -123,6 +127,8 @@ fn run_redteam() -> RedTeamReport {
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
         atomic: sfi.atomic_ok,
+        // Named SoftOp::Tensor refuse (`SfiError::Unmodeled`). Not a modeled TMA.
+        tensor: sfi.tensor_reject,
         // Named heap/alloc refuse (`SfiError::Unmodeled`). Not a bump allocator.
         heap: sfi.heap_reject,
     }
@@ -159,6 +165,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
+    emit_tagged(r.tensor, LINE_TENSOR);
     emit_tagged(r.heap, LINE_HEAP);
     println!();
     println!("{LINE_NOT}");
@@ -195,6 +202,7 @@ mod tests {
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
+        assert!(r.tensor, "SoftSFI tensor named refuse");
         assert!(r.heap, "SoftSFI heap/alloc named refuse");
         assert!(r.all_ok());
     }
@@ -212,6 +220,7 @@ mod tests {
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
+        assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
         assert_eq!(LINE_HEAP, "[softsfi] heap=refused");
         for line in [
             LINE_CROSSCUT,
