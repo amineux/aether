@@ -15,8 +15,8 @@
 //! hardware atomic.
 //!
 //! Honest remaining holes (named [`SfiError::Unmodeled`], not “safe”):
-//! - Tensor copies / SoftNPU `MatMul` / `Wave` / `Add` / `Relu` / `Mul` / `Max` are
-//!   **refused**, not modeled.
+//! - Tensor / TMA-shaped copy (`SoftOp::Tensor`) is a **named refuse**,
+//!   not a modeled SoftNPU `MatMul` / `Wave` / `Add` / `Relu` / `Mul` / `Max`.
 //! - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
 //!   allocator and not a sandbox. Prefer refuse over fake safety.
 //!
@@ -633,7 +633,8 @@ pub struct SoftSfiReport {
     pub in_bounds: bool,
     pub oob_reject: bool,
     pub atomic_ok: bool,
-    pub unmodeled_reject: bool,
+    /// Named SoftOp::Tensor is `SfiError::Unmodeled` (not a modeled TMA copy).
+    pub tensor_reject: bool,
     /// Named heap/alloc opcode is `SfiError::Unmodeled` (not a bump allocator).
     pub heap_reject: bool,
     pub no_cross_read: bool,
@@ -644,7 +645,7 @@ impl SoftSfiReport {
         self.in_bounds
             && self.oob_reject
             && self.atomic_ok
-            && self.unmodeled_reject
+            && self.tensor_reject
             && self.heap_reject
             && self.no_cross_read
     }
@@ -698,6 +699,13 @@ pub fn oob_atomic_prog(foreign_base: u64) -> Program {
     p
 }
 
+/// Tensor / TMA-shaped program. Verifier must name-refuse (`Unmodeled`).
+pub fn tensor_prog(rd: u8, rs: u8, imm: u64) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::tensor(rd, rs, imm));
+    p
+}
+
 /// Heap / alloc program. Verifier must name-refuse (`Unmodeled`).
 pub fn heap_alloc_prog(size: u64) -> Program {
     let mut p = Program::new();
@@ -706,7 +714,7 @@ pub fn heap_alloc_prog(size: u64) -> Program {
 }
 
 /// Two tenants, same toy Soft-CP ISA: accept in-bounds load/store and
-/// SID-proved `atomic_add`, reject OOB, tensor, and heap/alloc, skip-verify
+/// SID-proved `atomic_add`, reject OOB, named tensor, and heap/alloc, skip-verify
 /// fault injection does not cross-read B.
 #[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
@@ -752,10 +760,12 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         && u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4])) == 6
         && secret_after_atom == SFI_SECRET_B;
 
-    let mut tens = Program::new();
-    let _ = tens.push(Insn::add_imm(1, 0, SFI_BASE_A));
-    let _ = tens.push(Insn::tensor(2, 1, 4));
-    let unmodeled_reject = verify(&tens, &a) == Err(SfiError::Unmodeled);
+    let tens = tensor_prog(2, 1, 4);
+    let mut tens_with_base = Program::new();
+    let _ = tens_with_base.push(Insn::add_imm(1, 0, SFI_BASE_A));
+    let _ = tens_with_base.push(Insn::tensor(2, 1, 4));
+    let tensor_reject = verify(&tens, &a) == Err(SfiError::Unmodeled)
+        && verify(&tens_with_base, &a) == Err(SfiError::Unmodeled);
 
     let heap = heap_alloc_prog(16);
     let mut alloc_only = Program::new();
@@ -783,7 +793,7 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         in_bounds,
         oob_reject,
         atomic_ok,
-        unmodeled_reject,
+        tensor_reject,
         heap_reject,
         no_cross_read,
     }
@@ -822,9 +832,31 @@ mod tests {
     #[test]
     fn verifier_rejects_tensor_and_unknown() {
         let a = box_a();
-        let mut tens = Program::new();
-        let _ = tens.push(Insn::tensor(1, 0, 16));
+        let tens = tensor_prog(1, 0, 16);
         assert_eq!(verify(&tens, &a), Err(SfiError::Unmodeled));
+        assert_eq!(SoftOp::from_u8(0x81), Some(SoftOp::Tensor));
+        assert!(!SoftOp::Tensor.is_modeled());
+        assert!(!SoftOp::Tensor.touches_memory());
+        // Named encoding, not an unknown leftover.
+        let mut raw = Program::new();
+        let _ = raw.push(Insn {
+            op: 0x81,
+            rd: 1,
+            rs: 0,
+            rt: 0,
+            imm: 8,
+        });
+        assert_eq!(verify(&raw, &a), Err(SfiError::Unmodeled));
+        let mut mem_bytes = [0u8; 128];
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut mem_bytes,
+        };
+        assert_eq!(run(&tens, &a, &mut mem), Err(SfiError::Unmodeled));
+        assert_eq!(
+            execute_unverified(&tens, &a, &mut mem),
+            Err(SfiError::Unmodeled)
+        );
         let mut unk = Program::new();
         let _ = unk.push(Insn {
             op: 0xFF,
@@ -1008,7 +1040,7 @@ mod tests {
         assert!(r.in_bounds, "in-bounds accept");
         assert!(r.oob_reject, "OOB reject");
         assert!(r.atomic_ok, "atomic SID-range / cross-tenant Oob");
-        assert!(r.unmodeled_reject, "tensor refuse");
+        assert!(r.tensor_reject, "tensor named refuse");
         assert!(r.heap_reject, "heap/alloc named refuse");
         assert!(r.no_cross_read, "skip-verify does not leak B");
         assert!(r.all_ok());

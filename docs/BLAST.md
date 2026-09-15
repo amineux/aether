@@ -85,6 +85,18 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. QoS credits stays
 on `attack=qos-credits`. No CapTable split, no new syscall, no opcode churn.
 
+## SoftSFI tensor (red-team / softsfi serial needle)
+
+`SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.
+Sell surface matches heap style — **not** a bump allocator, not CapTable /
+SoftNPU opcode churn:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Named tensor / TMA-shaped opcode refuse | `run_softsfi_demo` → `SoftOp::Tensor` → `SfiError::Unmodeled` | `[softsfi] tensor=refused` |
+
+Heap stays on `[softsfi] heap=refused`. No CapTable split, no BAR0, no new syscall.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).

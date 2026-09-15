@@ -77,9 +77,14 @@ fn run_and_print_softsfi() -> bool {
     let softsfi = run_softsfi_demo();
     write_str("[softsfi] in-bounds+atomic accept / OOB+tensor reject  ");
     write_str(flag(
-        softsfi.in_bounds && softsfi.oob_reject && softsfi.atomic_ok && softsfi.unmodeled_reject,
+        softsfi.in_bounds && softsfi.oob_reject && softsfi.atomic_ok && softsfi.tensor_reject,
     ));
     console::nl();
+    if softsfi.tensor_reject {
+        println!("[softsfi] tensor=refused");
+    } else {
+        println!("[softsfi] tensor FAIL");
+    }
     if softsfi.heap_reject {
         println!("[softsfi] heap=refused");
     } else {
