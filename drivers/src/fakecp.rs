@@ -51,6 +51,12 @@
 //! reserved ring capacity. PARL / NoI inspiration. **Admit control,
 //! not topology synthesis, not UniCNet, not a vendor class header.**
 //!
+//! Soft-CP sparsify (`crate::sparsify`) is the sibling opt-in path:
+//! `submit_xqueue_sparsify` calls `decide_header` before enqueue.
+//! Below-threshold Harmonic is DROP (no push / no seq). Hodge refuse
+//! (Tree+Harmonic) still wins and is not a Drop. Host needle
+//! `[softcp] sparsify DROP` — not the qemu `[sparsify]` serial line.
+//!
 //! SoftGreenCtx partitions a fake SM / WQ pool (canonical 70/30). XQueues
 //! bind to a context. CUDA Green Contexts / DetShare are **inspiration**
 //! only (DetShare has no public repo). Soft partition — **not** HW MIG,

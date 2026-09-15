@@ -774,6 +774,50 @@ Host tests: `admit_light_two_tenants_refuse_heavy`,
 `softnoi_solo_vs_concurrent_then_xqueue_refuse`. Kernel serial
 `[softnoi]`.
 
+## Soft-CP sparsify (`decide_header` at submit)
+
+**Status:** Landed. Soft-CP opt-in path; default `submit_xqueue` stays
+ungated. Host needle `[softcp] sparsify DROP` — **not** a re-grep of the
+qemu/kernel `[sparsify] below-threshold DROP + above KEEP + harmonic-tree
+REFUSE` line.
+
+**Context.** `SparsifiedCollective` / `decide_header` were already
+host-tested in `core/src/sparsify.rs`. Soft-CP already carries a software
+[`FlowClass`] on `AccelJobDesc` (SoftNoI fabric-class admit). This cut
+wires Soft-CP submit so a collective-tagged job consults
+`decide_header` **before** XQueue enqueue.
+
+**This is not:**
+
+- A QEMU collective engine or a new syscall.
+- A `CpCmd` / `AccelJobWire` layout change.
+- FLOPs, CapTable theater, freeze-v2, SoftSFI tensor ops, or BAR0 work.
+- A red-team `result=refused` line. **DROP ≠ Hodge refuse.**
+
+**Contract** (`aether_core::sparsify::decide_header` + Soft-CP):
+
+```text
+AccelJobDesc.flow                         // software tag (already on Soft-CP)
+Soft-CP submit_xqueue_sparsify(queue, job, topology, energy_milli)
+  decide_header(topology, job.flow, energy, threshold)
+    Tree+Harmonic / Tree+Curl  → Err (Hodge refuse → HalError::BadArg)
+    Torus+Harmonic, energy < T → Ok(None)  // DROP: no enqueue, no seq
+    Torus+Harmonic, energy ≥ T → Ok(Some(seq))  // KEEP → submit_xqueue
+    Gradient / Curl            → Ok(Some(seq))  // energy ignored
+```
+
+Canonical clip: threshold **500** milli. Torus+Harmonic at **499** →
+DROP (queue empty, submit_seq uncharged). At **500** → KEEP (enqueued).
+Tree+Harmonic at **1** → `BadArg` (refuse, not Drop). Gradient on Tree
+with energy **0** → KEEP. Default `submit_xqueue` still ignores sparsify
+(SoftNoI-style opt-in).
+
+Host tests: `softcp_below_threshold_harmonic_drops_without_enqueue`,
+`softcp_sparsify_drop_keeps_submit_seq_uncharged`,
+`softcp_harmonic_tree_refuse_is_not_drop`,
+`default_submit_xqueue_still_ignores_sparsify`. Grep
+`[softcp] sparsify DROP`.
+
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
 **Status:** Accepted 2026-09-07. **M5–M6 freeze-v1 (this PR):**

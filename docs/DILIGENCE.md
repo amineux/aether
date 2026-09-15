@@ -91,10 +91,10 @@ clip is a sibling: `make red-team` (fabric-class + `ATOMIC_ADD`; see
 | AffinityLaplacian `L = D − A` | Implemented (integer prototype, n≤32 host-tested) | `core/src/laplacian.rs` |
 | Hodge flow-class quotas | Implemented | `core/src/hodge.rs` |
 | OperatorKernelHandle (collective × Hodge) | Implemented, host-tested | `core/src/opkernel.rs` |
-| SparsifiedCollective (milli threshold) | Implemented, host-tested | `core/src/sparsify.rs` |
+| SparsifiedCollective (milli threshold) | Implemented, host-tested; Soft-CP submit wires `decide_header` (`[softcp] sparsify DROP`) | `core/src/sparsify.rs`, `drivers/src/sparsify.rs` |
 | Accel HAL + SoftNPU + virtqueue MMIO | Implemented (in-kernel BAR path B); I32 + software F16/F32 | `hal/`, `drivers/`, `core/src/accel.rs` |
 | Path-A QEMU `aether-accel` | Optional device + host Soft-SMMU IOVA / wrong-SID proof; stock QEMU stays B | `qemu/`, `drivers/src/path_a.rs`, `make accel-test` / `make qemu-accel` |
-| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftNoI-IS admit (PR #60 + fabric-class #75) + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + OperatorInject resident worker + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva,opinject,noi}.rs` |
+| SoftCommandProcessor (`backend = 3`) | Software CP: `CpCmd` + SET_SID-at-submit + two XQueues (M4 PR #47) + SoftGreenCtx SM/WQ partitions + SoftChipletSync scoped timelines + SoftCCT elision + SoftNoI-IS admit (PR #60 + fabric-class #75) + Soft-CP sparsify `decide_header` before enqueue + SoftCmdFirewall copy-then-validate + PASID/SVA mm↔SSID + OperatorInject resident worker + Soft SMMU SID + IRQ/fence | `drivers/src/{fakecp,firewall,sva,opinject,noi,sparsify}.rs` |
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | SoftChipletSync | Scoped wave/CU/chiplet/package timelines (Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
@@ -161,7 +161,11 @@ not zero-copy SVA without invalidate.
 GPUOS / Mirage MPK inspiration only — not NVRTC, not CUDA, not a full
 LLM compiler. `run_softnoi_demo()` is the SoftNoI-IS clip (serial
 `[softnoi]`); PARL / NoI inspiration only — admit control, not
-topology synth, not UniCNet. Fabric-class tags (PR #75) feed the same
+topology synth, not UniCNet. Soft-CP sparsify
+(`run_softcp_sparsify_demo` / `submit_xqueue_sparsify`) consults
+`decide_header` before XQueue enqueue; host needle
+`[softcp] sparsify DROP` (below-threshold Harmonic, no enqueue).
+DROP ≠ Hodge refuse and is not a qemu `[sparsify]` re-grep. Fabric-class tags (PR #75) feed the same
 admit: Curl needs reserved ring capacity. `make red-team`
 (`examples/red-team`) is the **buyer stdout**: it calls those same
 clips and prints `[redteam] attack=… result=refused` for
