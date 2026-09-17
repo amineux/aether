@@ -3,8 +3,9 @@
 //! Reuses the same refuse paths the kernel self-check already runs
 //! (`run_blast_demo`, `run_blast_hops_demo`, `run_blast_nodes_demo`,
 //! `run_bank_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`,
-//! `run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`,
-//! `run_sva_demo`). This crate does not invent a new isolation mechanism.
+//! `run_silent_remote_demo`, `run_firewall_demo`, `run_softsfi_demo`,
+//! `run_softnoi_demo`, `run_sva_demo`). This crate does not invent a new
+//! isolation mechanism.
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
@@ -18,9 +19,11 @@
 //! credits is `Timeline::submit` → `CreditExhausted` when
 //! `in_flight >= qos.credits` (not EventRing theater, not a second
 //! charge API). Outside-slice is `PartitionProfile::admit_chiplet` →
-//! `OutsideSlice` (not hops / qos / CrossCut / bank-color). The closer
-//! names what this is **not**: confidential GPU, HW MIG, hardware SMMU
-//! (Soft SMMU is software).
+//! `OutsideSlice` (not hops / qos / CrossCut / bank-color). Silent-remote
+//! is `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad`
+//! (`MEM_FULL` never implies `UNIFIED`; not CXL productization / BAR0 /
+//! SoftNPU). The closer names what this is **not**: confidential GPU, HW
+//! MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
@@ -31,6 +34,7 @@ use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_outside_slice_demo,
     run_qos_credits_demo,
 };
+use aether_core::space::run_silent_remote_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_drivers::run_firewall_demo;
@@ -46,6 +50,7 @@ const LINE_BLAST_NODES: &str = "[redteam] attack=blast-nodes result=refused";
 const LINE_BANK_COLOR: &str = "[redteam] attack=bank-color result=refused";
 const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
+const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -66,6 +71,7 @@ struct RedTeamReport {
     bank_color: bool,
     qos_credits: bool,
     outside_slice: bool,
+    silent_remote: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -84,6 +90,7 @@ impl RedTeamReport {
             && self.bank_color
             && self.qos_credits
             && self.outside_slice
+            && self.silent_remote
             && self.class
             && self.atomic
             && self.tensor
@@ -99,6 +106,7 @@ fn run_redteam() -> RedTeamReport {
     let color = run_bank_color_demo();
     let qos = run_qos_credits_demo();
     let outside = run_outside_slice_demo();
+    let silent = run_silent_remote_demo();
     let firewall = run_firewall_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
@@ -133,6 +141,9 @@ fn run_redteam() -> RedTeamReport {
         // PartitionProfile::admit_chiplet: own chiplet OK; foreign → OutsideSlice.
         // Existing path only — not hops / qos / CrossCut / bank-color.
         outside_slice: outside.all_ok(),
+        // map_place / map_fabric: local OK; remote → SilentRemoteLoad.
+        // MEM_FULL never implies UNIFIED. Not CXL productization / BAR0 / SoftNPU.
+        silent_remote: silent.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -174,6 +185,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.bank_color, LINE_BANK_COLOR);
     emit(r.qos_credits, LINE_QOS_CREDITS);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
+    emit(r.silent_remote, LINE_SILENT_REMOTE);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -212,6 +224,7 @@ mod tests {
         assert!(r.bank_color, "admit_wave foreign bank → ForeignBank");
         assert!(r.qos_credits, "Timeline::submit over credits → CreditExhausted");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
+        assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -231,6 +244,7 @@ mod tests {
         assert_eq!(LINE_BANK_COLOR, "[redteam] attack=bank-color result=refused");
         assert_eq!(LINE_QOS_CREDITS, "[redteam] attack=qos-credits result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
+        assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -246,6 +260,7 @@ mod tests {
             LINE_BANK_COLOR,
             LINE_QOS_CREDITS,
             LINE_OUTSIDE_SLICE,
+            LINE_SILENT_REMOTE,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
