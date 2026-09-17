@@ -6,7 +6,7 @@
 //! timeline, not a CUDA stream, not a Vulkan timeline product, and not
 //! a hardware fence unit.
 //!
-//! Scoped (wave / CU / chiplet / package) timelines, Fleet-shaped
+//! Scoped (chiplet / package; Wave/Cu alias Chiplet) timelines, Fleet-shaped
 //! hierarchical counters, and SoftCCT (CPElide-shaped last-writer
 //! elision) live in [`crate::chipsync::SoftChipletSync`]. That is
 //! **not** UCIe sync, not a coherence protocol, not a Vulkan / ROCm

@@ -35,7 +35,7 @@
 //! validate after copy or userspace races the rewrite. Integrity of
 //! the command stream only — not confidential GPU.
 //!
-//! SoftChipletSync (wave / CU / chiplet / package timelines, Fleet-shaped
+//! SoftChipletSync (chiplet / package timelines; Wave/Cu alias Chiplet, Fleet-shaped
 //! hierarchical counters) plus SoftCCT (buffer labels + last-writer
 //! chiplet; package fence only on a cross-chiplet hazard) is a
 //! **software** fence domain on this CP. Single-chiplet CCT is a no-op.
