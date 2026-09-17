@@ -129,6 +129,14 @@ impl PartitionProfile {
             Err(PartitionError::BlastRadius)
         }
     }
+
+    pub fn admit_nodes(&self, nodes: u16) -> Result<(), PartitionError> {
+        if nodes <= self.blast.max_nodes {
+            Ok(())
+        } else {
+            Err(PartitionError::BlastRadius)
+        }
+    }
 }
 
 /// Host red-team hops clip: two partitions / two slices.
@@ -189,6 +197,68 @@ pub fn run_blast_hops_demo() -> BlastHopsReport {
         two_slice,
         in_budget,
         over_hops,
+    }
+}
+
+/// Host red-team nodes clip: two partitions / two slices.
+/// In-budget nodes admit; over [`BlastRadius::max_nodes`] → [`PartitionError::BlastRadius`].
+/// Not a `[blast]` serial line — sell needle is `[redteam] attack=blast-nodes`.
+/// Not a hops rehash — hops stays `attack=blast-hops`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BlastNodesReport {
+    pub two_slice: bool,
+    pub in_budget: bool,
+    pub over_nodes: bool,
+}
+
+impl BlastNodesReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_slice && self.in_budget && self.over_nodes
+    }
+}
+
+/// Two tenants, distinct chiplet slices, `max_nodes = 4`.
+pub fn run_blast_nodes_demo() -> BlastNodesReport {
+    let a = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let b = PartitionProfile::new(
+        PartitionId(2),
+        SpatialSlice::single_chiplet(ChipletId(1), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+
+    let two_slice = a.admit_chiplet(ChipletId(0)).is_ok()
+        && b.admit_chiplet(ChipletId(1)).is_ok()
+        && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
+        && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
+
+    let in_budget =
+        a.admit_nodes(0).is_ok() && a.admit_nodes(4).is_ok() && b.admit_nodes(4).is_ok();
+
+    let over_nodes = a.admit_nodes(5) == Err(PartitionError::BlastRadius)
+        && b.admit_nodes(5) == Err(PartitionError::BlastRadius);
+
+    BlastNodesReport {
+        two_slice,
+        in_budget,
+        over_nodes,
     }
 }
 
@@ -388,6 +458,7 @@ mod tests {
             Err(PartitionError::OutsideSlice)
         );
         assert_eq!(p.admit_hops(2), Err(PartitionError::BlastRadius));
+        assert_eq!(p.admit_nodes(5), Err(PartitionError::BlastRadius));
         let mut t = CapTable::new(TenantId(1));
         let c = p.mint(&mut t).unwrap();
         assert_eq!(t.lookup(c).unwrap().kind, CapKind::Partition);
@@ -399,6 +470,15 @@ mod tests {
         assert!(r.two_slice, "two tenants / two slices");
         assert!(r.in_budget, "in-budget hops admit");
         assert!(r.over_hops, "over max_hops → BlastRadius");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn blast_nodes_demo_two_slice_refuse() {
+        let r = run_blast_nodes_demo();
+        assert!(r.two_slice, "two tenants / two slices");
+        assert!(r.in_budget, "in-budget nodes admit");
+        assert!(r.over_nodes, "over max_nodes → BlastRadius");
         assert!(r.all_ok());
     }
 
