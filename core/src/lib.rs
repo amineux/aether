@@ -107,7 +107,10 @@ pub use opinject::{
     OPINJECT_SID, OPINJECT_SPAN, OP_CALL_SIZE, SLOT_MEMCPY, SLOT_SAXPY, SLOT_SCALE,
 };
 pub use opkernel::{CollectiveKind, OpKernelError, OpKernelId, OperatorKernelHandle};
-pub use partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
+pub use partition::{
+    run_hbm_bw_demo, BlastRadius, HbmBwReport, PartitionId, PartitionProfile, QosBudget,
+    SoftHbmBwMeter, SpatialSlice,
+};
 pub use phase::Phase;
 pub use preempt::{CpuQueue, ThreadState, WaitWhy};
 pub use ramfs::{RamFd, RamFs, RamFsError, RamHandle, INIT_PATH, PROBE_PATH};
