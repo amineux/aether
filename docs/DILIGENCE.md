@@ -340,6 +340,8 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 
+| TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
+
 Expected stdout (CI greps these):
 
 ```
@@ -355,6 +357,7 @@ Expected stdout (CI greps these):
 [redteam] attack=qos-credits result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused
+[redteam] attack=typed-window-sid result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

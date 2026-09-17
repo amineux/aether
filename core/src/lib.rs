@@ -142,7 +142,7 @@ pub use sysnr::{
     USER_RV_MMAP_END, USER_RV_STACK_TOP, USER_STACK_TOP,
 };
 pub use types::{BankId, ChipletId, PhysAddr, TenantId, TileId};
-pub use window::{MappedWindow, TypedWindow, WindowKind};
+pub use window::{run_typed_window_sid_demo, MappedWindow, TypedWindow, TypedWindowSidReport, WindowKind};
 
 /// Research-prototype version string printed by the boot demo.
 pub const VERSION: &str = "0.1.0";

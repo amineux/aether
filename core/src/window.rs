@@ -159,6 +159,74 @@ impl IommuMap {
     }
 }
 
+
+/// Host red-team report for TypedWindow SID pin/map.
+///
+/// Sell line `[redteam] attack=typed-window-sid` — existing
+/// `map_window_sid` / `unmap_window` path only. Exploration stub, **not**
+/// CXL.mem silicon / QEMU CXL / BAR0.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TypedWindowSidReport {
+    pub match_ok: bool,
+    pub wrong_stream: bool,
+    pub cross_tenant: bool,
+}
+
+impl TypedWindowSidReport {
+    pub fn all_ok(&self) -> bool {
+        self.match_ok && self.wrong_stream && self.cross_tenant
+    }
+}
+
+/// Matching SID admits; mismatched SID → `WrongStream`; foreign tenant
+/// pin → `CrossTenant`. Reuses [`IommuMap::map_window_sid`] /
+/// [`IommuMap::map_window`] only.
+pub fn run_typed_window_sid_demo() -> TypedWindowSidReport {
+    use crate::caps::{CapKind, CapRights};
+    use crate::types::{ChipletId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let tenant = TenantId(1);
+    let foreign = TenantId(2);
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, tenant).with_generation(1);
+    let foreign_cap =
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, foreign).with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+    let other = StreamId::accel(ChipletId(0), TileId(2), 3);
+    let win = TypedWindow::new(
+        PhysAddr(0xB000),
+        0x1000,
+        WindowKind::Hbm,
+        sid,
+        tenant,
+    );
+
+    let mapped = iommu.map_window_sid(&cap, win, sid);
+    let match_ok = match &mapped {
+        Ok(m) => {
+            m.window.kind == WindowKind::Hbm
+                && m.region.stream_id == sid.raw()
+                && m.region.iova != win.base
+        }
+        Err(_) => false,
+    };
+
+    let pin_wrong = iommu.map_window_sid(&cap, win, other) == Err(MapError::WrongStream);
+    let unmap_wrong = match &mapped {
+        Ok(m) => iommu.unmap_window(&cap, other, m.region.iova) == Err(MapError::WrongStream),
+        Err(_) => false,
+    };
+    let wrong_stream = pin_wrong && unmap_wrong;
+
+    let cross_tenant = iommu.map_window(&foreign_cap, win) == Err(MapError::CrossTenant);
+
+    TypedWindowSidReport {
+        match_ok,
+        wrong_stream,
+        cross_tenant,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -292,4 +360,14 @@ mod tests {
         );
         assert_eq!(map_place(here, there), Err(SpaceError::SilentRemoteLoad));
     }
+
+    #[test]
+    fn typed_window_sid_demo_match_and_refuse() {
+        let r = run_typed_window_sid_demo();
+        assert!(r.match_ok, "matching SID map_window_sid admits");
+        assert!(r.wrong_stream, "mismatched SID → WrongStream");
+        assert!(r.cross_tenant, "foreign tenant pin → CrossTenant");
+        assert!(r.all_ok());
+    }
 }
+
