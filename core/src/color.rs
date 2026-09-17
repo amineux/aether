@@ -117,6 +117,41 @@ pub fn run_bank_color_demo() -> BankColorReport {
     }
 }
 
+/// Host red-team uncolored-compute clip: Compute with no color refused;
+/// Exchange with a color still OK. Sell needle is
+/// `[redteam] attack=uncolored-compute` — existing [`admit_wave`] only.
+/// Not a ForeignBank / bank-color rehash (that stays on `attack=bank-color`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UncoloredComputeReport {
+    pub colored_ok: bool,
+    pub uncolored: bool,
+    pub exchange_ok: bool,
+}
+
+impl UncoloredComputeReport {
+    pub fn all_ok(&self) -> bool {
+        self.colored_ok && self.uncolored && self.exchange_ok
+    }
+}
+
+/// Colored Compute admits; `color=None` Compute → [`ColorError::Uncolored`];
+/// [`Phase::Exchange`] with a color still admits.
+pub fn run_uncolored_compute_demo() -> UncoloredComputeReport {
+    let home = BankId(0);
+    let colored = BankColor::new(TenantId(1), home);
+
+    let colored_ok = admit_wave(1, Phase::Compute, Some(colored), home).is_ok();
+    let uncolored =
+        admit_wave(1, Phase::Compute, None, home) == Err(ColorError::Uncolored);
+    let exchange_ok = admit_wave(1, Phase::Exchange, Some(colored), home).is_ok();
+
+    UncoloredComputeReport {
+        colored_ok,
+        uncolored,
+        exchange_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +210,15 @@ mod tests {
         assert!(r.same_ok, "same-color Compute admits");
         assert!(r.foreign_bank, "foreign bank Compute → ForeignBank");
         assert!(r.exchange_ok, "Exchange still admits foreign bank");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn uncolored_compute_demo_refuse() {
+        let r = run_uncolored_compute_demo();
+        assert!(r.colored_ok, "colored Compute admits");
+        assert!(r.uncolored, "uncolored Compute → Uncolored");
+        assert!(r.exchange_ok, "Exchange with color still admits");
         assert!(r.all_ok());
     }
 }

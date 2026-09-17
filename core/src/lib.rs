@@ -73,7 +73,7 @@ pub use chipsync::{
     ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctReport, SoftChipletSync, SyncScope,
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
-pub use color::{admit_wave, run_bank_color_demo, BankColor, BankColorReport, ColorError};
+pub use color::{admit_wave, run_bank_color_demo, run_uncolored_compute_demo, BankColor, BankColorReport, ColorError, UncoloredComputeReport};
 pub use cut::{AffinityGraph, CutError, CutId, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};

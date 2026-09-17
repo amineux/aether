@@ -70,6 +70,20 @@ red-team only — existing path; **not** a new isolator:
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay
 on `attack=blast-hops`. No CapTable split, no new syscall, no opcode churn.
 
+## Uncolored compute (red-team needle)
+
+`admit_wave(..., color=None)` is unit-tested in `color.rs`. The sell surface
+is host red-team only — existing path; **not** a ForeignBank / bank-color
+rehash (that stays on `attack=bank-color`):
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Colored Compute admits; uncolored Compute refuse; Exchange with color still OK | `run_uncolored_compute_demo` → `ColorError::Uncolored` | `[redteam] attack=uncolored-compute result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay on
+`attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable
+split, no new syscall, no opcode churn.
+
 ## QoS credits (red-team needle)
 
 [`Timeline::submit`](../core/src/fence.rs) meters [`QosBudget::credits`](../core/src/partition.rs).
