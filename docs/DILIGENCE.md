@@ -41,7 +41,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 
 | Command | What they see |
 | --- | --- |
-| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast / firewall / greenctx 70/30 + interference |
+| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
 | `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
@@ -68,6 +68,8 @@ scripted narrative. CI greps
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
 | `[greenctx] interference partitioned 70/30 vs unpartitioned` | **M3 leave-behind** (host stdout). Integer `bw_milli` / `interference_milli`. Not HW MIG, not FLOPs, not a BAR firewall. Residual shared-HBM tax stays. |
+| `[softcp] sparsify DROP` | Soft-CP `decide_header` before XQueue enqueue; below-threshold Harmonic drops (no enqueue). Host Path B greps this — not qemu `[sparsify]`, not a sparsify re-implementation. DROP ≠ Hodge refuse. |
+| `[opinject] resident worker + hot-add sealed` | OperatorInject resident worker + hot-add scale without relaunch. Same `run_opinject_demo()` the guest prints on serial; now also host Path B. Not NVRTC / CUDA. |
 | `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
 
 This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
@@ -159,12 +161,15 @@ PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
 `run_opinject_demo()` is the resident-worker clip (serial `[opinject]`);
 GPUOS / Mirage MPK inspiration only — not NVRTC, not CUDA, not a full
-LLM compiler. `run_softnoi_demo()` is the SoftNoI-IS clip (serial
+LLM compiler. `make diligence-demo` greps
+`[opinject] resident worker + hot-add sealed` from the same clip (host
+Path B; not qemu-only). `run_softnoi_demo()` is the SoftNoI-IS clip (serial
 `[softnoi]`); PARL / NoI inspiration only — admit control, not
 topology synth, not UniCNet. Soft-CP sparsify
 (`run_softcp_sparsify_demo` / `submit_xqueue_sparsify`) consults
 `decide_header` before XQueue enqueue; host needle
-`[softcp] sparsify DROP` (below-threshold Harmonic, no enqueue).
+`[softcp] sparsify DROP` (below-threshold Harmonic, no enqueue) is now
+also grepped by `make diligence-demo`.
 DROP ≠ Hodge refuse and is not a qemu `[sparsify]` re-grep. Fabric-class tags (PR #75) feed the same
 admit: Curl needs reserved ring capacity. `make red-team`
 (`examples/red-team`) is the **buyer stdout**: it calls those same
@@ -291,7 +296,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
-| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` / `[firewall]` / `[greenctx]` (incl. M3 interference) + proves/does-not. No QEMU rebuild |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |

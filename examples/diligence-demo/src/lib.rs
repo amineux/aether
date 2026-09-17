@@ -13,10 +13,13 @@ use aether_core::accel::{AccelOp, DType};
 use aether_core::iommu::StreamId;
 use aether_core::space::MemorySpace;
 use aether_core::{
-    run_blast_demo, run_greenctx_demo, run_softcct_demo, BlastReport, GreenCtxReport, SoftCctReport,
+    run_blast_demo, run_greenctx_demo, run_opinject_demo, run_softcct_demo, BlastReport,
+    GreenCtxReport, OpInjectReport, SoftCctReport,
 };
 use aether_drivers::ireecp::{IreeHalCmd, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
-use aether_drivers::{run_firewall_demo, FirewallReport};
+use aether_drivers::{
+    run_firewall_demo, run_softcp_sparsify_demo, FirewallReport, SoftcpSparsifyReport,
+};
 use aether_hal::ACCEL_BACKEND_IREE_SHAPED;
 use aether_pjrt::{Client, Dispatch, EventFenceCounts, EventScope};
 
@@ -176,8 +179,10 @@ fn run_event_clip() -> Result<EventClip, DemoError> {
 }
 
 /// Scripted host narrative. Same clips as kernel serial `[blast]` /
-/// `[firewall]` / `[greenctx]` / `[softcct]`, plus the PJRT `IreeHalCmd`
-/// submit+wait and Event create/record/wait the guest does not run.
+/// `[firewall]` / `[greenctx]` / `[softcct]` / `[opinject]`, plus Soft-CP
+/// sparsify (`[softcp] sparsify DROP`, host-only — not qemu `[sparsify]`),
+/// plus the PJRT `IreeHalCmd` submit+wait and Event create/record/wait
+/// the guest does not run.
 pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     writeln!(
         out,
@@ -319,6 +324,51 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
             .map_err(|_| DemoError { clip: "write" })?;
     }
 
+    let softcp: SoftcpSparsifyReport = run_softcp_sparsify_demo();
+    writeln!(
+        out,
+        "[softcp] decide_header before enqueue  drop={} keep={} refuse={} gradient={}  (not qemu [sparsify]; DROP ≠ Hodge refuse)  {}",
+        flag(softcp.drop_ok),
+        flag(softcp.keep_ok),
+        flag(softcp.refuse_ok),
+        flag(softcp.gradient_ok),
+        flag(softcp.all_ok())
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    if softcp.drop_ok && softcp.all_ok() {
+        writeln!(out, "[softcp] sparsify DROP")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[softcp] FAIL -- Soft-CP sparsify")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
+
+    let opinject: OpInjectReport = run_opinject_demo();
+    writeln!(
+        out,
+        "[opinject] resident memcpy+saxpy  hot-add scale no-relaunch  {}",
+        flag(
+            opinject.memcpy_ok
+                && opinject.saxpy_ok
+                && opinject.hot_add_no_relaunch
+                && opinject.scale_ok
+        )
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "[opinject] SID-at-submit refuse + scale unpublished  {}",
+        flag(opinject.sid_oob && opinject.scale_refused_before)
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    if opinject.all_ok() {
+        writeln!(out, "[opinject] resident worker + hot-add sealed")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[opinject] FAIL -- OperatorInject")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
+
     writeln!(out, "[diligence] what this proves").map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
@@ -350,6 +400,16 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         "  SoftGreenCtx 70/30 SM/WQ partition + interference vs unpartitioned (integer milli; not MIG)"
     )
     .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "  Soft-CP sparsify decide_header DROP below-threshold Harmonic (host [softcp]; not qemu [sparsify])"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "  OperatorInject resident worker + hot-add scale without relaunch (not NVRTC)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
     writeln!(out, "[diligence] what this does not prove")
         .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
@@ -369,12 +429,22 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  NVRTC / CUDA OperatorInject, or a Soft-CP sparsify re-implementation of qemu [sparsify]"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  Path A -device aether-accel (stock demo stays Path B)"
     )
     .map_err(|_| DemoError { clip: "write" })?;
 
-    let all_ok =
-        blast.all_ok() && pjrt.submit_wait && event.wait_ok && firewall.all_ok() && green.all_ok();
+    let all_ok = blast.all_ok()
+        && pjrt.submit_wait
+        && event.wait_ok
+        && firewall.all_ok()
+        && green.all_ok()
+        && softcp.all_ok()
+        && opinject.all_ok();
     if all_ok {
         writeln!(out, "[diligence] host Path B sealed").map_err(|_| DemoError { clip: "write" })?;
         Ok(())
@@ -437,6 +507,8 @@ mod tests {
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));
+        assert!(needles.contains("[softcp] sparsify DROP"));
+        assert!(needles.contains("[opinject] resident worker + hot-add sealed"));
         assert!(needles.contains("[diligence] what this proves"));
         assert!(needles.contains("[diligence] what this does not prove"));
     }
