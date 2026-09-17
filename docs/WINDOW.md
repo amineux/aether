@@ -21,6 +21,8 @@ TypedWindow { base, len, kind: Hbm | CxlMemStub | Dram, sid }
 - Optional `EventRing` lines: `WindowMap`, `WindowRefuse`.
 - Host tests (`cargo test -p aether-core window`). QEMU CXL
   (`cxl-type3`, CXL.host) is **not** used.
+- Red-team sell line: `[redteam] attack=typed-window-sid result=refused`
+  (`run_typed_window_sid_demo` → `WrongStream`; exploration stub only).
 
 `CxlMemStub` maps to the existing typed place `MemorySpace::CxlRegion`.
 Coherent remote load is still refused without `UNIFIED`.

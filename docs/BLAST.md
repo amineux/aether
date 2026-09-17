@@ -128,6 +128,22 @@ on `attack=qos-credits`. No CapTable split, no new syscall, no opcode churn.
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Outside-slice stays
 on `attack=outside-slice`. No CapTable split, no new syscall, no opcode churn.
 
+
+## TypedWindow SID (red-team needle)
+
+`IommuMap::map_window_sid` is unit-tested in `window.rs`. The sell surface is
+host red-team only — existing TypedWindow pin/map path; **exploration stub**,
+**not** CXL.mem silicon / QEMU CXL / BAR0. Sibling foreign pin is
+`MapError::CrossTenant`:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Matching SID admits; mismatched SID refuse; foreign tenant pin refuse | `run_typed_window_sid_demo` → `MapError::WrongStream` (+ `CrossTenant`) | `[redteam] attack=typed-window-sid result=refused` |
+
+CrossCut / wrong-SID DMA stay on `attack=wrong-sid-crosscut`. Outside-slice
+stays on `attack=outside-slice`. No CapTable split, no new syscall, no opcode
+churn, no CXL.mem productization.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.
