@@ -60,8 +60,11 @@ pub struct BlastRadius {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PartitionError {
     OutsideSlice,
-    /// Reserved; QoS credit refuse uses [`Self::CreditExhausted`] via
-    /// [`crate::fence::Timeline::submit`].
+    /// Soft HBM bandwidth over [`QosBudget::bw_mbps`] on the
+    /// [`SoftHbmBwMeter`] / [`crate::window::TypedWindow`]
+    /// ([`crate::window::WindowKind::Hbm`]) path. QoS credits use
+    /// [`Self::CreditExhausted`] via [`crate::fence::Timeline::submit`] —
+    /// do not resurrect `charge_credits`.
     QosExceeded,
     BlastRadius,
     Unbound,
@@ -187,8 +190,7 @@ pub fn run_blast_hops_demo() -> BlastHopsReport {
         && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
         && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
 
-    let in_budget =
-        a.admit_hops(0).is_ok() && a.admit_hops(1).is_ok() && b.admit_hops(1).is_ok();
+    let in_budget = a.admit_hops(0).is_ok() && a.admit_hops(1).is_ok() && b.admit_hops(1).is_ok();
 
     let over_hops = a.admit_hops(2) == Err(PartitionError::BlastRadius)
         && b.admit_hops(2) == Err(PartitionError::BlastRadius);
@@ -363,7 +365,6 @@ pub fn run_qos_credits_demo() -> QosCreditsReport {
     }
 }
 
-
 /// Host red-team outside-slice clip: two partitions / two chiplet slices.
 /// Own chiplet admits via [`PartitionProfile::admit_chiplet`]; foreign
 /// chiplet → [`PartitionError::OutsideSlice`]. Sell needle is
@@ -415,8 +416,7 @@ pub fn run_outside_slice_demo() -> OutsideSliceReport {
         && b.slice.chiplet_hi == ChipletId(1)
         && a.slice.chiplet_lo != b.slice.chiplet_lo;
 
-    let in_slice =
-        a.admit_chiplet(ChipletId(0)).is_ok() && b.admit_chiplet(ChipletId(1)).is_ok();
+    let in_slice = a.admit_chiplet(ChipletId(0)).is_ok() && b.admit_chiplet(ChipletId(1)).is_ok();
 
     let outside = a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
         && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
@@ -425,6 +425,174 @@ pub fn run_outside_slice_demo() -> OutsideSliceReport {
         two_slice,
         in_slice,
         outside,
+    }
+}
+
+/// Software Soft HBM bandwidth meter against [`QosBudget::bw_mbps`].
+///
+/// Charges on the [`crate::window::TypedWindow`] / [`crate::window::WindowKind::Hbm`]
+/// path only. Over budget → [`PartitionError::QosExceeded`]. Release frees
+/// budget so admit resumes. Software meter only — not silicon BW, not FLOPs,
+/// not `charge_credits` / CapTable / SoftNPU / BAR0 / CXL productization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftHbmBwMeter {
+    partition: PartitionId,
+    used_mbps: u32,
+}
+
+impl SoftHbmBwMeter {
+    pub const fn new(partition: PartitionId) -> Self {
+        Self {
+            partition,
+            used_mbps: 0,
+        }
+    }
+
+    pub const fn used_mbps(self) -> u32 {
+        self.used_mbps
+    }
+
+    /// Charge `mbps` against `profile.qos.bw_mbps` for an HBM typed window.
+    ///
+    /// Wrong partition → [`PartitionError::Unbound`]. Non-HBM window →
+    /// [`PartitionError::Unbound`]. `used + mbps > bw_mbps` →
+    /// [`PartitionError::QosExceeded`].
+    pub fn charge(
+        &mut self,
+        profile: &PartitionProfile,
+        win: &crate::window::TypedWindow,
+        mbps: u32,
+    ) -> Result<(), PartitionError> {
+        if profile.id.0 != self.partition.0 {
+            return Err(PartitionError::Unbound);
+        }
+        if win.kind != crate::window::WindowKind::Hbm {
+            return Err(PartitionError::Unbound);
+        }
+        let next = self.used_mbps.saturating_add(mbps);
+        if next > profile.qos.bw_mbps {
+            return Err(PartitionError::QosExceeded);
+        }
+        self.used_mbps = next;
+        Ok(())
+    }
+
+    /// Free previously charged HBM bandwidth.
+    pub fn release(&mut self, mbps: u32) {
+        self.used_mbps = self.used_mbps.saturating_sub(mbps);
+    }
+}
+
+/// Host red-team Soft HBM BW clip: two partitions / two slices.
+/// [`SoftHbmBwMeter::charge`] meters [`QosBudget::bw_mbps`] on HBM
+/// [`crate::window::TypedWindow`]s: in-budget admits; over budget →
+/// [`PartitionError::QosExceeded`]. Release frees budget and admit resumes.
+/// Sell needle is `[redteam] attack=hbm-bw` — software meter only; not
+/// silicon BW / FLOPs / charge_credits / CapTable / SoftNPU / BAR0 / CXL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HbmBwReport {
+    pub two_slice: bool,
+    pub in_budget: bool,
+    pub over_bw: bool,
+    pub resume: bool,
+    pub non_hbm: bool,
+}
+
+impl HbmBwReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_slice && self.in_budget && self.over_bw && self.resume && self.non_hbm
+    }
+}
+
+/// Two tenants, distinct chiplet slices, `bw_mbps = 100`.
+/// Uses [`SoftHbmBwMeter`] + HBM [`crate::window::TypedWindow`] only.
+pub fn run_hbm_bw_demo() -> HbmBwReport {
+    use crate::iommu::StreamId;
+    use crate::types::{PhysAddr, TenantId};
+    use crate::window::{TypedWindow, WindowKind};
+
+    let a = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 100,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let b = PartitionProfile::new(
+        PartitionId(2),
+        SpatialSlice::single_chiplet(ChipletId(1), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 100,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+
+    let two_slice = a.admit_chiplet(ChipletId(0)).is_ok()
+        && b.admit_chiplet(ChipletId(1)).is_ok()
+        && a.admit_chiplet(ChipletId(1)) == Err(PartitionError::OutsideSlice)
+        && b.admit_chiplet(ChipletId(0)) == Err(PartitionError::OutsideSlice);
+
+    let sid_a = StreamId::accel(ChipletId(0), crate::types::TileId(0), 0);
+    let sid_b = StreamId::accel(ChipletId(1), crate::types::TileId(0), 0);
+    let hbm_a = TypedWindow::new(
+        PhysAddr(0xB000),
+        0x1000,
+        WindowKind::Hbm,
+        sid_a,
+        TenantId(1),
+    );
+    let hbm_b = TypedWindow::new(
+        PhysAddr(0xC000),
+        0x1000,
+        WindowKind::Hbm,
+        sid_b,
+        TenantId(2),
+    );
+    let dram_a = TypedWindow::new(
+        PhysAddr(0xD000),
+        0x1000,
+        WindowKind::Dram,
+        sid_a,
+        TenantId(1),
+    );
+
+    let mut ma = SoftHbmBwMeter::new(PartitionId(1));
+    let mut mb = SoftHbmBwMeter::new(PartitionId(2));
+
+    // Fill each meter to qos.bw_mbps — all admit.
+    let in_budget = ma.charge(&a, &hbm_a, 40).is_ok()
+        && ma.charge(&a, &hbm_a, 60).is_ok()
+        && mb.charge(&b, &hbm_b, 100).is_ok()
+        && ma.used_mbps() == a.qos.bw_mbps
+        && mb.used_mbps() == b.qos.bw_mbps;
+
+    // One over budget → QosExceeded (soft HBM BW meter).
+    let over_bw = ma.charge(&a, &hbm_a, 1) == Err(PartitionError::QosExceeded)
+        && mb.charge(&b, &hbm_b, 1) == Err(PartitionError::QosExceeded);
+
+    // Non-HBM typed window is unbound on this meter (HBM path only).
+    let non_hbm = ma.charge(&a, &dram_a, 1) == Err(PartitionError::Unbound);
+
+    // release frees budget; next charge admits again.
+    ma.release(40);
+    mb.release(50);
+    let resume = ma.charge(&a, &hbm_a, 40).is_ok() && mb.charge(&b, &hbm_b, 50).is_ok();
+
+    HbmBwReport {
+        two_slice,
+        in_budget,
+        over_bw,
+        resume,
+        non_hbm,
     }
 }
 
@@ -498,6 +666,17 @@ mod tests {
         assert!(r.two_slice, "two tenants / two chiplet slices");
         assert!(r.in_slice, "own chiplet admit_chiplet admits");
         assert!(r.outside, "foreign chiplet → OutsideSlice");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn hbm_bw_demo_in_budget_and_refuse() {
+        let r = run_hbm_bw_demo();
+        assert!(r.two_slice, "two tenants / two slices");
+        assert!(r.in_budget, "in-budget SoftHbmBwMeter::charge admits");
+        assert!(r.over_bw, "over bw_mbps → QosExceeded");
+        assert!(r.resume, "release frees budget; admit resumes");
+        assert!(r.non_hbm, "non-HBM TypedWindow → Unbound on HBM meter");
         assert!(r.all_ok());
     }
 }

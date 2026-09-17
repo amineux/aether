@@ -144,6 +144,25 @@ CrossCut / wrong-SID DMA stay on `attack=wrong-sid-crosscut`. Outside-slice
 stays on `attack=outside-slice`. No CapTable split, no new syscall, no opcode
 churn, no CXL.mem productization.
 
+## Soft HBM BW (red-team needle)
+
+[`SoftHbmBwMeter`](../core/src/partition.rs) meters [`QosBudget::bw_mbps`](../core/src/partition.rs)
+on the [`TypedWindow`](../core/src/window.rs) / [`WindowKind::Hbm`](../core/src/window.rs) path.
+In-budget charges admit; `used + mbps > bw_mbps` → [`PartitionError::QosExceeded`](../core/src/partition.rs).
+Release frees budget and admit resumes. Host red-team only — **software meter**,
+not silicon BW / FLOPs, not `charge_credits`, not CapTable / SoftNPU / BAR0 / CXL:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two tenants / two slices; in-budget HBM charges admit; over `bw_mbps` refuse; release resume; non-HBM unbound | `run_hbm_bw_demo` → `PartitionError::QosExceeded` | `[redteam] attack=hbm-bw result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
+`attack=blast-hops`. Bank color stays on `attack=bank-color`. QoS credits stays
+on `attack=qos-credits`. Outside-slice stays on `attack=outside-slice`. Silent-remote
+stays on `attack=silent-remote`. Typed-window-sid stays on `attack=typed-window-sid`.
+No CapTable split, no new syscall, no opcode churn.
+
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.
