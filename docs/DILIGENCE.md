@@ -328,6 +328,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Fabric-class tag at admit | `run_softnoi_demo` — Gradient admits; second Curl refuses the reserved ring | admit / refuse |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
 | Over `max_hops` flood | `run_blast_hops_demo` — `PartitionProfile::admit_hops` → `PartitionError::BlastRadius` (two slices; in-budget admits). Not a CrossCut / wrong-SID rehash | refused |
+| Over `max_nodes` flood | `run_blast_nodes_demo` — `PartitionProfile::admit_nodes` → `PartitionError::BlastRadius` (two slices; in-budget admits). Not a hops rehash — hops stays `attack=blast-hops` | refused |
 | Foreign bank Compute wave | `run_bank_color_demo` — `admit_wave` → `ColorError::ForeignBank` (Exchange still OK). Existing path; not CrossCut / hops | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
@@ -341,6 +342,7 @@ Expected stdout (CI greps these):
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
 [redteam] attack=blast-hops result=refused
+[redteam] attack=blast-nodes result=refused
 [redteam] attack=bank-color result=refused
 [redteam] attack=qos-credits result=refused
 [redteam] attack=outside-slice result=refused

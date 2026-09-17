@@ -142,7 +142,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / bank-color / qos-credits / outside-slice / SoftCmdFirewall / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / qos-credits / outside-slice / SoftCmdFirewall / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 

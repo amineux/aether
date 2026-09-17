@@ -44,6 +44,20 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. No World CapTable
 split, no new syscall, no opcode churn.
 
 
+
+## Blast nodes (red-team needle)
+
+`PartitionProfile::admit_nodes` is unit-tested in `partition.rs`. The sell
+surface is host red-team only — **not** a fourth `[blast]` serial line and
+**not** a hops rehash (hops stays `attack=blast-hops`):
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two tenants / two slices; in-budget nodes admit; over `max_nodes` refuse | `run_blast_nodes_demo` → `PartitionError::BlastRadius` | `[redteam] attack=blast-nodes result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay on
+`attack=blast-hops`. No CapTable split, no new syscall, no opcode churn.
+
 ## Bank color (red-team needle)
 
 `admit_wave` is unit-tested in `color.rs`. The sell surface is host

@@ -1,9 +1,11 @@
 # Red-team diligence clip
 
 Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
-`run_bank_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`,
-`run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, and `run_sva_demo`.
-Not a new isolator, not a QEMU guest, not a slide. Bank-color needle:
+`run_blast_nodes_demo`, `run_bank_color_demo`, `run_qos_credits_demo`,
+`run_outside_slice_demo`, `run_firewall_demo`, `run_softsfi_demo`,
+`run_softnoi_demo`, and `run_sva_demo`. Not a new isolator, not a QEMU guest,
+not a slide. Blast-nodes needle: `[redteam] attack=blast-nodes result=refused`
+(`admit_nodes` → `BlastRadius`; hops stays `attack=blast-hops`). Bank-color needle:
 `[redteam] attack=bank-color result=refused` (`admit_wave` →
 `ColorError::ForeignBank`; Exchange still OK). QoS credits needle:
 `[redteam] attack=qos-credits result=refused` (`Timeline::submit` → `CreditExhausted`).
