@@ -10,7 +10,7 @@
 //! **admit control, not topology synthesis** (see [`crate::noi`]).
 //!
 //! **Inspiration (not a port, not a product):**
-//! - Fleet hierarchical event counters (wave / CU / chiplet / package):
+//! - Fleet hierarchical event counters (chiplet / package; Wave/Cu alias Chiplet):
 //!   workers increment a chiplet-local counter with **no** package fence;
 //!   only the last worker on a participating chiplet issues a package-scope
 //!   fence. Chiplet-local signal is free; package-scope costs more.
@@ -48,25 +48,30 @@ pub const MAX_CCT_ENTRIES: usize = 16;
 /// Naive global fence = 16; hierarchical package fences = 2.
 pub const DEMO_WORKERS_PER_CHIPLET: u32 = 8;
 
-/// Visibility scope. Narrowest first (Fleet-shaped).
+/// Visibility scope. Two cost tiers only (Fleet-shaped nouns collapsed).
+///
+/// Wave / CU were noun inflation: identical cost+signal to Chiplet in this
+/// model (no sub-chiplet structure, no UCIe latency). Kept as aliases so
+/// call sites and tests stay green without inventing a fake diverge.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum SyncScope {
-    /// Wavefront-local. Chiplet-local signal; no package fence.
-    Wave = 0,
-    /// Compute-unit local. Chiplet-local signal; no package fence.
-    Cu = 1,
     /// Chiplet / L2-local. Free in this model (no package fence).
-    Chiplet = 2,
+    Chiplet = 0,
     /// Package / GPU-scope. Last worker per participating chiplet pays.
-    Package = 3,
+    Package = 1,
 }
 
 impl SyncScope {
+    /// Historical Fleet noun; identical to [`Self::Chiplet`] (no distinct cost).
+    #[allow(non_upper_case_globals)]
+    pub const Wave: Self = Self::Chiplet;
+    /// Historical Fleet noun; identical to [`Self::Chiplet`] (no distinct cost).
+    #[allow(non_upper_case_globals)]
+    pub const Cu: Self = Self::Chiplet;
+
     pub const fn name(self) -> &'static str {
         match self {
-            Self::Wave => "wave",
-            Self::Cu => "cu",
             Self::Chiplet => "chiplet",
             Self::Package => "package",
         }
@@ -76,15 +81,14 @@ impl SyncScope {
     pub const fn naive_package_cost(self) -> u32 {
         match self {
             Self::Package => 1,
-            _ => 0,
+            Self::Chiplet => 0,
         }
     }
 
+    /// Wire / historical values: `0`/`1` (Wave/Cu aliases) and `2` → Chiplet; `3` → Package.
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
-            0 => Some(Self::Wave),
-            1 => Some(Self::Cu),
-            2 => Some(Self::Chiplet),
+            0 | 1 | 2 => Some(Self::Chiplet),
             3 => Some(Self::Package),
             _ => None,
         }
@@ -98,7 +102,7 @@ pub struct BufferLabel(pub u32);
 /// What a scoped arrive / wait did. PackageFence is the expensive one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SignalKind {
-    /// Wave / CU / chiplet, or a non-last worker on a chiplet.
+    /// Chiplet-local (incl. Wave/Cu aliases), or a non-last worker on a chiplet.
     ChipletLocal,
     /// Last worker; CCT on — package fence deferred until [`SoftChipletSync::wait`].
     PendingPackage,
@@ -271,13 +275,13 @@ impl Default for ChipletCoherenceTable {
 
 /// Scoped SoftChipletSync object.
 ///
-/// Four CP-shaped [`Timeline`]s (wave / CU / chiplet / package) plus
+/// Two CP-shaped [`Timeline`]s (chiplet / package; Wave/Cu alias chiplet) plus
 /// Fleet-shaped two-level counters and SoftCCT elision. Distinct from
 /// [`crate::sched::ChipletTaskScope`] (placement / steal affinity).
 pub struct SoftChipletSync {
     partition: PartitionId,
     profile: PartitionProfile,
-    timelines: [Timeline; 4],
+    timelines: [Timeline; 2],
     cct: SoftCct,
     cct_on: bool,
     scope: SyncScope,
@@ -317,8 +321,6 @@ impl SoftChipletSync {
             timelines: [
                 Timeline::named(TimelineId(0), partition),
                 Timeline::named(TimelineId(1), partition),
-                Timeline::named(TimelineId(2), partition),
-                Timeline::named(TimelineId(3), partition),
             ],
             cct: SoftCct::new(),
             cct_on: false,
@@ -488,11 +490,8 @@ impl SoftChipletSync {
             self.cct.record(label, chiplet)?;
         }
 
-        let local = if self.scope < SyncScope::Chiplet {
-            self.scope
-        } else {
-            SyncScope::Chiplet
-        };
+        // Free scopes (Chiplet + Wave/Cu aliases) share one chiplet timeline.
+        let local = SyncScope::Chiplet;
         let pulse = self.pulse(local, chiplet)?;
         let last = self.arrived[i] == self.expected[i];
 
@@ -813,7 +812,26 @@ mod tests {
     use super::*;
 
     #[test]
+    fn wave_cu_alias_chiplet() {
+        // Honesty: Wave/Cu are not distinct cost tiers — aliases of Chiplet.
+        assert_eq!(SyncScope::Wave, SyncScope::Chiplet);
+        assert_eq!(SyncScope::Cu, SyncScope::Chiplet);
+        assert_eq!(SyncScope::Wave.name(), "chiplet");
+        assert_eq!(SyncScope::Cu.name(), "chiplet");
+        assert_eq!(SyncScope::Wave.naive_package_cost(), 0);
+        assert_eq!(SyncScope::Cu.naive_package_cost(), 0);
+        assert_eq!(SyncScope::from_u8(0), Some(SyncScope::Chiplet));
+        assert_eq!(SyncScope::from_u8(1), Some(SyncScope::Chiplet));
+        assert_eq!(SyncScope::from_u8(2), Some(SyncScope::Chiplet));
+        assert_eq!(SyncScope::from_u8(3), Some(SyncScope::Package));
+        // ≤2 variants: only Chiplet | Package exist as enum arms.
+        let variants = [SyncScope::Chiplet, SyncScope::Package];
+        assert_eq!(variants.len(), 2);
+    }
+
+    #[test]
     fn chiplet_local_signal_is_free() {
+        // Wave/Cu aliases exercise the same free path as Chiplet.
         for scope in [SyncScope::Wave, SyncScope::Cu, SyncScope::Chiplet] {
             let mut s = SoftChipletSync::new(PartitionId(1));
             s.open(scope);
@@ -821,18 +839,19 @@ mod tests {
             for _ in 0..8 {
                 let f = s.arrive(ChipletId(0), None).unwrap();
                 assert_eq!(f.kind, SignalKind::ChipletLocal);
+                assert_eq!(f.scope, SyncScope::Chiplet);
                 assert_eq!(scope.naive_package_cost(), 0);
             }
             assert_eq!(s.package_fences(), 0);
             assert_eq!(s.naive_package_fences(), 8);
             assert!(s.package_lt_naive());
-            let local = if scope < SyncScope::Chiplet {
-                scope
-            } else {
-                SyncScope::Chiplet
-            };
-            let id = FenceId(s.timeline(local).retired());
-            assert!(s.wait_seq(local, id).unwrap().completed);
+            let id = FenceId(s.timeline(SyncScope::Chiplet).retired());
+            assert!(s.wait_seq(SyncScope::Chiplet, id).unwrap().completed);
+            // Alias scopes share the chiplet timeline index.
+            assert_eq!(
+                s.timeline(scope).id(),
+                s.timeline(SyncScope::Chiplet).id()
+            );
         }
     }
 
@@ -1039,7 +1058,9 @@ mod tests {
         let s = SoftChipletSync::new(PartitionId(7));
         assert_eq!(s.partition(), PartitionId(7));
         assert_eq!(s.timeline(SyncScope::Wave).id(), TimelineId(0));
-        assert_eq!(s.timeline(SyncScope::Package).id(), TimelineId(3));
+        assert_eq!(s.timeline(SyncScope::Cu).id(), TimelineId(0));
+        assert_eq!(s.timeline(SyncScope::Chiplet).id(), TimelineId(0));
+        assert_eq!(s.timeline(SyncScope::Package).id(), TimelineId(1));
         assert!(!s.cct_enabled());
         assert!(s.softcct().is_noop());
         assert!(!s.noi().enabled());
