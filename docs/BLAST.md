@@ -99,6 +99,21 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. QoS credits stays
 on `attack=qos-credits`. No CapTable split, no new syscall, no opcode churn.
 
+
+## Silent remote (red-team needle)
+
+[`map_place`](../core/src/space.rs) / HAL `map_fabric` are unit-tested in
+`space.rs` / `hal`. The sell surface is host red-team only — existing path;
+**not** CXL productization, UNIFIED-as-default, BAR0, or SoftNPU ops.
+`MEM_FULL` never implies `UNIFIED`:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Local map admits; silent remote `(place, local)` refuse; UNIFIED not default | `run_silent_remote_demo` → `SpaceError::SilentRemoteLoad` | `[redteam] attack=silent-remote result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Outside-slice stays
+on `attack=outside-slice`. No CapTable split, no new syscall, no opcode churn.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.

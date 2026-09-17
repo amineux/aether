@@ -332,6 +332,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Foreign bank Compute wave | `run_bank_color_demo` — `admit_wave` → `ColorError::ForeignBank` (Exchange still OK). Existing path; not CrossCut / hops | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
+| Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 
 Expected stdout (CI greps these):
 
@@ -346,6 +347,7 @@ Expected stdout (CI greps these):
 [redteam] attack=bank-color result=refused
 [redteam] attack=qos-credits result=refused
 [redteam] attack=outside-slice result=refused
+[redteam] attack=silent-remote result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

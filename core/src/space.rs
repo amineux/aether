@@ -159,6 +159,47 @@ pub fn coherent_load(rights: CapRights, here: Place, addr: FabricAddr) -> Result
     Err(SpaceError::UnifiedNotGranted)
 }
 
+
+/// Host red-team silent-remote clip: [`map_place`] (HAL `map_fabric` wraps the
+/// same path) refuses a remote `(place, local)` as
+/// [`SpaceError::SilentRemoteLoad`]. Sell needle is
+/// `[redteam] attack=silent-remote` — existing path only; **not** CXL
+/// productization, UNIFIED-as-default, BAR0, or SoftNPU ops.
+/// [`CapRights::MEM_FULL`] never implies [`CapRights::UNIFIED`] (already
+/// true in caps).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SilentRemoteReport {
+    pub local_ok: bool,
+    pub remote_refuse: bool,
+    pub unified_not_default: bool,
+}
+
+impl SilentRemoteReport {
+    pub fn all_ok(&self) -> bool {
+        self.local_ok && self.remote_refuse && self.unified_not_default
+    }
+}
+
+/// Local map admits; silent remote → [`SpaceError::SilentRemoteLoad`].
+/// `MEM_FULL` does not grant coherent remote load.
+pub fn run_silent_remote_demo() -> SilentRemoteReport {
+    let here = Place::new(ChipletId(0), MemorySpace::TileSram).with_tile(0);
+    let local = FabricAddr::new(here, 0x40);
+    let remote = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x2000);
+
+    let local_ok = map_place(here, local).is_ok();
+    let remote_refuse = map_place(here, remote) == Err(SpaceError::SilentRemoteLoad);
+    let unified_not_default = !CapRights::MEM_FULL.contains(CapRights::UNIFIED)
+        && coherent_load(CapRights::MEM_FULL, here, remote)
+            == Err(SpaceError::UnifiedNotGranted);
+
+    SilentRemoteReport {
+        local_ok,
+        remote_refuse,
+        unified_not_default,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -184,5 +225,14 @@ mod tests {
             coherent_load(CapRights::MEM_FULL, here, there),
             Err(SpaceError::UnifiedNotGranted)
         );
+    }
+
+    #[test]
+    fn silent_remote_demo_local_ok_remote_refuse() {
+        let r = run_silent_remote_demo();
+        assert!(r.local_ok, "local map_place admits");
+        assert!(r.remote_refuse, "remote → SilentRemoteLoad");
+        assert!(r.unified_not_default, "MEM_FULL never implies UNIFIED");
+        assert!(r.all_ok());
     }
 }
