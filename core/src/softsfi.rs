@@ -19,6 +19,9 @@
 //!   not a modeled SoftNPU `MatMul` / `Wave` / `Add` / `Relu` / `Mul` / `Max`.
 //! - Heap / alloc (`SoftOp::Heap`) is a **named refuse**, not a bump
 //!   allocator and not a sandbox. Prefer refuse over fake safety.
+//! - Unknown opcode / illegal access width (not [`WORD`]) are **named
+//!   refuses** (`SfiError::Unmodeled`). Sell: `[softsfi] unknown=refused`.
+//!   Not AddImm deepen; no new modeled ops.
 //!
 //! [atoll]: https://github.com/AERO-Project-EU/gpu-atoll
 
@@ -316,9 +319,9 @@ impl SidSandbox {
 pub enum SfiError {
     /// `base+off+size` is outside every SID-allowed range (or overflow).
     Oob,
-    /// Tensor / heap / other unmodeled side-effect (named refuse).
+    /// Tensor / heap / unknown opcode / illegal width (named refuse).
     Unmodeled,
-    /// Unknown opcode, bad register, empty program, or illegal size.
+    /// Bad register, empty program, or capacity overflow.
     BadInsn,
     /// Address register is not a proved constant (GPU-AToLL: no location).
     UnknownBase,
@@ -392,8 +395,9 @@ impl SfiExec {
 }
 
 fn span(base: u64, off: u64, size: u32) -> Result<(u64, u64), SfiError> {
-    if size == 0 {
-        return Err(SfiError::BadInsn);
+    // Modeled access width is WORD; zero / non-word sizes are Unmodeled.
+    if size == 0 || size % WORD != 0 {
+        return Err(SfiError::Unmodeled);
     }
     let start = base.checked_add(off).ok_or(SfiError::Oob)?;
     let end = start.checked_add(size as u64).ok_or(SfiError::Oob)?;
@@ -414,8 +418,8 @@ fn check_reg(r: u8) -> Result<usize, SfiError> {
 /// Registers start unknown except `r0 = 0`. `Add` / `AddImm` of constants
 /// refine the abstract file. A memory op whose base is not a constant is
 /// [`SfiError::UnknownBase`] (no distinct location). Tensor / heap /
-/// unknown ops are [`SfiError::Unmodeled`]. Heap is a named refuse,
-/// not a modeled bump allocator.
+/// unknown opcode / illegal width are [`SfiError::Unmodeled`]. Heap is
+/// a named refuse, not a modeled bump allocator.
 pub fn verify(prog: &Program, sandbox: &SidSandbox) -> Result<(), SfiError> {
     if prog.is_empty() {
         return Err(SfiError::BadInsn);
@@ -478,7 +482,7 @@ fn step_verify(
         }
         SoftOp::Dma => {
             if insn.imm == 0 || insn.imm > u32::MAX as u64 || insn.imm % WORD as u64 != 0 {
-                return Err(SfiError::BadInsn);
+                return Err(SfiError::Unmodeled);
             }
             let dst = abs[rd].ok_or(SfiError::UnknownBase)?;
             let src = abs[rs].ok_or(SfiError::UnknownBase)?;
@@ -599,7 +603,7 @@ fn step_exec<M: SfiMem>(
         }
         SoftOp::Dma => {
             if insn.imm == 0 || insn.imm > u32::MAX as u64 || insn.imm % WORD as u64 != 0 {
-                return Err(SfiError::BadInsn);
+                return Err(SfiError::Unmodeled);
             }
             let dst = read_reg(regs, rd);
             let src = read_reg(regs, rs);
@@ -637,6 +641,8 @@ pub struct SoftSfiReport {
     pub tensor_reject: bool,
     /// Named heap/alloc opcode is `SfiError::Unmodeled` (not a bump allocator).
     pub heap_reject: bool,
+    /// Bad opcode / illegal width → `SfiError::Unmodeled` (sell: unknown=refused).
+    pub unknown_reject: bool,
     pub no_cross_read: bool,
 }
 
@@ -647,6 +653,7 @@ impl SoftSfiReport {
             && self.atomic_ok
             && self.tensor_reject
             && self.heap_reject
+            && self.unknown_reject
             && self.no_cross_read
     }
 }
@@ -713,9 +720,33 @@ pub fn heap_alloc_prog(size: u64) -> Program {
     p
 }
 
+/// Bad / leftover opcode. Verifier must name-refuse (`Unmodeled`).
+pub fn unknown_opcode_prog(op: u8) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn {
+        op,
+        rd: 0,
+        rs: 0,
+        rt: 0,
+        imm: 0,
+    });
+    p
+}
+
+/// Illegal access width (DMA length not a multiple of [`WORD`]).
+/// Verifier must name-refuse (`Unmodeled`). Not AddImm deepen.
+pub fn illegal_width_prog(base: u64) -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::add_imm(1, 0, base));
+    let _ = p.push(Insn::add_imm(2, 0, base));
+    let _ = p.push(Insn::dma(2, 1, 3));
+    p
+}
+
 /// Two tenants, same toy Soft-CP ISA: accept in-bounds load/store and
-/// SID-proved `atomic_add`, reject OOB, named tensor, and heap/alloc, skip-verify
-/// fault injection does not cross-read B.
+/// SID-proved `atomic_add`, reject OOB, named tensor, heap/alloc, and
+/// unknown opcode / illegal width; skip-verify fault injection does not
+/// cross-read B.
 #[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
     let mut bytes = [0u8; 128];
@@ -773,6 +804,14 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
     let heap_reject = verify(&heap, &a) == Err(SfiError::Unmodeled)
         && verify(&alloc_only, &a) == Err(SfiError::Unmodeled);
 
+    // Bad opcode + illegal width (not WORD) → Unmodeled. Tensor/heap stay separate.
+    let unk = unknown_opcode_prog(0xFF);
+    let bad_w = illegal_width_prog(SFI_BASE_A);
+    let unknown_reject = verify(&unk, &a) == Err(SfiError::Unmodeled)
+        && verify(&bad_w, &a) == Err(SfiError::Unmodeled)
+        && a.prove(SFI_BASE_A, 0, 0, false) == Err(SfiError::Unmodeled)
+        && a.prove(SFI_BASE_A, 0, 3, false) == Err(SfiError::Unmodeled);
+
     // Fault inject: skip verifier. Runtime SID trap; B's secret unread.
     let mut mem = FlatMem {
         base: 0,
@@ -795,6 +834,7 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         atomic_ok,
         tensor_reject,
         heap_reject,
+        unknown_reject,
         no_cross_read,
     }
 }
@@ -900,6 +940,32 @@ mod tests {
             Err(SfiError::Unmodeled)
         );
     }
+
+    #[test]
+    fn verifier_rejects_unknown_opcode_and_illegal_width() {
+        let a = box_a();
+        assert_eq!(SoftOp::from_u8(0xFF), None);
+        let unk = unknown_opcode_prog(0xFF);
+        assert_eq!(verify(&unk, &a), Err(SfiError::Unmodeled));
+        let mut mem_bytes = [0u8; 128];
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut mem_bytes,
+        };
+        assert_eq!(run(&unk, &a, &mut mem), Err(SfiError::Unmodeled));
+        assert_eq!(
+            execute_unverified(&unk, &a, &mut mem),
+            Err(SfiError::Unmodeled)
+        );
+        // Illegal width: DMA len 3, prove size 0 / 3 — not WORD.
+        let bad_w = illegal_width_prog(SFI_BASE_A);
+        assert_eq!(verify(&bad_w, &a), Err(SfiError::Unmodeled));
+        assert_eq!(a.prove(SFI_BASE_A, 0, 0, false), Err(SfiError::Unmodeled));
+        assert_eq!(a.prove(SFI_BASE_A, 0, 3, false), Err(SfiError::Unmodeled));
+        // WORD still proves in-window.
+        assert!(a.prove(SFI_BASE_A, 0, WORD, false).is_ok());
+    }
+
 
     #[test]
     fn atomic_add_in_bounds_accepted() {
@@ -1042,6 +1108,7 @@ mod tests {
         assert!(r.atomic_ok, "atomic SID-range / cross-tenant Oob");
         assert!(r.tensor_reject, "tensor named refuse");
         assert!(r.heap_reject, "heap/alloc named refuse");
+        assert!(r.unknown_reject, "unknown opcode / illegal width refuse");
         assert!(r.no_cross_read, "skip-verify does not leak B");
         assert!(r.all_ok());
     }

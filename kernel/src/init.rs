@@ -90,6 +90,11 @@ fn run_and_print_softsfi() -> bool {
     } else {
         println!("[softsfi] heap FAIL");
     }
+    if softsfi.unknown_reject {
+        println!("[softsfi] unknown=refused");
+    } else {
+        println!("[softsfi] unknown FAIL");
+    }
     write_str("[softsfi] skip-verify no cross-read  ");
     write_str(flag(softsfi.no_cross_read));
     console::nl();

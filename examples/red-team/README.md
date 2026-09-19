@@ -30,6 +30,8 @@ XQueue SID override needle: `[redteam] attack=xqueue-sid-override result=refused
 not BAR0 / SoftNPU).
 SoftSFI tensor needle: `[softsfi] tensor=refused` (`SoftOp::Tensor` → `Unmodeled`;
 heap line stays separate).
+SoftSFI unknown needle: `[softsfi] unknown=refused` (bad opcode / illegal width →
+`Unmodeled`; tensor/heap lines stay separate; not AddImm deepen).
 
 Typed-window-sid needle: `[redteam] attack=typed-window-sid result=refused`
 (`map_window_sid` → `WrongStream`; exploration TypedWindow stub, not CXL.mem
@@ -43,5 +45,5 @@ make red-team
 
 or `cargo run -p aether-redteam`. CI greps `[redteam] attack=… result=refused`
 plus `[redteam] fabric-class admit/refuse`, `[redteam] ATOMIC_ADD accept/reject`,
-`[softsfi] tensor=refused`, `[softsfi] heap=refused`, and the “what this is not” closer. See
+`[softsfi] tensor=refused`, `[softsfi] heap=refused`, `[softsfi] unknown=refused`, and the “what this is not” closer. See
 [docs/DILIGENCE.md](../../docs/DILIGENCE.md).

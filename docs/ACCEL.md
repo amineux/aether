@@ -605,7 +605,8 @@ verify(program, SidSandbox::from_iommu(sid))
   AtomicAdd:    prove [rs+imm, +4) writable ⊆ window (toy RMW)
   Dma:          prove src and dst spans ⊆ window
   Add/AddImm:   no memory; refine constants
-  Tensor/Heap/unknown: Unmodeled (heap is named refuse, not a bump)
+  Tensor/Heap/unknown: Unmodeled (named refuses; heap not a bump;
+                       unknown = bad opcode / illegal width)
 Soft-CP submit_sfi(sid, program)     // verify then execute
 Soft-CP inject_sfi_skip_verify(...)  // runtime SID trap only
 ```
@@ -619,8 +620,10 @@ Host tests: `verifier_accepts_in_bounds_program`,
 `verifier_rejects_oob`, `atomic_add_in_bounds_accepted`,
 `atomic_add_cross_tenant_rejected`, `verifier_rejects_tensor_and_unknown`,
 `verifier_rejects_heap_and_alloc`,
+`verifier_rejects_unknown_opcode_and_illegal_width`,
 `softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
-`[softsfi]` including `[softsfi] heap=refused`.
+`[softsfi]` including `[softsfi] heap=refused` /
+`[softsfi] unknown=refused`.
 
 ## PASID / SVA (software; Linux SVA-shaped)
 
