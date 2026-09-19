@@ -10,9 +10,10 @@
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
-//! each from the same clips. SoftSFI tensor and heap/alloc print
-//! `[softsfi] tensor=refused` and `[softsfi] heap=refused` (named
-//! `Unmodeled`; heap is not a bump allocator).
+//! each from the same clips. SoftSFI tensor, heap/alloc, and unknown
+//! print `[softsfi] tensor=refused`, `[softsfi] heap=refused`, and
+//! `[softsfi] unknown=refused` (named `Unmodeled`; heap is not a bump
+//! allocator; unknown is bad opcode / illegal width).
 //! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius`. Blast
 //! nodes is `PartitionProfile::admit_nodes` → `BlastRadius` (not a hops
 //! rehash — hops stays `attack=blast-hops`). Bank color is `admit_wave`
@@ -74,6 +75,7 @@ const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
 const LINE_HEAP: &str = "[softsfi] heap=refused";
+const LINE_UNKNOWN: &str = "[softsfi] unknown=refused";
 const LINE_NOT: &str =
     "[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software";
 const LINE_SEALED: &str = "[redteam] sealed";
@@ -100,6 +102,7 @@ struct RedTeamReport {
     atomic: bool,
     tensor: bool,
     heap: bool,
+    unknown: bool,
 }
 
 impl RedTeamReport {
@@ -124,6 +127,7 @@ impl RedTeamReport {
             && self.atomic
             && self.tensor
             && self.heap
+            && self.unknown
     }
 }
 
@@ -201,6 +205,8 @@ fn run_redteam() -> RedTeamReport {
         tensor: sfi.tensor_reject,
         // Named heap/alloc refuse (`SfiError::Unmodeled`). Not a bump allocator.
         heap: sfi.heap_reject,
+        // Bad opcode / illegal width → Unmodeled. Tensor/heap lines stay separate.
+        unknown: sfi.unknown_reject,
     }
 }
 
@@ -244,6 +250,7 @@ fn print_clip(r: &RedTeamReport) {
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
     emit_tagged(r.heap, LINE_HEAP);
+    emit_tagged(r.unknown, LINE_UNKNOWN);
     println!();
     println!("{LINE_NOT}");
     if r.all_ok() {
@@ -291,6 +298,7 @@ mod tests {
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
         assert!(r.heap, "SoftSFI heap/alloc named refuse");
+        assert!(r.unknown, "SoftSFI unknown opcode/illegal width refuse");
         assert!(r.all_ok());
     }
 
@@ -319,6 +327,7 @@ mod tests {
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
         assert_eq!(LINE_HEAP, "[softsfi] heap=refused");
+        assert_eq!(LINE_UNKNOWN, "[softsfi] unknown=refused");
         for line in [
             LINE_CROSSCUT,
             LINE_FIREWALL,

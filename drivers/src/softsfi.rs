@@ -4,10 +4,11 @@
 //! can keep editing the CP without merging this ISA. GPU-AToLL-shaped
 //! SFI: every load/store/dma/`atomic_add` proves `base+bound` in the
 //! SID IOVA window. Not NVVM, not “safe multi-tenant kernels.”
-//! Tensor / heap stay `Unmodeled` as **named refuses** (sell:
-//! `[softsfi] tensor=refused` / `[softsfi] heap=refused`). Heap is not a
-//! bump allocator. `atomic_add` is a sequential toy RMW, not a coherent
-//! hardware atomic.
+//! Tensor / heap / unknown stay `Unmodeled` as **named refuses** (sell:
+//! `[softsfi] tensor=refused` / `[softsfi] heap=refused` /
+//! `[softsfi] unknown=refused`). Heap is not a bump allocator. Unknown is
+//! bad opcode / illegal width — not AddImm deepen. `atomic_add` is a
+//! sequential toy RMW, not a coherent hardware atomic.
 
 use aether_core::accel::DmaView;
 use aether_core::iommu::{IommuMap, StreamId};
@@ -104,8 +105,9 @@ mod tests {
     use aether_core::caps::{CapKind, CapRights, Capability};
     use aether_core::iommu::MapRequest;
     use aether_core::softsfi::{
-        heap_alloc_prog, in_bounds_atomic_prog, in_bounds_prog, oob_atomic_prog, oob_load_prog,
-        tensor_prog, Insn, Program, SFI_SECRET_B,
+        heap_alloc_prog, illegal_width_prog, in_bounds_atomic_prog, in_bounds_prog,
+        oob_atomic_prog, oob_load_prog, tensor_prog, unknown_opcode_prog, Insn, Program,
+        SFI_SECRET_B, SFI_BASE_A,
     };
     use aether_core::types::{ChipletId, TenantId, TileId};
 
@@ -204,6 +206,26 @@ mod tests {
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
         assert_eq!(a_word, 3);
     }
+
+    #[test]
+    fn softsfi_unknown_opcode_illegal_width_unmodeled_refuse() {
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        backing[256..260].copy_from_slice(&SFI_SECRET_B.to_le_bytes());
+        let (mut d, sid_a, _sid_b, _iova_a, _iova_b) = two_tenant_cp(&mut backing);
+        let unk = unknown_opcode_prog(0xFF);
+        assert_eq!(d.verify_sfi(sid_a, &unk), Err(SfiError::Unmodeled));
+        assert_eq!(d.submit_sfi(sid_a, &unk).unwrap_err(), HalError::Fault);
+        let bad_w = illegal_width_prog(SFI_BASE_A);
+        assert_eq!(d.verify_sfi(sid_a, &bad_w), Err(SfiError::Unmodeled));
+        assert_eq!(d.submit_sfi(sid_a, &bad_w).unwrap_err(), HalError::Fault);
+        drop(d);
+        let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
+        assert_eq!(secret, SFI_SECRET_B);
+        let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(a_word, 3);
+    }
+
 
     #[test]
     fn softsfi_atomic_in_range_accept_cross_tenant_reject() {
