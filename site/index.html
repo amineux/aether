@@ -542,8 +542,8 @@
               <span class="badge done">RMW</span>
             </div>
             <h3>One honest <code>atomic_add</code></h3>
-            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
-            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] heap=refused</code></p>
+            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width is a named refuse (<code>[softsfi] unknown=refused</code>). Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
+            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] heap=refused</code> · <code>[softsfi] unknown=refused</code></p>
           </article>
           <article class="proof-card proof-wide" data-reveal data-d="6">
             <div class="proof-head">
@@ -607,6 +607,7 @@
 <span class="ok">[event] SoftChipletSync create/record/wait
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
+[softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
 [softcp] sparsify DROP
 [opinject] resident worker + hot-add sealed
@@ -618,9 +619,14 @@
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
+[redteam] attack=foreign-tenant-color result=refused
+[redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=firewall-ident-pa result=refused
+[redteam] attack=hodge-harmonic-tree result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
+[softsfi] unknown=refused
 [redteam] sealed</span>
 <span class="cmd">$ make partner-hello</span>
 <span class="ok">[partner-hello] ok</span>
@@ -701,7 +707,7 @@
               <span class="badge done">wait</span>
             </div>
             <h3>Host Path B</h3>
-            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait. Event create/record/wait. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>.</p>
+            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait. Event create/record/wait. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>.</p>
           </article>
           <article class="proof-card" data-reveal data-d="1">
             <div class="proof-head">
@@ -709,7 +715,7 @@
               <span class="badge done">refuse</span>
             </div>
             <h3>Named attacks</h3>
-            <p><code>[redteam] attack=… result=refused</code> including <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out). Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code> (PR #80). Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
+            <p><code>[redteam] attack=… result=refused</code> including <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code> (PR #80). <code>[softsfi] unknown=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
           </article>
           <article class="proof-card" data-reveal data-d="2">
             <div class="proof-head">
@@ -765,6 +771,7 @@
 <span class="ok">[event] SoftChipletSync create/record/wait
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
+[softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
 [softcp] sparsify DROP
 [opinject] resident worker + hot-add sealed
@@ -776,9 +783,14 @@
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
+[redteam] attack=foreign-tenant-color result=refused
+[redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=firewall-ident-pa result=refused
+[redteam] attack=hodge-harmonic-tree result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
+[softsfi] unknown=refused
 [redteam] sealed</span>
 <span class="cmd">$ make partner-hello &amp;&amp; make mp-shim</span>
 <span class="ok">[partner-hello] ok
@@ -854,7 +866,7 @@
                 <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
                 <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
                 <li>Bank coloring — Compute refuse, Exchange may transfer</li>
-                <li>AffinityLaplacian n≤32 — prototype eigensolve in sched (not GiFt-Placer)</li>
+                <li>AffinityLaplacian n≤32 — prototype eigensolve in sched (not GiFt-Placer); orphaned heat/commute helpers deleted, not elevated</li>
                 <li>RISC-V U-mode <code>/init</code> over <code>ecall</code> / <code>sret</code> (Sv39 isolate; in-kernel SoftNPU; PLIC software doorbell, not virtio-mmio; not product-class)</li>
                 <li>aarch64 EL0 <code>/init</code> over <code>svc</code> / <code>eret</code> (TTBR0 isolate; in-kernel SoftNPU; not GICv3 / virtio-mmio; not product-class)</li>
                 <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
@@ -931,7 +943,7 @@
               </div>
               <ul>
                 <li>SoftChipletSync (PR #51) — chiplet-local fence domains on the existing seq / wait / complete model; scopes collapsed to <code>chiplet|package</code> (Wave/Cu alias Chiplet — same cost+signal; PR #102). Fleet-shaped hierarchical counters: chiplet-local signal is free; package-scope is one fence per participating chiplet. Soft-CP and IreeShapedCp <code>submit_scoped</code> run a producer/consumer across two fake chiplets. Host tests measure fence counts. Not a Vulkan timeline, not UCIe, not ChipletFleet placement, not a multi-chiplet latency claim. SID-at-submit, XQueue, and path-B SoftNPU stay</li>
-                <li>SoftCCT — elision layer on SoftChipletSync. Soft-CP buffer labels + last-writer chiplet (CPElide MICRO’24 inspiration). Package-scope fence only when CCT says a cross-chiplet hazard. Same-chiplet consume on ≥2 fake chiplets elides; single-chiplet CCT is a no-op. Host tests: CCT fence count ≪ broadcast baseline; incorrect elision (ignore writer chiplet) fails. Not a full coherence protocol, not a Vulkan / ROCm product, not a latency claim from single-die numbers</li>
+                <li>SoftCCT — elision layer on SoftChipletSync. Soft-CP buffer labels + last-writer chiplet (CPElide MICRO’24 inspiration). Package-scope fence only when CCT says a cross-chiplet hazard. Same-chiplet consume on ≥2 fake chiplets elides; single-chiplet CCT is a no-op (<code>[softcct] single-chiplet=noop</code> on host diligence). Host tests: CCT fence count ≪ broadcast baseline; incorrect elision (ignore writer chiplet) fails. Not a full coherence protocol, not a Vulkan / ROCm product, not a latency claim from single-die numbers</li>
               </ul>
             </div>
           </article>
@@ -949,8 +961,8 @@
               <ul>
                 <li>SoftGreenCtx (PR #54) — Soft-CP partitions a fake SM / work-queue pool 70/30. Two XQueues bind to those SoftGreenCtx slices. Host tests co-run memcpy-like kernels and report BW interference vs an unpartitioned baseline (normalized integer units, not FLOPs). Queue A can migrate-to-yield onto the larger slice at a queue boundary; Soft-SMMU SID is unchanged. CUDA Green Contexts / DetShare are inspiration only (DetShare has no public repo). Soft partition — not HW MIG, not a BAR firewall. Residual shared-HBM tax stays on so the 70% slice is still below solo. Path B SoftNPU / <code>make qemu</code> unchanged. <code>IreeShapedCp</code> stays a single mailbox</li>
                 <li>SoftCmdFirewall (PR #55) — copy-then-validate on Soft-CP submit; kernel-owned arena; opcodes / relocs / SID / addr caps on the copy. Mutation-during-validate fails without the firewall. Host1x lesson. Not confidential GPU, not a Tegra driver, not SEC2</li>
-                <li>SoftCCT (PR #57) — deepen landed SoftChipletSync: last-writer chiplet per buffer label elides the package fence when the consumer is on that chiplet; labeled chiplet0→1; package-fence ≪ broadcast; incorrect elision fails. CPElide inspiration. Not UCIe, not a coherence directory, not a multi-chiplet latency claim. Fence counts only</li>
-                <li>SoftSFI (PR #56) — toy Soft-CP bytecode memory sandbox (<code>load</code> / <code>store</code> / <code>add</code> / <code>dma</code> / SID-proved <code>atomic_add</code>); bounds verifier against the SID-mapped Soft-SMMU window; two tenants SFI+SID. GPU-AToLL-shaped. Not a verified multi-tenant GPU, not NVRTC, not confidential GPU. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse. <code>atomic_add</code> is a sequential toy RMW, not a hardware atomic. No new syscall</li>
+                <li>SoftCCT (PR #57) — deepen landed SoftChipletSync: last-writer chiplet per buffer label elides the package fence when the consumer is on that chiplet; labeled chiplet0→1; package-fence ≪ broadcast; incorrect elision fails; single-chiplet CCT is a no-op (<code>[softcct] single-chiplet=noop</code>). CPElide inspiration. Not UCIe, not a coherence directory, not a multi-chiplet latency claim. Fence counts only</li>
+                <li>SoftSFI (PR #56) — toy Soft-CP bytecode memory sandbox (<code>load</code> / <code>store</code> / <code>add</code> / <code>dma</code> / SID-proved <code>atomic_add</code>); bounds verifier against the SID-mapped Soft-SMMU window; two tenants SFI+SID. GPU-AToLL-shaped. Not a verified multi-tenant GPU, not NVRTC, not confidential GPU. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse. Unknown opcode / illegal width → <code>[softsfi] unknown=refused</code>. <code>atomic_add</code> is a sequential toy RMW, not a hardware atomic. No new syscall</li>
               </ul>
             </div>
           </article>
@@ -987,7 +999,7 @@
               <ul>
                 <li>PJRT Event (PR #74) — <code>host/aether-pjrt</code> Event create / record / wait on existing SoftChipletSync chiplet-local or package-scope fences. Job Events from <code>execute</code> stay on the partition CP-shaped <code>Timeline</code>. Wait-before-record / wait-before-complete is <code>NotReady</code>. Wrong-SID still refuses. TRANSFER-only images still <code>Fault</code>. <code>IreeHalCmd</code> offsets unchanged. Not a new packet, not a PJRT plugin, not <code>GetPjRtApi</code> / XLA / <code>iree_hal_driver_t</code>, not a CUDA stream, not a silicon fence. Path B / <code>make qemu</code> unchanged</li>
                 <li>Fabric-class SoftNoI (PR #75) — software tag on <code>AccelJobDesc.flow</code> from collective type (tree → Gradient, ring → Curl, persistent → Harmonic). SoftNoI <code>admit_class</code>: Curl needs reserved ring capacity (400). Same light demand admits as Gradient/Harmonic and refuses the second Curl (<code>RingExhausted</code>) even when projected IS is still 1.0. Not a <code>CpCmd</code> / vendor header, not FlowHodgeQuota DMA-header theater, not topology synth, not UniCNet. Default <code>submit_xqueue</code> stays ungated. Integer counters only, not FLOPs</li>
-                <li>SoftSFI <code>atomic_add</code> (PR #73) — one honest side-effect: SID-proved toy word fetch-add (<code>rd = mem[rs+imm]; mem[rs+imm] += rt</code>, wrapping u32). In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named <code>Unmodeled</code> refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Sequential software RMW — not a coherent hardware atomic, not NVVM, not “safe kernels.” Path B SoftNPU / <code>make qemu</code> unchanged</li>
+                <li>SoftSFI <code>atomic_add</code> (PR #73) — one honest side-effect: SID-proved toy word fetch-add (<code>rd = mem[rs+imm]; mem[rs+imm] += rt</code>, wrapping u32). In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named <code>Unmodeled</code> refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width → <code>[softsfi] unknown=refused</code>. Sequential software RMW — not a coherent hardware atomic, not NVVM, not “safe kernels.” Path B SoftNPU / <code>make qemu</code> unchanged</li>
                 <li>Week 1 call pack (PR #77) — isolation (<code>make red-team</code>) → packet (<code>make partner-hello</code> / doorbell) → wait (Event) → admit class (fabric-class) → sandbox hole (<code>ATOMIC_ADD</code>). Commands that exist. Not a new kernel milestone</li>
                 <li>Path-A Soft-SMMU IOVA (PR #78) — host <code>PathABar</code> + <code>make accel-test</code>; wrong SID aborts. Path B / <code>make qemu</code> stays canonical. Not a QEMU rebuild in default CI. Kernel PCI bind still optional. Soft SMMU stays software</li>
               </ul>
@@ -1069,7 +1081,7 @@
               <div class="tl-when">Later · research</div>
               <h3>Package topology as a solver input</h3>
               <ul>
-                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Chiplet-local steal is an exploration digest (PR #40 stub), not ChipletFleet</li>
+                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Orphaned heat-kernel / commute-time helpers deleted (zero consumers; not elevated). Chiplet-local steal is an exploration digest (PR #40 stub), not ChipletFleet</li>
                 <li>CXL.mem window stays killed as a milestone — <code>TypedWindow</code> is an exploration digest pin stub (PR #42; SID refuse), not silicon</li>
                 <li>Formal subset of caps — inspired by seL4, not a proof claim. CDT property tests (PR #39) are host tests, not a seL4 CNode</li>
               </ul>
@@ -1118,7 +1130,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
               <span class="badge done">Ships</span>
               <div>
                 <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
-                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model (Soft-SMMU IOVA / wrong-SID host proof; not a guest PCI bind), Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions + SoftCmdFirewall copy-then-validate + SoftSFI toy bytecode sandbox + OperatorInject resident worker + SoftNoI-IS admit + PASID/SVA mm↔SSID), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; Event create/record/wait on existing SoftChipletSync fences; additive <code>Add</code>/<code>Relu</code>/<code>Mul</code>/<code>Max</code> research ops on freeze-v1; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32, Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (SyncScope collapsed to chiplet|package; Wave/Cu alias Chiplet; not UCIe), SoftCCT (last-writer chiplet elision; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), SoftCmdFirewall (copy-then-validate; not confidential GPU), SoftSFI (toy ISA bounds + SID-proved <code>atomic_add</code>; tensor/heap <code>Unmodeled</code>; not a verified multi-tenant GPU), OperatorInject (resident worker + hot-add scale; not NVRTC), SoftNoI-IS (fake NoI IS admit; fabric-class tree/ring/persistent tag; refuse IS &gt; 1.5 or Curl ring-exhaust; not topology synth), PASID/SVA (mm↔SSID bind; Soft-CP DMA via process VA; unmap→SSID TLB; not ARM SVA / CUDA UVA / hardware SMMU), Week 1 call pack (isolation → packet → wait → admit class → sandbox hole), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model (Soft-SMMU IOVA / wrong-SID host proof; not a guest PCI bind), Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions + SoftCmdFirewall copy-then-validate + SoftSFI toy bytecode sandbox + OperatorInject resident worker + SoftNoI-IS admit + PASID/SVA mm↔SSID), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; Event create/record/wait on existing SoftChipletSync fences; additive <code>Add</code>/<code>Relu</code>/<code>Mul</code>/<code>Max</code> research ops on freeze-v1; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32 (heat/commute orphans deleted, not elevated), Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (SyncScope collapsed to chiplet|package; Wave/Cu alias Chiplet; not UCIe), SoftCCT (last-writer chiplet elision; <code>[softcct] single-chiplet=noop</code>; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), SoftCmdFirewall (copy-then-validate; not confidential GPU), SoftSFI (toy ISA bounds + SID-proved <code>atomic_add</code>; tensor/heap <code>Unmodeled</code>; <code>[softsfi] unknown=refused</code>; not a verified multi-tenant GPU), OperatorInject (resident worker + hot-add scale; not NVRTC), SoftNoI-IS (fake NoI IS admit; fabric-class tree/ring/persistent tag; refuse IS &gt; 1.5 or Curl ring-exhaust; not topology synth), PASID/SVA (mm↔SSID bind; Soft-CP DMA via process VA; unmap→SSID TLB; not ARM SVA / CUDA UVA / hardware SMMU), Week 1 call pack (isolation → packet → wait → admit class → sandbox hole), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
               </div>
             </div>
             <div class="proof">
@@ -1207,12 +1219,14 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[event] SoftChipletSync create/record/wait</span>
 <span class="ok">[event] fence counts chiplet-local vs package</span>
 <span class="ok">[softcct] package fences=</span>
+<span class="ok">[softcct] single-chiplet=noop</span>
 <span class="ok">[greenctx] interference partitioned 70/30 vs unpartitioned</span>
 <span class="ok">[softcp] sparsify DROP</span>
 <span class="ok">[opinject] resident worker + hot-add sealed</span>
 <span class="ok">[redteam] fabric-class admit/refuse</span>
 <span class="ok">[redteam] ATOMIC_ADD accept/reject</span>
 <span class="ok">[softsfi] heap=refused</span>
+<span class="ok">[softsfi] unknown=refused</span>
 <span class="ok">[redteam] attack=wrong-sid-crosscut result=refused</span>
 <span class="ok">[redteam] attack=blast-hops result=refused</span>
 <span class="ok">[redteam] attack=blast-nodes result=refused</span>
@@ -1220,6 +1234,10 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[redteam] attack=uncolored-compute result=refused</span>
 <span class="ok">[redteam] attack=typed-window-sid result=refused</span>
 <span class="ok">[redteam] attack=hbm-bw result=refused</span>
+<span class="ok">[redteam] attack=foreign-tenant-color result=refused</span>
+<span class="ok">[redteam] attack=xqueue-sid-override result=refused</span>
+<span class="ok">[redteam] attack=firewall-ident-pa result=refused</span>
+<span class="ok">[redteam] attack=hodge-harmonic-tree result=refused</span>
 <span class="ok">[diligence] host Path B sealed</span>
 <span class="ok">[redteam] sealed</span></pre>
           </div>
