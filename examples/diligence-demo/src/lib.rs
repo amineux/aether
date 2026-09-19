@@ -268,6 +268,15 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         )
     )
     .map_err(|_| DemoError { clip: "write" })?;
+    // Honesty after SyncScope collapse (#102 Chiplet|Package): single-chiplet
+    // SoftCCT is a no-op (same fence count as CCT-off). Not UCIe latency.
+    if event.cct.single_chiplet_noop {
+        writeln!(out, "[softcct] single-chiplet=noop")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[softcct] FAIL -- single-chiplet noop")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
 
     let firewall: FirewallReport = run_firewall_demo();
     writeln!(
@@ -392,6 +401,11 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  SoftCCT single-chiplet=noop after SyncScope Chiplet|Package (#102; not UCIe latency)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue"
     )
     .map_err(|_| DemoError { clip: "write" })?;
@@ -504,6 +518,7 @@ mod tests {
         assert!(needles.contains("[event] SoftChipletSync create/record/wait"));
         assert!(needles.contains("[event] fence counts chiplet-local vs package"));
         assert!(needles.contains("[softcct] package fences="));
+        assert!(needles.contains("[softcct] single-chiplet=noop"));
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));
