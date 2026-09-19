@@ -496,6 +496,65 @@ pub fn job_template_from_cmd(cmd: &CpCmd) -> Result<AccelJobDesc, HalError> {
     })
 }
 
+
+/// Host red-team report for SoftCmdFirewall identity guest-PA refuse.
+///
+/// Sell line `[redteam] attack=firewall-ident-pa` — existing
+/// [`validate_reloc`] / [`SoftCmdFirewall::admit_packed`] addr-cap path
+/// only. Non-SVA packets must use the Soft-SMMU IOVA window; identity
+/// guest PAs (`< SOFT_SMMU_IOVA_BASE`) in the packet are `HalError::Fault`.
+/// **Not** a mutation-during-validate rehash (`softcmdfirewall` stays
+/// separate). **Not** confidential GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FirewallIdentPaReport {
+    /// Packed cmd with Soft-SMMU IOVA relocs admits.
+    pub iova_ok: bool,
+    /// Identity guest PA in `iova_a` → `HalError::Fault`.
+    pub ident_refused: bool,
+    /// Copy-then-validate sim note still recorded on the admit path.
+    pub sim_noted: bool,
+}
+
+impl FirewallIdentPaReport {
+    pub fn all_ok(&self) -> bool {
+        self.iova_ok && self.ident_refused && self.sim_noted
+    }
+}
+
+/// SoftCmdFirewall admits Soft-SMMU IOVA relocs; refuses identity guest
+/// PA sneaking into the packet. Reuses [`SoftCmdFirewall::admit_packed`]
+/// only — not Host1x race theater, not confidential GPU.
+pub fn run_firewall_ident_pa_demo() -> FirewallIdentPaReport {
+    use aether_core::caps::{CapKind, CapRights, Capability};
+    use aether_core::iommu::MapRequest;
+    use aether_core::types::TenantId;
+
+    let mut iommu = IommuMap::new();
+    let cap =
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1)).with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), aether_core::types::TileId(2), CP_SSID);
+    let pin = iommu
+        .map(&cap, MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid))
+        .expect("pin");
+    let _ = iommu.set_sid(&cap, sid);
+
+    let mut fw = SoftCmdFirewall::new();
+    let good = demo_matmul_cmd(sid, pin.iova);
+    let admitted = fw.admit_packed(good, &iommu, Some(sid)).is_ok();
+    let iova_ok = admitted && good.iova_a >= SOFT_SMMU_IOVA_BASE;
+    let sim_noted = fw.last_sim.noted();
+
+    let mut ident = good;
+    ident.iova_a = 0x1000; // guest PA identity, not Soft-SMMU IOVA window
+    let ident_refused = fw.admit_packed(ident, &iommu, Some(sid)) == Err(HalError::Fault);
+
+    FirewallIdentPaReport {
+        iova_ok,
+        ident_refused,
+        sim_noted,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -614,5 +673,14 @@ mod tests {
         let again = CpCmd::from_le_bytes(cmd.to_le_bytes()).unwrap();
         assert_eq!(cmd, again);
         assert!(validate_cp_cmd(&again, &iommu, Some(sid)).unwrap() > 0);
+    }
+
+    #[test]
+    fn firewall_ident_pa_demo_refuses_identity_guest_pa() {
+        let r = run_firewall_ident_pa_demo();
+        assert!(r.iova_ok, "Soft-SMMU IOVA reloc admits");
+        assert!(r.ident_refused, "identity guest PA in packet → Fault");
+        assert!(r.sim_noted, "admit path records firewall sim note");
+        assert!(r.all_ok());
     }
 }
