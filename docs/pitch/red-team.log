@@ -10,12 +10,14 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [redteam] attack=blast-nodes result=refused
 [redteam] attack=bank-color result=refused
 [redteam] attack=uncolored-compute result=refused
+[redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=qos-credits result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=hodge-harmonic-tree result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused
