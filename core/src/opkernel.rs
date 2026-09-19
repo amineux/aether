@@ -231,6 +231,58 @@ pub fn compatible(topology: CollectiveKind, flow: FlowClass) -> Result<(), Hodge
     }
 }
 
+/// Host red-team clip: Tree+Harmonic → [`HodgeError::HarmonicTreeReduce`].
+///
+/// Existing [`compatible`] / [`OperatorKernelHandle::bind`] path only.
+/// **Not** SoftNoI fabric-class Curl ring (that stays on
+/// `[redteam] fabric-class admit/refuse`). CurlOnTree stays a sibling
+/// refuse, not this attack.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HodgeHarmonicTreeReport {
+    /// Tree+Gradient binds (tree offload is the right topology).
+    pub gradient_tree_ok: bool,
+    /// Torus+Harmonic binds (homology on a cycle; no TREE_OFFLOAD).
+    pub harmonic_plain_ok: bool,
+    /// Tree+Harmonic bind refuses as [`HodgeError::HarmonicTreeReduce`].
+    pub harmonic_tree_refuse: bool,
+}
+
+impl HodgeHarmonicTreeReport {
+    pub fn all_ok(&self) -> bool {
+        self.gradient_tree_ok && self.harmonic_plain_ok && self.harmonic_tree_refuse
+    }
+}
+
+/// Tree+Gradient admits; Torus+Harmonic admits; Tree+Harmonic →
+/// [`HodgeError::HarmonicTreeReduce`]. SoftNoI Curl ring stays elsewhere.
+pub fn run_hodge_harmonic_tree_demo() -> HodgeHarmonicTreeReport {
+    let gradient_tree_ok =
+        OperatorKernelHandle::bind(OpKernelId(1), CollectiveKind::Tree, FlowClass::Gradient).is_ok();
+    let harmonic_plain_ok =
+        OperatorKernelHandle::bind(OpKernelId(2), CollectiveKind::Torus, FlowClass::Harmonic)
+            .is_ok();
+    let harmonic_tree_refuse = OperatorKernelHandle::bind(
+        OpKernelId(3),
+        CollectiveKind::Tree,
+        FlowClass::Harmonic,
+    ) == Err(HodgeError::HarmonicTreeReduce)
+        && compatible(CollectiveKind::Tree, FlowClass::Harmonic)
+            == Err(HodgeError::HarmonicTreeReduce);
+
+    // Fabric meter agrees: TREE_OFFLOAD + Harmonic is the same refuse.
+    let mut q = HodgeQuota::generous();
+    let admit_refuse =
+        q.admit(FlowClass::Harmonic, true) == Err(HodgeError::HarmonicTreeReduce);
+    let mut q_plain = HodgeQuota::generous();
+    let plain_admit = q_plain.admit(FlowClass::Harmonic, false).is_ok();
+
+    HodgeHarmonicTreeReport {
+        gradient_tree_ok,
+        harmonic_plain_ok: harmonic_plain_ok && plain_admit,
+        harmonic_tree_refuse: harmonic_tree_refuse && admit_refuse,
+    }
+}
+
 /// BIND is required. Without it the handle is inert (same as SpectralCut).
 pub fn require_opkernel_bind(tab: &CapTable, cptr: CPtr) -> Result<&Capability, CapError> {
     tab.require(cptr, CapKind::OperatorKernel, CapRights::BIND)
@@ -254,7 +306,20 @@ mod tests {
     }
 
     #[test]
+    fn hodge_harmonic_tree_demo_refuses() {
+        let r = run_hodge_harmonic_tree_demo();
+        assert!(r.gradient_tree_ok, "Tree+Gradient must bind: {r:?}");
+        assert!(r.harmonic_plain_ok, "Torus+Harmonic must bind: {r:?}");
+        assert!(
+            r.harmonic_tree_refuse,
+            "Tree+Harmonic must be HarmonicTreeReduce: {r:?}"
+        );
+        assert!(r.all_ok(), "{r:?}");
+    }
+
+    #[test]
     fn tree_binds_gradient_only() {
+
         assert!(OperatorKernelHandle::bind(
             OpKernelId(1),
             CollectiveKind::Tree,

@@ -193,6 +193,23 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Typed-window-sid stays
 [ACCEL.md](ACCEL.md)). No CapTable split, no new syscall, no opcode churn, no BAR0.
 
 
+## Hodge harmonic-tree (red-team needle)
+
+[`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Harmonic as
+[`HodgeError::HarmonicTreeReduce`](../core/src/hodge.rs) (deadlock / homology
+collapse). Tree+Gradient admits; Torus+Harmonic admits. Host red-team only —
+existing Hodge / opkernel path; **not** SoftNoI fabric-class Curl ring
+(`attack` stays separate from `[redteam] fabric-class admit/refuse`):
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Tree+Gradient admits; Torus+Harmonic admits; Tree+Harmonic refuse | `run_hodge_harmonic_tree_demo` → `HodgeError::HarmonicTreeReduce` | `[redteam] attack=hodge-harmonic-tree result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftNoI IS stays on
+`attack=softnoi-is`. Fabric-class Curl ring stays on `fabric-class admit/refuse`.
+CurlOnTree is a sibling refuse, not this attack. No CapTable split, no new
+syscall, no opcode churn.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.
