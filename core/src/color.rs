@@ -152,6 +152,42 @@ pub fn run_uncolored_compute_demo() -> UncoloredComputeReport {
     }
 }
 
+/// Host red-team foreign-tenant-color clip: Compute with foreign tenant
+/// refused; Exchange still OK. Sell needle is
+/// `[redteam] attack=foreign-tenant-color` — existing [`admit_wave`] only.
+/// Not a ForeignBank / bank-color or Uncolored / uncolored-compute rehash.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ForeignTenantColorReport {
+    pub same_ok: bool,
+    pub foreign_tenant: bool,
+    pub exchange_ok: bool,
+}
+
+impl ForeignTenantColorReport {
+    pub fn all_ok(&self) -> bool {
+        self.same_ok && self.foreign_tenant && self.exchange_ok
+    }
+}
+
+/// Same-tenant Compute admits; foreign tenant → [`ColorError::ForeignTenant`];
+/// [`Phase::Exchange`] still admits the foreign-tenant color.
+pub fn run_foreign_tenant_color_demo() -> ForeignTenantColorReport {
+    let home = BankId(0);
+    let same = BankColor::new(TenantId(1), home);
+    let foreign = BankColor::new(TenantId(2), home);
+
+    let same_ok = admit_wave(1, Phase::Compute, Some(same), home).is_ok();
+    let foreign_tenant =
+        admit_wave(1, Phase::Compute, Some(foreign), home) == Err(ColorError::ForeignTenant);
+    let exchange_ok = admit_wave(1, Phase::Exchange, Some(foreign), home).is_ok();
+
+    ForeignTenantColorReport {
+        same_ok,
+        foreign_tenant,
+        exchange_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -219,6 +255,15 @@ mod tests {
         assert!(r.colored_ok, "colored Compute admits");
         assert!(r.uncolored, "uncolored Compute → Uncolored");
         assert!(r.exchange_ok, "Exchange with color still admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn foreign_tenant_color_demo_refuse() {
+        let r = run_foreign_tenant_color_demo();
+        assert!(r.same_ok, "same-tenant Compute admits");
+        assert!(r.foreign_tenant, "foreign tenant Compute → ForeignTenant");
+        assert!(r.exchange_ok, "Exchange still admits foreign-tenant color");
         assert!(r.all_ok());
     }
 }

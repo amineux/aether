@@ -84,6 +84,21 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable
 split, no new syscall, no opcode churn.
 
+## Foreign tenant color (red-team needle)
+
+`admit_wave` foreign-tenant refuse is unit-tested in `color.rs`. The sell
+surface is host red-team only — existing path; **not** a ForeignBank /
+bank-color or Uncolored / uncolored-compute rehash:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Same-tenant Compute admits; foreign tenant refuse; Exchange still OK | `run_foreign_tenant_color_demo` → `ColorError::ForeignTenant` | `[redteam] attack=foreign-tenant-color result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stay on
+`attack=blast-hops`. Bank color stays on `attack=bank-color`. Uncolored
+compute stays on `attack=uncolored-compute`. No CapTable split, no new
+syscall, no opcode churn.
+
 ## QoS credits (red-team needle)
 
 [`Timeline::submit`](../core/src/fence.rs) meters [`QosBudget::credits`](../core/src/partition.rs).

@@ -2,7 +2,7 @@
 
 Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
-`run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
+`run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
 `run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
@@ -12,7 +12,10 @@ hops stays `attack=blast-hops`). Bank-color needle:
 `ColorError::ForeignBank`; Exchange still OK). Uncolored-compute needle:
 `[redteam] attack=uncolored-compute result=refused` (`admit_wave(..., color=None)` →
 `ColorError::Uncolored`; Exchange with color still OK; not ForeignBank /
-bank-color). QoS credits needle:
+bank-color). Foreign-tenant-color needle:
+`[redteam] attack=foreign-tenant-color result=refused` (`admit_wave` →
+`ColorError::ForeignTenant`; Exchange still OK; not ForeignBank / bank-color
+or Uncolored / uncolored-compute). QoS credits needle:
 `[redteam] attack=qos-credits result=refused` (`Timeline::submit` → `CreditExhausted`).
 Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 (`admit_chiplet` → `OutsideSlice`; not hops / qos / CrossCut / bank-color).

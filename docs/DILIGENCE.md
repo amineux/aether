@@ -336,6 +336,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Over `max_nodes` flood | `run_blast_nodes_demo` — `PartitionProfile::admit_nodes` → `PartitionError::BlastRadius` (two slices; in-budget admits). Not a hops rehash — hops stays `attack=blast-hops` | refused |
 | Foreign bank Compute wave | `run_bank_color_demo` — `admit_wave` → `ColorError::ForeignBank` (Exchange still OK). Existing path; not CrossCut / hops | refused |
 | Uncolored Compute wave | `run_uncolored_compute_demo` — `admit_wave(..., color=None)` → `ColorError::Uncolored` (Exchange with color still OK). Not ForeignBank / bank-color | refused |
+| Foreign tenant Compute wave | `run_foreign_tenant_color_demo` — `admit_wave` → `ColorError::ForeignTenant` (Exchange still OK). Not ForeignBank / bank-color or Uncolored / uncolored-compute | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
@@ -355,6 +356,7 @@ Expected stdout (CI greps these):
 [redteam] attack=blast-nodes result=refused
 [redteam] attack=bank-color result=refused
 [redteam] attack=uncolored-compute result=refused
+[redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=qos-credits result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused

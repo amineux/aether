@@ -3,7 +3,7 @@
 //! Reuses the same refuse paths the kernel self-check already runs
 //! (`run_blast_demo`, `run_blast_hops_demo`, `run_blast_nodes_demo`,
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
-//! `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
+//! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
 //! `run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
@@ -19,7 +19,10 @@
 //! → `ColorError::ForeignBank` (not a rehash of CrossCut / hops).
 //! Uncolored compute is `admit_wave(..., color=None)` →
 //! `ColorError::Uncolored` (Exchange with color still OK; not a
-//! ForeignBank / bank-color rehash). QoS credits is `Timeline::submit` →
+//! ForeignBank / bank-color rehash). Foreign-tenant color is
+//! `admit_wave` → `ColorError::ForeignTenant` (Exchange still OK; not a
+//! ForeignBank / bank-color or Uncolored / uncolored-compute rehash).
+//! QoS credits is `Timeline::submit` →
 //! `CreditExhausted` when `in_flight >= qos.credits` (not EventRing
 //! theater, not a second charge API). Outside-slice is
 //! `PartitionProfile::admit_chiplet` → `OutsideSlice` (not hops / qos /
@@ -39,7 +42,7 @@
 
 use aether_core::blast::run_blast_demo;
 use aether_core::noi::run_softnoi_demo;
-use aether_core::color::{run_bank_color_demo, run_uncolored_compute_demo};
+use aether_core::color::{run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo};
 use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_hbm_bw_demo, run_outside_slice_demo,
     run_qos_credits_demo,
@@ -60,6 +63,7 @@ const LINE_BLAST_HOPS: &str = "[redteam] attack=blast-hops result=refused";
 const LINE_BLAST_NODES: &str = "[redteam] attack=blast-nodes result=refused";
 const LINE_BANK_COLOR: &str = "[redteam] attack=bank-color result=refused";
 const LINE_UNCOLORED: &str = "[redteam] attack=uncolored-compute result=refused";
+const LINE_FOREIGN_TENANT: &str = "[redteam] attack=foreign-tenant-color result=refused";
 const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
@@ -85,6 +89,7 @@ struct RedTeamReport {
     blast_nodes: bool,
     bank_color: bool,
     uncolored_compute: bool,
+    foreign_tenant_color: bool,
     qos_credits: bool,
     outside_slice: bool,
     silent_remote: bool,
@@ -108,6 +113,7 @@ impl RedTeamReport {
             && self.blast_nodes
             && self.bank_color
             && self.uncolored_compute
+            && self.foreign_tenant_color
             && self.qos_credits
             && self.outside_slice
             && self.silent_remote
@@ -128,6 +134,7 @@ fn run_redteam() -> RedTeamReport {
     let nodes = run_blast_nodes_demo();
     let color = run_bank_color_demo();
     let uncolored = run_uncolored_compute_demo();
+    let foreign_tenant = run_foreign_tenant_color_demo();
     let qos = run_qos_credits_demo();
     let outside = run_outside_slice_demo();
     let silent = run_silent_remote_demo();
@@ -165,6 +172,9 @@ fn run_redteam() -> RedTeamReport {
         // admit_wave(..., color=None): Compute → Uncolored; Exchange with color OK.
         // Existing path only — not ForeignBank / bank-color (that stays on LINE_BANK_COLOR).
         uncolored_compute: uncolored.all_ok(),
+        // admit_wave: same-tenant Compute OK; foreign tenant → ForeignTenant; Exchange OK.
+        // Existing path only — not ForeignBank / bank-color or Uncolored / uncolored-compute.
+        foreign_tenant_color: foreign_tenant.all_ok(),
         // Timeline::submit: in-budget OK; in_flight >= credits → CreditExhausted;
         // complete/timeout frees credit and admit resumes. Existing fence meter.
         qos_credits: qos.all_ok(),
@@ -223,6 +233,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.blast_nodes, LINE_BLAST_NODES);
     emit(r.bank_color, LINE_BANK_COLOR);
     emit(r.uncolored_compute, LINE_UNCOLORED);
+    emit(r.foreign_tenant_color, LINE_FOREIGN_TENANT);
     emit(r.qos_credits, LINE_QOS_CREDITS);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
@@ -266,6 +277,7 @@ mod tests {
         assert!(r.blast_nodes, "admit_nodes over max_nodes → BlastRadius");
         assert!(r.bank_color, "admit_wave foreign bank → ForeignBank");
         assert!(r.uncolored_compute, "admit_wave color=None → Uncolored");
+        assert!(r.foreign_tenant_color, "admit_wave foreign tenant → ForeignTenant");
         assert!(r.qos_credits, "Timeline::submit over credits → CreditExhausted");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
@@ -293,6 +305,7 @@ mod tests {
         assert_eq!(LINE_BLAST_NODES, "[redteam] attack=blast-nodes result=refused");
         assert_eq!(LINE_BANK_COLOR, "[redteam] attack=bank-color result=refused");
         assert_eq!(LINE_UNCOLORED, "[redteam] attack=uncolored-compute result=refused");
+        assert_eq!(LINE_FOREIGN_TENANT, "[redteam] attack=foreign-tenant-color result=refused");
         assert_eq!(LINE_QOS_CREDITS, "[redteam] attack=qos-credits result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
@@ -316,6 +329,7 @@ mod tests {
             LINE_BLAST_NODES,
             LINE_BANK_COLOR,
             LINE_UNCOLORED,
+            LINE_FOREIGN_TENANT,
             LINE_QOS_CREDITS,
             LINE_OUTSIDE_SLICE,
             LINE_SILENT_REMOTE,
