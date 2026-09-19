@@ -818,6 +818,19 @@ Host tests: `softcp_below_threshold_harmonic_drops_without_enqueue`,
 `default_submit_xqueue_still_ignores_sparsify`. Grep
 `[softcp] sparsify DROP`.
 
+## AffinityLaplacian heat / commute orphans (removed, not elevated)
+
+SpectraScout round-4 KEEP: `heat_step`, `heat_distance_milli`, and
+`commute_time_milli` had **zero consumers** outside `core/src/laplacian.rs`.
+They are **deleted**, not diligence/redteam-elevated. `AffinityLaplacian`
+public surface is Fiedler / Rayleigh / placement only
+(`fiedler_iterate` / `fiedler_mask` / `rayleigh_milli` +
+`SpectralCut::from_fiedler` / `from_placement`). No SoftNoI∩SpectralCut,
+no SoftSFI deepen, no CapTable / BAR0 / opcodes.
+
+See [ROADMAP.md](ROADMAP.md) AffinityLaplacian n≤32 placement and
+[CUT.md](CUT.md).
+
 ## ADR: partner-shaped opcode packet (`IreeShapedCp`)
 
 **Status:** Accepted 2026-09-07. **M5–M6 freeze-v1 (this PR):**
