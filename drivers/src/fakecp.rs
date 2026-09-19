@@ -1257,6 +1257,69 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     }
 }
 
+/// Host red-team report for Soft-CP XQueue sticky-SID override refuse.
+///
+/// Sell line `[redteam] attack=xqueue-sid-override` — existing
+/// [`SoftCommandProcessor::stamp_queue_sid`] path only. Pending queue
+/// refuses a second SID with [`HalError::Busy`]. Not BAR0 / SoftNPU /
+/// CXL / CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct XqueueSidOverrideReport {
+    /// First `stamp_queue_sid` (or create) admits on an empty queue.
+    pub first_stamp_ok: bool,
+    /// Same SID while pending still admits.
+    pub pending_same_ok: bool,
+    /// Second / foreign SID while pending → `HalError::Busy`.
+    pub override_busy: bool,
+    /// Queue SID stays the original after the refused override.
+    pub sticky: bool,
+}
+
+impl XqueueSidOverrideReport {
+    pub fn all_ok(&self) -> bool {
+        self.first_stamp_ok && self.pending_same_ok && self.override_busy && self.sticky
+    }
+}
+
+/// Pending Soft-CP XQueue: matching `stamp_queue_sid` admits; foreign
+/// SID → [`HalError::Busy`]. Reuses [`SoftCommandProcessor::create_xqueue`]
+/// / [`SoftCommandProcessor::submit_xqueue`] / [`SoftCommandProcessor::stamp_queue_sid`]
+/// only — not BAR0.
+pub fn run_xqueue_sid_override_demo() -> XqueueSidOverrideReport {
+    use aether_core::accel::SliceMem;
+
+    let mut backing = [0u8; 16];
+    let mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut backing,
+    };
+    let mut d = SoftCommandProcessor::new(mem);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), CP_SSID);
+    let other = StreamId::accel(ChipletId(0), TileId(2), 7);
+
+    d.create_xqueue(0, sid, 0).unwrap();
+    let first_stamp_ok = d.stamp_queue_sid(0, sid).is_ok();
+
+    // Nop on the sticky SID — leaves the queue non-empty (pending).
+    let mut job = AccelJobDesc::matmul_i32(1, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+    job.op = AccelOp::Nop;
+    job.place.chiplet = ChipletId(0);
+    job.place = job.place.with_tile(2);
+    d.submit_xqueue(0, &job).unwrap();
+
+    let pending_same_ok = d.stamp_queue_sid(0, sid).is_ok();
+    let override_busy = d.stamp_queue_sid(0, other) == Err(HalError::Busy);
+    let sticky = d.xqueue(0).unwrap().sid == Some(sid);
+
+    XqueueSidOverrideReport {
+        first_stamp_ok,
+        pending_same_ok,
+        override_busy,
+        sticky,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1852,6 +1915,16 @@ mod tests {
         d.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(64), 48, sid_a))
             .unwrap();
         assert_eq!(d.submit_xqueue(0, &foreign).unwrap_err(), HalError::Fault);
+    }
+
+    #[test]
+    fn xqueue_sid_override_demo_refuses_second_sid() {
+        let r = run_xqueue_sid_override_demo();
+        assert!(r.first_stamp_ok, "empty stamp admits");
+        assert!(r.pending_same_ok, "same SID while pending admits");
+        assert!(r.override_busy, "foreign SID while pending → Busy");
+        assert!(r.sticky, "SID stays stuck after refuse");
+        assert!(r.all_ok());
     }
 
     #[test]

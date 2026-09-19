@@ -36,8 +36,9 @@ pub mod sva;
 pub mod virtio_accel;
 
 pub use fakecp::{
-    CpCmd, SoftCommandProcessor, XQueue, XQueueState, CP_CMD_SIZE, CP_FLAG_SET_SID, CP_PKT_MAGIC,
-    CP_SSID, SOFT_CP_XQUEUES, XQUEUE_DEPTH,
+    run_xqueue_sid_override_demo, CpCmd, SoftCommandProcessor, XQueue, XQueueState,
+    XqueueSidOverrideReport, CP_CMD_SIZE, CP_FLAG_SET_SID, CP_PKT_MAGIC, CP_SSID, SOFT_CP_XQUEUES,
+    XQUEUE_DEPTH,
 };
 pub use firewall::{
     run_firewall_demo, FirewallMode, FirewallReport, FirewallSim, SoftCmdFirewall, FIREWALL_SLOTS,
