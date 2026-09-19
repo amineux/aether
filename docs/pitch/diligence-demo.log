@@ -9,6 +9,7 @@
 [event] SoftChipletSync create/record/wait  ok
 [event] fence counts chiplet-local vs package  chiplet_pkg=0 package_pkg=1  (not CUDA EventRecord; not latency)  ok
 [softcct] package fences=1 broadcast=10  (CCT ≪ broadcast; Event wait still works; not UCIe)  ok
+[softcct] single-chiplet=noop
 [firewall] copy-then-validate Host1x race  sneak=ok hold=ok  (cmd-stream integrity; not confidential GPU)  ok
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
@@ -25,6 +26,7 @@
   PJRT-shaped Client packs frozen IreeHalCmd and waits a fence (research opcodes)
   Event create/record/wait on existing SoftChipletSync fences (not GetPjRtApi)
   SoftCCT package fences ≪ broadcast; Event exposes chiplet-local vs package counts
+  SoftCCT single-chiplet=noop after SyncScope Chiplet|Package (#102; not UCIe latency)
   SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue
   SoftGreenCtx 70/30 SM/WQ partition + interference vs unpartitioned (integer milli; not MIG)
   Soft-CP sparsify decide_header DROP below-threshold Harmonic (host [softcp]; not qemu [sparsify])

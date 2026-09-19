@@ -372,9 +372,11 @@ pub fn run_kernel_selfcheck() {
     write_str("[softcct] incorrect elision refused  ");
     write_str(flag(softcct.incorrect_elision_refused));
     console::nl();
-    write_str("[softcct] single-chiplet no-op  ");
-    write_str(flag(softcct.single_chiplet_noop));
-    console::nl();
+    if softcct.single_chiplet_noop {
+        println!("[softcct] single-chiplet=noop");
+    } else {
+        println!("[softcct] FAIL -- single-chiplet noop");
+    }
     if softcct.all_ok() {
         println!("[softcct] two-chiplet producer/consumer elision sealed");
     } else {

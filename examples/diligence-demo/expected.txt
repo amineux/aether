@@ -11,6 +11,7 @@
 [event] SoftChipletSync create/record/wait
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
+[softcct] single-chiplet=noop
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30
