@@ -41,7 +41,8 @@ pub use fakecp::{
     XQUEUE_DEPTH,
 };
 pub use firewall::{
-    run_firewall_demo, FirewallMode, FirewallReport, FirewallSim, SoftCmdFirewall, FIREWALL_SLOTS,
+    run_firewall_demo, run_firewall_ident_pa_demo, FirewallIdentPaReport, FirewallMode,
+    FirewallReport, FirewallSim, SoftCmdFirewall, FIREWALL_SLOTS,
 };
 pub use ireecp::{IreeHalCmd, IreeShapedCp, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
 pub use mmio::{

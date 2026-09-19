@@ -210,6 +210,22 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftNoI IS stays on
 CurlOnTree is a sibling refuse, not this attack. No CapTable split, no new
 syscall, no opcode churn.
 
+## Firewall identity guest PA (red-team needle)
+
+SoftCmdFirewall addr-cap (`validate_reloc` / `admit_packed`) refuses identity
+guest PAs (`iova < SOFT_SMMU_IOVA_BASE`) sneaking into a non-SVA packet.
+Soft-SMMU IOVA relocs still admit. Host red-team only — existing SoftCmdFirewall
+path; **not** a mutation-during-validate rehash (`softcmdfirewall` stays
+separate), **not** confidential GPU:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Soft-SMMU IOVA admits; identity guest PA in packet refuse | `run_firewall_ident_pa_demo` → `HalError::Fault` | `[redteam] attack=firewall-ident-pa result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftCmdFirewall
+mutation-during-validate stays on `attack=softcmdfirewall`. No CapTable split,
+no new syscall, no opcode churn, no confidential GPU.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.

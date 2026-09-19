@@ -4,7 +4,7 @@ Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
 `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-`run_hodge_harmonic_tree_demo`, `run_firewall_demo`, `run_softsfi_demo`,
+`run_hodge_harmonic_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_softsfi_demo`,
 `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
 `[redteam] attack=blast-nodes result=refused` (`admit_nodes` → `BlastRadius`;
@@ -32,6 +32,10 @@ not BAR0 / SoftNPU).
 Hodge harmonic-tree needle: `[redteam] attack=hodge-harmonic-tree result=refused`
 (`OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`;
 not SoftNoI fabric-class Curl ring).
+Firewall-ident-pa needle: `[redteam] attack=firewall-ident-pa result=refused`
+(SoftCmdFirewall `admit_packed` identity guest PA → `HalError::Fault`;
+not mutation-during-validate — `softcmdfirewall` stays separate; not
+confidential GPU).
 SoftSFI tensor needle: `[softsfi] tensor=refused` (`SoftOp::Tensor` → `Unmodeled`;
 heap line stays separate).
 SoftSFI unknown needle: `[softsfi] unknown=refused` (bad opcode / illegal width →
