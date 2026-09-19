@@ -33,13 +33,14 @@ On the QEMU 2-chiplet graph and the host `two_chiplet_mesh` (n=16 / 32)
 the min-Φ / Fiedler split *is* the chiplet cut (weak inter-die edges).
 
 `AffinityLaplacian` (`core/src/laplacian.rs`) is the first-class `L`
-object. It exposes Rayleigh (`rayleigh_milli`), a Fiedler-ish power
-iteration + median-cut (`fiedler_mask`), and heat / commute-time
-distance helpers. Arithmetic is integer / milli-fixed-point.
+object. It exposes Rayleigh (`rayleigh_milli`) and a Fiedler-ish power
+iteration + median-cut (`fiedler_mask`) for placement. Arithmetic is
+integer / milli-fixed-point. Orphaned heat / commute-time helpers were
+removed (zero consumers outside `laplacian.rs`; not elevated).
 
 This is a **prototype eigensolve** — not GiFt-Placer, not a production
 package solver, and not an EDA replacement. Complexity is documented
-on the type: iterate O(iters·n²), commute-time O(n³).
+on the type: iterate O(iters·n²).
 
 `TileScheduler::bind_laplacian_cut` installs that Fiedler cut. `pick`
 scores a violating tile as impossible (`i32::MIN`) and adds a soft

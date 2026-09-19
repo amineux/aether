@@ -15,15 +15,15 @@
 //! - `from_graph` / `quadratic_form` / `rayleigh_milli`: O(n²)
 //! - `fiedler_iterate`: O(iters · n²); default iters = max(32, 2n)
 //! - `fiedler_mask` (median cut): iterate + O(n²) insertion sort
-//! - `heat_step` / `heat_distance_milli`: O(steps · n²). The prototype
-//!   scale can saturate `u32` around n=32; commute-time is the
-//!   distance check at that size.
-//! - `commute_time_milli` (integer Gaussian elim on L+J): O(n³)
+//!
+//! Public surface is Fiedler / Rayleigh / placement only. Orphaned
+//! heat-kernel (`heat_step` / `heat_distance_milli`) and commute-time
+//! (`commute_time_milli`) helpers were removed — zero consumers outside
+//! this file; not elevated.
 
 use crate::cut::{vert_bit, vert_mask, AffinityGraph, MAX_VERTS};
 
 const RAYLEIGH_SCALE: i64 = 1000;
-const SOLVE_SCALE: i64 = 1_000_000;
 const FIEDLER_ITERS: u32 = 32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -195,139 +195,6 @@ impl AffinityLaplacian {
         }
         mask
     }
-
-    /// One explicit-Euler heat step: `u ← u − (t/1000) L u`.
-    pub fn heat_step(&self, u: &mut [i32], t_milli: u32) {
-        let n = self.n.min(u.len());
-        let mut lu = [0i64; MAX_VERTS];
-        for i in 0..n {
-            let mut s = 0i64;
-            for j in 0..n {
-                s += self.l[i][j] as i64 * u[j] as i64;
-            }
-            lu[i] = s;
-        }
-        for i in 0..n {
-            let next = u[i] as i64 * 1000 - t_milli as i64 * lu[i];
-            u[i] = (next / 1000).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
-        }
-    }
-
-    /// Squared heat-kernel distance after `steps` explicit Euler steps.
-    /// Units are prototype-scaled; only ratios (near vs far) are meaningful.
-    pub fn heat_distance_milli(
-        &self,
-        i: usize,
-        j: usize,
-        t_milli: u32,
-        steps: usize,
-    ) -> Option<u32> {
-        if i >= self.n || j >= self.n {
-            return None;
-        }
-        if i == j {
-            return Some(0);
-        }
-        let mut ui = [0i32; MAX_VERTS];
-        let mut uj = [0i32; MAX_VERTS];
-        ui[i] = 1_000_000;
-        uj[j] = 1_000_000;
-        for _ in 0..steps {
-            self.heat_step(&mut ui, t_milli);
-            self.heat_step(&mut uj, t_milli);
-        }
-        let mut d = 0i64;
-        for k in 0..self.n {
-            let diff = ui[k] as i64 - uj[k] as i64;
-            d = d.saturating_add(diff.saturating_mul(diff));
-        }
-        Some((d / 1_000_000).clamp(0, u32::MAX as i64) as u32)
-    }
-
-    /// Commute-time / resistance proxy: `vol · (xᵢ − xⱼ)` where
-    /// `(L + J) x = eᵢ − eⱼ` (so `x = L⁺(eᵢ − eⱼ)` on the 1-orthogonal
-    /// complement). Integer Gaussian elimination; not a claimed inverse.
-    pub fn commute_time_milli(&self, i: usize, j: usize) -> Option<u32> {
-        if i >= self.n || j >= self.n || self.n == 0 {
-            return None;
-        }
-        if i == j {
-            return Some(0);
-        }
-        let mut b = [0i64; MAX_VERTS];
-        b[i] = 1;
-        b[j] = -1;
-        let x = self.solve_lj(&b)?;
-        let diff = (x[i] - x[j]).abs();
-        let vol = self.volume() as i64;
-        let milli = vol.saturating_mul(diff).saturating_mul(1000) / SOLVE_SCALE;
-        Some(milli.clamp(0, u32::MAX as i64) as u32)
-    }
-
-    /// Solve `(L + J) x = b` with `b` scaled by [`SOLVE_SCALE`].
-    fn solve_lj(&self, b: &[i64; MAX_VERTS]) -> Option<[i64; MAX_VERTS]> {
-        let n = self.n;
-        if n == 0 {
-            return None;
-        }
-        let mut a = [[0i64; MAX_VERTS]; MAX_VERTS];
-        let mut rhs = [0i64; MAX_VERTS];
-        for i in 0..n {
-            rhs[i] = b[i].saturating_mul(SOLVE_SCALE);
-            for j in 0..n {
-                a[i][j] = self.l[i][j] as i64 + 1;
-            }
-        }
-        for k in 0..n {
-            let mut piv = k;
-            let mut best = a[k][k].abs();
-            for i in (k + 1)..n {
-                let mag = a[i][k].abs();
-                if mag > best {
-                    best = mag;
-                    piv = i;
-                }
-            }
-            if best == 0 {
-                return None;
-            }
-            if piv != k {
-                for j in 0..n {
-                    let tmp = a[k][j];
-                    a[k][j] = a[piv][j];
-                    a[piv][j] = tmp;
-                }
-                let tmp = rhs[k];
-                rhs[k] = rhs[piv];
-                rhs[piv] = tmp;
-            }
-            for i in (k + 1)..n {
-                let num = a[i][k] as i128;
-                let den = a[k][k] as i128;
-                if den == 0 {
-                    return None;
-                }
-                for j in k..n {
-                    let v = a[i][j] as i128 - num * a[k][j] as i128 / den;
-                    a[i][j] = v as i64;
-                }
-                let v = rhs[i] as i128 - num * rhs[k] as i128 / den;
-                rhs[i] = v as i64;
-            }
-        }
-        let mut sol = [0i64; MAX_VERTS];
-        for i in (0..n).rev() {
-            if a[i][i] == 0 {
-                return None;
-            }
-            let mut acc = rhs[i] as i128;
-            for j in (i + 1)..n {
-                acc -= a[i][j] as i128 * sol[j] as i128;
-            }
-            sol[i] = (acc / a[i][i] as i128) as i64;
-        }
-        Some(sol)
-    }
 }
 
 impl AffinityGraph {
@@ -423,27 +290,6 @@ mod tests {
     }
 
     #[test]
-    fn commute_and_heat_prefer_intra_chiplet() {
-        let g = AffinityGraph::qemu_package();
-        let lap = AffinityLaplacian::from_graph(&g);
-        // verts 0,1 = CPU0, NPU on chiplet 0; 3 = CPU1 on chiplet 1.
-        let near_c = lap.commute_time_milli(0, 1).unwrap();
-        let far_c = lap.commute_time_milli(0, 3).unwrap();
-        assert!(
-            near_c < far_c,
-            "commute intra {near_c} should be < inter {far_c}"
-        );
-        let near_h = lap.heat_distance_milli(0, 1, 50, 8).unwrap();
-        let far_h = lap.heat_distance_milli(0, 3, 50, 8).unwrap();
-        assert!(
-            near_h < far_h,
-            "heat intra {near_h} should be < inter {far_h}"
-        );
-        assert_eq!(lap.commute_time_milli(2, 2), Some(0));
-        assert_eq!(lap.heat_distance_milli(4, 4, 50, 4), Some(0));
-    }
-
-    #[test]
     fn from_fiedler_matches_enumerated_chiplet_cut() {
         let g = AffinityGraph::qemu_package();
         let enumerated = SpectralCut::min_balanced(crate::cut::CutId(2), &g, 400).unwrap();
@@ -480,23 +326,10 @@ mod tests {
     #[test]
     fn n16_smoke_fiedler_placement() {
         assert_mesh_smoke(16);
-        let g = AffinityGraph::two_chiplet_mesh(16);
-        let lap = AffinityLaplacian::from_graph(&g);
-        // Intra-chiplet (tile 0 ↔ tile 1) vs EMIB (tile 0 ↔ tile 8).
-        let near = lap.commute_time_milli(0, 1).unwrap();
-        let far = lap.commute_time_milli(0, 8).unwrap();
-        assert!(near < far, "n=16 commute intra {near} !< inter {far}");
     }
 
     #[test]
     fn n32_smoke_fiedler_placement() {
         assert_mesh_smoke(32);
-        let g = AffinityGraph::two_chiplet_mesh(32);
-        let lap = AffinityLaplacian::from_graph(&g);
-        // Heat-kernel L2 saturates u32 at this n with the prototype
-        // scale; commute-time (O(n³) Gauss) is the distance check.
-        let near = lap.commute_time_milli(0, 1).unwrap();
-        let far = lap.commute_time_milli(0, 16).unwrap();
-        assert!(near < far, "n=32 commute intra {near} !< inter {far}");
     }
 }

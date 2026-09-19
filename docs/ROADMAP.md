@@ -64,8 +64,9 @@ Landed:
   map; `kernel/src/arch/riscv64` UART / SBI timer / stvec. The later
   S-mode userspace cut (below) adds `sret` / `ecall` `/init`.
 - **AffinityLaplacian.** First-class `L = D − A` in `core/src/laplacian.rs`
-  with integer Rayleigh, Fiedler-ish power iteration, heat-kernel and
-  commute-time helpers. The n≤32 placement cut (below) extends this.
+  with integer Rayleigh and Fiedler-ish power iteration (placement). The
+  n≤32 placement cut (below) extends this. Orphaned heat-kernel /
+  commute-time helpers were **removed** (zero consumers; not elevated).
 - **Diligence pack.** [DILIGENCE.md](DILIGENCE.md) — what ships, what is
   stubbed, how to plug `AccelDevice`, security invariants, CI, non-claims,
   and a design-win narrative that does not invent a partner.
@@ -374,8 +375,10 @@ production package solver, **not** an EDA replacement:
 - `TileScheduler::bind_laplacian_cut` installs that cut. `pick`
   refuses CrossCut on a bound cut; BIND is still required on
   `bind_place`. A soft Fiedler-side score hint is not a refuse.
-- Complexity (dense integer): iterate O(iters·n²), commute O(n³).
-  No libm. No new syscall. AccelDevice / qemu arch CI unchanged.
+- Complexity (dense integer): iterate O(iters·n²). Public surface is
+  Fiedler / Rayleigh / placement only — heat-kernel and commute-time
+  orphans were deleted (not elevated). No libm. No new syscall.
+  AccelDevice / qemu arch CI unchanged.
 
 Chiplet-local steal (`ChipletTaskScope`) is a **thin exploration stub**
 on the same mesh tests — **KILL** as a calendar milestone, not a Year-1
