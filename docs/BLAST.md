@@ -162,6 +162,21 @@ on `attack=qos-credits`. Outside-slice stays on `attack=outside-slice`. Silent-r
 stays on `attack=silent-remote`. Typed-window-sid stays on `attack=typed-window-sid`.
 No CapTable split, no new syscall, no opcode churn.
 
+## Soft-CP XQueue SID override (red-team needle)
+
+[`SoftCommandProcessor::stamp_queue_sid`](../drivers/src/fakecp.rs) sticks Soft-SMMU SID
+to a software XQueue. Same SID while pending admits; a second / foreign SID on a
+non-empty queue → [`HalError::Busy`](../hal/src/lib.rs). Host red-team only — existing
+Soft-CP path; **not** BAR0 / SoftNPU / CXL / CapTable:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Empty / same-SID stamp admits; pending foreign SID refuse; sticky SID retained | `run_xqueue_sid_override_demo` → `HalError::Busy` | `[redteam] attack=xqueue-sid-override result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Typed-window-sid stays on
+`attack=typed-window-sid`. Empty-queue restamp between jobs stays Host1x-shaped (see
+[ACCEL.md](ACCEL.md)). No CapTable split, no new syscall, no opcode churn, no BAR0.
+
 
 ## SoftSFI tensor (red-team / softsfi serial needle)
 

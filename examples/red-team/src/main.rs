@@ -4,9 +4,9 @@
 //! (`run_blast_demo`, `run_blast_hops_demo`, `run_blast_nodes_demo`,
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
-//! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_firewall_demo`, `run_softsfi_demo`,
-//! `run_softnoi_demo`, `run_sva_demo`). This crate does not invent a new
-//! isolation mechanism.
+//! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
+//! `run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
+//! This crate does not invent a new isolation mechanism.
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
@@ -30,7 +30,9 @@
 //! TypedWindow stub; not CXL.mem silicon / BAR0; CrossTenant sibling on
 //! foreign pin). Soft HBM BW is `SoftHbmBwMeter::charge` → `QosExceeded`
 //! when `used + mbps > qos.bw_mbps` on an HBM `TypedWindow` (not silicon
-//! BW / FLOPs / charge_credits). The closer names what this is **not**:
+//! BW / FLOPs / charge_credits). XQueue SID override is Soft-CP
+//! `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID;
+//! not BAR0 / SoftNPU). The closer names what this is **not**:
 //! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
@@ -46,7 +48,7 @@ use aether_core::space::run_silent_remote_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
-use aether_drivers::run_firewall_demo;
+use aether_drivers::{run_firewall_demo, run_xqueue_sid_override_demo};
 
 /// Grep-able proof lines. CI matches these exactly.
 const LINE_CROSSCUT: &str = "[redteam] attack=wrong-sid-crosscut result=refused";
@@ -63,6 +65,7 @@ const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused"
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
+const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -87,6 +90,7 @@ struct RedTeamReport {
     silent_remote: bool,
     typed_window_sid: bool,
     hbm_bw: bool,
+    xqueue_sid_override: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -109,6 +113,7 @@ impl RedTeamReport {
             && self.silent_remote
             && self.typed_window_sid
             && self.hbm_bw
+            && self.xqueue_sid_override
             && self.class
             && self.atomic
             && self.tensor
@@ -128,6 +133,7 @@ fn run_redteam() -> RedTeamReport {
     let silent = run_silent_remote_demo();
     let typed_win = run_typed_window_sid_demo();
     let hbm = run_hbm_bw_demo();
+    let xqueue_sid = run_xqueue_sid_override_demo();
     let firewall = run_firewall_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
@@ -174,6 +180,9 @@ fn run_redteam() -> RedTeamReport {
         // SoftHbmBwMeter::charge: in-budget OK; used+mbps > bw_mbps → QosExceeded;
         // release frees; non-HBM → Unbound. Software meter vs QosBudget.bw_mbps.
         hbm_bw: hbm.all_ok(),
+        // Soft-CP stamp_queue_sid: same SID while pending OK; foreign → Busy.
+        // Existing XQueue sticky-SID path — not BAR0 / SoftNPU / CXL.
+        xqueue_sid_override: xqueue_sid.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -219,6 +228,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.silent_remote, LINE_SILENT_REMOTE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
     emit(r.hbm_bw, LINE_HBM_BW);
+    emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -261,6 +271,10 @@ mod tests {
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
         assert!(r.hbm_bw, "SoftHbmBwMeter over bw_mbps → QosExceeded");
+        assert!(
+            r.xqueue_sid_override,
+            "stamp_queue_sid second SID → HalError::Busy"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -284,6 +298,10 @@ mod tests {
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
         assert_eq!(LINE_HBM_BW, "[redteam] attack=hbm-bw result=refused");
+        assert_eq!(
+            LINE_XQUEUE_SID_OVERRIDE,
+            "[redteam] attack=xqueue-sid-override result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -303,6 +321,7 @@ mod tests {
             LINE_SILENT_REMOTE,
             LINE_TYPED_WINDOW_SID,
             LINE_HBM_BW,
+            LINE_XQUEUE_SID_OVERRIDE,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

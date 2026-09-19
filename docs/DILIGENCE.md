@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `typed-window-sid` + `hbm-bw` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -297,7 +297,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `typed-window-sid` / `hbm-bw` and the “what this is not” closer |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
@@ -341,6 +341,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 | TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
 | Over Soft HBM BW | `run_hbm_bw_demo` — `SoftHbmBwMeter::charge` → `PartitionError::QosExceeded` when `used + mbps > qos.bw_mbps` on HBM `TypedWindow` (software meter vs `QosBudget.bw_mbps`; release resumes). Not silicon BW / FLOPs / charge_credits | refused |
+| Soft-CP XQueue SID override | `run_xqueue_sid_override_demo` — `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID; same SID admits). Existing Soft-CP path — **not** BAR0 / SoftNPU / CXL | refused |
 
 Expected stdout (CI greps these):
 
@@ -359,6 +360,7 @@ Expected stdout (CI greps these):
 [redteam] attack=silent-remote result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
+[redteam] attack=xqueue-sid-override result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

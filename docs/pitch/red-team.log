@@ -15,6 +15,7 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [redteam] attack=silent-remote result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
+[redteam] attack=xqueue-sid-override result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

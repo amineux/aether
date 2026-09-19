@@ -3,8 +3,8 @@
 Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
 `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
-`run_silent_remote_demo`, `run_hbm_bw_demo`, `run_firewall_demo`, `run_softsfi_demo`,
-`run_softnoi_demo`, and `run_sva_demo`.
+`run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
+`run_firewall_demo`, `run_softsfi_demo`, `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
 `[redteam] attack=blast-nodes result=refused` (`admit_nodes` → `BlastRadius`;
 hops stays `attack=blast-hops`). Bank-color needle:
@@ -22,6 +22,9 @@ Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 Soft HBM BW needle: `[redteam] attack=hbm-bw result=refused`
 (`SoftHbmBwMeter::charge` → `QosExceeded` vs `QosBudget.bw_mbps` on HBM
 `TypedWindow`; software meter only).
+XQueue SID override needle: `[redteam] attack=xqueue-sid-override result=refused`
+(`stamp_queue_sid` second SID → `HalError::Busy` on pending Soft-CP XQueue;
+not BAR0 / SoftNPU).
 SoftSFI tensor needle: `[softsfi] tensor=refused` (`SoftOp::Tensor` → `Unmodeled`;
 heap line stays separate).
 
