@@ -11,10 +11,13 @@
 //!
 //! Each case prints `[redteam] attack=… result=refused`. SoftNoI
 //! fabric-class and SoftSFI `ATOMIC_ADD` print one grep-able line
-//! each from the same clips. SoftSFI tensor, heap/alloc, and unknown
-//! print `[softsfi] tensor=refused`, `[softsfi] heap=refused`, and
-//! `[softsfi] unknown=refused` (named `Unmodeled`; heap is not a bump
-//! allocator; unknown is bad opcode / illegal width).
+//! each from the same clips. SoftSFI tensor, heap/alloc, unknown, and
+//! unknown-base print `[softsfi] tensor=refused`, `[softsfi] heap=refused`,
+//! `[softsfi] unknown=refused`, and `[softsfi] unknown-base=refused`
+//! (tensor/heap/unknown named `Unmodeled`; unknown-base is load/store
+//! with no proved base window → `SfiError::UnknownBase`; heap is not a
+//! bump allocator; unknown is bad opcode / illegal width; lines stay
+//! separate).
 //! Blast hops is `PartitionProfile::admit_hops` → `BlastRadius`. Blast
 //! nodes is `PartitionProfile::admit_nodes` → `BlastRadius` (not a hops
 //! rehash — hops stays `attack=blast-hops`). Bank color is `admit_wave`
@@ -90,6 +93,7 @@ const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
 const LINE_HEAP: &str = "[softsfi] heap=refused";
 const LINE_UNKNOWN: &str = "[softsfi] unknown=refused";
+const LINE_UNKNOWN_BASE: &str = "[softsfi] unknown-base=refused";
 const LINE_NOT: &str =
     "[redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software";
 const LINE_SEALED: &str = "[redteam] sealed";
@@ -120,6 +124,7 @@ struct RedTeamReport {
     tensor: bool,
     heap: bool,
     unknown: bool,
+    unknown_base: bool,
 }
 
 impl RedTeamReport {
@@ -148,6 +153,7 @@ impl RedTeamReport {
             && self.tensor
             && self.heap
             && self.unknown
+            && self.unknown_base
     }
 }
 
@@ -239,6 +245,8 @@ fn run_redteam() -> RedTeamReport {
         heap: sfi.heap_reject,
         // Bad opcode / illegal width → Unmodeled. Tensor/heap lines stay separate.
         unknown: sfi.unknown_reject,
+        // Load/store no base window → UnknownBase. Tensor/heap/unknown stay separate.
+        unknown_base: sfi.unknown_base_reject,
     }
 }
 
@@ -286,6 +294,7 @@ fn print_clip(r: &RedTeamReport) {
     emit_tagged(r.tensor, LINE_TENSOR);
     emit_tagged(r.heap, LINE_HEAP);
     emit_tagged(r.unknown, LINE_UNKNOWN);
+    emit_tagged(r.unknown_base, LINE_UNKNOWN_BASE);
     println!();
     println!("{LINE_NOT}");
     if r.all_ok() {
@@ -343,6 +352,7 @@ mod tests {
         assert!(r.tensor, "SoftSFI tensor named refuse");
         assert!(r.heap, "SoftSFI heap/alloc named refuse");
         assert!(r.unknown, "SoftSFI unknown opcode/illegal width refuse");
+        assert!(r.unknown_base, "SoftSFI load/store no base window → UnknownBase");
         assert!(r.all_ok());
     }
 
@@ -381,6 +391,7 @@ mod tests {
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
         assert_eq!(LINE_HEAP, "[softsfi] heap=refused");
         assert_eq!(LINE_UNKNOWN, "[softsfi] unknown=refused");
+        assert_eq!(LINE_UNKNOWN_BASE, "[softsfi] unknown-base=refused");
         for line in [
             LINE_CROSSCUT,
             LINE_FIREWALL,

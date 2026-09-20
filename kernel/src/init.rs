@@ -95,6 +95,11 @@ fn run_and_print_softsfi() -> bool {
     } else {
         println!("[softsfi] unknown FAIL");
     }
+    if softsfi.unknown_base_reject {
+        println!("[softsfi] unknown-base=refused");
+    } else {
+        println!("[softsfi] unknown-base FAIL");
+    }
     write_str("[softsfi] skip-verify no cross-read  ");
     write_str(flag(softsfi.no_cross_read));
     console::nl();

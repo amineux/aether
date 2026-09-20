@@ -175,6 +175,7 @@ red-team:
 	grep -F -x -q "[softsfi] tensor=refused" $(REDTEAM_LOG)
 	grep -F -x -q "[softsfi] heap=refused" $(REDTEAM_LOG)
 	grep -F -x -q "[softsfi] unknown=refused" $(REDTEAM_LOG)
+	grep -F -x -q "[softsfi] unknown-base=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] what this is not: confidential GPU; not HW MIG; Soft SMMU is software" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] sealed" $(REDTEAM_LOG)
 	@echo "red-team: named attacks refused (host clip)"
@@ -384,6 +385,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sva\\] bind mm↔ssid DMA VA" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-serial.log \
@@ -438,6 +440,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -481,6 +484,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -534,6 +538,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/smp-serial.log \
@@ -596,6 +601,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/qemu-blk-serial.log \
@@ -655,6 +661,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/riscv-serial.log \
@@ -727,6 +734,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[softsfi\\] tensor=refused" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[softsfi\\] heap=refused" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[softsfi\\] unknown=refused" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[softsfi\\] unknown-base=refused" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[softsfi\\] two-tenant SFI+SID sandbox sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sva\\] mm↔ssid Soft-SMMU SVA sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[opinject\\] resident worker + hot-add sealed" $(BUILD)/aarch64-serial.log \

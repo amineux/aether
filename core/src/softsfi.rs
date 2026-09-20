@@ -22,6 +22,10 @@
 //! - Unknown opcode / illegal access width (not [`WORD`]) are **named
 //!   refuses** (`SfiError::Unmodeled`). Sell: `[softsfi] unknown=refused`.
 //!   Not AddImm deepen; no new modeled ops.
+//! - Load/store (and dma/`atomic_add`) whose base is not a proved constant
+//!   are [`SfiError::UnknownBase`] (no base window). Sell:
+//!   `[softsfi] unknown-base=refused`. Tensor / heap / unknown-op stay
+//!   separate lines. Not SoftSFI deepen past Unmodeled for new ops.
 //!
 //! [atoll]: https://github.com/AERO-Project-EU/gpu-atoll
 
@@ -643,6 +647,9 @@ pub struct SoftSfiReport {
     pub heap_reject: bool,
     /// Bad opcode / illegal width → `SfiError::Unmodeled` (sell: unknown=refused).
     pub unknown_reject: bool,
+    /// Load/store with no proved base window → `SfiError::UnknownBase`
+    /// (sell: unknown-base=refused). Tensor/heap/unknown-op stay separate.
+    pub unknown_base_reject: bool,
     pub no_cross_read: bool,
 }
 
@@ -654,6 +661,7 @@ impl SoftSfiReport {
             && self.tensor_reject
             && self.heap_reject
             && self.unknown_reject
+            && self.unknown_base_reject
             && self.no_cross_read
     }
 }
@@ -743,10 +751,28 @@ pub fn illegal_width_prog(base: u64) -> Program {
     p
 }
 
+/// Load whose base register was never a proved constant (no SID window).
+/// Verifier must name-refuse (`UnknownBase`). Not Unmodeled; tensor/heap/
+/// unknown-op stay separate sell lines.
+pub fn unknown_base_load_prog() -> Program {
+    let mut p = Program::new();
+    // r3 never proved — GPU-AToLL: no distinct location / no base window.
+    let _ = p.push(Insn::load(2, 3, 0));
+    p
+}
+
+/// Store whose base register was never a proved constant (no SID window).
+/// Verifier must name-refuse (`UnknownBase`).
+pub fn unknown_base_store_prog() -> Program {
+    let mut p = Program::new();
+    let _ = p.push(Insn::store(2, 3, 0));
+    p
+}
+
 /// Two tenants, same toy Soft-CP ISA: accept in-bounds load/store and
-/// SID-proved `atomic_add`, reject OOB, named tensor, heap/alloc, and
-/// unknown opcode / illegal width; skip-verify fault injection does not
-/// cross-read B.
+/// SID-proved `atomic_add`, reject OOB, named tensor, heap/alloc,
+/// unknown opcode / illegal width, and load/store with no base window;
+/// skip-verify fault injection does not cross-read B.
 #[inline(never)]
 pub fn run_softsfi_demo() -> SoftSfiReport {
     let mut bytes = [0u8; 128];
@@ -812,6 +838,13 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         && a.prove(SFI_BASE_A, 0, 0, false) == Err(SfiError::Unmodeled)
         && a.prove(SFI_BASE_A, 0, 3, false) == Err(SfiError::Unmodeled);
 
+    // Load/store with no proved base → UnknownBase (not Unmodeled).
+    // Tensor / heap / unknown-op stay separate sell lines.
+    let ub_load = unknown_base_load_prog();
+    let ub_store = unknown_base_store_prog();
+    let unknown_base_reject = verify(&ub_load, &a) == Err(SfiError::UnknownBase)
+        && verify(&ub_store, &a) == Err(SfiError::UnknownBase);
+
     // Fault inject: skip verifier. Runtime SID trap; B's secret unread.
     let mut mem = FlatMem {
         base: 0,
@@ -835,6 +868,7 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
         tensor_reject,
         heap_reject,
         unknown_reject,
+        unknown_base_reject,
         no_cross_read,
     }
 }
@@ -1037,10 +1071,8 @@ mod tests {
     #[test]
     fn verifier_rejects_unknown_base() {
         let a = box_a();
-        let mut p = Program::new();
-        // r3 never proved — GPU-AToLL: no distinct location.
-        let _ = p.push(Insn::load(2, 3, 0));
-        assert_eq!(verify(&p, &a), Err(SfiError::UnknownBase));
+        assert_eq!(verify(&unknown_base_load_prog(), &a), Err(SfiError::UnknownBase));
+        assert_eq!(verify(&unknown_base_store_prog(), &a), Err(SfiError::UnknownBase));
     }
 
     #[test]
@@ -1109,6 +1141,7 @@ mod tests {
         assert!(r.tensor_reject, "tensor named refuse");
         assert!(r.heap_reject, "heap/alloc named refuse");
         assert!(r.unknown_reject, "unknown opcode / illegal width refuse");
+        assert!(r.unknown_base_reject, "load/store no base window → UnknownBase");
         assert!(r.no_cross_read, "skip-verify does not leak B");
         assert!(r.all_ok());
     }

@@ -90,6 +90,7 @@ Makefile `red-team` greps (same strings in
 [softsfi] tensor=refused
 [softsfi] heap=refused
 [softsfi] unknown=refused
+[softsfi] unknown-base=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```

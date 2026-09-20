@@ -41,7 +41,7 @@ not mutation-during-validate — `softcmdfirewall` stays separate; not
 confidential GPU).
 SoftSFI tensor needle: `[softsfi] tensor=refused` (`SoftOp::Tensor` → `Unmodeled`;
 heap line stays separate).
-SoftSFI unknown needle: `[softsfi] unknown=refused` (bad opcode / illegal width →
+SoftSFI unknown needle: `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` (bad opcode / illegal width →
 `Unmodeled`; tensor/heap lines stay separate; not AddImm deepen).
 
 Typed-window-sid needle: `[redteam] attack=typed-window-sid result=refused`

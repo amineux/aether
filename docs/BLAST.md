@@ -266,6 +266,21 @@ AddImm deepen, no new modeled ops, not CapTable / SoftNPU churn:
 Tensor stays on `[softsfi] tensor=refused`. Heap stays on `[softsfi] heap=refused`.
 No CapTable split, no BAR0, no new syscall.
 
+## SoftSFI unknown-base (red-team / softsfi serial needle)
+
+Load/store whose base register is not a proved constant (no SID window)
+are unit-tested as `SfiError::UnknownBase`. Sell surface matches
+heap/tensor/unknown style — **not** Unmodeled deepen, no new modeled
+ops, not CapTable / SoftNPU churn:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Load/store with no base window refuse | `run_softsfi_demo` → load/store unknown base → `SfiError::UnknownBase` | `[softsfi] unknown-base=refused` |
+
+Tensor stays on `[softsfi] tensor=refused`. Heap stays on `[softsfi] heap=refused`.
+Unknown opcode / illegal width stays on `[softsfi] unknown=refused`.
+No CapTable split, no BAR0, no new syscall.
+
 SID-at-submit (Host1x-shaped) is a separate clip: [`run_sid_submit_demo()`](../core/src/sid.rs),
 serial `[sid]`. Bind-at-map is not enough on the Soft-CP / IreeShapedCp
 path. See [ACCEL.md](ACCEL.md).
