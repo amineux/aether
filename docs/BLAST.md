@@ -207,6 +207,20 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Typed-window-sid stays
 `attack=typed-window-sid`. Empty-queue restamp between jobs stays Host1x-shaped (see
 [ACCEL.md](ACCEL.md)). No CapTable split, no new syscall, no opcode churn, no BAR0.
 
+## Soft-CP SET_SID unbound (red-team needle)
+
+[`SoftCommandProcessor::set_sid`](../drivers/src/fakecp.rs) / submit require a Bound Soft-SMMU
+SID (SID-at-submit foundation). Without Bound, Soft-CP maps [`MapError::StreamAbort`](../core/src/iommu.rs)
+→ [`HalError::Fault`](../hal/src/lib.rs). Host red-team only — existing Soft-CP SET_SID path;
+**not** xqueue-sid-override / PASID rehash, **not** BAR0 / SoftNPU / CXL / CapTable:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Unbound `set_sid` / submit refuse; Bound `set_sid` admits; latch clear | `run_set_sid_unbound_demo` → `HalError::Fault` | `[redteam] attack=set-sid-unbound result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. XQueue sticky override stays on
+`attack=xqueue-sid-override`. PASID stale stays on `attack=pasid-stale`. No CapTable split,
+no new syscall, no opcode churn, no BAR0.
 
 ## Hodge harmonic-tree (red-team needle)
 

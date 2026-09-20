@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
+//! `run_set_sid_unbound_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -43,7 +43,9 @@
 //! when `used + mbps > qos.bw_mbps` on an HBM `TypedWindow` (not silicon
 //! BW / FLOPs / charge_credits). XQueue SID override is Soft-CP
 //! `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID;
-//! not BAR0 / SoftNPU). Hodge harmonic-tree is
+//! not BAR0 / SoftNPU). SET_SID unbound is Soft-CP `set_sid` / submit
+//! without Bound SID → `HalError::Fault` (SID-at-submit `StreamAbort`
+//! foundation; not xqueue-sid-override / PASID). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -68,7 +70,10 @@ use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
 use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
-use aether_drivers::{run_firewall_demo, run_firewall_ident_pa_demo, run_xqueue_sid_override_demo};
+use aether_drivers::{
+    run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
+    run_xqueue_sid_override_demo,
+};
 
 /// Grep-able proof lines. CI matches these exactly.
 const LINE_CROSSCUT: &str = "[redteam] attack=wrong-sid-crosscut result=refused";
@@ -88,6 +93,7 @@ const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused"
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
+const LINE_SET_SID_UNBOUND: &str = "[redteam] attack=set-sid-unbound result=refused";
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -120,6 +126,7 @@ struct RedTeamReport {
     typed_window_sid: bool,
     hbm_bw: bool,
     xqueue_sid_override: bool,
+    set_sid_unbound: bool,
     hodge_harmonic_tree: bool,
     hodge_curl_tree: bool,
     firewall_ident_pa: bool,
@@ -150,6 +157,7 @@ impl RedTeamReport {
             && self.typed_window_sid
             && self.hbm_bw
             && self.xqueue_sid_override
+            && self.set_sid_unbound
             && self.hodge_harmonic_tree
             && self.hodge_curl_tree
             && self.firewall_ident_pa
@@ -177,6 +185,7 @@ fn run_redteam() -> RedTeamReport {
     let typed_win = run_typed_window_sid_demo();
     let hbm = run_hbm_bw_demo();
     let xqueue_sid = run_xqueue_sid_override_demo();
+    let set_sid_unbound = run_set_sid_unbound_demo();
     let hodge_ht = run_hodge_harmonic_tree_demo();
     let hodge_ct = run_hodge_curl_tree_demo();
     let firewall = run_firewall_demo();
@@ -235,6 +244,9 @@ fn run_redteam() -> RedTeamReport {
         // Soft-CP stamp_queue_sid: same SID while pending OK; foreign → Busy.
         // Existing XQueue sticky-SID path — not BAR0 / SoftNPU / CXL.
         xqueue_sid_override: xqueue_sid.all_ok(),
+        // Soft-CP set_sid / submit without Bound → Fault (StreamAbort foundation).
+        // SID-at-submit path — not xqueue-sid-override / PASID / BAR0.
+        set_sid_unbound: set_sid_unbound.all_ok(),
         // OperatorKernelHandle::bind(Tree, Harmonic) → HarmonicTreeReduce.
         // Existing Hodge / opkernel path — not SoftNoI fabric-class Curl ring.
         hodge_harmonic_tree: hodge_ht.all_ok(),
@@ -296,6 +308,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
     emit(r.hbm_bw, LINE_HBM_BW);
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
+    emit(r.set_sid_unbound, LINE_SET_SID_UNBOUND);
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -350,6 +363,10 @@ mod tests {
             "stamp_queue_sid second SID → HalError::Busy"
         );
         assert!(
+            r.set_sid_unbound,
+            "set_sid / submit unbound → HalError::Fault"
+        );
+        assert!(
             r.hodge_harmonic_tree,
             "bind(Tree, Harmonic) → HarmonicTreeReduce"
         );
@@ -393,6 +410,10 @@ mod tests {
             "[redteam] attack=xqueue-sid-override result=refused"
         );
         assert_eq!(
+            LINE_SET_SID_UNBOUND,
+            "[redteam] attack=set-sid-unbound result=refused"
+        );
+        assert_eq!(
             LINE_HODGE_HARMONIC_TREE,
             "[redteam] attack=hodge-harmonic-tree result=refused"
         );
@@ -428,6 +449,7 @@ mod tests {
             LINE_TYPED_WINDOW_SID,
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,
+            LINE_SET_SID_UNBOUND,
             LINE_HODGE_HARMONIC_TREE,
             LINE_HODGE_CURL_TREE,
             LINE_FIREWALL_IDENT_PA,
