@@ -1319,6 +1319,70 @@ pub fn run_xqueue_sid_override_demo() -> XqueueSidOverrideReport {
     }
 }
 
+/// Host red-team report for Soft-CP SET_SID / submit without Bound SID.
+///
+/// Sell line `[redteam] attack=set-sid-unbound` — existing Soft-CP
+/// [`SoftCommandProcessor::set_sid`] / [`SoftCommandProcessor::submit`]
+/// path only. Unbound SID → [`HalError::Fault`] (`MapError::StreamAbort`
+/// foundation). Not xqueue-sid-override / PASID rehash; not BAR0 / SoftNPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetSidUnboundReport {
+    /// Privileged `set_sid` without Bound → `HalError::Fault`.
+    pub set_sid_unbound_fault: bool,
+    /// `submit` / `set_sid_bound` without Bound → `HalError::Fault`.
+    pub submit_unbound_fault: bool,
+    /// After `bind_stream`, `set_sid` admits.
+    pub bound_set_sid_ok: bool,
+    /// Submit latch stays clear after the unbound refuses.
+    pub latch_clear: bool,
+}
+
+impl SetSidUnboundReport {
+    pub fn all_ok(&self) -> bool {
+        self.set_sid_unbound_fault
+            && self.submit_unbound_fault
+            && self.bound_set_sid_ok
+            && self.latch_clear
+    }
+}
+
+/// Soft-CP `set_sid` / submit without Bound SID → [`HalError::Fault`].
+/// SID-at-submit foundation (`IommuMap::require_bound` → `StreamAbort`).
+/// Reuses Soft-CP SET_SID path only — not `stamp_queue_sid` override,
+/// not PASID / SVA, not BAR0.
+pub fn run_set_sid_unbound_demo() -> SetSidUnboundReport {
+    use aether_core::accel::SliceMem;
+    use aether_core::caps::{CapKind, CapRights, Capability};
+    use aether_core::types::TenantId;
+
+    let mut backing = [0u8; 16];
+    let mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut backing,
+    };
+    let mut d = SoftCommandProcessor::new(mem);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), CP_SSID);
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 3, TenantId(1)).with_generation(1);
+
+    let set_sid_unbound_fault = d.set_sid(&cap, sid) == Err(HalError::Fault);
+
+    let mut job = AccelJobDesc::matmul_i32(1, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+    job.place.chiplet = ChipletId(0);
+    job.place = job.place.with_tile(2);
+    let submit_unbound_fault = d.submit(&job) == Err(HalError::Fault);
+    let latch_clear = d.iommu.submit_sid().is_none();
+
+    let bound = d.bind_stream(&cap, sid).is_ok();
+    let bound_set_sid_ok = bound && d.set_sid(&cap, sid) == Ok(sid);
+
+    SetSidUnboundReport {
+        set_sid_unbound_fault,
+        submit_unbound_fault,
+        bound_set_sid_ok,
+        latch_clear,
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1924,6 +1988,16 @@ mod tests {
         assert!(r.pending_same_ok, "same SID while pending admits");
         assert!(r.override_busy, "foreign SID while pending → Busy");
         assert!(r.sticky, "SID stays stuck after refuse");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn set_sid_unbound_demo_refuses_without_bound() {
+        let r = run_set_sid_unbound_demo();
+        assert!(r.set_sid_unbound_fault, "set_sid unbound → Fault");
+        assert!(r.submit_unbound_fault, "submit unbound → Fault");
+        assert!(r.bound_set_sid_ok, "Bound set_sid admits");
+        assert!(r.latch_clear, "latch clear after unbound refuse");
         assert!(r.all_ok());
     }
 

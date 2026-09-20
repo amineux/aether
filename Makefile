@@ -142,7 +142,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / hodge-harmonic-tree / hodge-curl-tree / SoftCmdFirewall / firewall-ident-pa / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / hodge-harmonic-tree / hodge-curl-tree / SoftCmdFirewall / firewall-ident-pa / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -168,6 +168,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=silent-remote result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hbm-bw result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-harmonic-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-curl-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)

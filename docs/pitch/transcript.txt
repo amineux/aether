@@ -78,11 +78,13 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=qos-credits result=refused
+[redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=set-sid-unbound result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=firewall-ident-pa result=refused
