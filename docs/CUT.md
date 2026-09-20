@@ -52,9 +52,11 @@ capabilities.
 Jobs may also carry a `ChipletTaskScope` (`Job.chiplet_scope`). That is a
 **thin exploration stub**, not a Year-1 pillar and **not a partner ask**:
 Strict (default) keeps scoped work on its die for `pick` / `steal`;
-Soft is a same-chiplet score + local-first steal preference. A bound
-SpectralCut still refuses `CrossCut` independently. Prototype only —
-not ChipletFleet-as-milestone, not GiFt-Placer.
+Soft is a same-chiplet score + local-first steal preference that may still
+cross. Soft ≠ Strict is greppable on host Path B as `[scope] soft≠strict`
+(`run_chiplet_scope_demo()`). A bound SpectralCut still refuses `CrossCut`
+independently. Prototype only — not ChipletFleet-as-milestone, not
+GiFt-Placer.
 
 QEMU topology (static):
 

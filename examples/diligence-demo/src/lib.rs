@@ -13,8 +13,8 @@ use aether_core::accel::{AccelOp, DType};
 use aether_core::iommu::StreamId;
 use aether_core::space::MemorySpace;
 use aether_core::{
-    run_blast_demo, run_greenctx_demo, run_opinject_demo, run_softcct_demo, BlastReport,
-    GreenCtxReport, OpInjectReport, SoftCctReport,
+    run_blast_demo, run_chiplet_scope_demo, run_greenctx_demo, run_opinject_demo, run_softcct_demo,
+    BlastReport, ChipletScopeReport, GreenCtxReport, OpInjectReport, SoftCctReport,
 };
 use aether_drivers::ireecp::{IreeHalCmd, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
 use aether_drivers::{
@@ -287,6 +287,27 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
             .map_err(|_| DemoError { clip: "write" })?;
     }
 
+    // Honesty: Soft remote-steal ≠ Strict refuse on the same ChipletTaskScope job.
+    // Thin stub only — not ChipletFleet calendar. Boot demo may still leave
+    // chiplet_scope: None (unscoped); this clip is the greppable Soft≠Strict proof.
+    let scope: ChipletScopeReport = run_chiplet_scope_demo();
+    writeln!(
+        out,
+        "[scope] soft≠strict  strict_refuse={} soft_allow={} soft_prefer={}  (ChipletTaskScope; not ChipletFleet)  {}",
+        flag(scope.strict_refuse_remote),
+        flag(scope.soft_allow_remote),
+        flag(scope.soft_prefer_local),
+        flag(scope.all_ok())
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    if scope.soft_ne_strict && scope.all_ok() {
+        writeln!(out, "[scope] soft≠strict")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[scope] FAIL -- soft≠strict")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
+
     let firewall: FirewallReport = run_firewall_demo();
     writeln!(
         out,
@@ -420,6 +441,11 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  ChipletTaskScope Soft≠Strict: Strict refuses remote steal; Soft allows (not ChipletFleet)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue"
     )
     .map_err(|_| DemoError { clip: "write" })?;
@@ -534,6 +560,7 @@ mod tests {
         assert!(needles.contains("[softcct] package fences="));
         assert!(needles.contains("[softcct] single-chiplet=noop"));
         assert!(needles.contains("[softcct] incorrect-elision=refused"));
+        assert!(needles.contains("[scope] soft≠strict"));
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));
