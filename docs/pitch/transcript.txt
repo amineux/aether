@@ -84,6 +84,7 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
+[redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject

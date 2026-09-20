@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_hodge_harmonic_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
+//! `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -45,7 +45,9 @@
 //! `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID;
 //! not BAR0 / SoftNPU). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
-//! (not SoftNoI fabric-class Curl ring). Firewall identity guest PA is SoftCmdFirewall
+//! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
+//! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
+//! (sibling of HarmonicTreeReduce; not SoftNoI fabric-class). Firewall identity guest PA is SoftCmdFirewall
 //! `admit_packed` with `iova < SOFT_SMMU_IOVA_BASE` → `HalError::Fault`
 //! (addr-cap; **not** mutation-during-validate — `softcmdfirewall` stays
 //! separate; not confidential GPU). The closer names what this is **not**:
@@ -65,7 +67,7 @@ use aether_core::space::run_silent_remote_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
-use aether_core::opkernel::run_hodge_harmonic_tree_demo;
+use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
 use aether_drivers::{run_firewall_demo, run_firewall_ident_pa_demo, run_xqueue_sid_override_demo};
 
 /// Grep-able proof lines. CI matches these exactly.
@@ -87,6 +89,7 @@ const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=re
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
+const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
@@ -118,6 +121,7 @@ struct RedTeamReport {
     hbm_bw: bool,
     xqueue_sid_override: bool,
     hodge_harmonic_tree: bool,
+    hodge_curl_tree: bool,
     firewall_ident_pa: bool,
     class: bool,
     atomic: bool,
@@ -147,6 +151,7 @@ impl RedTeamReport {
             && self.hbm_bw
             && self.xqueue_sid_override
             && self.hodge_harmonic_tree
+            && self.hodge_curl_tree
             && self.firewall_ident_pa
             && self.class
             && self.atomic
@@ -173,6 +178,7 @@ fn run_redteam() -> RedTeamReport {
     let hbm = run_hbm_bw_demo();
     let xqueue_sid = run_xqueue_sid_override_demo();
     let hodge_ht = run_hodge_harmonic_tree_demo();
+    let hodge_ct = run_hodge_curl_tree_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let sfi = run_softsfi_demo();
@@ -232,6 +238,9 @@ fn run_redteam() -> RedTeamReport {
         // OperatorKernelHandle::bind(Tree, Harmonic) → HarmonicTreeReduce.
         // Existing Hodge / opkernel path — not SoftNoI fabric-class Curl ring.
         hodge_harmonic_tree: hodge_ht.all_ok(),
+        // OperatorKernelHandle::bind(Tree, Curl) → CurlOnTree.
+        // Sibling of HarmonicTreeReduce — not SoftNoI fabric-class Curl ring.
+        hodge_curl_tree: hodge_ct.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -288,6 +297,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hbm_bw, LINE_HBM_BW);
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
+    emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
@@ -344,6 +354,10 @@ mod tests {
             "bind(Tree, Harmonic) → HarmonicTreeReduce"
         );
         assert!(
+            r.hodge_curl_tree,
+            "bind(Tree, Curl) → CurlOnTree"
+        );
+        assert!(
             r.firewall_ident_pa,
             "SoftCmdFirewall identity guest PA → HalError::Fault"
         );
@@ -383,6 +397,10 @@ mod tests {
             "[redteam] attack=hodge-harmonic-tree result=refused"
         );
         assert_eq!(
+            LINE_HODGE_CURL_TREE,
+            "[redteam] attack=hodge-curl-tree result=refused"
+        );
+        assert_eq!(
             LINE_FIREWALL_IDENT_PA,
             "[redteam] attack=firewall-ident-pa result=refused"
         );
@@ -411,6 +429,7 @@ mod tests {
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,
             LINE_HODGE_HARMONIC_TREE,
+            LINE_HODGE_CURL_TREE,
             LINE_FIREWALL_IDENT_PA,
         ] {
             assert!(
