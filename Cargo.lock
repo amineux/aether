@@ -32,6 +32,7 @@ dependencies = [
  "aether-core",
  "aether-drivers",
  "aether-hal",
+ "aether-partner-hello",
  "aether-pjrt",
 ]
 

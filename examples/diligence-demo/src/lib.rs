@@ -13,9 +13,11 @@ use aether_core::accel::{AccelOp, DType};
 use aether_core::iommu::StreamId;
 use aether_core::space::MemorySpace;
 use aether_core::{
-    run_blast_demo, run_chiplet_scope_demo, run_greenctx_demo, run_opinject_demo, run_softcct_demo,
-    BlastReport, ChipletScopeReport, GreenCtxReport, OpInjectReport, SoftCctReport,
+    run_blast_demo, run_boot_demo, run_chiplet_scope_demo, run_greenctx_demo, run_opinject_demo,
+    run_softcct_demo, BlastReport, ChipletScopeReport, DemoReport, GreenCtxReport, OpInjectReport,
+    SoftCctReport,
 };
+use aether_partner_hello::refuse_bad_executable;
 use aether_drivers::ireecp::{IreeHalCmd, IREE_HAL_CMD_SIZE, IREE_HAL_PKT_MAGIC, IREE_SSID};
 use aether_drivers::{
     run_firewall_demo, run_softcp_sparsify_demo, FirewallReport, SoftcpSparsifyReport,
@@ -179,10 +181,11 @@ fn run_event_clip() -> Result<EventClip, DemoError> {
 }
 
 /// Scripted host narrative. Same clips as kernel serial `[blast]` /
-/// `[firewall]` / `[greenctx]` / `[softcct]` / `[opinject]`, plus Soft-CP
+/// `[firewall]` / `[greenctx]` / `[softcct]` / `[opinject]` / `[cdt]`, plus Soft-CP
 /// sparsify (`[softcp] sparsify DROP`, host-only — not qemu `[sparsify]`),
 /// plus the PJRT `IreeHalCmd` submit+wait and Event create/record/wait
-/// the guest does not run.
+/// the guest does not run, plus partner-hello bad-exec refuse (packet foundation).
+/// Caps/CDT honesty via `run_boot_demo().revoke_ok` — not a CapTable milestone.
 pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     writeln!(
         out,
@@ -355,6 +358,13 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         )
     )
     .map_err(|_| DemoError { clip: "write" })?;
+    // Same migrate proof the guest prints on serial — SID sticky across yield.
+    writeln!(
+        out,
+        "[greenctx] migrate-to-yield A 30->70 SID unchanged  {}",
+        flag(green.migrate_ok && green.not_mig)
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
     if green.all_ok() {
         writeln!(out, "[greenctx] two-queue SoftGreenCtx sealed")
             .map_err(|_| DemoError { clip: "write" })?;
@@ -362,6 +372,16 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         writeln!(out, "[greenctx] FAIL -- SoftGreenCtx")
             .map_err(|_| DemoError { clip: "write" })?;
     }
+
+    // Caps/CDT honesty on host Path B (same run_boot_demo revoke_ok as qemu).
+    // Not a per-task CapTable milestone — World still shares one table.
+    let boot: DemoReport = run_boot_demo();
+    writeln!(
+        out,
+        "[cdt] revoke descendants {}",
+        flag(boot.revoke_ok)
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
 
     let softcp: SoftcpSparsifyReport = run_softcp_sparsify_demo();
     writeln!(
@@ -405,6 +425,16 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
             .map_err(|_| DemoError { clip: "write" })?;
     } else {
         writeln!(out, "[opinject] FAIL -- OperatorInject")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
+
+    // Stretch: packet foundation on Path B — same refuse as `make partner-hello`.
+    let partner_bad_exec = refuse_bad_executable().is_ok();
+    if partner_bad_exec {
+        writeln!(out, "[partner-hello] bad executable 0xDEAD refused")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[partner-hello] FAIL -- bad executable refuse")
             .map_err(|_| DemoError { clip: "write" })?;
     }
 
@@ -456,12 +486,27 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  SoftGreenCtx migrate-to-yield keeps SID sticky (queue-boundary; not MIG)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "  Caps CDT revoke descendants empties grant children (honesty; not CapTable milestone)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  Soft-CP sparsify decide_header DROP below-threshold Harmonic (host [softcp]; not qemu [sparsify])"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
         "  OperatorInject resident worker + hot-add scale without relaunch (not NVRTC)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
+        "  partner-hello bad executable refuse (freeze-v1 packet foundation; not a vendor)"
     )
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(out, "[diligence] what this does not prove")
@@ -488,6 +533,11 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  per-task CapTable / SYS_REVOKE (CDT proof is shared-table honesty, not that milestone)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  Path A -device aether-accel (stock demo stays Path B)"
     )
     .map_err(|_| DemoError { clip: "write" })?;
@@ -495,10 +545,14 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     let all_ok = blast.all_ok()
         && pjrt.submit_wait
         && event.wait_ok
+        && scope.soft_ne_strict
+        && scope.all_ok()
         && firewall.all_ok()
         && green.all_ok()
+        && boot.revoke_ok
         && softcp.all_ok()
-        && opinject.all_ok();
+        && opinject.all_ok()
+        && partner_bad_exec;
     if all_ok {
         writeln!(out, "[diligence] host Path B sealed").map_err(|_| DemoError { clip: "write" })?;
         Ok(())
@@ -564,8 +618,11 @@ mod tests {
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));
+        assert!(needles.contains("[greenctx] migrate"));
+        assert!(needles.contains("[cdt] revoke descendants ok"));
         assert!(needles.contains("[softcp] sparsify DROP"));
         assert!(needles.contains("[opinject] resident worker + hot-add sealed"));
+        assert!(needles.contains("[partner-hello] bad executable"));
         assert!(needles.contains("[diligence] what this proves"));
         assert!(needles.contains("[diligence] what this does not prove"));
     }

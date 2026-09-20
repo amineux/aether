@@ -609,8 +609,11 @@
 [softcct] package fences=
 [softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
+[greenctx] migrate-to-yield A 30->70 SID unchanged
+[cdt] revoke descendants ok
 [softcp] sparsify DROP
 [opinject] resident worker + hot-add sealed
+[partner-hello] bad executable 0xDEAD refused
 [diligence] host Path B sealed</span>
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] attack=blast-hops result=refused
@@ -707,7 +710,7 @@
               <span class="badge done">wait</span>
             </div>
             <h3>Host Path B</h3>
-            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait. Event create/record/wait. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>.</p>
+            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait. Event create/record/wait. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[softcct] incorrect-elision=refused</code>, <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>, <code>[greenctx] migrate-to-yield A 30->70 SID unchanged</code>, <code>[cdt] revoke descendants ok</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>, <code>[partner-hello] bad executable 0xDEAD refused</code>.</p>
           </article>
           <article class="proof-card" data-reveal data-d="1">
             <div class="proof-head">
@@ -773,8 +776,11 @@
 [softcct] package fences=
 [softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
+[greenctx] migrate-to-yield A 30->70 SID unchanged
+[cdt] revoke descendants ok
 [softcp] sparsify DROP
 [opinject] resident worker + hot-add sealed
+[partner-hello] bad executable 0xDEAD refused
 [diligence] host Path B sealed</span>
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] attack=blast-hops result=refused
@@ -1221,8 +1227,11 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[softcct] package fences=</span>
 <span class="ok">[softcct] single-chiplet=noop</span>
 <span class="ok">[greenctx] interference partitioned 70/30 vs unpartitioned</span>
+<span class="ok">[greenctx] migrate-to-yield A 30->70 SID unchanged</span>
+<span class="ok">[cdt] revoke descendants ok</span>
 <span class="ok">[softcp] sparsify DROP</span>
 <span class="ok">[opinject] resident worker + hot-add sealed</span>
+<span class="ok">[partner-hello] bad executable 0xDEAD refused</span>
 <span class="ok">[redteam] fabric-class admit/refuse</span>
 <span class="ok">[redteam] ATOMIC_ADD accept/reject</span>
 <span class="ok">[softsfi] heap=refused</span>
