@@ -235,8 +235,8 @@ pub fn compatible(topology: CollectiveKind, flow: FlowClass) -> Result<(), Hodge
 ///
 /// Existing [`compatible`] / [`OperatorKernelHandle::bind`] path only.
 /// **Not** SoftNoI fabric-class Curl ring (that stays on
-/// `[redteam] fabric-class admit/refuse`). CurlOnTree stays a sibling
-/// refuse, not this attack.
+/// `[redteam] fabric-class admit/refuse`). CurlOnTree is the sibling
+/// `hodge-curl-tree` attack, not this one.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HodgeHarmonicTreeReport {
     /// Tree+Gradient binds (tree offload is the right topology).
@@ -283,6 +283,55 @@ pub fn run_hodge_harmonic_tree_demo() -> HodgeHarmonicTreeReport {
     }
 }
 
+/// Host red-team clip: Tree+Curl → [`HodgeError::CurlOnTree`].
+///
+/// Existing [`compatible`] / [`OperatorKernelHandle::bind`] path only.
+/// Sibling of `hodge-harmonic-tree` / [`HarmonicTreeReduce`] — **not** a
+/// SoftNoI fabric-class Curl ring rehash (`[redteam] fabric-class
+/// admit/refuse` stays separate).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HodgeCurlTreeReport {
+    /// Tree+Gradient binds (tree offload is the right topology).
+    pub gradient_tree_ok: bool,
+    /// Ring+Curl binds (curl is a ring; no TREE_OFFLOAD).
+    pub curl_plain_ok: bool,
+    /// Tree+Curl bind refuses as [`HodgeError::CurlOnTree`].
+    pub curl_tree_refuse: bool,
+}
+
+impl HodgeCurlTreeReport {
+    pub fn all_ok(&self) -> bool {
+        self.gradient_tree_ok && self.curl_plain_ok && self.curl_tree_refuse
+    }
+}
+
+/// Tree+Gradient admits; Ring+Curl admits; Tree+Curl →
+/// [`HodgeError::CurlOnTree`]. SoftNoI fabric-class Curl ring stays elsewhere.
+pub fn run_hodge_curl_tree_demo() -> HodgeCurlTreeReport {
+    let gradient_tree_ok =
+        OperatorKernelHandle::bind(OpKernelId(1), CollectiveKind::Tree, FlowClass::Gradient).is_ok();
+    let curl_plain_ok =
+        OperatorKernelHandle::bind(OpKernelId(2), CollectiveKind::Ring, FlowClass::Curl).is_ok();
+    let curl_tree_refuse = OperatorKernelHandle::bind(
+        OpKernelId(3),
+        CollectiveKind::Tree,
+        FlowClass::Curl,
+    ) == Err(HodgeError::CurlOnTree)
+        && compatible(CollectiveKind::Tree, FlowClass::Curl) == Err(HodgeError::CurlOnTree);
+
+    // Fabric meter agrees: TREE_OFFLOAD + Curl is the same refuse.
+    let mut q = HodgeQuota::generous();
+    let admit_refuse = q.admit(FlowClass::Curl, true) == Err(HodgeError::CurlOnTree);
+    let mut q_plain = HodgeQuota::generous();
+    let plain_admit = q_plain.admit(FlowClass::Curl, false).is_ok();
+
+    HodgeCurlTreeReport {
+        gradient_tree_ok,
+        curl_plain_ok: curl_plain_ok && plain_admit,
+        curl_tree_refuse: curl_tree_refuse && admit_refuse,
+    }
+}
+
 /// BIND is required. Without it the handle is inert (same as SpectralCut).
 pub fn require_opkernel_bind(tab: &CapTable, cptr: CPtr) -> Result<&Capability, CapError> {
     tab.require(cptr, CapKind::OperatorKernel, CapRights::BIND)
@@ -313,6 +362,18 @@ mod tests {
         assert!(
             r.harmonic_tree_refuse,
             "Tree+Harmonic must be HarmonicTreeReduce: {r:?}"
+        );
+        assert!(r.all_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn hodge_curl_tree_demo_refuses() {
+        let r = run_hodge_curl_tree_demo();
+        assert!(r.gradient_tree_ok, "Tree+Gradient must bind: {r:?}");
+        assert!(r.curl_plain_ok, "Ring+Curl must bind: {r:?}");
+        assert!(
+            r.curl_tree_refuse,
+            "Tree+Curl must be CurlOnTree: {r:?}"
         );
         assert!(r.all_ok(), "{r:?}");
     }

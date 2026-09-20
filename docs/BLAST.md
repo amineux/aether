@@ -222,8 +222,26 @@ existing Hodge / opkernel path; **not** SoftNoI fabric-class Curl ring
 
 CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftNoI IS stays on
 `attack=softnoi-is`. Fabric-class Curl ring stays on `fabric-class admit/refuse`.
-CurlOnTree is a sibling refuse, not this attack. No CapTable split, no new
-syscall, no opcode churn.
+CurlOnTree is the sibling `hodge-curl-tree` attack, not this one. No CapTable
+split, no new syscall, no opcode churn.
+
+## Hodge curl-tree (red-team needle)
+
+[`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Curl as
+[`HodgeError::CurlOnTree`](../core/src/hodge.rs) (curl is a ring; tree offload
+is the wrong topology). Tree+Gradient admits; Ring+Curl admits. Host red-team
+only — existing Hodge / opkernel path; sibling of [#114](https://github.com/amineux/aether/pull/114)
+`HarmonicTreeReduce` / `hodge-harmonic-tree`; **not** SoftNoI fabric-class Curl
+ring (`[redteam] fabric-class admit/refuse` stays separate):
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Tree+Gradient admits; Ring+Curl admits; Tree+Curl refuse | `run_hodge_curl_tree_demo` → `HodgeError::CurlOnTree` | `[redteam] attack=hodge-curl-tree result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftNoI IS stays on
+`attack=softnoi-is`. Fabric-class Curl ring stays on `fabric-class admit/refuse`.
+HarmonicTreeReduce stays on `attack=hodge-harmonic-tree`. No CapTable split, no
+new syscall, no opcode churn.
 
 ## Firewall identity guest PA (red-team needle)
 
