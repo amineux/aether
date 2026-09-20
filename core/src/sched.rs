@@ -6,7 +6,8 @@
 //!
 //! Chiplet-local work uses [`ChipletTaskScope`] as a **thin exploration
 //! stub** (not a Year-1 pillar, not a partner ask): pick/steal prefer
-//! (Soft) or require (Strict) the job's chiplet.
+//! (Soft) or require (Strict) the job's chiplet. Soft ≠ Strict is sold
+//! on host Path B as `[scope] soft≠strict` via [`run_chiplet_scope_demo`].
 
 use crate::color::{admit_wave, BankColor, ColorError};
 use crate::cut::{vert_bit, AffinityGraph, CutError, CutId, SpectralCut, MAX_CUTS_SCHED};
@@ -512,6 +513,106 @@ impl TileScheduler {
 impl Default for TileScheduler {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+
+/// Host Path B clip: Soft remote-steal ≠ Strict refuse on the same scoped job.
+///
+/// Thin exploration stub only — not ChipletFleet calendar, not UCIe latency.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChipletScopeReport {
+    /// Strict refused remote steal; Soft allowed it on the same scoped job.
+    pub soft_ne_strict: bool,
+    pub strict_refuse_remote: bool,
+    pub soft_allow_remote: bool,
+    /// Soft pick still prefers the matching die (+[`CHIPLET_SCOPE_BONUS`]).
+    pub soft_prefer_local: bool,
+}
+
+impl ChipletScopeReport {
+    pub fn all_ok(&self) -> bool {
+        self.soft_ne_strict
+            && self.strict_refuse_remote
+            && self.soft_allow_remote
+            && self.soft_prefer_local
+    }
+}
+
+fn scope_demo_mesh() -> (TileScheduler, TileId, TileId, TileId) {
+    let g = AffinityGraph::two_chiplet_mesh(16);
+    let t00 = g.nth_tile_on(0, 0).unwrap();
+    let t01 = g.nth_tile_on(0, 1).unwrap();
+    let t10 = g.nth_tile_on(1, 0).unwrap();
+    let mut s = TileScheduler::new();
+    s.add_tile(t00, TileKind::Cpu, BankId(0));
+    s.add_tile(t01, TileKind::Cpu, BankId(0));
+    s.add_tile(t10, TileKind::Cpu, BankId(1));
+    s.set_graph(g);
+    (s, t00, t01, t10)
+}
+
+fn scope_demo_job(id: u32, chiplet: ChipletId) -> Job {
+    Job {
+        id,
+        kind: JobKind::Thread,
+        tile_hint: None,
+        bank_affinity: Some(BankId(0)),
+        priority: 3,
+        deadline_ticks: None,
+        tenant: 1,
+        cut_id: None,
+        phase: Phase::Compute,
+        partition_id: None,
+        fence_id: None,
+        arena_color: None,
+        chiplet_scope: Some(ChipletTaskScope::new(chiplet)),
+    }
+}
+
+/// Prove Soft ≠ Strict on one scoped job (host Path B / diligence needle).
+///
+/// Strict (default) refuses remote steal; Soft allows cross-chiplet steal
+/// after a local-first pass. Preference bonus still prefers the matching
+/// die. Not ChipletFleet-as-calendar, not a SpectralCut elevate.
+pub fn run_chiplet_scope_demo() -> ChipletScopeReport {
+    // Strict: chiplet-0 scoped job is not stealable from chiplet 1.
+    let (mut strict, _t00, t01, t10) = scope_demo_mesh();
+    let default_is_strict = strict.chiplet_policy() == ChipletLocalPolicy::Strict;
+    strict.enqueue(scope_demo_job(20, ChipletId(0)));
+    let strict_refuse_remote = strict.steal(t10).is_none() && strict.pick(t10).is_none();
+    let local = strict.steal(t01);
+    let strict_local_ok = local.as_ref().map(|j| j.id) == Some(20);
+
+    // Soft: same scoped job *is* stealable remotely (preference ≠ hard fence).
+    let (mut soft, _t00b, _t01b, t10b) = scope_demo_mesh();
+    soft.set_chiplet_policy(ChipletLocalPolicy::Soft);
+    soft.enqueue(scope_demo_job(30, ChipletId(0)));
+    let stolen = soft.steal(t10b);
+    let soft_allow_remote = stolen.as_ref().map(|j| j.id) == Some(30);
+
+    // Soft pick still prefers matching die when both sides are eligible.
+    let g = AffinityGraph::two_chiplet_mesh(16);
+    let t0 = g.first_tile_on(0).unwrap();
+    let t1 = g.first_tile_on(1).unwrap();
+    let mut prefer = TileScheduler::new();
+    prefer.add_tile(t0, TileKind::Cpu, BankId(0));
+    prefer.add_tile(t1, TileKind::Cpu, BankId(1));
+    prefer.set_graph(g);
+    prefer.set_chiplet_policy(ChipletLocalPolicy::Soft);
+    prefer.enqueue(scope_demo_job(40, ChipletId(1)));
+    prefer.enqueue(scope_demo_job(41, ChipletId(0)));
+    let soft_prefer_local = prefer.pick(t0).map(|j| j.id) == Some(41)
+        && prefer.pick(t1).map(|j| j.id) == Some(40);
+
+    let soft_ne_strict =
+        default_is_strict && strict_refuse_remote && soft_allow_remote && strict_local_ok;
+
+    ChipletScopeReport {
+        soft_ne_strict,
+        strict_refuse_remote: default_is_strict && strict_refuse_remote && strict_local_ok,
+        soft_allow_remote,
+        soft_prefer_local,
     }
 }
 
@@ -1089,5 +1190,14 @@ mod tests {
         s.set_graph(g);
         s.enqueue(thread_job(51, BankId(0), None));
         assert_eq!(s.steal(t10).unwrap().id, 51);
+    }
+
+    #[test]
+    fn chiplet_scope_demo_soft_ne_strict() {
+        let r = run_chiplet_scope_demo();
+        assert!(r.strict_refuse_remote, "Strict must refuse remote scoped steal");
+        assert!(r.soft_allow_remote, "Soft must allow remote scoped steal");
+        assert!(r.soft_prefer_local, "Soft pick prefers matching die");
+        assert!(r.soft_ne_strict && r.all_ok());
     }
 }

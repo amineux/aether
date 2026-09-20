@@ -13,6 +13,7 @@
 [softcct] package fences=
 [softcct] single-chiplet=noop
 [softcct] incorrect-elision=refused
+[scope] soft≠strict
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30
