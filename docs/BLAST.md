@@ -114,6 +114,21 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Blast hops stays on
 `attack=blast-hops`. Bank color stays on `attack=bank-color`. No CapTable
 split, no new syscall, no opcode churn.
 
+## Fence not ready (red-team needle)
+
+[`Timeline::wait`](../core/src/fence.rs) polls the retired watermark. Issued-but-not-retired
+→ [`PartitionError::FenceNotReady`](../core/src/partition.rs). Complete then wait succeeds.
+Host red-team only — existing path; **not** [`PartitionError::CreditExhausted`](../core/src/partition.rs)
+/ `attack=qos-credits` (different error, different trigger); timeout-frees-credit stays
+inside the qos-credits demo:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Submit admits; wait before retire refuse; complete then wait OK | `run_fence_not_ready_demo` → `PartitionError::FenceNotReady` | `[redteam] attack=fence-not-ready result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. QoS credits stays on
+`attack=qos-credits`. No CapTable split, no new syscall, no opcode churn.
+
 ## Outside slice (red-team needle)
 
 `PartitionProfile::admit_chiplet` is unit-tested in `partition.rs`. The sell

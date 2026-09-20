@@ -345,6 +345,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Uncolored Compute wave | `run_uncolored_compute_demo` — `admit_wave(..., color=None)` → `ColorError::Uncolored` (Exchange with color still OK). Not ForeignBank / bank-color | refused |
 | Foreign tenant Compute wave | `run_foreign_tenant_color_demo` — `admit_wave` → `ColorError::ForeignTenant` (Exchange still OK). Not ForeignBank / bank-color or Uncolored / uncolored-compute | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
+| Wait before fence retire | `run_fence_not_ready_demo` — `Timeline::wait` → `PartitionError::FenceNotReady` (issued-but-not-retired; complete then wait OK). Not CreditExhausted / qos-credits; timeout-frees stays in qos demo | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 | TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
@@ -367,6 +368,7 @@ Expected stdout (CI greps these):
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=qos-credits result=refused
+[redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=typed-window-sid result=refused

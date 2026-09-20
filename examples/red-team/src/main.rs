@@ -3,7 +3,7 @@
 //! Reuses the same refuse paths the kernel self-check already runs
 //! (`run_blast_demo`, `run_blast_hops_demo`, `run_blast_nodes_demo`,
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
-//! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
+//! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
 //! `run_hodge_harmonic_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
@@ -26,7 +26,10 @@
 //! ForeignBank / bank-color or Uncolored / uncolored-compute rehash).
 //! QoS credits is `Timeline::submit` →
 //! `CreditExhausted` when `in_flight >= qos.credits` (not EventRing
-//! theater, not a second charge API). Outside-slice is
+//! theater, not a second charge API). Fence-not-ready is
+//! `Timeline::wait` → `FenceNotReady` on issued-but-not-retired
+//! (not CreditExhausted / qos-credits; timeout-frees-credit stays
+//! inside the qos demo). Outside-slice is
 //! `PartitionProfile::admit_chiplet` → `OutsideSlice` (not hops / qos /
 //! CrossCut / bank-color). Silent-remote is `map_place` / `map_fabric` →
 //! `SpaceError::SilentRemoteLoad` (`MEM_FULL` never implies `UNIFIED`;
@@ -48,6 +51,7 @@
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
 use aether_core::blast::run_blast_demo;
+use aether_core::fence::run_fence_not_ready_demo;
 use aether_core::noi::run_softnoi_demo;
 use aether_core::color::{run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo};
 use aether_core::partition::{
@@ -73,6 +77,7 @@ const LINE_BANK_COLOR: &str = "[redteam] attack=bank-color result=refused";
 const LINE_UNCOLORED: &str = "[redteam] attack=uncolored-compute result=refused";
 const LINE_FOREIGN_TENANT: &str = "[redteam] attack=foreign-tenant-color result=refused";
 const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
+const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
@@ -102,6 +107,7 @@ struct RedTeamReport {
     uncolored_compute: bool,
     foreign_tenant_color: bool,
     qos_credits: bool,
+    fence_not_ready: bool,
     outside_slice: bool,
     silent_remote: bool,
     typed_window_sid: bool,
@@ -129,6 +135,7 @@ impl RedTeamReport {
             && self.uncolored_compute
             && self.foreign_tenant_color
             && self.qos_credits
+            && self.fence_not_ready
             && self.outside_slice
             && self.silent_remote
             && self.typed_window_sid
@@ -153,6 +160,7 @@ fn run_redteam() -> RedTeamReport {
     let uncolored = run_uncolored_compute_demo();
     let foreign_tenant = run_foreign_tenant_color_demo();
     let qos = run_qos_credits_demo();
+    let fence_nr = run_fence_not_ready_demo();
     let outside = run_outside_slice_demo();
     let silent = run_silent_remote_demo();
     let typed_win = run_typed_window_sid_demo();
@@ -197,6 +205,9 @@ fn run_redteam() -> RedTeamReport {
         // Timeline::submit: in-budget OK; in_flight >= credits → CreditExhausted;
         // complete/timeout frees credit and admit resumes. Existing fence meter.
         qos_credits: qos.all_ok(),
+        // Timeline::wait: issued-but-not-retired → FenceNotReady; complete then wait OK.
+        // Existing path — not CreditExhausted / qos-credits; timeout-frees stays in qos demo.
+        fence_not_ready: fence_nr.all_ok(),
         // PartitionProfile::admit_chiplet: own chiplet OK; foreign → OutsideSlice.
         // Existing path only — not hops / qos / CrossCut / bank-color.
         outside_slice: outside.all_ok(),
@@ -262,6 +273,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.uncolored_compute, LINE_UNCOLORED);
     emit(r.foreign_tenant_color, LINE_FOREIGN_TENANT);
     emit(r.qos_credits, LINE_QOS_CREDITS);
+    emit(r.fence_not_ready, LINE_FENCE_NOT_READY);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
@@ -309,6 +321,7 @@ mod tests {
         assert!(r.uncolored_compute, "admit_wave color=None → Uncolored");
         assert!(r.foreign_tenant_color, "admit_wave foreign tenant → ForeignTenant");
         assert!(r.qos_credits, "Timeline::submit over credits → CreditExhausted");
+        assert!(r.fence_not_ready, "Timeline::wait before retire → FenceNotReady");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
@@ -346,6 +359,7 @@ mod tests {
         assert_eq!(LINE_UNCOLORED, "[redteam] attack=uncolored-compute result=refused");
         assert_eq!(LINE_FOREIGN_TENANT, "[redteam] attack=foreign-tenant-color result=refused");
         assert_eq!(LINE_QOS_CREDITS, "[redteam] attack=qos-credits result=refused");
+        assert_eq!(LINE_FENCE_NOT_READY, "[redteam] attack=fence-not-ready result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
@@ -379,6 +393,7 @@ mod tests {
             LINE_UNCOLORED,
             LINE_FOREIGN_TENANT,
             LINE_QOS_CREDITS,
+            LINE_FENCE_NOT_READY,
             LINE_OUTSIDE_SLICE,
             LINE_SILENT_REMOTE,
             LINE_TYPED_WINDOW_SID,
