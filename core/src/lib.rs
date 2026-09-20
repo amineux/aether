@@ -78,7 +78,7 @@ pub use cut::{AffinityGraph, CutError, CutId, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
-pub use fence::{Fence, FenceId, Timeline, TimelineId, MAX_IN_FLIGHT};
+pub use fence::{run_fence_not_ready_demo, Fence, FenceId, FenceNotReadyReport, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use greenctx::{
     run_greenctx_demo, GreenCtxError, GreenCtxId, GreenCtxReport, MemcpyReport, SmWqBudget,
     SoftGreenCtx, SoftGreenPool, DEMO_MEMCPY_BYTES, MAX_GREEN_CTX, SHARED_BW_TAX_MILLI,

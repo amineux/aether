@@ -269,6 +269,72 @@ impl Timeline {
     }
 }
 
+
+/// Host red-team fence-not-ready clip: wait before complete on
+/// [`Timeline`]. Issued-but-not-retired → [`PartitionError::FenceNotReady`].
+/// Sell needle is `[redteam] attack=fence-not-ready` — existing path only;
+/// **not** [`PartitionError::CreditExhausted`] / qos-credits (different
+/// error, different trigger), not the fence-timeout-frees-credit stretch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FenceNotReadyReport {
+    pub submitted: bool,
+    pub wait_before: bool,
+    pub after_complete: bool,
+}
+
+impl FenceNotReadyReport {
+    pub fn all_ok(&self) -> bool {
+        self.submitted && self.wait_before && self.after_complete
+    }
+}
+
+/// Thin wait-before-complete demo. Uses [`Timeline`] + [`PartitionProfile`]
+/// only — no CapTable, no opcodes, no BAR0.
+pub fn run_fence_not_ready_demo() -> FenceNotReadyReport {
+    use crate::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
+    use crate::types::ChipletId;
+
+    let p = PartitionProfile::new(
+        PartitionId(1),
+        SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1),
+        QosBudget {
+            bw_mbps: 1000,
+            credits: 4,
+        },
+        BlastRadius {
+            max_nodes: 4,
+            max_hops: 1,
+        },
+    );
+    let mut t = Timeline::new(PartitionId(1));
+
+    let a = t.submit(&p, None);
+    let submitted = a.is_ok() && t.in_flight() == 1;
+
+    // Wait before retire → FenceNotReady (watermark not advanced).
+    let wait_before = match &a {
+        Ok(af) => t.wait(af.id) == Err(PartitionError::FenceNotReady),
+        Err(_) => false,
+    };
+
+    // Complete then wait succeeds — not a stuck timeline.
+    let after_complete = match a {
+        Ok(af) => {
+            t.complete(af.id).is_ok()
+                && t.wait(af.id).map(|f| f.completed).unwrap_or(false)
+                && t.retired() == 1
+                && t.in_flight() == 0
+        }
+        Err(_) => false,
+    };
+
+    FenceNotReadyReport {
+        submitted,
+        wait_before,
+        after_complete,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -381,5 +447,14 @@ mod tests {
         let p = profile(2);
         let mut t = Timeline::new(PartitionId(2));
         assert_eq!(t.submit(&p, None), Err(PartitionError::Unbound));
+    }
+
+    #[test]
+    fn fence_not_ready_demo_wait_before_complete() {
+        let r = run_fence_not_ready_demo();
+        assert!(r.submitted, "submit admits");
+        assert!(r.wait_before, "wait before retire → FenceNotReady");
+        assert!(r.after_complete, "complete then wait succeeds");
+        assert!(r.all_ok());
     }
 }
