@@ -277,6 +277,15 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
         writeln!(out, "[softcct] FAIL -- single-chiplet noop")
             .map_err(|_| DemoError { clip: "write" })?;
     }
+    // Companion honesty (#110): incorrect cross-chiplet elision is refused.
+    // SoftCCT must fence when last-writer ≠ consumer chiplet. Not UCIe latency.
+    if event.cct.incorrect_elision_refused {
+        writeln!(out, "[softcct] incorrect-elision=refused")
+            .map_err(|_| DemoError { clip: "write" })?;
+    } else {
+        writeln!(out, "[softcct] FAIL -- incorrect elision refused")
+            .map_err(|_| DemoError { clip: "write" })?;
+    }
 
     let firewall: FirewallReport = run_firewall_demo();
     writeln!(
@@ -406,6 +415,11 @@ pub fn run_diligence_demo(out: &mut dyn fmt::Write) -> Result<(), DemoError> {
     .map_err(|_| DemoError { clip: "write" })?;
     writeln!(
         out,
+        "  SoftCCT incorrect-elision=refused (cross-chiplet hazard still fences; not UCIe latency)"
+    )
+    .map_err(|_| DemoError { clip: "write" })?;
+    writeln!(
+        out,
         "  SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue"
     )
     .map_err(|_| DemoError { clip: "write" })?;
@@ -519,6 +533,7 @@ mod tests {
         assert!(needles.contains("[event] fence counts chiplet-local vs package"));
         assert!(needles.contains("[softcct] package fences="));
         assert!(needles.contains("[softcct] single-chiplet=noop"));
+        assert!(needles.contains("[softcct] incorrect-elision=refused"));
         assert!(needles.contains("[firewall] mutation-during-validate fails"));
         assert!(needles.contains("[greenctx] SM/WQ pool split 70/30"));
         assert!(needles.contains("[greenctx] interference partitioned 70/30 vs unpartitioned"));

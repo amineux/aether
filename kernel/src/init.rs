@@ -369,9 +369,11 @@ pub fn run_kernel_selfcheck() {
     write_str(" (CPElide CCT; not a coherence protocol)  ");
     write_str(flag(softcct.cct_lt_broadcast));
     console::nl();
-    write_str("[softcct] incorrect elision refused  ");
-    write_str(flag(softcct.incorrect_elision_refused));
-    console::nl();
+    if softcct.incorrect_elision_refused {
+        println!("[softcct] incorrect-elision=refused");
+    } else {
+        println!("[softcct] FAIL -- incorrect elision refused");
+    }
     if softcct.single_chiplet_noop {
         println!("[softcct] single-chiplet=noop");
     } else {
