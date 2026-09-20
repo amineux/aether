@@ -19,6 +19,8 @@ aether-core = { path = "../../core" }
 aether-drivers = { path = "../../drivers" }
 aether-hal = { path = "../../hal" }
 aether-pjrt = { path = "../../host/aether-pjrt" }
+# Stretch: fold partner-hello bad-exec refuse into Path B (packet foundation).
+aether-partner-hello = { path = "../partner-hello" }
 
 [lints]
 workspace = true

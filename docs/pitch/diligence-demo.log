@@ -18,12 +18,15 @@
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30  part70_bw=636 unpart=454  (Green Contexts / DetShare; not MIG, not FLOPs)  ok
 [greenctx] interference partitioned 70/30 vs unpartitioned  part70_bw=636 unpart_bw=454 interference_milli=364/546  (not MIG; residual shared-HBM tax; not FLOPs; not a BAR firewall)  ok
+[greenctx] migrate-to-yield A 30->70 SID unchanged  ok
 [greenctx] two-queue SoftGreenCtx sealed
+[cdt] revoke descendants ok
 [softcp] decide_header before enqueue  drop=ok keep=ok refuse=ok gradient=ok  (not qemu [sparsify]; DROP ≠ Hodge refuse)  ok
 [softcp] sparsify DROP
 [opinject] resident memcpy+saxpy  hot-add scale no-relaunch  ok
 [opinject] SID-at-submit refuse + scale unpublished  ok
 [opinject] resident worker + hot-add sealed
+[partner-hello] bad executable 0xDEAD refused
 [diligence] what this proves
   two tenants: CrossCut + wrong-SID refuse (Soft SMMU software tables)
   PJRT-shaped Client packs frozen IreeHalCmd and waits a fence (research opcodes)
@@ -34,12 +37,16 @@
   ChipletTaskScope Soft≠Strict: Strict refuses remote steal; Soft allows (not ChipletFleet)
   SoftCmdFirewall snapshot: mutation during validate does not sneak onto the queue
   SoftGreenCtx 70/30 SM/WQ partition + interference vs unpartitioned (integer milli; not MIG)
+  SoftGreenCtx migrate-to-yield keeps SID sticky (queue-boundary; not MIG)
+  Caps CDT revoke descendants empties grant children (honesty; not CapTable milestone)
   Soft-CP sparsify decide_header DROP below-threshold Harmonic (host [softcp]; not qemu [sparsify])
   OperatorInject resident worker + hot-add scale without relaunch (not NVRTC)
+  partner-hello bad executable refuse (freeze-v1 packet foundation; not a vendor)
 [diligence] what this does not prove
   hardware SMMU, HW MIG, confidential GPU, a BAR firewall, or a silicon command processor
   FLOP throughput, multi-chiplet latency from single-die counts, tape-out, or a QEMU rebuild
   a PJRT plugin, an IREE HAL driver, or an NVIDIA partnership
   NVRTC / CUDA OperatorInject, or a Soft-CP sparsify re-implementation of qemu [sparsify]
+  per-task CapTable / SYS_REVOKE (CDT proof is shared-table honesty, not that milestone)
   Path A -device aether-accel (stock demo stays Path B)
 [diligence] host Path B sealed

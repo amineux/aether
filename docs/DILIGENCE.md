@@ -41,7 +41,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 
 | Command | What they see |
 | --- | --- |
-| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
+| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
 | `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `hodge-harmonic-tree` + `hodge-curl-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
@@ -71,8 +71,11 @@ scripted narrative. CI greps
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
 | `[greenctx] interference partitioned 70/30 vs unpartitioned` | **M3 leave-behind** (host stdout). Integer `bw_milli` / `interference_milli`. Not HW MIG, not FLOPs, not a BAR firewall. Residual shared-HBM tax stays. |
+| `[greenctx] migrate-to-yield A 30->70 SID unchanged` | Same migrate proof the guest prints. Queue-boundary yield; Soft-SMMU SID sticky. Not HW MIG. Host Path B now greps it (was qemu-only). |
+| `[cdt] revoke descendants ok` | Caps CDT honesty from `run_boot_demo().revoke_ok` (parent revoke empties grant children; unrelated caps live). Host Path B — qemu already grepped this. **Not** a per-task CapTable / `SYS_REVOKE` milestone. |
 | `[softcp] sparsify DROP` | Soft-CP `decide_header` before XQueue enqueue; below-threshold Harmonic drops (no enqueue). Host Path B greps this — not qemu `[sparsify]`, not a sparsify re-implementation. DROP ≠ Hodge refuse. |
 | `[opinject] resident worker + hot-add sealed` | OperatorInject resident worker + hot-add scale without relaunch. Same `run_opinject_demo()` the guest prints on serial; now also host Path B. Not NVRTC / CUDA. |
+| `[partner-hello] bad executable 0xDEAD refused` | Stretch: freeze-v1 packet foundation on Path B. Same `refuse_bad_executable()` as `make partner-hello`. Not a vendor, not TRANSFER (still reserved). |
 | `[diligence] what this proves` / `does not prove` | Honest close. Host Path B sealed. |
 
 This is not `make qemu`. Stock QEMU stays path B (`make qemu` /
@@ -147,7 +150,13 @@ line: partitioned 70/30 vs unpartitioned baseline, integer
 `bw_milli` / `interference_milli` on `MemcpyReport` / `GreenCtxReport`.
 `make diligence-demo` greps
 `[greenctx] interference partitioned 70/30 vs unpartitioned`.
-The existing 70/30 needle stays. SoftCCT / Event fence-**count**
+The existing 70/30 needle stays. Host Path B also greps the migrate
+SID-sticky line (`[greenctx] migrate-to-yield A 30->70 SID unchanged`)
+and caps CDT honesty (`[cdt] revoke descendants ok` from
+`run_boot_demo().revoke_ok`) — qemu already had both; diligence did not.
+CDT here is shared-table honesty, **not** a CapTable milestone. Stretch:
+`[partner-hello] bad executable 0xDEAD refused` folds the freeze-v1
+packet refuse onto Path B. SoftCCT / Event fence-**count**
 polish (M4) is the sibling host line
 `[softcct] package fences=` plus
 `[event] fence counts chiplet-local vs package`. Host tests still
@@ -313,7 +322,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
-| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[scope] soft≠strict` / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[scope] soft≠strict` / `[firewall]` / `[greenctx]` (incl. M3 interference + migrate SID-sticky) / `[cdt] revoke descendants ok` / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` / `[partner-hello] bad executable` + proves/does-not. No QEMU rebuild. Caps/CDT honesty ≠ CapTable milestone |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `set-sid-unbound` / `hodge-harmonic-tree` / `hodge-curl-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
