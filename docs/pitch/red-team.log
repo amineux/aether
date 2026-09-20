@@ -24,6 +24,7 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [softsfi] tensor=refused
 [softsfi] heap=refused
 [softsfi] unknown=refused
+[softsfi] unknown-base=refused
 
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed

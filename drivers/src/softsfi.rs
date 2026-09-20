@@ -6,9 +6,12 @@
 //! SID IOVA window. Not NVVM, not “safe multi-tenant kernels.”
 //! Tensor / heap / unknown stay `Unmodeled` as **named refuses** (sell:
 //! `[softsfi] tensor=refused` / `[softsfi] heap=refused` /
-//! `[softsfi] unknown=refused`). Heap is not a bump allocator. Unknown is
-//! bad opcode / illegal width — not AddImm deepen. `atomic_add` is a
-//! sequential toy RMW, not a coherent hardware atomic.
+//! `[softsfi] unknown=refused`). Load/store with no proved base window is
+//! `UnknownBase` (sell: `[softsfi] unknown-base=refused`) — separate from
+//! Unmodeled. Heap is not a bump allocator. Unknown is bad opcode /
+//! illegal width — not AddImm deepen. Not SoftSFI deepen past Unmodeled
+//! for new ops. `atomic_add` is a sequential toy RMW, not a coherent
+//! hardware atomic.
 
 use aether_core::accel::DmaView;
 use aether_core::iommu::{IommuMap, StreamId};
@@ -106,8 +109,8 @@ mod tests {
     use aether_core::iommu::MapRequest;
     use aether_core::softsfi::{
         heap_alloc_prog, illegal_width_prog, in_bounds_atomic_prog, in_bounds_prog,
-        oob_atomic_prog, oob_load_prog, tensor_prog, unknown_opcode_prog, Insn, Program,
-        SFI_SECRET_B, SFI_BASE_A,
+        oob_atomic_prog, oob_load_prog, tensor_prog, unknown_base_load_prog,
+        unknown_base_store_prog, unknown_opcode_prog, Insn, Program, SFI_SECRET_B, SFI_BASE_A,
     };
     use aether_core::types::{ChipletId, TenantId, TileId};
 
@@ -225,6 +228,26 @@ mod tests {
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
         assert_eq!(a_word, 3);
     }
+
+    #[test]
+    fn softsfi_unknown_base_load_store_refused() {
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        backing[256..260].copy_from_slice(&SFI_SECRET_B.to_le_bytes());
+        let (mut d, sid_a, _sid_b, _iova_a, _iova_b) = two_tenant_cp(&mut backing);
+        let load = unknown_base_load_prog();
+        assert_eq!(d.verify_sfi(sid_a, &load), Err(SfiError::UnknownBase));
+        assert_eq!(d.submit_sfi(sid_a, &load).unwrap_err(), HalError::Fault);
+        let store = unknown_base_store_prog();
+        assert_eq!(d.verify_sfi(sid_a, &store), Err(SfiError::UnknownBase));
+        assert_eq!(d.submit_sfi(sid_a, &store).unwrap_err(), HalError::Fault);
+        drop(d);
+        let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
+        assert_eq!(secret, SFI_SECRET_B);
+        let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(a_word, 3);
+    }
+
 
 
     #[test]

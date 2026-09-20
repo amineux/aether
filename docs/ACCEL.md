@@ -623,7 +623,9 @@ Host tests: `verifier_accepts_in_bounds_program`,
 `verifier_rejects_unknown_opcode_and_illegal_width`,
 `softsfi_two_tenants_fault_inject_no_cross_read`. Kernel serial
 `[softsfi]` including `[softsfi] heap=refused` /
-`[softsfi] unknown=refused`.
+`[softsfi] unknown=refused` / `[softsfi] unknown-base=refused`
+(load/store with no proved base → `UnknownBase`; tensor/heap/unknown
+stay separate).
 
 ## PASID / SVA (software; Linux SVA-shaped)
 

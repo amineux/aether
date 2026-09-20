@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `hodge-harmonic-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `hodge-harmonic-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -104,7 +104,7 @@ clip is a sibling: `make red-team` (fabric-class + `ATOMIC_ADD`; see
 | SoftChipletSync | Scoped **chiplet/package** timelines (Wave/Cu alias Chiplet — same cost+signal; Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
 | SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard; single-chiplet=noop after #102 Chiplet\|Package; incorrect-elision=refused on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm, not UCIe latency) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
-| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM). `atomic_add` is SID-proved (PR #73; in-range accept, cross-tenant `Oob`). Tensor is a named refuse (`SoftOp::Tensor` → `Unmodeled`; `[softsfi] tensor=refused`). Heap/alloc is a named refuse (PR #80; `[softsfi] heap=refused`). Unknown opcode / illegal width is a named refuse (`Unmodeled`; `[softsfi] unknown=refused`) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
+| SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM). `atomic_add` is SID-proved (PR #73; in-range accept, cross-tenant `Oob`). Tensor is a named refuse (`SoftOp::Tensor` → `Unmodeled`; `[softsfi] tensor=refused`). Heap/alloc is a named refuse (PR #80; `[softsfi] heap=refused`). Unknown opcode / illegal width is a named refuse (`Unmodeled`; `[softsfi] unknown=refused`). Load/store with no proved base window is `UnknownBase` (`[softsfi] unknown-base=refused`; tensor/heap/unknown stay separate) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
 | OperatorInject | Soft-CP resident worker + versioned memcpy/saxpy + hot-add scale without relaunch; SID-at-submit + SoftCmdFirewall (GPUOS / Mirage MPK inspiration; not NVRTC/CUDA, not a full LLM compiler) | `core/src/opinject.rs`, `drivers/src/opinject.rs` |
 | SoftNoI-IS | **Landed** (PR #60). Fake shared NoI; solo vs concurrent → IS; XQueue refuse `IS > 1.5`. Fabric-class tag (PR #75): tree → Gradient, ring → Curl, persistent → Harmonic; second Curl refuses reserved ring even at IS = 1.0. PARL/NoI inspiration; admit control, not topology synth, not UniCNet | `core/src/noi.rs`, `drivers/src/noi.rs` |
@@ -165,8 +165,9 @@ GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
 Tensor and heap/alloc are named opcodes refused as `SfiError::Unmodeled`
 (not a modeled TMA; not a bump allocator). Unknown opcode / illegal width
 are the same named refuse (not AddImm deepen). Sell clips:
-`[softsfi] tensor=refused`, `[softsfi] heap=refused`, and
-`[softsfi] unknown=refused`.
+`[softsfi] tensor=refused`, `[softsfi] heap=refused`,
+`[softsfi] unknown=refused`, and `[softsfi] unknown-base=refused`
+(load/store with no proved base → `UnknownBase`; lines stay separate).
 `run_sva_demo()` is the PASID/SVA clip (serial `[sva]`); Linux SVA /
 PASID inspiration only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA,
 not zero-copy SVA without invalidate.
@@ -308,7 +309,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `hodge-harmonic-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `hodge-harmonic-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
@@ -341,6 +342,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Tensor / TMA-shaped copy | `run_softsfi_demo` — named `SoftOp::Tensor` is `SfiError::Unmodeled` (not a modeled TMA) | refused |
 | Heap / alloc | `run_softsfi_demo` — named `SoftOp::Heap` is `SfiError::Unmodeled` (not a bump allocator) | refused |
 | Unknown opcode / illegal width | `run_softsfi_demo` — bad opcode / non-`WORD` width → `SfiError::Unmodeled` (not AddImm deepen; tensor/heap stay separate) | refused |
+| Load/store with no base window | `run_softsfi_demo` — unproved base → `SfiError::UnknownBase` (not Unmodeled; tensor/heap/unknown stay separate) | refused |
 | Overload admit (`IS` over budget) | `run_softnoi_demo` — SoftNoI-IS refuse when projected `IS > 1.5` | refused |
 | Fabric-class tag at admit | `run_softnoi_demo` — Gradient admits; second Curl refuses the reserved ring | admit / refuse |
 | PASID stale translate after unmap | `run_sva_demo` — unmap drops SSID TLB; skipped invalidate is a stale hit until flush, then fault | refused |
@@ -386,6 +388,7 @@ Expected stdout (CI greps these):
 [softsfi] tensor=refused
 [softsfi] heap=refused
 [softsfi] unknown=refused
+[softsfi] unknown-base=refused
 [redteam] what this is not: confidential GPU; not HW MIG; Soft SMMU is software
 [redteam] sealed
 ```
