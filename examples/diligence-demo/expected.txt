@@ -12,6 +12,7 @@
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
 [softcct] single-chiplet=noop
+[softcct] incorrect-elision=refused
 [firewall] mutation-during-validate fails  ok
 [firewall] copy-then-validate race sealed
 [greenctx] SM/WQ pool split 70/30

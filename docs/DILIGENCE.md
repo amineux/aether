@@ -41,7 +41,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 
 | Command | What they see |
 | --- | --- |
-| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
+| `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / firewall / greenctx 70/30 + interference / softcp sparsify DROP / opinject resident+hot-add |
 | `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `hodge-harmonic-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
@@ -66,6 +66,7 @@ scripted narrative. CI greps
 | `[event] fence counts chiplet-local vs package` | M4 polish. Event exposes the SoftChipletSync counts it already sits on. Not CUDA EventRecord. Not latency. |
 | `[softcct] package fences=` | M4 polish. Package-scope ≪ broadcast (`1` vs `10` on the two-chiplet clip). Event wait still works. Not UCIe. |
 | `[softcct] single-chiplet=noop` | Honesty after SyncScope collapse (#102 Chiplet\|Package). `run_softcct_demo().single_chiplet_noop`: CCT on one chiplet matches CCT-off fence count — nothing to elide. Not a Wave/Cu tier, not UCIe latency, no new isolator. |
+| `[softcct] incorrect-elision=refused` | Companion honesty to #110. `run_softcct_demo().incorrect_elision_refused`: SoftCCT refuses to elide a cross-chiplet hazard (last-writer ≠ consumer). Host Path B only — not qemu exact-line greps. Not UCIe latency, no new isolator. |
 | `[firewall] mutation-during-validate fails` | SoftCmdFirewall copy-then-validate. Command-stream integrity, not confidential GPU. |
 | `[greenctx] SM/WQ pool split 70/30` | Measurable software partition (not HW MIG). |
 | `[greenctx] interference partitioned 70/30 vs unpartitioned` | **M3 leave-behind** (host stdout). Integer `bw_milli` / `interference_milli`. Not HW MIG, not FLOPs, not a BAR firewall. Residual shared-HBM tax stays. |
@@ -101,7 +102,7 @@ clip is a sibling: `make red-team` (fabric-class + `ATOMIC_ADD`; see
 | IreeShapedCp (`backend = 4`) | IREE HAL dispatch packet + SET_SID-at-submit + Soft SMMU `ssid=2` + IRQ/fence; not a vendor | `drivers/src/ireecp.rs` |
 | Fence / timeline | Software CP-shaped seq / wait / complete (not silicon) | `core/src/fence.rs` |
 | SoftChipletSync | Scoped **chiplet/package** timelines (Wave/Cu alias Chiplet — same cost+signal; Fleet inspiration; not Vulkan, not UCIe) | `core/src/chipsync.rs` |
-| SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard; single-chiplet=noop after #102 Chiplet\|Package (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm, not UCIe latency) | `core/src/chipsync.rs` |
+| SoftCCT | Last-writer chiplet per buffer label; package fence only on cross-chiplet hazard; single-chiplet=noop after #102 Chiplet\|Package; incorrect-elision=refused on cross-chiplet hazard (CPElide inspiration; not a coherence protocol, not Vulkan / ROCm, not UCIe latency) | `core/src/chipsync.rs` |
 | SoftGreenCtx | Fake SM/WQ 70/30 partitions on Soft-CP; XQueue bind; memcpy interference vs unpartitioned; migrate-to-yield without SID change (Green Contexts / DetShare inspiration; not HW MIG, not a BAR firewall, not FLOPs) | `core/src/greenctx.rs` |
 | SoftSFI | Toy Soft-CP load/store/add/dma/`atomic_add` + SFI verifier (GPU-AToLL shape; not NVVM). `atomic_add` is SID-proved (PR #73; in-range accept, cross-tenant `Oob`). Tensor is a named refuse (`SoftOp::Tensor` → `Unmodeled`; `[softsfi] tensor=refused`). Heap/alloc is a named refuse (PR #80; `[softsfi] heap=refused`). Unknown opcode / illegal width is a named refuse (`Unmodeled`; `[softsfi] unknown=refused`) | `core/src/softsfi.rs`, `drivers/src/softsfi.rs` |
 | PASID / SVA | Per-AccelDevice PASID; bind mm↔SSID; Soft-CP DMA via process VA; unmap→SSID TLB; stale ATC fault (Linux SVA inspiration; not ARM SVA / PCIe PASID / CUDA UVA) | `core/src/{iommu,sva}.rs`, `drivers/src/sva.rs` |
@@ -154,6 +155,10 @@ new IR. Not partner latency. After SyncScope collapse (#102
 Chiplet|Package), `make diligence-demo` also greps
 `[softcct] single-chiplet=noop` from the same `run_softcct_demo()` —
 CCT on one chiplet is a documented no-op, not a UCIe latency claim.
+The companion sell line `[softcct] incorrect-elision=refused` is the
+same demo's `incorrect_elision_refused` (cross-chiplet hazard still
+fences) — host Path B / `expected.txt` only; exact-line qemu greps
+broke #110. Not a new isolator. Not UCIe latency.
 `run_softsfi_demo()` is the Soft-CP SFI clip (serial `[softsfi]`);
 GPU-AToLL inspiration only — not NVVM, not “safe multi-tenant kernels.”
 `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`).
@@ -302,7 +307,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | Job | Command | Intent |
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
-| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop`) / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
+| Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[firewall]` / `[greenctx]` (incl. M3 interference) / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` + proves/does-not. No QEMU rebuild |
 | Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `hodge-harmonic-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
