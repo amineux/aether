@@ -47,7 +47,7 @@
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="wrap hero-inner">
         <div>
-          <p class="eyebrow"><i></i> freeze-v1 · M0–M6 complete · next year is YEAR_AHEAD</p>
+          <p class="eyebrow"><i></i> freeze-v1 · R5 foundation seals · M0–M6 complete · next year is YEAR_AHEAD</p>
           <h1><span>Aether</span></h1>
           <p class="one-liner">Fabric kernel for AI silicon.</p>
           <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
@@ -313,7 +313,7 @@
           <article class="explainer" data-reveal>
             <div class="copy">
               <h3>Fence-ordered jobs</h3>
-              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Host Event create / record / wait is a research noun over those existing SoftChipletSync fences — not a new packet, not a PJRT plugin, not a CUDA stream. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
+              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Waiting before a fence retires refuses as <code>PartitionError::FenceNotReady</code>; complete then wait is the path. Host Event create / record / wait is a research noun over those existing SoftChipletSync fences — not a new packet, not a PJRT plugin, not a CUDA stream. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
             </div>
             <div class="fence" aria-label="Submit, fence, complete">
               <div class="fence-step">
@@ -337,7 +337,7 @@
           <article class="explainer reverse" data-reveal>
             <div class="copy">
               <h3>SpectralCut + Hodge</h3>
-              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks. SoftNoI admit now reads a software fabric-class tag at submit (tree / ring / persistent). Curl still needs reserved ring capacity even when IS is 1.0. Not a DMA header, not topology synth.</p>
+              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks. The Hodge bind also refuses <code>Tree + Curl</code> as <code>HodgeError::CurlOnTree</code>; that is separate from the SoftNoI ring-capacity check. SoftNoI admit now reads a software fabric-class tag at submit (tree / ring / persistent). Curl still needs reserved ring capacity even when IS is 1.0. Not a DMA header, not topology synth.</p>
               <div class="cut-legend">
                 <span><i class="swatch" style="background:#3DDC97"></i>Strong on-die</span>
                 <span><i class="swatch" style="background:#6AA8FF"></i>Weak EMIB</span>
@@ -458,7 +458,7 @@
             <div class="icon-dot">⚿</div>
             <small>Stream identity</small>
             <h3>Soft SMMU SID</h3>
-            <p>STE→CD→Stage-1/2 software walk. SET_SID at Soft-CP submit; StreamId inherits / sticks on the XQueue. Bind-at-map is not enough. Path-A BAR DMA host-proves the same walk (wrong SID aborts). Software tables — partner silicon still required for a hardware SMMU.</p>
+            <p>STE→CD→Stage-1/2 software walk. SET_SID at Soft-CP submit; StreamId inherits / sticks on the XQueue. An unbound SET_SID refuses as <code>HalError::Fault</code> — no silent DMA. Bind-at-map is not enough. Path-A BAR DMA host-proves the same walk (wrong SID aborts). Software tables — partner silicon still required for a hardware SMMU.</p>
             <div class="chip-row">
               <span class="chip on">SET_SID-at-submit</span>
               <span class="chip on">path-A IOVA</span>
@@ -506,12 +506,21 @@
               <span class="badge done">1 ≪ 10</span>
             </div>
             <h3>Fence elision vs broadcast</h3>
-            <p>Last-writer chiplet per buffer label. Same-chiplet consume elides; cross-chiplet cannot. Incorrect elision (ignore writer chiplet) fails. Fence <em>counts</em> only — not a latency claim.</p>
+            <p>Last-writer chiplet per buffer label. Same-chiplet consume elides; cross-chiplet cannot. SoftCCT refuses incorrect elision when the writer chiplet is ignored (<code>[softcct] incorrect-elision=refused</code>). Fence <em>counts</em> only — not a latency claim.</p>
             <div class="meter" aria-label="SoftCCT package fences versus broadcast baseline">
               <div class="meter-row"><span>package</span><i style="--w:10%"><b></b></i><em>1</em></div>
               <div class="meter-row bcast"><span>broadcast</span><i style="--w:100%"><b></b></i><em>10</em></div>
             </div>
             <p class="proof-src">run_softcct_demo() · two-chiplet clip: 1 package fence vs 10-fence broadcast</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">[scope]</span>
+              <span class="badge done">soft≠strict</span>
+            </div>
+            <h3>Scope policy stays explicit</h3>
+            <p>On the same scoped <code>ChipletTaskScope</code> job, Strict refuses remote steal while Soft allows it after local-first. Thin host exploration only — not ChipletFleet, not a new placement claim, and unscoped boot work remains unrestricted.</p>
+            <p class="proof-src">run_chiplet_scope_demo() · serial <code>[scope] soft≠strict</code></p>
           </article>
           <article class="proof-card" data-reveal data-d="3">
             <div class="proof-head">
@@ -533,7 +542,7 @@
               <span class="badge done">wait</span>
             </div>
             <h3>Event on existing fences</h3>
-            <p><code>create_event(Chiplet | Package)</code> / record / wait lower onto SoftChipletSync. Job Events from <code>execute</code> stay on the partition CP-shaped timeline. Wait-before-record is <code>NotReady</code>. Not a new packet, not <code>GetPjRtApi</code>, not a CUDA stream.</p>
+            <p><code>create_event(Chiplet | Package)</code> / record / wait lower onto SoftChipletSync. Job Events from <code>execute</code> stay on the partition CP-shaped timeline. Timeline wait-before-retire is <code>PartitionError::FenceNotReady</code>; Event wait-before-record is <code>NotReady</code>. Not a new packet, not <code>GetPjRtApi</code>, not a CUDA stream.</p>
             <p class="proof-src">host/aether-pjrt · <code>IreeHalCmd</code> offsets unchanged · not a plugin</p>
           </article>
           <article class="proof-card" data-reveal data-d="5">
@@ -542,8 +551,8 @@
               <span class="badge done">RMW</span>
             </div>
             <h3>One honest <code>atomic_add</code></h3>
-            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width is a named refuse (<code>[softsfi] unknown=refused</code>). Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
-            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] heap=refused</code> · <code>[softsfi] unknown=refused</code></p>
+            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width is a named refuse (<code>[softsfi] unknown=refused</code>). Load/store without a proved base window refuses as <code>SfiError::UnknownBase</code> (<code>[softsfi] unknown-base=refused</code>), not <code>Unmodeled</code>. Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
+            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] heap=refused</code> · <code>[softsfi] unknown=refused</code> · <code>[softsfi] unknown-base=refused</code></p>
           </article>
           <article class="proof-card proof-wide" data-reveal data-d="6">
             <div class="proof-head">
@@ -607,6 +616,8 @@
 <span class="ok">[event] SoftChipletSync create/record/wait
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
+[softcct] incorrect-elision=refused
+[scope] soft≠strict
 [softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
 [greenctx] migrate-to-yield A 30->70 SID unchanged
@@ -618,18 +629,22 @@
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] attack=blast-hops result=refused
 [redteam] attack=blast-nodes result=refused
+[redteam] attack=fence-not-ready result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=set-sid-unbound result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
+[redteam] attack=hodge-curl-tree result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
 [softsfi] unknown=refused
+[softsfi] unknown-base=refused
 [redteam] sealed</span>
 <span class="cmd">$ make partner-hello</span>
 <span class="ok">[partner-hello] ok</span>
@@ -680,7 +695,7 @@
           <article class="glass sell-goal" data-reveal data-d="2">
             <small>03</small>
             <h3>Walk the five beats</h3>
-            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + heap refuse. Same tree. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
+            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + named refuses. Round 5 adds fence-not-ready, unbound SET_SID, Hodge Tree+Curl, SoftSFI unknown-base, and Soft≠Strict scope honesty; the Host Path B close keeps GreenCtx migrate, CDT revoke, and bad-executable refuse visible. Same tree. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
           </article>
           <article class="glass sell-goal" data-reveal data-d="3">
             <small>04</small>
@@ -710,7 +725,7 @@
               <span class="badge done">wait</span>
             </div>
             <h3>Host Path B</h3>
-            <p>Two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait. Event create/record/wait. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[softcct] incorrect-elision=refused</code>, <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>, <code>[greenctx] migrate-to-yield A 30->70 SID unchanged</code>, <code>[cdt] revoke descendants ok</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>, <code>[partner-hello] bad executable 0xDEAD refused</code>.</p>
+            <p>R5 foundation fold on Host Path B: two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait, Event create/record/wait, GreenCtx migrate with SID unchanged, CDT descendant revoke, and partner-hello bad-executable refuse. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[softcct] incorrect-elision=refused</code>, <code>[scope] soft≠strict</code>, <code>[greenctx] migrate-to-yield A 30->70 SID unchanged</code>, <code>[cdt] revoke descendants ok</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>, <code>[partner-hello] bad executable 0xDEAD refused</code>.</p>
           </article>
           <article class="proof-card" data-reveal data-d="1">
             <div class="proof-head">
@@ -718,7 +733,7 @@
               <span class="badge done">refuse</span>
             </div>
             <h3>Named attacks</h3>
-            <p><code>[redteam] attack=… result=refused</code> including <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code> (PR #80). <code>[softsfi] unknown=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
+            <p><code>[redteam] attack=… result=refused</code> including the R5 foundation needles: <code>attack=fence-not-ready</code> (<code>PartitionError::FenceNotReady</code>), <code>attack=set-sid-unbound</code> (<code>HalError::Fault</code>), and <code>attack=hodge-curl-tree</code> (<code>HodgeError::CurlOnTree</code>). Also <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code>, <code>[softsfi] unknown=refused</code>, and <code>[softsfi] unknown-base=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
           </article>
           <article class="proof-card" data-reveal data-d="2">
             <div class="proof-head">
@@ -726,7 +741,7 @@
               <span class="badge done">packet</span>
             </div>
             <h3>Frozen <code>IreeHalCmd</code></h3>
-            <p>Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>. Bad executable refused. No QEMU rebuild. Not a signed vendor.</p>
+            <p>Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>. Bad executable refused on the same frozen packet. No QEMU rebuild. Not a signed vendor.</p>
           </article>
           <article class="proof-card" data-reveal data-d="3">
             <div class="proof-head">
@@ -774,6 +789,8 @@
 <span class="ok">[event] SoftChipletSync create/record/wait
 [event] fence counts chiplet-local vs package
 [softcct] package fences=
+[softcct] incorrect-elision=refused
+[scope] soft≠strict
 [softcct] single-chiplet=noop
 [greenctx] interference partitioned 70/30 vs unpartitioned
 [greenctx] migrate-to-yield A 30->70 SID unchanged
@@ -785,18 +802,22 @@
 <span class="cmd">$ make red-team</span>
 <span class="ok">[redteam] attack=blast-hops result=refused
 [redteam] attack=blast-nodes result=refused
+[redteam] attack=fence-not-ready result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=uncolored-compute result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=set-sid-unbound result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
+[redteam] attack=hodge-curl-tree result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
 [softsfi] unknown=refused
+[softsfi] unknown-base=refused
 [redteam] sealed</span>
 <span class="cmd">$ make partner-hello &amp;&amp; make mp-shim</span>
 <span class="ok">[partner-hello] ok
@@ -1225,6 +1246,8 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[event] SoftChipletSync create/record/wait</span>
 <span class="ok">[event] fence counts chiplet-local vs package</span>
 <span class="ok">[softcct] package fences=</span>
+<span class="ok">[softcct] incorrect-elision=refused</span>
+<span class="ok">[scope] soft≠strict</span>
 <span class="ok">[softcct] single-chiplet=noop</span>
 <span class="ok">[greenctx] interference partitioned 70/30 vs unpartitioned</span>
 <span class="ok">[greenctx] migrate-to-yield A 30->70 SID unchanged</span>
@@ -1236,17 +1259,21 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[redteam] ATOMIC_ADD accept/reject</span>
 <span class="ok">[softsfi] heap=refused</span>
 <span class="ok">[softsfi] unknown=refused</span>
+<span class="ok">[softsfi] unknown-base=refused</span>
 <span class="ok">[redteam] attack=wrong-sid-crosscut result=refused</span>
 <span class="ok">[redteam] attack=blast-hops result=refused</span>
 <span class="ok">[redteam] attack=blast-nodes result=refused</span>
+<span class="ok">[redteam] attack=fence-not-ready result=refused</span>
 <span class="ok">[redteam] attack=silent-remote result=refused</span>
 <span class="ok">[redteam] attack=uncolored-compute result=refused</span>
 <span class="ok">[redteam] attack=typed-window-sid result=refused</span>
 <span class="ok">[redteam] attack=hbm-bw result=refused</span>
 <span class="ok">[redteam] attack=foreign-tenant-color result=refused</span>
 <span class="ok">[redteam] attack=xqueue-sid-override result=refused</span>
+<span class="ok">[redteam] attack=set-sid-unbound result=refused</span>
 <span class="ok">[redteam] attack=firewall-ident-pa result=refused</span>
 <span class="ok">[redteam] attack=hodge-harmonic-tree result=refused</span>
+<span class="ok">[redteam] attack=hodge-curl-tree result=refused</span>
 <span class="ok">[diligence] host Path B sealed</span>
 <span class="ok">[redteam] sealed</span></pre>
           </div>
