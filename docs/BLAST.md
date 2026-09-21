@@ -255,6 +255,21 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Soft-CP unbound stays 
 `attack=set-sid-unbound`. Submit-sid latch stays on `attack=submit-sid`. No CapTable
 split, no new syscall, no opcode churn, no BAR0.
 
+
+## Soft-SMMU Stage2Fault (red-team needle)
+
+[`IommuMap::bind_nested`](../core/src/iommu.rs) + pin establishes distinct Stage-1/2.
+[`unbind_stage2`](../core/src/iommu.rs) drops S2 only — S1 remains and the next nested walk is
+[`MapError::Stage2Fault`](../core/src/iommu.rs) while the SID stays Bound. Host red-team only —
+existing Soft-SMMU nested path; **not** PASID stale / SubmitSid / StreamAbort / set-sid-unbound:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Nested bind+pin+walk admits; S2 drop then walk refuse; SID still Bound | `run_stage2_fault_demo` → `MapError::Stage2Fault` | `[redteam] attack=stage2-fault result=refused` |
+
+PASID stale stays on `attack=pasid-stale`. Soft-CP unbound stays on `attack=set-sid-unbound`.
+Submit-sid / sid-budget stay on their attacks. No CapTable split, no new syscall, no opcode churn, no BAR0.
+
 ## Hodge harmonic-tree (red-team needle)
 
 [`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Harmonic as
