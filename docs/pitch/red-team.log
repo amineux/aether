@@ -22,6 +22,7 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=firewall-ident-pa result=refused

@@ -637,6 +637,48 @@ pub fn run_softnoi_demo() -> SoftNoiReport {
     }
 }
 
+
+/// Host red-team report for SoftNoI tenant-slot exhaust refuse.
+///
+/// Sell line `[redteam] attack=softnoi-exhausted` — existing [`SoftNoI::admit`]
+/// path only. Two light admits fill [`MAX_NOI_TENANTS`]; a third →
+/// [`NoiError::Exhausted`]. **Not** softnoi-is `OverBudget`, **not**
+/// fabric-class `RingExhausted`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftNoiExhaustedReport {
+    /// Two light tenants admit under budget.
+    pub two_admit: bool,
+    /// Third tenant → `NoiError::Exhausted`.
+    pub third_exhausted: bool,
+    /// Occupancy stays at max; refuse counter bumps.
+    pub occupancy_max: bool,
+}
+
+impl SoftNoiExhaustedReport {
+    pub fn all_ok(&self) -> bool {
+        self.two_admit && self.third_exhausted && self.occupancy_max
+    }
+}
+
+/// SoftNoI `admit` past [`MAX_NOI_TENANTS`] → [`NoiError::Exhausted`].
+/// Slot ceiling — not IS OverBudget / Curl RingExhausted.
+pub fn run_softnoi_exhausted_demo() -> SoftNoiExhaustedReport {
+    let mut n = SoftNoI::new();
+    n.enable(true);
+    let a = n.admit(TenantId(1), DEMO_LIGHT_DEMAND);
+    let b = n.admit(TenantId(2), DEMO_LIGHT_DEMAND);
+    let two_admit = a.is_ok() && b.is_ok() && n.occupancy() as usize == MAX_NOI_TENANTS;
+    let third = n.admit(TenantId(3), DEMO_LIGHT_DEMAND);
+    let third_exhausted = third == Err(NoiError::Exhausted);
+    let occupancy_max = n.occupancy() as usize == MAX_NOI_TENANTS && n.refused() >= 1;
+
+    SoftNoiExhaustedReport {
+        two_admit,
+        third_exhausted,
+        occupancy_max,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -734,6 +776,15 @@ mod tests {
             NoiError::Exhausted
         );
         assert_eq!(n.refused(), 1);
+    }
+
+    #[test]
+    fn softnoi_exhausted_demo_third_tenant() {
+        let r = run_softnoi_exhausted_demo();
+        assert!(r.two_admit, "two light tenants admit");
+        assert!(r.third_exhausted, "third → Exhausted");
+        assert!(r.occupancy_max, "occupancy stays at max");
+        assert!(r.all_ok());
     }
 
     #[test]

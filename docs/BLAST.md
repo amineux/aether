@@ -270,6 +270,21 @@ existing Soft-SMMU nested path; **not** PASID stale / SubmitSid / StreamAbort / 
 PASID stale stays on `attack=pasid-stale`. Soft-CP unbound stays on `attack=set-sid-unbound`.
 Submit-sid / sid-budget stay on their attacks. No CapTable split, no new syscall, no opcode churn, no BAR0.
 
+
+## SoftNoI Exhausted (red-team needle)
+
+[`SoftNoI::admit`](../core/src/noi.rs) caps concurrent tenants at [`MAX_NOI_TENANTS`](../core/src/noi.rs).
+Two light admits fill the fake NoI; a third → [`NoiError::Exhausted`](../core/src/noi.rs). Host
+red-team only — existing SoftNoI path; **not** softnoi-is `OverBudget`, **not** fabric-class
+`RingExhausted` (Curl ring), **not** SoftNoI∩SpectralCut:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Two light tenants admit; third refuse; occupancy stays at max | `run_softnoi_exhausted_demo` → `NoiError::Exhausted` | `[redteam] attack=softnoi-exhausted result=refused` |
+
+SoftNoI IS stays on `attack=softnoi-is`. Fabric-class Curl ring stays on
+`fabric-class admit/refuse`. No CapTable split, no new syscall, no opcode churn.
+
 ## Hodge harmonic-tree (red-team needle)
 
 [`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Harmonic as
