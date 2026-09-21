@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `hodge-harmonic-tree` + `hodge-curl-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `firewall-ident-pa` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -323,7 +323,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[scope] soft≠strict` / `[firewall]` / `[greenctx]` (incl. M3 interference + migrate SID-sticky) / `[cdt] revoke descendants ok` / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` / `[partner-hello] bad executable` + proves/does-not. No QEMU rebuild. Caps/CDT honesty ≠ CapTable milestone |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `set-sid-unbound` / `submit-sid` / `sid-budget` / `stage2-fault` / `hodge-harmonic-tree` / `hodge-curl-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `set-sid-unbound` / `submit-sid` / `sid-budget` / `stage2-fault` / `softnoi-exhausted` / `hodge-harmonic-tree` / `hodge-curl-tree` / `firewall-ident-pa` / `foreign-tenant-color` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
@@ -375,6 +375,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | SET_SID latch missing at submit | `run_submit_sid_demo` — Soft-SMMU `resolve_submit` → `MapError::SubmitSid` (Bound walk still OK; after `set_sid` admits). **Not** set-sid-unbound StreamAbort / Soft-CP Fault; not SidBudget | refused |
 | Per-tenant SID pool exhausted | `run_sid_budget_demo` — Soft-SMMU `bind_stream` → `MapError::SidBudget` when over `SID_BUDGET_PER_TENANT` (peer still has budget). **Not** set-sid-unbound / SubmitSid / xqueue Busy; software pool only | refused |
 | Nested Stage-2 dropped | `run_stage2_fault_demo` — Soft-SMMU `unbind_stage2` then walk → `MapError::Stage2Fault` (S1 remains; SID still Bound). **Not** PASID stale / SubmitSid / StreamAbort | refused |
+| SoftNoI tenant slots full | `run_softnoi_exhausted_demo` — SoftNoI `admit` → `NoiError::Exhausted` past `MAX_NOI_TENANTS` (two light OK). **Not** softnoi-is OverBudget / fabric-class RingExhausted | refused |
 | Tree+Harmonic bind | `run_hodge_harmonic_tree_demo` — `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce` (Tree+Gradient / Torus+Harmonic admit). Existing Hodge path — **not** SoftNoI fabric-class Curl ring | refused |
 | Tree+Curl bind | `run_hodge_curl_tree_demo` — `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree` (Tree+Gradient / Ring+Curl admit). Sibling of HarmonicTreeReduce — **not** SoftNoI fabric-class Curl ring | refused |
 | Identity guest PA in Soft-CP packet | `run_firewall_ident_pa_demo` — SoftCmdFirewall `admit_packed` / addr-cap → `HalError::Fault` when `iova < SOFT_SMMU_IOVA_BASE` (IOVA admits). **Not** mutation-during-validate — `softcmdfirewall` stays separate; not confidential GPU | refused |
@@ -403,6 +404,7 @@ Expected stdout (CI greps these):
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=firewall-ident-pa result=refused
