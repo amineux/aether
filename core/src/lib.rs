@@ -119,7 +119,7 @@ pub use reloc::{
     RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
 };
 pub use sched::{run_chiplet_scope_demo, ChipletLocalPolicy, ChipletScopeReport, ChipletTaskScope, Job, JobKind, TileKind, TileScheduler};
-pub use sid::{run_sid_submit_demo, SidSubmitReport, SID_SUBMIT_A, SID_SUBMIT_B};
+pub use sid::{run_sid_submit_demo, run_submit_sid_demo, SidSubmitReport, SubmitSidReport, SID_SUBMIT_A, SID_SUBMIT_B};
 pub use smmu_bringup::{
     kit_cp_sid, kit_iree_sid, replay_jsonl, write_dump_json, BringupError, KIT_CP_SSID,
     KIT_IREE_SSID,

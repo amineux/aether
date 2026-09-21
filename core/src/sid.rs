@@ -101,6 +101,59 @@ pub fn run_sid_submit_demo() -> SidSubmitReport {
     }
 }
 
+
+/// Host red-team report for Soft-SMMU SET_SID-at-submit refuse.
+///
+/// Sell line `[redteam] attack=submit-sid` — existing [`IommuMap::resolve_submit`]
+/// path only. Bound stream without armed SET_SID latch → [`MapError::SubmitSid`].
+/// Plain `walk` still admits (DMA map path). **Not** set-sid-unbound
+/// (`StreamAbort` / Soft-CP Fault), **not** xqueue-sid-override / PASID / SidBudget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SubmitSidReport {
+    /// `resolve_submit` before SET_SID → `MapError::SubmitSid`.
+    pub abort_until_set: bool,
+    /// Bound `walk` without SET_SID still admits (distinct from StreamAbort).
+    pub walk_without_set_ok: bool,
+    /// After `set_sid`, `resolve_submit` admits.
+    pub after_set_ok: bool,
+}
+
+impl SubmitSidReport {
+    pub fn all_ok(&self) -> bool {
+        self.abort_until_set && self.walk_without_set_ok && self.after_set_ok
+    }
+}
+
+/// Soft-SMMU `resolve_submit` without SET_SID → [`MapError::SubmitSid`].
+/// Host1x-shaped SID-at-submit foundation — not Soft-CP unbound Fault,
+/// not SidBudget / xqueue override / PASID.
+pub fn run_submit_sid_demo() -> SubmitSidReport {
+    let mut iommu = IommuMap::new();
+    let cap = mem_cap(1, TenantId(1));
+    let sid = StreamId::from_raw(SID_SUBMIT_A);
+
+    let pin = iommu
+        .map(
+            &cap,
+            MapRequest::pin_accel(PhysAddr(0x0100_0000), 0x1000, sid),
+        )
+        .unwrap();
+
+    let abort_until_set =
+        iommu.resolve_submit(sid.raw(), pin.iova, None) == Err(MapError::SubmitSid);
+    let walk_without_set_ok = iommu.walk(sid, pin.iova).is_ok();
+
+    iommu.set_sid(&cap, sid).unwrap();
+    let after_set_ok =
+        iommu.resolve_submit(sid.raw(), pin.iova, None) == Ok(PhysAddr(0x0100_0000));
+
+    SubmitSidReport {
+        abort_until_set,
+        walk_without_set_ok,
+        after_set_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -116,4 +169,13 @@ mod tests {
         assert!(r.all_ok());
         assert_ne!(SID_SUBMIT_A, SID_SUBMIT_B);
     }
+    #[test]
+    fn submit_sid_demo_refuses_until_set() {
+        let r = run_submit_sid_demo();
+        assert!(r.abort_until_set, "resolve_submit before SET_SID → SubmitSid");
+        assert!(r.walk_without_set_ok, "walk without SET_SID still admits");
+        assert!(r.after_set_ok, "after set_sid resolve_submit admits");
+        assert!(r.all_ok());
+    }
+
 }
