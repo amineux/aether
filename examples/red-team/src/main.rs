@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -45,7 +45,7 @@
 //! `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID;
 //! not BAR0 / SoftNPU). SET_SID unbound is Soft-CP `set_sid` / submit
 //! without Bound SID → `HalError::Fault` (SID-at-submit `StreamAbort`
-//! foundation; not xqueue-sid-override / PASID). Submit-sid is Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid` (walk still OK; not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget). Hodge harmonic-tree is
+//! foundation; not xqueue-sid-override / PASID). Submit-sid is Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid` (walk still OK; not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget). Sid-budget is Soft-SMMU `bind_stream` over `SID_BUDGET_PER_TENANT` → `MapError::SidBudget` (peer tenant still has budget; not set-sid-unbound / SubmitSid / xqueue Busy). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -58,7 +58,7 @@
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
 use aether_core::blast::run_blast_demo;
-use aether_core::sid::run_submit_sid_demo;
+use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
 use aether_core::noi::run_softnoi_demo;
 use aether_core::color::{run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo};
@@ -96,6 +96,7 @@ const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
 const LINE_SET_SID_UNBOUND: &str = "[redteam] attack=set-sid-unbound result=refused";
 const LINE_SUBMIT_SID: &str = "[redteam] attack=submit-sid result=refused";
+const LINE_SID_BUDGET: &str = "[redteam] attack=sid-budget result=refused";
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -130,6 +131,7 @@ struct RedTeamReport {
     xqueue_sid_override: bool,
     set_sid_unbound: bool,
     submit_sid: bool,
+    sid_budget: bool,
     hodge_harmonic_tree: bool,
     hodge_curl_tree: bool,
     firewall_ident_pa: bool,
@@ -162,6 +164,7 @@ impl RedTeamReport {
             && self.xqueue_sid_override
             && self.set_sid_unbound
             && self.submit_sid
+            && self.sid_budget
             && self.hodge_harmonic_tree
             && self.hodge_curl_tree
             && self.firewall_ident_pa
@@ -191,6 +194,7 @@ fn run_redteam() -> RedTeamReport {
     let xqueue_sid = run_xqueue_sid_override_demo();
     let set_sid_unbound = run_set_sid_unbound_demo();
     let submit_sid = run_submit_sid_demo();
+    let sid_budget = run_sid_budget_demo();
     let hodge_ht = run_hodge_harmonic_tree_demo();
     let hodge_ct = run_hodge_curl_tree_demo();
     let firewall = run_firewall_demo();
@@ -255,6 +259,9 @@ fn run_redteam() -> RedTeamReport {
         // Soft-SMMU resolve_submit without SET_SID → SubmitSid; walk still OK.
         // Not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget.
         submit_sid: submit_sid.all_ok(),
+        // Soft-SMMU bind_stream over SID_BUDGET_PER_TENANT → SidBudget.
+        // Peer tenant still has budget — not set-sid-unbound / SubmitSid / xqueue Busy.
+        sid_budget: sid_budget.all_ok(),
         // OperatorKernelHandle::bind(Tree, Harmonic) → HarmonicTreeReduce.
         // Existing Hodge / opkernel path — not SoftNoI fabric-class Curl ring.
         hodge_harmonic_tree: hodge_ht.all_ok(),
@@ -318,6 +325,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
     emit(r.set_sid_unbound, LINE_SET_SID_UNBOUND);
     emit(r.submit_sid, LINE_SUBMIT_SID);
+    emit(r.sid_budget, LINE_SID_BUDGET);
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -380,6 +388,10 @@ mod tests {
             "resolve_submit without SET_SID → SubmitSid"
         );
         assert!(
+            r.sid_budget,
+            "bind_stream over SID_BUDGET_PER_TENANT → SidBudget"
+        );
+        assert!(
             r.hodge_harmonic_tree,
             "bind(Tree, Harmonic) → HarmonicTreeReduce"
         );
@@ -429,6 +441,10 @@ mod tests {
         assert_eq!(
             LINE_SUBMIT_SID,
             "[redteam] attack=submit-sid result=refused"
+        );
+        assert_eq!(
+            LINE_SID_BUDGET,
+            "[redteam] attack=sid-budget result=refused"
         );
         assert_eq!(
             LINE_HODGE_HARMONIC_TREE,

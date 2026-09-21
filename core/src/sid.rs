@@ -154,6 +154,58 @@ pub fn run_submit_sid_demo() -> SubmitSidReport {
     }
 }
 
+
+/// Host red-team report for Soft-SMMU per-tenant SID pool refuse.
+///
+/// Sell line `[redteam] attack=sid-budget` — existing [`IommuMap::bind_stream`]
+/// path only. Filling [`SID_BUDGET_PER_TENANT`] then one more →
+/// [`MapError::SidBudget`]. Peer tenant still has budget. **Not**
+/// set-sid-unbound / SubmitSid / xqueue-sid-override Busy / PASID.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SidBudgetReport {
+    /// In-budget binds admit up to the pool size.
+    pub fill_ok: bool,
+    /// One over pool → `MapError::SidBudget`.
+    pub over_budget: bool,
+    /// Other tenant still has remaining budget.
+    pub peer_budget_left: bool,
+}
+
+impl SidBudgetReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok && self.over_budget && self.peer_budget_left
+    }
+}
+
+/// Soft-SMMU `bind_stream` over [`SID_BUDGET_PER_TENANT`] → [`MapError::SidBudget`].
+/// Software SID pool — not set-sid-unbound / SubmitSid / xqueue Busy / PASID.
+pub fn run_sid_budget_demo() -> SidBudgetReport {
+    let mut iommu = IommuMap::new();
+    let cap_a = mem_cap(1, TenantId(1));
+    let cap_b = mem_cap(2, TenantId(2));
+
+    let mut fill_ok = true;
+    for i in 0..SID_BUDGET_PER_TENANT {
+        let sid = StreamId::accel(ChipletId(0), TileId(i as u16), 1);
+        fill_ok &= iommu.bind_stream(&cap_a, sid).is_ok();
+    }
+    fill_ok &= iommu.tenant_sid_count(TenantId(1)) == SID_BUDGET_PER_TENANT;
+    fill_ok &= iommu.sid_budget_left(TenantId(1)) == 0;
+
+    let over_budget = iommu.bind_stream(&cap_a, StreamId::accel(ChipletId(1), TileId(0), 1))
+        == Err(MapError::SidBudget);
+
+    let peer = iommu.bind_stream(&cap_b, StreamId::accel(ChipletId(2), TileId(0), 1));
+    let peer_budget_left = peer.is_ok()
+        && iommu.sid_budget_left(TenantId(2)) == SID_BUDGET_PER_TENANT - 1;
+
+    SidBudgetReport {
+        fill_ok,
+        over_budget,
+        peer_budget_left,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -175,6 +227,15 @@ mod tests {
         assert!(r.abort_until_set, "resolve_submit before SET_SID → SubmitSid");
         assert!(r.walk_without_set_ok, "walk without SET_SID still admits");
         assert!(r.after_set_ok, "after set_sid resolve_submit admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn sid_budget_demo_refuses_fifth_bind() {
+        let r = run_sid_budget_demo();
+        assert!(r.fill_ok, "in-budget binds fill the pool");
+        assert!(r.over_budget, "one over → SidBudget");
+        assert!(r.peer_budget_left, "peer tenant still has budget");
         assert!(r.all_ok());
     }
 
