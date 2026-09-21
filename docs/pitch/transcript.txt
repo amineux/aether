@@ -87,6 +87,7 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=set-sid-unbound result=refused
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
+[redteam] attack=stage2-fault result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=firewall-ident-pa result=refused

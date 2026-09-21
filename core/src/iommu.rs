@@ -1776,6 +1776,78 @@ impl Default for IommuMap {
     }
 }
 
+/// Host red-team report for Soft-SMMU nested Stage-2 drop refuse.
+///
+/// Sell line `[redteam] attack=stage2-fault` — existing [`IommuMap::unbind_stage2`]
+/// / nested walk path only. After `bind_nested` + pin, dropping S2 yields
+/// [`MapError::Stage2Fault`] while the SID stays Bound (S1 remains).
+/// **Not** PASID stale / SubmitSid / StreamAbort / set-sid-unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Stage2FaultReport {
+    /// Nested bind + pin + walk admits with distinct IPA.
+    pub nested_ok: bool,
+    /// `unbind_stage2` then walk → `MapError::Stage2Fault`.
+    pub stage2_fault: bool,
+    /// SID remains Bound after S2 drop (S1 still present).
+    pub still_bound: bool,
+}
+
+impl Stage2FaultReport {
+    pub fn all_ok(&self) -> bool {
+        self.nested_ok && self.stage2_fault && self.still_bound
+    }
+}
+
+/// Soft-SMMU `unbind_stage2` then nested walk → [`MapError::Stage2Fault`].
+/// Nested Stage-1/2 honesty — not PASID / SubmitSid / StreamAbort / Soft-CP.
+pub fn run_stage2_fault_demo() -> Stage2FaultReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(3), 1);
+
+    let bound = iommu.bind_nested(&cap, sid) == Ok(StreamState::Bound);
+    let pin = iommu.map(
+        &cap,
+        MapRequest::pin_accel(PhysAddr(0x5000), 0x1000, sid),
+    );
+    let nested_ok = match &pin {
+        Ok(r) if bound => {
+            let w = iommu.walk(sid, r.iova);
+            match w {
+                Ok(wr) => {
+                    wr.config == SteConfig::Nested
+                        && wr.pa.0 == 0x5000
+                        && wr.ipa.0 >= SOFT_SMMU_IPA_BASE
+                        && wr.ipa.0 != r.iova.0
+                }
+                Err(_) => false,
+            }
+        }
+        _ => false,
+    };
+
+    let stage2_fault = match &pin {
+        Ok(r) => {
+            iommu.unbind_stage2(sid).is_ok()
+                && iommu.walk(sid, r.iova) == Err(MapError::Stage2Fault)
+                && iommu.resolve_result(sid.raw(), r.iova, None) == Err(MapError::Stage2Fault)
+        }
+        Err(_) => false,
+    };
+    let still_bound = iommu.is_bound(sid);
+
+    Stage2FaultReport {
+        nested_ok,
+        stage2_fault,
+        still_bound,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2064,6 +2136,15 @@ mod tests {
             Err(MapError::Stage2Fault)
         );
         assert!(iommu.is_bound(sid));
+    }
+
+    #[test]
+    fn stage2_fault_demo_unbind_then_walk() {
+        let r = run_stage2_fault_demo();
+        assert!(r.nested_ok, "nested bind+pin+walk admits");
+        assert!(r.stage2_fault, "unbind_stage2 → Stage2Fault");
+        assert!(r.still_bound, "SID stays Bound after S2 drop");
+        assert!(r.all_ok());
     }
 
     #[test]

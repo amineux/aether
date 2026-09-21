@@ -86,9 +86,10 @@ pub use greenctx::{
 };
 pub use hodge::{FlowClass, HodgeError, HodgeQuota};
 pub use iommu::{
-    AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest, MappedRegion, MmId, SoftPte,
-    SoftSmmuDump, SteConfig, SteTableDump, StreamId, StreamState, WalkResult, DEFAULT_STREAM,
-    SET_SID, SID_BUDGET_PER_TENANT, SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
+    run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
+    MappedRegion, MmId, SoftPte, SoftSmmuDump, Stage2FaultReport, SteConfig, SteTableDump,
+    StreamId, StreamState, WalkResult, DEFAULT_STREAM, SET_SID, SID_BUDGET_PER_TENANT,
+    SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
 pub use laplacian::AffinityLaplacian;
 pub use mmap::{
