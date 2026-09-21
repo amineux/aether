@@ -238,6 +238,23 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Soft-CP unbound stays 
 `attack=set-sid-unbound`. XQueue sticky override stays on `attack=xqueue-sid-override`.
 No CapTable split, no new syscall, no opcode churn, no BAR0.
 
+
+## Soft-SMMU SidBudget (red-team needle)
+
+[`IommuMap::bind_stream`](../core/src/iommu.rs) enforces a per-tenant software SID pool
+([`SID_BUDGET_PER_TENANT`](../core/src/iommu.rs)). Filling the pool then one more →
+[`MapError::SidBudget`](../core/src/iommu.rs); a peer tenant still has budget. Host red-team
+only — existing Soft-SMMU path; **not** set-sid-unbound / SubmitSid / xqueue Busy / PASID,
+**not** a silicon SID allocator:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| In-budget binds fill pool; one over refuse; peer tenant budget left | `run_sid_budget_demo` → `MapError::SidBudget` | `[redteam] attack=sid-budget result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Soft-CP unbound stays on
+`attack=set-sid-unbound`. Submit-sid latch stays on `attack=submit-sid`. No CapTable
+split, no new syscall, no opcode churn, no BAR0.
+
 ## Hodge harmonic-tree (red-team needle)
 
 [`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Harmonic as
