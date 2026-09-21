@@ -222,6 +222,22 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. XQueue sticky override
 `attack=xqueue-sid-override`. PASID stale stays on `attack=pasid-stale`. No CapTable split,
 no new syscall, no opcode churn, no BAR0.
 
+
+## Soft-SMMU SubmitSid (red-team needle)
+
+[`IommuMap::resolve_submit`](../core/src/iommu.rs) requires an armed SET_SID latch
+before DMA submit. Bound stream without SET_SID → [`MapError::SubmitSid`](../core/src/iommu.rs);
+plain `walk` still admits. Host red-team only — existing Soft-SMMU SID-at-submit path;
+**not** set-sid-unbound (`StreamAbort` / Soft-CP Fault), **not** SidBudget / xqueue Busy / PASID:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Bound walk OK; `resolve_submit` before SET_SID refuse; after `set_sid` admit | `run_submit_sid_demo` → `MapError::SubmitSid` | `[redteam] attack=submit-sid result=refused` |
+
+CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. Soft-CP unbound stays on
+`attack=set-sid-unbound`. XQueue sticky override stays on `attack=xqueue-sid-override`.
+No CapTable split, no new syscall, no opcode churn, no BAR0.
+
 ## Hodge harmonic-tree (red-team needle)
 
 [`OperatorKernelHandle::bind`](../core/src/opkernel.rs) refuses Tree+Harmonic as
