@@ -637,6 +637,10 @@
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=set-sid-unbound result=refused
+[redteam] attack=submit-sid result=refused
+[redteam] attack=sid-budget result=refused
+[redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
@@ -695,7 +699,7 @@
           <article class="glass sell-goal" data-reveal data-d="2">
             <small>03</small>
             <h3>Walk the five beats</h3>
-            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + named refuses. Round 5 adds fence-not-ready, unbound SET_SID, Hodge Tree+Curl, SoftSFI unknown-base, and Soft≠Strict scope honesty; the Host Path B close keeps GreenCtx migrate, CDT revoke, and bad-executable refuse visible. Same tree. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
+            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + named refuses. Round 5 sealed fence-not-ready, unbound SET_SID, Hodge Tree+Curl, SoftSFI unknown-base, and Soft≠Strict scope honesty. Round 6 adds Soft-SMMU SubmitSid / SidBudget / Stage2Fault and SoftNoI Exhausted refuse lines; the Host Path B close keeps GreenCtx migrate, CDT revoke, and bad-executable refuse visible. Same tree. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
           </article>
           <article class="glass sell-goal" data-reveal data-d="3">
             <small>04</small>
@@ -733,7 +737,7 @@
               <span class="badge done">refuse</span>
             </div>
             <h3>Named attacks</h3>
-            <p><code>[redteam] attack=… result=refused</code> including the R5 foundation needles: <code>attack=fence-not-ready</code> (<code>PartitionError::FenceNotReady</code>), <code>attack=set-sid-unbound</code> (<code>HalError::Fault</code>), and <code>attack=hodge-curl-tree</code> (<code>HodgeError::CurlOnTree</code>). Also <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code>, <code>[softsfi] unknown=refused</code>, and <code>[softsfi] unknown-base=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
+            <p><code>[redteam] attack=… result=refused</code> including the R5–R6 foundation needles: <code>attack=fence-not-ready</code> (<code>PartitionError::FenceNotReady</code>), <code>attack=set-sid-unbound</code> (<code>HalError::Fault</code>), <code>attack=submit-sid</code> (<code>MapError::SubmitSid</code>), <code>attack=sid-budget</code> (<code>MapError::SidBudget</code>), <code>attack=stage2-fault</code> (<code>MapError::Stage2Fault</code>), <code>attack=softnoi-exhausted</code> (<code>NoiError::Exhausted</code>), and <code>attack=hodge-curl-tree</code> (<code>HodgeError::CurlOnTree</code>). Also <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code>, <code>[softsfi] unknown=refused</code>, and <code>[softsfi] unknown-base=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
           </article>
           <article class="proof-card" data-reveal data-d="2">
             <div class="proof-head">
@@ -810,6 +814,10 @@
 [redteam] attack=foreign-tenant-color result=refused
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=set-sid-unbound result=refused
+[redteam] attack=submit-sid result=refused
+[redteam] attack=sid-budget result=refused
+[redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
@@ -1271,6 +1279,10 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[redteam] attack=foreign-tenant-color result=refused</span>
 <span class="ok">[redteam] attack=xqueue-sid-override result=refused</span>
 <span class="ok">[redteam] attack=set-sid-unbound result=refused</span>
+<span class="ok">[redteam] attack=submit-sid result=refused</span>
+<span class="ok">[redteam] attack=sid-budget result=refused</span>
+<span class="ok">[redteam] attack=stage2-fault result=refused</span>
+<span class="ok">[redteam] attack=softnoi-exhausted result=refused</span>
 <span class="ok">[redteam] attack=firewall-ident-pa result=refused</span>
 <span class="ok">[redteam] attack=hodge-harmonic-tree result=refused</span>
 <span class="ok">[redteam] attack=hodge-curl-tree result=refused</span>
