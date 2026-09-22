@@ -84,7 +84,7 @@ pub use greenctx::{
     SoftGreenCtx, SoftGreenPool, DEMO_MEMCPY_BYTES, MAX_GREEN_CTX, SHARED_BW_TAX_MILLI,
     SOFT_SM_POOL, SOFT_WQ_POOL, SPLIT_30, SPLIT_70,
 };
-pub use hodge::{FlowClass, HodgeError, HodgeQuota};
+pub use hodge::{run_hodge_quota_demo, FlowClass, HodgeError, HodgeQuota, HodgeQuotaReport};
 pub use iommu::{
     run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
     MappedRegion, MmId, SoftPte, SoftSmmuDump, Stage2FaultReport, SteConfig, SteTableDump,

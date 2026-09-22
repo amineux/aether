@@ -4,7 +4,7 @@ Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
 `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`, `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`,
-`run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_softsfi_demo`,
+`run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_softsfi_demo`,
 `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
 `[redteam] attack=blast-nodes result=refused` (`admit_nodes` → `BlastRadius`;
@@ -53,6 +53,9 @@ not SoftNoI fabric-class Curl ring).
 Hodge curl-tree needle: `[redteam] attack=hodge-curl-tree result=refused`
 (`OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`; sibling of
 HarmonicTreeReduce; not SoftNoI fabric-class Curl ring).
+Hodge-quota needle: `[redteam] attack=hodge-quota result=refused`
+(`HodgeQuota::empty().admit(...)` → `HodgeError::QuotaExceeded`; generous admit succeeds;
+not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable).
 Firewall-ident-pa needle: `[redteam] attack=firewall-ident-pa result=refused`
 (SoftCmdFirewall `admit_packed` identity guest PA → `HalError::Fault`;
 not mutation-during-validate — `softcmdfirewall` stays separate; not

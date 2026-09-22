@@ -25,6 +25,7 @@ Same refuse paths as the kernel self-check — not a new isolator.
 [redteam] attack=softnoi-exhausted result=refused
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
+[redteam] attack=hodge-quota result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject

@@ -116,6 +116,44 @@ pub fn authorize(cap: &Capability, flow: FlowClass) -> Result<(), HodgeError> {
     Ok(())
 }
 
+/// Host red-team report for HodgeQuota empty-admit refuse.
+///
+/// Sell line `[redteam] attack=hodge-quota` — existing [`HodgeQuota::admit`]
+/// path only. [`HodgeQuota::empty`] then admit → [`HodgeError::QuotaExceeded`];
+/// generous admit succeeds. **Not** `hodge-harmonic-tree` / `hodge-curl-tree`,
+/// **not** CapTable / [`HodgeError::ClassNotAuthorized`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HodgeQuotaReport {
+    /// Empty quota Gradient admit → `QuotaExceeded`.
+    pub empty_refused: bool,
+    /// Generous quota admits Gradient / Curl / Harmonic (plain, no tree).
+    pub generous_ok: bool,
+}
+
+impl HodgeQuotaReport {
+    pub fn all_ok(&self) -> bool {
+        self.empty_refused && self.generous_ok
+    }
+}
+
+/// `HodgeQuota::empty().admit(...)` → [`HodgeError::QuotaExceeded`].
+/// Quota ceiling — not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized.
+pub fn run_hodge_quota_demo() -> HodgeQuotaReport {
+    let mut empty = HodgeQuota::empty();
+    let empty_refused =
+        empty.admit(FlowClass::Gradient, false) == Err(HodgeError::QuotaExceeded);
+
+    let mut generous = HodgeQuota::generous();
+    let generous_ok = generous.admit(FlowClass::Gradient, false).is_ok()
+        && generous.admit(FlowClass::Curl, false).is_ok()
+        && generous.admit(FlowClass::Harmonic, false).is_ok();
+
+    HodgeQuotaReport {
+        empty_refused,
+        generous_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -165,5 +203,13 @@ mod tests {
             authorize(&cap, FlowClass::Harmonic).unwrap_err(),
             HodgeError::ClassNotAuthorized
         );
+    }
+
+    #[test]
+    fn hodge_quota_demo_empty_refuses() {
+        let r = run_hodge_quota_demo();
+        assert!(r.empty_refused, "empty admit → QuotaExceeded");
+        assert!(r.generous_ok, "generous Gradient/Curl/Harmonic admit");
+        assert!(r.all_ok());
     }
 }
