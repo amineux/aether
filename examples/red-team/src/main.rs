@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -54,7 +54,9 @@
 //! succeeds; not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable). Firewall identity guest PA is SoftCmdFirewall
 //! `admit_packed` with `iova < SOFT_SMMU_IOVA_BASE` → `HalError::Fault`
 //! (addr-cap; **not** mutation-during-validate — `softcmdfirewall` stays
-//! separate; not confidential GPU). The closer names what this is **not**:
+//! separate; not confidential GPU). Greenctx-overcommit is SoftGreenPool
+//! `create` past SM/WQ pool → `GreenCtxError::Overcommit` (not diligence
+//! `run_greenctx_demo` 70/30 sell; not HW MIG / BAR0 / SoftNPU). The closer names what this is **not**:
 //! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
@@ -75,6 +77,7 @@ use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
 use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
 use aether_core::hodge::run_hodge_quota_demo;
+use aether_core::greenctx::run_greenctx_overcommit_demo;
 use aether_drivers::{
     run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
     run_xqueue_sid_override_demo,
@@ -107,6 +110,7 @@ const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree res
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
+const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -145,6 +149,7 @@ struct RedTeamReport {
     hodge_curl_tree: bool,
     hodge_quota: bool,
     firewall_ident_pa: bool,
+    greenctx_overcommit: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -181,6 +186,7 @@ impl RedTeamReport {
             && self.hodge_curl_tree
             && self.hodge_quota
             && self.firewall_ident_pa
+            && self.greenctx_overcommit
             && self.class
             && self.atomic
             && self.tensor
@@ -215,6 +221,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_quota = run_hodge_quota_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
+    let greenctx_over = run_greenctx_overcommit_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -296,6 +303,9 @@ fn run_redteam() -> RedTeamReport {
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
+        // SoftGreenPool::create past SM/WQ pool → Overcommit.
+        // Not diligence run_greenctx_demo 70/30 sell; not HW MIG / BAR0 / SoftNPU.
+        greenctx_overcommit: greenctx_over.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -357,6 +367,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
+    emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -443,6 +454,10 @@ mod tests {
             r.firewall_ident_pa,
             "SoftCmdFirewall identity guest PA → HalError::Fault"
         );
+        assert!(
+            r.greenctx_overcommit,
+            "SoftGreenPool::create past pool → Overcommit"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -510,6 +525,10 @@ mod tests {
             LINE_FIREWALL_IDENT_PA,
             "[redteam] attack=firewall-ident-pa result=refused"
         );
+        assert_eq!(
+            LINE_GREENCTX_OVERCOMMIT,
+            "[redteam] attack=greenctx-overcommit result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -539,6 +558,7 @@ mod tests {
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
             LINE_FIREWALL_IDENT_PA,
+            LINE_GREENCTX_OVERCOMMIT,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
