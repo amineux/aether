@@ -320,6 +320,22 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftNoI IS stays on
 HarmonicTreeReduce stays on `attack=hodge-harmonic-tree`. No CapTable split, no
 new syscall, no opcode churn.
 
+
+## Hodge quota (red-team needle)
+
+[`HodgeQuota::admit`](../core/src/hodge.rs) refuses when the class remaining
+budget is zero ([`HodgeError::QuotaExceeded`](../core/src/hodge.rs)). Empty quota
+refuses; generous admits Gradient / Curl / Harmonic (plain). Host red-team only —
+existing Hodge path; **not** `hodge-harmonic-tree` / `hodge-curl-tree`, **not**
+CapTable / `ClassNotAuthorized`:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Empty admit refuse; generous Gradient/Curl/Harmonic admit | `run_hodge_quota_demo` → `HodgeError::QuotaExceeded` | `[redteam] attack=hodge-quota result=refused` |
+
+HarmonicTreeReduce stays on `attack=hodge-harmonic-tree`. CurlOnTree stays on
+`attack=hodge-curl-tree`. No CapTable split, no new syscall, no opcode churn.
+
 ## Firewall identity guest PA (red-team needle)
 
 SoftCmdFirewall addr-cap (`validate_reloc` / `admit_packed`) refuses identity
