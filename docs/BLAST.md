@@ -352,6 +352,22 @@ CrossCut / wrong-SID stay on `attack=wrong-sid-crosscut`. SoftCmdFirewall
 mutation-during-validate stays on `attack=softcmdfirewall`. No CapTable split,
 no new syscall, no opcode churn, no confidential GPU.
 
+## SoftGreenCtx overcommit (red-team needle)
+
+[`SoftGreenPool::create`](../core/src/greenctx.rs) refuses when SM/WQ allocation
+would exceed the software pool ([`GreenCtxError::Overcommit`](../core/src/greenctx.rs)).
+In-budget create admits; create past remaining pool refuses; after a full 70/30
+split another create also Overcommits. Host red-team only — existing SoftGreenCtx
+path; **not** diligence [`run_greenctx_demo`](../core/src/greenctx.rs) 70/30 sell,
+**not** HW MIG / BAR0 / SoftNPU:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| In-budget create admits; past pool refuse; after 70/30 fill refuse | `run_greenctx_overcommit_demo` → `GreenCtxError::Overcommit` | `[redteam] attack=greenctx-overcommit result=refused` |
+
+Diligence greenctx 70/30 sell stays on `make diligence-demo` / `[greenctx]`. No CapTable
+split, no new syscall, no opcode churn, no BAR0 / SoftNPU.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.

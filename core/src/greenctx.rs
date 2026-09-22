@@ -464,6 +464,54 @@ pub fn run_greenctx_demo() -> GreenCtxReport {
     }
 }
 
+
+/// Host red-team report for SoftGreenPool SM/WQ overcommit refuse.
+///
+/// Sell line `[redteam] attack=greenctx-overcommit` — existing
+/// [`SoftGreenPool::create`] path only. Create past the SM/WQ pool →
+/// [`GreenCtxError::Overcommit`]. After a full 70/30 split, another create
+/// also Overcommits. **Not** diligence `run_greenctx_demo` 70/30 sell,
+/// **not** HW MIG / BAR0 / SoftNPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GreenCtxOvercommitReport {
+    /// First create that fits the pool admits.
+    pub fill_ok: bool,
+    /// Create past remaining SM/WQ → `GreenCtxError::Overcommit`.
+    pub overcommit: bool,
+    /// After `split_70_30` fills the pool, another create → Overcommit.
+    pub after_split_over: bool,
+}
+
+impl GreenCtxOvercommitReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok && self.overcommit && self.after_split_over
+    }
+}
+
+/// `SoftGreenPool::create` past SM/WQ pool → [`GreenCtxError::Overcommit`].
+/// Software pool ceiling — not HW MIG / BAR0 / SoftNPU / diligence 70/30 sell.
+pub fn run_greenctx_overcommit_demo() -> GreenCtxOvercommitReport {
+    let mut p = SoftGreenPool::new();
+    let fill_ok = p
+        .create(SmWqBudget {
+            sm: 8,
+            wq: 8,
+        })
+        .is_ok();
+    let overcommit = p.create(SmWqBudget::split_30()) == Err(GreenCtxError::Overcommit);
+
+    let mut p2 = SoftGreenPool::new();
+    let (_hi, _lo) = p2.split_70_30().unwrap();
+    let after_split_over = p2.allocated() == SmWqBudget::full()
+        && p2.create(SmWqBudget { sm: 1, wq: 1 }) == Err(GreenCtxError::Overcommit);
+
+    GreenCtxOvercommitReport {
+        fill_ok,
+        overcommit,
+        after_split_over,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -559,5 +607,14 @@ mod tests {
         assert!(r.part70_bw < r.solo_bw);
         let tax = SHARED_BW_TAX_MILLI;
         assert!(tax > 0, "zero tax would look like MIG isolation");
+    }
+
+    #[test]
+    fn greenctx_overcommit_demo_refuses_past_pool() {
+        let r = run_greenctx_overcommit_demo();
+        assert!(r.fill_ok, "in-budget create admits");
+        assert!(r.overcommit, "past pool → Overcommit");
+        assert!(r.after_split_over, "after 70/30 fill → Overcommit");
+        assert!(r.all_ok());
     }
 }
