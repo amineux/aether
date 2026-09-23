@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -385,6 +385,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | SoftGreenPool slot exhausted | `run_greenctx_exhausted_demo` — `SoftGreenPool::create` past `MAX_GREEN_CTX` → `GreenCtxError::Exhausted` (tiny in-budget fills admit; contrast after 70/30 → Overcommit). **Not** greenctx-overcommit SM/WQ; not SoftNoI Exhausted; not HW MIG / BAR0 / SoftNPU | refused |
 | SoftGreenPool migrate dest busy | `run_greenctx_busy_demo` — `SoftGreenPool::migrate_to_yield` → `GreenCtxError::Busy` when dest bound to another queue (`bind(lo,0); bind(hi,1); migrate 0→hi`). **Not** greenctx-unbound; not overcommit/exhausted; not xqueue-sid-override Soft-CP Busy; not HW MIG / BAR0 / SoftNPU | refused |
 | Soft-SMMU same-SID guest-PA overlap | `run_smmu_overlap_demo` — Soft-SMMU `map` → `MapError::Overlap` on overlapping guest PA same SID (disjoint admits). **Not** CrossTenant / WrongStream / Stage2Fault / SubmitSid / SidBudget | refused |
+| Soft-SMMU Bound IOVA hole | `run_smmu_not_mapped_demo` — Soft-SMMU `walk` / `resolve_result` → `MapError::NotMapped` on Bound SID with no S1 PTE (mapped IOVA admits). **Not** WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap | refused |
 
 Expected stdout (CI greps these):
 
@@ -420,6 +421,7 @@ Expected stdout (CI greps these):
 [redteam] attack=greenctx-exhausted result=refused
 [redteam] attack=greenctx-busy result=refused
 [redteam] attack=smmu-overlap result=refused
+[redteam] attack=smmu-not-mapped result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused
