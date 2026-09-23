@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `softcct-incorrect-elision` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -387,6 +387,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Soft-SMMU same-SID guest-PA overlap | `run_smmu_overlap_demo` — Soft-SMMU `map` → `MapError::Overlap` on overlapping guest PA same SID (disjoint admits). **Not** CrossTenant / WrongStream / Stage2Fault / SubmitSid / SidBudget | refused |
 | Soft-SMMU Bound IOVA hole | `run_smmu_not_mapped_demo` — Soft-SMMU `walk` / `resolve_result` → `MapError::NotMapped` on Bound SID with no S1 PTE (mapped IOVA admits). **Not** WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap | refused |
 | Soft-SMMU submit SID mismatch | `run_smmu_wrong_stream_demo` — Soft-SMMU `resolve_submit` → `MapError::WrongStream` when armed submit_sid ≠ packet StreamId (matching admits; no-latch stays SubmitSid). **Not** SubmitSid / Stage2Fault / NotMapped / Overlap / StreamAbort | refused |
+| SoftCCT incorrect elision | `run_softcct_incorrect_elision_demo` — SoftCCT `incorrect_elide` dual-proof fold: cross-chiplet hazard must fence (`should_elide` false) while buggy policy would elide. Diligence banner sibling. **Not** UCIe latency / qos-credits / softcct-credit-exhausted | refused |
 
 Expected stdout (CI greps these):
 
@@ -424,6 +425,7 @@ Expected stdout (CI greps these):
 [redteam] attack=smmu-overlap result=refused
 [redteam] attack=smmu-not-mapped result=refused
 [redteam] attack=smmu-wrong-stream result=refused
+[redteam] attack=softcct-incorrect-elision result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

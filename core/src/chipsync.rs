@@ -807,6 +807,43 @@ pub fn run_softcct_demo() -> SoftCctReport {
     }
 }
 
+/// Host red-team report: SoftCCT incorrect-elision dual-proof fold.
+///
+/// Sell line `[redteam] attack=softcct-incorrect-elision` — reuses existing
+/// [`run_softcct_demo`] / [`ChipletCoherenceTable::incorrect_elide`] path only.
+/// Cross-chiplet hazard: buggy `incorrect_elide` would say yes; correct
+/// `should_elide` refuses. Diligence already prints
+/// `[softcct] incorrect-elision=refused`; this is the named red-team needle.
+/// **Not** UCIe latency, **not** a coherence protocol, **not** qos-credits /
+/// softcct-credit-exhausted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftCctIncorrectElisionReport {
+    /// Buggy `incorrect_elide` would fire on a known label; correct policy refuses.
+    pub incorrect_elision_refused: bool,
+    /// Correct policy fences the cross-chiplet consume.
+    pub cross_chiplet_fence: bool,
+    /// Correct policy still elides same-chiplet consume.
+    pub same_chiplet_elide: bool,
+}
+
+impl SoftCctIncorrectElisionReport {
+    pub fn all_ok(&self) -> bool {
+        self.incorrect_elision_refused && self.cross_chiplet_fence && self.same_chiplet_elide
+    }
+}
+
+/// SoftCCT incorrect-elision refuse — dual-proof fold of [`run_softcct_demo`].
+/// Red-team named needle; diligence banner already exists. Not UCIe / qos-credits.
+pub fn run_softcct_incorrect_elision_demo() -> SoftCctIncorrectElisionReport {
+    let r = run_softcct_demo();
+    SoftCctIncorrectElisionReport {
+        incorrect_elision_refused: r.incorrect_elision_refused,
+        cross_chiplet_fence: r.cross_chiplet_fence,
+        same_chiplet_elide: r.same_chiplet_elide,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1018,6 +1055,15 @@ mod tests {
         assert_eq!(s.elided(), 0);
         assert_eq!(s.package_fences(), 1);
         assert_eq!(s.broadcast_package_fences(), 1);
+    }
+
+    #[test]
+    fn softcct_incorrect_elision_demo_refuses_cross_chiplet() {
+        let r = run_softcct_incorrect_elision_demo();
+        assert!(r.incorrect_elision_refused, "incorrect elision refused");
+        assert!(r.cross_chiplet_fence, "cross-chiplet still fences");
+        assert!(r.same_chiplet_elide, "same-chiplet still elides");
+        assert!(r.all_ok());
     }
 
     #[test]

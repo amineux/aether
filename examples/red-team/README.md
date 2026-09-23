@@ -81,6 +81,8 @@ Smmu-not-mapped needle: `[redteam] attack=smmu-not-mapped result=refused`
 (Soft-SMMU Bound `walk` / `resolve_result` IOVA hole → `MapError::NotMapped`; mapped admits; not WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap).
 Smmu-wrong-stream needle: `[redteam] attack=smmu-wrong-stream result=refused`
 (Soft-SMMU `resolve_submit` armed submit_sid ≠ packet → `MapError::WrongStream`; matching admits; no-latch stays SubmitSid; not Stage2Fault / NotMapped / Overlap / StreamAbort).
+Softcct-incorrect-elision needle: `[redteam] attack=softcct-incorrect-elision result=refused`
+(SoftCCT `incorrect_elide` dual-proof fold; diligence `[softcct] incorrect-elision=refused` sibling; not UCIe / qos-credits / softcct-credit-exhausted).
 
 Typed-window-sid needle: `[redteam] attack=typed-window-sid result=refused`
 (`map_window_sid` → `WrongStream`; exploration TypedWindow stub, not CXL.mem
