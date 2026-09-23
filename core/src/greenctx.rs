@@ -602,6 +602,57 @@ pub fn run_greenctx_exhausted_demo() -> GreenCtxExhaustedReport {
     }
 }
 
+
+/// Host red-team report for SoftGreenPool migrate_to_yield Busy refuse.
+///
+/// Sell line `[redteam] attack=greenctx-busy` — existing
+/// [`SoftGreenPool::migrate_to_yield`] path only. Dest ctx already bound to
+/// another queue → [`GreenCtxError::Busy`]. Same-SID happy migrate still OK on
+/// a free dest. **Not** greenctx-unbound (never-bound queue), **not**
+/// greenctx-overcommit / greenctx-exhausted, **not** xqueue-sid-override Soft-CP
+/// Busy, **not** HW MIG / BAR0 / SoftNPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GreenCtxBusyReport {
+    /// Bind lo→0 and hi→1; migrate 0→hi (dest busy with 1) → Busy; queues stick.
+    pub busy: bool,
+    /// Optional same-pool bind contrast: re-bind lo to a foreign queue → Busy.
+    pub bind_busy: bool,
+    /// Contrast: never-bound queue still → Unbound (sibling needle stays separate).
+    pub contrast_unbound: bool,
+}
+
+impl GreenCtxBusyReport {
+    pub fn all_ok(&self) -> bool {
+        self.busy && self.bind_busy && self.contrast_unbound
+    }
+}
+
+/// `SoftGreenPool::migrate_to_yield` when dest is bound elsewhere → [`GreenCtxError::Busy`].
+/// Occupied dest path — not Unbound / Overcommit / Exhausted / xqueue Busy / HW MIG.
+pub fn run_greenctx_busy_demo() -> GreenCtxBusyReport {
+    let mut p = SoftGreenPool::new();
+    let (hi, lo) = p.split_70_30().unwrap();
+    p.bind(lo, 0).unwrap();
+    p.bind(hi, 1).unwrap();
+    let sid = StreamId::from_raw(0x11_22_33_44);
+    // Dest hi already holds queue 1 ≠ 0 → Busy. Queues stay put.
+    let busy = p.migrate_to_yield(0, hi, sid) == Err(GreenCtxError::Busy)
+        && p.ctx_for_queue(0) == Some(lo)
+        && p.ctx_for_queue(1) == Some(hi);
+    // Optional bind-busy (same Error::Busy; not a separate PR): lo already on 0.
+    let bind_busy = p.bind(lo, 1) == Err(GreenCtxError::Busy);
+    // Fresh pool: never-bound queue → Unbound (sibling contrast).
+    let mut p2 = SoftGreenPool::new();
+    let (hi2, _lo2) = p2.split_70_30().unwrap();
+    let contrast_unbound = p2.migrate_to_yield(1, hi2, sid) == Err(GreenCtxError::Unbound);
+
+    GreenCtxBusyReport {
+        busy,
+        bind_busy,
+        contrast_unbound,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -725,4 +776,14 @@ mod tests {
         assert!(r.contrast_overcommit, "70/30 fill → Overcommit contrast");
         assert!(r.all_ok());
     }
+
+    #[test]
+    fn greenctx_busy_demo_refuses_occupied_dest() {
+        let r = run_greenctx_busy_demo();
+        assert!(r.busy, "dest bound elsewhere → Busy");
+        assert!(r.bind_busy, "re-bind foreign queue → Busy");
+        assert!(r.contrast_unbound, "never-bound → Unbound contrast");
+        assert!(r.all_ok());
+    }
+
 }

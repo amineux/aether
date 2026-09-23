@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -60,7 +60,9 @@
 //! `migrate_to_yield` on a queue with no bound ctx → `GreenCtxError::Unbound` (not set-sid-unbound Soft-CP
 //! Fault; not greenctx-overcommit SM/WQ ceiling; not HW MIG / BAR0 / SoftNPU). Greenctx-exhausted is SoftGreenPool
 //! `create` past `MAX_GREEN_CTX` slots → `GreenCtxError::Exhausted` (not greenctx-overcommit SM/WQ ceiling;
-//! not SoftNoI Exhausted; not HW MIG / BAR0 / SoftNPU). The closer names what this is **not**:
+//! not SoftNoI Exhausted; not HW MIG / BAR0 / SoftNPU). Greenctx-busy is SoftGreenPool
+//! `migrate_to_yield` when dest is bound to another queue → `GreenCtxError::Busy` (not greenctx-unbound;
+//! not greenctx-overcommit / exhausted; not xqueue-sid-override Soft-CP Busy; not HW MIG / BAR0 / SoftNPU). The closer names what this is **not**:
 //! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
@@ -81,7 +83,7 @@ use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
 use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
 use aether_core::hodge::run_hodge_quota_demo;
-use aether_core::greenctx::{run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
+use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
     run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
     run_xqueue_sid_override_demo,
@@ -117,6 +119,7 @@ const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
 const LINE_GREENCTX_EXHAUSTED: &str = "[redteam] attack=greenctx-exhausted result=refused";
+const LINE_GREENCTX_BUSY: &str = "[redteam] attack=greenctx-busy result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -158,6 +161,7 @@ struct RedTeamReport {
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
     greenctx_exhausted: bool,
+    greenctx_busy: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -197,6 +201,7 @@ impl RedTeamReport {
             && self.greenctx_overcommit
             && self.greenctx_unbound
             && self.greenctx_exhausted
+            && self.greenctx_busy
             && self.class
             && self.atomic
             && self.tensor
@@ -234,6 +239,7 @@ fn run_redteam() -> RedTeamReport {
     let greenctx_over = run_greenctx_overcommit_demo();
     let greenctx_unbound = run_greenctx_unbound_demo();
     let greenctx_exhausted = run_greenctx_exhausted_demo();
+    let greenctx_busy = run_greenctx_busy_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -324,6 +330,9 @@ fn run_redteam() -> RedTeamReport {
         // SoftGreenPool::create past MAX_GREEN_CTX slots → Exhausted.
         // Not greenctx-overcommit SM/WQ; not SoftNoI Exhausted; not HW MIG.
         greenctx_exhausted: greenctx_exhausted.all_ok(),
+        // SoftGreenPool::migrate_to_yield dest bound elsewhere → Busy.
+        // Not greenctx-unbound; not overcommit/exhausted; not xqueue Soft-CP Busy; not HW MIG.
+        greenctx_busy: greenctx_busy.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -388,6 +397,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
     emit(r.greenctx_exhausted, LINE_GREENCTX_EXHAUSTED);
+    emit(r.greenctx_busy, LINE_GREENCTX_BUSY);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -486,6 +496,10 @@ mod tests {
             r.greenctx_exhausted,
             "SoftGreenPool::create past MAX_GREEN_CTX → Exhausted"
         );
+        assert!(
+            r.greenctx_busy,
+            "SoftGreenPool::migrate_to_yield dest bound elsewhere → Busy"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -565,6 +579,10 @@ mod tests {
             LINE_GREENCTX_EXHAUSTED,
             "[redteam] attack=greenctx-exhausted result=refused"
         );
+        assert_eq!(
+            LINE_GREENCTX_BUSY,
+            "[redteam] attack=greenctx-busy result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -597,6 +615,7 @@ mod tests {
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,
             LINE_GREENCTX_EXHAUSTED,
+            LINE_GREENCTX_BUSY,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

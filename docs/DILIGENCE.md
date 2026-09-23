@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -323,7 +323,7 @@ task-local AP_EL0 leaves + Soft SMMU” (no PAN on cortex-a72).
 | --- | --- | --- |
 | Host tests | `cargo test --workspace` | Caps + CDT properties, fabric, arenas, color, map, typed window stub, sched, SoftNPU, Laplacian, ELF, ramfs, bootfs, mmap, opkernel, sparsify, diligence-demo + red-team + accel-client + aether-mp-shim + design-win-check crates, partner-hello |
 | Diligence demo | `make diligence-demo` | Host Path B partner clip; greps `[blast]` / `[pjrt]` / `[event]` / `[softcct]` (package ≪ broadcast + `single-chiplet=noop` + `incorrect-elision=refused`) / `[scope] soft≠strict` / `[firewall]` / `[greenctx]` (incl. M3 interference + migrate SID-sticky) / `[cdt] revoke descendants ok` / `[softcp] sparsify DROP` / `[opinject] resident worker + hot-add sealed` / `[partner-hello] bad executable` + proves/does-not. No QEMU rebuild. Caps/CDT honesty ≠ CapTable milestone |
-| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `set-sid-unbound` / `submit-sid` / `sid-budget` / `stage2-fault` / `softnoi-exhausted` / `hodge-harmonic-tree` / `hodge-curl-tree` / `hodge-quota` / `firewall-ident-pa` / `greenctx-overcommit` / `greenctx-unbound` / `greenctx-exhausted` / `foreign-tenant-color` and the “what this is not” closer |
+| Red-team clip | `make red-team` | Host stdout; greps `[redteam] attack=… result=refused` plus fabric-class / `ATOMIC_ADD` / `[softsfi] tensor=refused` / `[softsfi] heap=refused` / `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` / `typed-window-sid` / `hbm-bw` / `xqueue-sid-override` / `set-sid-unbound` / `submit-sid` / `sid-budget` / `stage2-fault` / `softnoi-exhausted` / `hodge-harmonic-tree` / `hodge-curl-tree` / `hodge-quota` / `firewall-ident-pa` / `greenctx-overcommit` / `greenctx-unbound` / `greenctx-exhausted` / `greenctx-busy` / `foreign-tenant-color` and the “what this is not” closer |
 | Design-win checker | `make design-win-check` | Loads sample filled worksheet; refuses unknown executable / SID 0 / TRANSFER-only. No pipes |
 | IREE HAL stand-in | `make design-win-standin` | Admits `docs/design-win/iree-hal-standin.toml`. Not a partner |
 | Partner hello | `make partner-hello-ci` | Frozen `IreeHalCmd` pack/submit + bad executable refuse; no QEMU |
@@ -383,6 +383,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | SoftGreenPool SM/WQ overcommit | `run_greenctx_overcommit_demo` — `SoftGreenPool::create` → `GreenCtxError::Overcommit` past pool (in-budget admits; after 70/30 fill refuses). **Not** diligence `run_greenctx_demo` 70/30 sell; not HW MIG / BAR0 / SoftNPU | refused |
 | SoftGreenPool migrate unbound | `run_greenctx_unbound_demo` — `SoftGreenPool::migrate_to_yield` → `GreenCtxError::Unbound` on never-bound queue (bound migrate keeps SID). **Not** set-sid-unbound Soft-CP Fault; not greenctx-overcommit; not HW MIG / BAR0 / SoftNPU | refused |
 | SoftGreenPool slot exhausted | `run_greenctx_exhausted_demo` — `SoftGreenPool::create` past `MAX_GREEN_CTX` → `GreenCtxError::Exhausted` (tiny in-budget fills admit; contrast after 70/30 → Overcommit). **Not** greenctx-overcommit SM/WQ; not SoftNoI Exhausted; not HW MIG / BAR0 / SoftNPU | refused |
+| SoftGreenPool migrate dest busy | `run_greenctx_busy_demo` — `SoftGreenPool::migrate_to_yield` → `GreenCtxError::Busy` when dest bound to another queue (`bind(lo,0); bind(hi,1); migrate 0→hi`). **Not** greenctx-unbound; not overcommit/exhausted; not xqueue-sid-override Soft-CP Busy; not HW MIG / BAR0 / SoftNPU | refused |
 
 Expected stdout (CI greps these):
 
@@ -416,6 +417,7 @@ Expected stdout (CI greps these):
 [redteam] attack=greenctx-overcommit result=refused
 [redteam] attack=greenctx-unbound result=refused
 [redteam] attack=greenctx-exhausted result=refused
+[redteam] attack=greenctx-busy result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

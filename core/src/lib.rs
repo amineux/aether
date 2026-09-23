@@ -80,8 +80,8 @@ pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
 pub use fence::{run_fence_not_ready_demo, Fence, FenceId, FenceNotReadyReport, Timeline, TimelineId, MAX_IN_FLIGHT};
 pub use greenctx::{
-    run_greenctx_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo,
-    run_greenctx_unbound_demo, GreenCtxError, GreenCtxExhaustedReport, GreenCtxId,
+    run_greenctx_busy_demo, run_greenctx_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo,
+    run_greenctx_unbound_demo, GreenCtxBusyReport, GreenCtxError, GreenCtxExhaustedReport, GreenCtxId,
     GreenCtxOvercommitReport, GreenCtxReport, GreenCtxUnboundReport, MemcpyReport, SmWqBudget,
     SoftGreenCtx, SoftGreenPool, DEMO_MEMCPY_BYTES, MAX_GREEN_CTX, SHARED_BW_TAX_MILLI,
     SOFT_SM_POOL, SOFT_WQ_POOL, SPLIT_30, SPLIT_70,
