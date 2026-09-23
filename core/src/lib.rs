@@ -69,8 +69,8 @@ pub use bootfs::{
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use chipsync::{
-    run_chipsync_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport,
-    ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctReport, SoftChipletSync, SyncScope,
+    run_chipsync_demo, run_softcct_incorrect_elision_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport,
+    ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctIncorrectElisionReport, SoftCctReport, SoftChipletSync, SyncScope,
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
 pub use color::{admit_wave, run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo, BankColor, BankColorReport, ColorError, ForeignTenantColorReport, UncoloredComputeReport};
