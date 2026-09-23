@@ -385,6 +385,23 @@ existing SoftGreenCtx path; **not** set-sid-unbound Soft-CP `Fault`, **not**
 Diligence greenctx migrate SID-sticky stays on `make diligence-demo` / `[greenctx]`. No CapTable
 split, no new syscall, no opcode churn, no BAR0 / SoftNPU.
 
+## SoftGreenCtx exhausted (red-team needle)
+
+[`SoftGreenPool::create`](../core/src/greenctx.rs) refuses when all
+[`MAX_GREEN_CTX`](../core/src/greenctx.rs) slots are filled
+([`GreenCtxError::Exhausted`](../core/src/greenctx.rs)). Four tiny in-budget
+creates (`sm=1,wq=1`) admit; the fifth Exhausts. Distinct from SM/WQ
+[`Overcommit`](#softgreenctx-overcommit-red-team-needle) (after 70/30 fill the
+contrast path still Overcommits). Host red-team only — existing SoftGreenCtx
+path; **not** SoftNoI Exhausted, **not** HW MIG / BAR0 / SoftNPU:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Four tiny creates admit; fifth refuse; 70/30 contrast Overcommit | `run_greenctx_exhausted_demo` → `GreenCtxError::Exhausted` | `[redteam] attack=greenctx-exhausted result=refused` |
+
+Diligence greenctx 70/30 sell stays on `make diligence-demo` / `[greenctx]`. No CapTable
+split, no new syscall, no opcode churn, no BAR0 / SoftNPU.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.

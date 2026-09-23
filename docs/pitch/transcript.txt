@@ -95,6 +95,7 @@ Makefile `red-team` greps (same strings in
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=greenctx-overcommit result=refused
 [redteam] attack=greenctx-unbound result=refused
+[redteam] attack=greenctx-exhausted result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] tensor=refused

@@ -557,6 +557,51 @@ pub fn run_greenctx_unbound_demo() -> GreenCtxUnboundReport {
     }
 }
 
+/// Host red-team report for SoftGreenPool slot Exhausted refuse.
+///
+/// Sell line `[redteam] attack=greenctx-exhausted` — existing
+/// [`SoftGreenPool::create`] path only. Fill all [`MAX_GREEN_CTX`] slots with
+/// tiny in-budget creates → fifth create [`GreenCtxError::Exhausted`].
+/// **Not** greenctx-overcommit SM/WQ pool ceiling, **not** SoftNoI Exhausted,
+/// **not** HW MIG / BAR0 / SoftNPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GreenCtxExhaustedReport {
+    /// Four tiny in-budget creates (`sm=1,wq=1`) fill all slots.
+    pub fill_ok: bool,
+    /// Fifth create → `GreenCtxError::Exhausted` (not Overcommit).
+    pub exhausted: bool,
+    /// Contrast: after 70/30 fill, create → Overcommit (sibling needle stays separate).
+    pub contrast_overcommit: bool,
+}
+
+impl GreenCtxExhaustedReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok && self.exhausted && self.contrast_overcommit
+    }
+}
+
+/// `SoftGreenPool::create` past [`MAX_GREEN_CTX`] slots → [`GreenCtxError::Exhausted`].
+/// Slot ceiling — not SM/WQ Overcommit / SoftNoI Exhausted / HW MIG.
+pub fn run_greenctx_exhausted_demo() -> GreenCtxExhaustedReport {
+    let mut p = SoftGreenPool::new();
+    let tiny = SmWqBudget { sm: 1, wq: 1 };
+    let mut fill_ok = true;
+    for _ in 0..MAX_GREEN_CTX {
+        fill_ok &= p.create(tiny).is_ok();
+    }
+    let exhausted = p.create(tiny) == Err(GreenCtxError::Exhausted);
+
+    let mut p2 = SoftGreenPool::new();
+    let (_hi, _lo) = p2.split_70_30().unwrap();
+    let contrast_overcommit = p2.create(tiny) == Err(GreenCtxError::Overcommit);
+
+    GreenCtxExhaustedReport {
+        fill_ok,
+        exhausted,
+        contrast_overcommit,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -669,6 +714,15 @@ mod tests {
         assert!(r.migrate_ok, "bound migrate keeps SID");
         assert!(r.unbound, "never-bound queue → Unbound");
         assert!(r.dest_unbound, "ghost dest → Unbound");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn greenctx_exhausted_demo_refuses_fifth_slot() {
+        let r = run_greenctx_exhausted_demo();
+        assert!(r.fill_ok, "four tiny creates fill slots");
+        assert!(r.exhausted, "fifth → Exhausted");
+        assert!(r.contrast_overcommit, "70/30 fill → Overcommit contrast");
         assert!(r.all_ok());
     }
 }
