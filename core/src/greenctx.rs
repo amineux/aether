@@ -512,6 +512,51 @@ pub fn run_greenctx_overcommit_demo() -> GreenCtxOvercommitReport {
     }
 }
 
+/// Host red-team report for SoftGreenPool migrate_to_yield Unbound refuse.
+///
+/// Sell line `[redteam] attack=greenctx-unbound` — existing
+/// [`SoftGreenPool::migrate_to_yield`] path only. Queue with no bound ctx →
+/// [`GreenCtxError::Unbound`]. Happy-path migrate keeps SID. **Not**
+/// set-sid-unbound Soft-CP `Fault`, **not** greenctx-overcommit SM/WQ ceiling,
+/// **not** HW MIG / BAR0 / SoftNPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GreenCtxUnboundReport {
+    /// Bind lo, migrate 0→hi keeps SID and rebinds queue.
+    pub migrate_ok: bool,
+    /// Migrate queue never bound → `GreenCtxError::Unbound`.
+    pub unbound: bool,
+    /// Migrate to nonexistent dest id → `GreenCtxError::Unbound`.
+    pub dest_unbound: bool,
+}
+
+impl GreenCtxUnboundReport {
+    pub fn all_ok(&self) -> bool {
+        self.migrate_ok && self.unbound && self.dest_unbound
+    }
+}
+
+/// `SoftGreenPool::migrate_to_yield` on unbound queue → [`GreenCtxError::Unbound`].
+/// Queue-boundary yield path — not set-sid-unbound / Overcommit / HW MIG.
+pub fn run_greenctx_unbound_demo() -> GreenCtxUnboundReport {
+    let mut p = SoftGreenPool::new();
+    let (hi, lo) = p.split_70_30().unwrap();
+    p.bind(lo, 0).unwrap();
+    let sid = StreamId::from_raw(0x11_22_33_44);
+    let migrate_ok = p.migrate_to_yield(0, hi, sid) == Ok(sid)
+        && p.ctx_for_queue(0) == Some(hi);
+    // Queue 1 never bound → Unbound (distinct from Busy after bind).
+    let unbound = p.migrate_to_yield(1, hi, sid) == Err(GreenCtxError::Unbound);
+    // Nonexistent dest id → Unbound (queue 0 is bound to hi).
+    let ghost = GreenCtxId(99);
+    let dest_unbound = p.migrate_to_yield(0, ghost, sid) == Err(GreenCtxError::Unbound);
+
+    GreenCtxUnboundReport {
+        migrate_ok,
+        unbound,
+        dest_unbound,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -615,6 +660,15 @@ mod tests {
         assert!(r.fill_ok, "in-budget create admits");
         assert!(r.overcommit, "past pool → Overcommit");
         assert!(r.after_split_over, "after 70/30 fill → Overcommit");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn greenctx_unbound_demo_refuses_unbound_queue() {
+        let r = run_greenctx_unbound_demo();
+        assert!(r.migrate_ok, "bound migrate keeps SID");
+        assert!(r.unbound, "never-bound queue → Unbound");
+        assert!(r.dest_unbound, "ghost dest → Unbound");
         assert!(r.all_ok());
     }
 }

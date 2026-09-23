@@ -368,6 +368,23 @@ path; **not** diligence [`run_greenctx_demo`](../core/src/greenctx.rs) 70/30 sel
 Diligence greenctx 70/30 sell stays on `make diligence-demo` / `[greenctx]`. No CapTable
 split, no new syscall, no opcode churn, no BAR0 / SoftNPU.
 
+## SoftGreenCtx unbound migrate (red-team needle)
+
+[`SoftGreenPool::migrate_to_yield`](../core/src/greenctx.rs) refuses when the
+source queue has no bound ctx ([`GreenCtxError::Unbound`](../core/src/greenctx.rs)).
+Happy-path bind+migrate keeps Soft-SMMU SID; migrate on a never-bound queue
+refuses; migrate to a nonexistent dest id also Unbinds. Host red-team only —
+existing SoftGreenCtx path; **not** set-sid-unbound Soft-CP `Fault`, **not**
+[`greenctx-overcommit`](#softgreenctx-overcommit-red-team-needle) SM/WQ ceiling,
+**not** HW MIG / BAR0 / SoftNPU:
+
+| Proof | Mechanism | Grep |
+| --- | --- | --- |
+| Bound migrate keeps SID; never-bound queue refuse; ghost dest refuse | `run_greenctx_unbound_demo` → `GreenCtxError::Unbound` | `[redteam] attack=greenctx-unbound result=refused` |
+
+Diligence greenctx migrate SID-sticky stays on `make diligence-demo` / `[greenctx]`. No CapTable
+split, no new syscall, no opcode churn, no BAR0 / SoftNPU.
+
 ## SoftSFI tensor (red-team / softsfi serial needle)
 
 `SoftOp::Tensor` is unit-tested in `softsfi.rs` as `SfiError::Unmodeled`.
