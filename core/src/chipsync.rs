@@ -844,6 +844,54 @@ pub fn run_softcct_incorrect_elision_demo() -> SoftCctIncorrectElisionReport {
 }
 
 
+/// Host red-team report for SoftCCT CCT-slot CreditExhausted refuse.
+///
+/// Sell line `[redteam] attack=softcct-credit-exhausted` — existing
+/// [`ChipletCoherenceTable::record`] path only. Filling all
+/// [`MAX_CCT_ENTRIES`] distinct labels then one more →
+/// [`PartitionError::CreditExhausted`]. In-budget records admit; update
+/// of an existing label does not consume a new slot. **Not** Timeline
+/// `qos-credits` needle, **not** softcct-incorrect-elision, **not** UCIe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftCctCreditExhaustedReport {
+    /// Fill all [`MAX_CCT_ENTRIES`] distinct labels admits.
+    pub fill_ok: bool,
+    /// One over the table → `PartitionError::CreditExhausted`.
+    pub exhausted: bool,
+    /// Updating an existing label still admits (no new slot).
+    pub update_ok: bool,
+}
+
+impl SoftCctCreditExhaustedReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok && self.exhausted && self.update_ok
+    }
+}
+
+/// SoftCCT `record` past [`MAX_CCT_ENTRIES`] → [`PartitionError::CreditExhausted`].
+/// CCT slot ceiling — not Timeline qos-credits / incorrect-elision / UCIe.
+pub fn run_softcct_credit_exhausted_demo() -> SoftCctCreditExhaustedReport {
+    let mut table = ChipletCoherenceTable::new();
+    let writer = ChipletId(0);
+    let mut fill_ok = true;
+    for i in 0..MAX_CCT_ENTRIES {
+        fill_ok &= table.record(BufferLabel(i as u32 + 1), writer).is_ok();
+    }
+    let exhausted =
+        table.record(BufferLabel(MAX_CCT_ENTRIES as u32 + 1), ChipletId(1))
+            == Err(PartitionError::CreditExhausted);
+    // Existing label update does not need a new slot.
+    let update_ok = table.record(BufferLabel(1), ChipletId(1)).is_ok()
+        && table.last_writer(BufferLabel(1)) == Some(ChipletId(1));
+
+    SoftCctCreditExhaustedReport {
+        fill_ok,
+        exhausted,
+        update_ok,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1063,6 +1111,15 @@ mod tests {
         assert!(r.incorrect_elision_refused, "incorrect elision refused");
         assert!(r.cross_chiplet_fence, "cross-chiplet still fences");
         assert!(r.same_chiplet_elide, "same-chiplet still elides");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn softcct_credit_exhausted_demo_refuses_past_table() {
+        let r = run_softcct_credit_exhausted_demo();
+        assert!(r.fill_ok, "fill MAX_CCT_ENTRIES admits");
+        assert!(r.exhausted, "one over → CreditExhausted");
+        assert!(r.update_ok, "existing label update admits");
         assert!(r.all_ok());
     }
 
