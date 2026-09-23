@@ -1848,6 +1848,54 @@ pub fn run_stage2_fault_demo() -> Stage2FaultReport {
 }
 
 
+/// Host red-team report for Soft-SMMU same-SID guest-PA overlap refuse.
+///
+/// Sell line `[redteam] attack=smmu-overlap` — existing [`IommuMap::map`] path
+/// only. Second pin overlapping guest PA on the **same** SID →
+/// [`MapError::Overlap`]. Non-overlapping pin admits; peer SID may share PA.
+/// **Not** CrossTenant / WrongStream / Stage2Fault / SubmitSid / SidBudget.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuOverlapReport {
+    /// First in-range pin on SID admits.
+    pub first_ok: bool,
+    /// Overlapping guest-PA pin on same SID → `MapError::Overlap`.
+    pub overlap: bool,
+    /// Non-overlapping pin on same SID still admits (sibling contrast).
+    pub disjoint_ok: bool,
+}
+
+impl SmmuOverlapReport {
+    pub fn all_ok(&self) -> bool {
+        self.first_ok && self.overlap && self.disjoint_ok
+    }
+}
+
+/// Soft-SMMU `map` same-SID overlapping guest PA → [`MapError::Overlap`].
+/// Per-STE overlap honesty — not CrossTenant / WrongStream / Stage2Fault.
+pub fn run_smmu_overlap_demo() -> SmmuOverlapReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::TenantId;
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+
+    let first = iommu.map(&cap, MapRequest::pin(PhysAddr(0x1000), 0x1000));
+    let first_ok = first.is_ok();
+    let overlap = iommu.map(&cap, MapRequest::pin(PhysAddr(0x1800), 0x1000))
+        == Err(MapError::Overlap);
+    let disjoint_ok = iommu
+        .map(&cap, MapRequest::pin(PhysAddr(0x3000), 0x1000))
+        .is_ok();
+
+    SmmuOverlapReport {
+        first_ok,
+        overlap,
+        disjoint_ok,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2046,6 +2094,15 @@ mod tests {
             iommu.stream_state(StreamId::from_raw(0)),
             StreamState::Unbound
         );
+    }
+
+    #[test]
+    fn smmu_overlap_demo_refuses_same_sid_guest_pa() {
+        let r = run_smmu_overlap_demo();
+        assert!(r.first_ok, "first pin admits");
+        assert!(r.overlap, "overlapping guest PA → Overlap");
+        assert!(r.disjoint_ok, "disjoint pin admits");
+        assert!(r.all_ok());
     }
 
     #[test]
