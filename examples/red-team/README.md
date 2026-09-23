@@ -77,6 +77,8 @@ Smmu-overlap needle: `[redteam] attack=smmu-overlap result=refused`
 heap line stays separate).
 SoftSFI unknown needle: `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` (bad opcode / illegal width →
 `Unmodeled`; tensor/heap lines stay separate; not AddImm deepen).
+Smmu-not-mapped needle: `[redteam] attack=smmu-not-mapped result=refused`
+(Soft-SMMU Bound `walk` / `resolve_result` IOVA hole → `MapError::NotMapped`; mapped admits; not WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap).
 
 Typed-window-sid needle: `[redteam] attack=typed-window-sid result=refused`
 (`map_window_sid` → `WrongStream`; exploration TypedWindow stub, not CXL.mem

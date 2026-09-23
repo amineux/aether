@@ -1896,6 +1896,58 @@ pub fn run_smmu_overlap_demo() -> SmmuOverlapReport {
 }
 
 
+/// Host red-team report for Soft-SMMU Bound walk with no S1 PTE.
+///
+/// Sell line `[redteam] attack=smmu-not-mapped` — existing [`IommuMap::walk`] /
+/// [`IommuMap::resolve_result`] path only. Bound SID, IOVA with no S1 PTE →
+/// [`MapError::NotMapped`]. Mapped IOVA admits. **Not** WrongStream /
+/// Stage2Fault / StreamAbort / SubmitSid / Overlap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuNotMappedReport {
+    /// Bound + pin + walk of mapped IOVA admits.
+    pub mapped_ok: bool,
+    /// Walk of a hole on the same Bound SID → `MapError::NotMapped`.
+    pub not_mapped: bool,
+    /// `resolve_result` on the hole also → NotMapped (submit-path sibling).
+    pub resolve_not_mapped: bool,
+}
+
+impl SmmuNotMappedReport {
+    pub fn all_ok(&self) -> bool {
+        self.mapped_ok && self.not_mapped && self.resolve_not_mapped
+    }
+}
+
+/// Soft-SMMU Bound walk / resolve with no S1 PTE → [`MapError::NotMapped`].
+/// Hole-on-bound-SID honesty — not WrongStream / Stage2Fault / StreamAbort.
+pub fn run_smmu_not_mapped_demo() -> SmmuNotMappedReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), 1);
+    iommu.bind_stream(&cap, sid).unwrap();
+    let pin = iommu
+        .map(&cap, MapRequest::pin_accel(PhysAddr(0x2000), 0x1000, sid))
+        .unwrap();
+
+    let mapped_ok = iommu.walk(sid, pin.iova).is_ok()
+        && iommu.resolve_result(sid.raw(), pin.iova, None).is_ok();
+    let hole = PhysAddr(pin.iova.0.wrapping_add(0x8000));
+    let not_mapped = iommu.walk(sid, hole) == Err(MapError::NotMapped);
+    let resolve_not_mapped =
+        iommu.resolve_result(sid.raw(), hole, None) == Err(MapError::NotMapped);
+
+    SmmuNotMappedReport {
+        mapped_ok,
+        not_mapped,
+        resolve_not_mapped,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2102,6 +2154,15 @@ mod tests {
         assert!(r.first_ok, "first pin admits");
         assert!(r.overlap, "overlapping guest PA → Overlap");
         assert!(r.disjoint_ok, "disjoint pin admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_not_mapped_demo_refuses_hole_on_bound_sid() {
+        let r = run_smmu_not_mapped_demo();
+        assert!(r.mapped_ok, "mapped IOVA admits");
+        assert!(r.not_mapped, "hole → NotMapped");
+        assert!(r.resolve_not_mapped, "resolve hole → NotMapped");
         assert!(r.all_ok());
     }
 
