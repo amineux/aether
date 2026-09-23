@@ -142,7 +142,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -179,6 +179,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=greenctx-busy result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=smmu-overlap result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=smmu-not-mapped result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=smmu-wrong-stream result=refused" $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] fabric-class admit/refuse" $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] ATOMIC_ADD accept/reject" $(REDTEAM_LOG)
 	grep -F -x -q "[softsfi] tensor=refused" $(REDTEAM_LOG)
