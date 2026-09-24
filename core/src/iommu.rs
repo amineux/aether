@@ -1896,6 +1896,127 @@ pub fn run_smmu_overlap_demo() -> SmmuOverlapReport {
 }
 
 
+/// Host red-team report for Soft-SMMU Bound walk with no S1 PTE.
+///
+/// Sell line `[redteam] attack=smmu-not-mapped` — existing [`IommuMap::walk`] /
+/// [`IommuMap::resolve_result`] path only. Bound SID, IOVA with no S1 PTE →
+/// [`MapError::NotMapped`]. Mapped IOVA admits. **Not** WrongStream /
+/// Stage2Fault / StreamAbort / SubmitSid / Overlap.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuNotMappedReport {
+    /// Bound + pin + walk of mapped IOVA admits.
+    pub mapped_ok: bool,
+    /// Walk of a hole on the same Bound SID → `MapError::NotMapped`.
+    pub not_mapped: bool,
+    /// `resolve_result` on the hole also → NotMapped (submit-path sibling).
+    pub resolve_not_mapped: bool,
+}
+
+impl SmmuNotMappedReport {
+    pub fn all_ok(&self) -> bool {
+        self.mapped_ok && self.not_mapped && self.resolve_not_mapped
+    }
+}
+
+/// Soft-SMMU Bound walk / resolve with no S1 PTE → [`MapError::NotMapped`].
+/// Hole-on-bound-SID honesty — not WrongStream / Stage2Fault / StreamAbort.
+pub fn run_smmu_not_mapped_demo() -> SmmuNotMappedReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), 1);
+    iommu.bind_stream(&cap, sid).unwrap();
+    let pin = iommu
+        .map(&cap, MapRequest::pin_accel(PhysAddr(0x2000), 0x1000, sid))
+        .unwrap();
+
+    let mapped_ok = iommu.walk(sid, pin.iova).is_ok()
+        && iommu.resolve_result(sid.raw(), pin.iova, None).is_ok();
+    let hole = PhysAddr(pin.iova.0.wrapping_add(0x8000));
+    let not_mapped = iommu.walk(sid, hole) == Err(MapError::NotMapped);
+    let resolve_not_mapped =
+        iommu.resolve_result(sid.raw(), hole, None) == Err(MapError::NotMapped);
+
+    SmmuNotMappedReport {
+        mapped_ok,
+        not_mapped,
+        resolve_not_mapped,
+    }
+}
+
+
+/// Host red-team report for Soft-SMMU submit-path WrongStream refuse.
+///
+/// Sell line `[redteam] attack=smmu-wrong-stream` — existing
+/// [`IommuMap::resolve_submit`] path only. Armed `submit_sid` ≠ packet
+/// StreamId → [`MapError::WrongStream`]. Matching armed SID admits.
+/// **Not** SubmitSid (no latch), **not** Stage2Fault / NotMapped / Overlap /
+/// CrossTenant / set-sid-unbound StreamAbort.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuWrongStreamReport {
+    /// After `set_sid(A)`, `resolve_submit(A, …)` admits.
+    pub armed_ok: bool,
+    /// Armed A, packet B → `MapError::WrongStream`.
+    pub wrong_stream: bool,
+    /// Contrast: no `set_sid` yet → `MapError::SubmitSid` (sibling needle).
+    pub contrast_submit_sid: bool,
+}
+
+impl SmmuWrongStreamReport {
+    pub fn all_ok(&self) -> bool {
+        self.armed_ok && self.wrong_stream && self.contrast_submit_sid
+    }
+}
+
+/// Soft-SMMU `resolve_submit` armed SID ≠ packet → [`MapError::WrongStream`].
+/// SID-at-submit mismatch — not SubmitSid / Stage2Fault / NotMapped / Soft-CP.
+pub fn run_smmu_wrong_stream_demo() -> SmmuWrongStreamReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(2))
+        .with_generation(1);
+    let sid_a = StreamId::accel(ChipletId(0), TileId(1), 1);
+    let sid_b = StreamId::accel(ChipletId(0), TileId(2), 1);
+
+    iommu.bind_stream(&cap_a, sid_a).unwrap();
+    let pin_a = iommu
+        .map(
+            &cap_a,
+            MapRequest::pin_accel(PhysAddr(0x0100_0000), 0x1000, sid_a),
+        )
+        .unwrap();
+    iommu.bind_stream(&cap_b, sid_b).unwrap();
+    let pin_b = iommu
+        .map(
+            &cap_b,
+            MapRequest::pin_accel(PhysAddr(0x0180_0000), 0x1000, sid_b),
+        )
+        .unwrap();
+
+    let contrast_submit_sid =
+        iommu.resolve_submit(sid_a.raw(), pin_a.iova, None) == Err(MapError::SubmitSid);
+
+    iommu.set_sid(&cap_a, sid_a).unwrap();
+    let armed_ok =
+        iommu.resolve_submit(sid_a.raw(), pin_a.iova, None) == Ok(PhysAddr(0x0100_0000));
+    let wrong_stream =
+        iommu.resolve_submit(sid_b.raw(), pin_b.iova, None) == Err(MapError::WrongStream);
+
+    SmmuWrongStreamReport {
+        armed_ok,
+        wrong_stream,
+        contrast_submit_sid,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2102,6 +2223,24 @@ mod tests {
         assert!(r.first_ok, "first pin admits");
         assert!(r.overlap, "overlapping guest PA → Overlap");
         assert!(r.disjoint_ok, "disjoint pin admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_not_mapped_demo_refuses_hole_on_bound_sid() {
+        let r = run_smmu_not_mapped_demo();
+        assert!(r.mapped_ok, "mapped IOVA admits");
+        assert!(r.not_mapped, "hole → NotMapped");
+        assert!(r.resolve_not_mapped, "resolve hole → NotMapped");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_wrong_stream_demo_refuses_mismatched_submit_sid() {
+        let r = run_smmu_wrong_stream_demo();
+        assert!(r.armed_ok, "armed matching SID admits");
+        assert!(r.wrong_stream, "armed≠packet → WrongStream");
+        assert!(r.contrast_submit_sid, "no latch → SubmitSid contrast");
         assert!(r.all_ok());
     }
 
