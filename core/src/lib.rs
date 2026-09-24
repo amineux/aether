@@ -69,8 +69,8 @@ pub use bootfs::{
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use chipsync::{
-    run_chipsync_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport,
-    ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctReport, SoftChipletSync, SyncScope,
+    run_chipsync_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport,
+    ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctCreditExhaustedReport, SoftCctIncorrectElisionReport, SoftCctReport, SoftChipletSync, SyncScope,
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
 pub use color::{admit_wave, run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo, BankColor, BankColorReport, ColorError, ForeignTenantColorReport, UncoloredComputeReport};
@@ -88,8 +88,8 @@ pub use greenctx::{
 };
 pub use hodge::{run_hodge_quota_demo, FlowClass, HodgeError, HodgeQuota, HodgeQuotaReport};
 pub use iommu::{
-    run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
-    MappedRegion, MmId, SoftPte, SoftSmmuDump, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
+    run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
+    MappedRegion, MmId, SoftPte, SoftSmmuDump, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
     StreamId, StreamState, WalkResult, DEFAULT_STREAM, SET_SID, SID_BUDGET_PER_TENANT,
     SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
