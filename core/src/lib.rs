@@ -88,8 +88,8 @@ pub use greenctx::{
 };
 pub use hodge::{run_hodge_quota_demo, FlowClass, HodgeError, HodgeQuota, HodgeQuotaReport};
 pub use iommu::{
-    run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
-    MappedRegion, MmId, SoftPte, SoftSmmuDump, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
+    run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
+    MappedRegion, MmId, SoftPte, SoftSmmuDump, SmmuStreamAbortReport, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
     StreamId, StreamState, WalkResult, DEFAULT_STREAM, SET_SID, SID_BUDGET_PER_TENANT,
     SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };

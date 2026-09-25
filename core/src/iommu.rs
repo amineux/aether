@@ -2017,6 +2017,66 @@ pub fn run_smmu_wrong_stream_demo() -> SmmuWrongStreamReport {
 }
 
 
+/// Host red-team report for Soft-SMMU unbound-walk StreamAbort refuse.
+///
+/// Sell line `[redteam] attack=smmu-stream-abort` — existing
+/// [`IommuMap::walk`] / [`IommuMap::translate_result`] /
+/// [`IommuMap::resolve_result`] path only. Unbound SID →
+/// [`MapError::StreamAbort`]. Bound+pin admits; after `unbind_stream`
+/// walk aborts again. **Not** set-sid-unbound Soft-CP `HalError::Fault`,
+/// **not** SubmitSid / NotMapped / WrongStream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuStreamAbortReport {
+    /// Unbound walk / translate_result / resolve_result → StreamAbort.
+    pub unbound_abort: bool,
+    /// After bind+pin, mapped walk admits.
+    pub mapped_ok: bool,
+    /// After `unbind_stream`, walk again → StreamAbort.
+    pub after_unbind: bool,
+}
+
+impl SmmuStreamAbortReport {
+    pub fn all_ok(&self) -> bool {
+        self.unbound_abort && self.mapped_ok && self.after_unbind
+    }
+}
+
+/// Soft-SMMU unbound walk → [`MapError::StreamAbort`].
+/// Abort-until-bound honesty — not set-sid-unbound Soft-CP Fault / SubmitSid.
+pub fn run_smmu_stream_abort_demo() -> SmmuStreamAbortReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(4), 1);
+    let probe = PhysAddr(0x0300_0000);
+
+    let unbound_abort = iommu.walk(sid, probe) == Err(MapError::StreamAbort)
+        && iommu.translate_result(sid.raw(), probe, None) == Err(MapError::StreamAbort)
+        && iommu.resolve_result(sid.raw(), probe, None) == Err(MapError::StreamAbort);
+
+    iommu.bind_stream(&cap, sid).unwrap();
+    let pin = iommu
+        .map(&cap, MapRequest::pin_accel(probe, 0x1000, sid))
+        .unwrap();
+    let mapped_ok = iommu.walk(sid, pin.iova).is_ok()
+        && iommu.resolve_result(sid.raw(), pin.iova, None).is_ok();
+
+    iommu.unbind_stream(sid).unwrap();
+    let after_unbind = iommu.walk(sid, pin.iova) == Err(MapError::StreamAbort)
+        && iommu.translate_result(sid.raw(), pin.iova, None) == Err(MapError::StreamAbort);
+
+    SmmuStreamAbortReport {
+        unbound_abort,
+        mapped_ok,
+        after_unbind,
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2241,6 +2301,15 @@ mod tests {
         assert!(r.armed_ok, "armed matching SID admits");
         assert!(r.wrong_stream, "armed≠packet → WrongStream");
         assert!(r.contrast_submit_sid, "no latch → SubmitSid contrast");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_stream_abort_demo_refuses_unbound_walk() {
+        let r = run_smmu_stream_abort_demo();
+        assert!(r.unbound_abort, "unbound walk → StreamAbort");
+        assert!(r.mapped_ok, "bound+pin walk admits");
+        assert!(r.after_unbind, "after unbind → StreamAbort");
         assert!(r.all_ok());
     }
 
