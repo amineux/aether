@@ -2017,6 +2017,63 @@ pub fn run_smmu_wrong_stream_demo() -> SmmuWrongStreamReport {
 }
 
 
+/// Host red-team report for Soft-SMMU foreign-tenant bind refuse.
+///
+/// Sell line `[redteam] attack=smmu-cross-tenant` — existing
+/// [`IommuMap::bind_stream`] path only. Tenant A binds + pins; Tenant B
+/// `bind_stream` on the same Bound STE → [`MapError::CrossTenant`].
+/// Same-tenant re-bind admits. **Not** WrongStream / Overlap / NotMapped /
+/// CapError::CrossTenant mint / set-sid-unbound Soft-CP Fault.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuCrossTenantReport {
+    /// Tenant A bind + pin admits.
+    pub owner_ok: bool,
+    /// Tenant B bind_stream on A's Bound STE → `MapError::CrossTenant`.
+    pub cross_tenant: bool,
+    /// Same-tenant re-bind still admits (sibling contrast).
+    pub same_tenant_ok: bool,
+}
+
+impl SmmuCrossTenantReport {
+    pub fn all_ok(&self) -> bool {
+        self.owner_ok && self.cross_tenant && self.same_tenant_ok
+    }
+}
+
+/// Soft-SMMU `bind_stream` foreign tenant on Bound STE → [`MapError::CrossTenant`].
+/// STE-tenant honesty — not WrongStream / Overlap / CapError::CrossTenant mint.
+pub fn run_smmu_cross_tenant_demo() -> SmmuCrossTenantReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(2))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(3), 1);
+
+    iommu.bind_stream(&cap_a, sid).unwrap();
+    let pin = iommu
+        .map(
+            &cap_a,
+            MapRequest::pin_accel(PhysAddr(0x0200_0000), 0x1000, sid),
+        )
+        .unwrap();
+    let owner_ok = iommu.walk(sid, pin.iova).is_ok();
+    let cross_tenant =
+        iommu.bind_stream(&cap_b, sid) == Err(MapError::CrossTenant);
+    let same_tenant_ok = iommu.bind_stream(&cap_a, sid) == Ok(StreamState::Bound);
+
+    SmmuCrossTenantReport {
+        owner_ok,
+        cross_tenant,
+        same_tenant_ok,
+    }
+}
+
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2241,6 +2298,15 @@ mod tests {
         assert!(r.armed_ok, "armed matching SID admits");
         assert!(r.wrong_stream, "armed≠packet → WrongStream");
         assert!(r.contrast_submit_sid, "no latch → SubmitSid contrast");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_cross_tenant_demo_refuses_foreign_bind() {
+        let r = run_smmu_cross_tenant_demo();
+        assert!(r.owner_ok, "owner bind+pin admits");
+        assert!(r.cross_tenant, "foreign bind_stream → CrossTenant");
+        assert!(r.same_tenant_ok, "same-tenant re-bind admits");
         assert!(r.all_ok());
     }
 
