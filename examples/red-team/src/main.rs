@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -71,7 +71,7 @@
 
 use aether_core::blast::run_blast_demo;
 use aether_core::chipsync::{run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
-use aether_core::iommu::{run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
+use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
 use aether_core::noi::{run_softnoi_demo, run_softnoi_exhausted_demo};
@@ -128,6 +128,7 @@ const LINE_SMMU_NOT_MAPPED: &str = "[redteam] attack=smmu-not-mapped result=refu
 const LINE_SMMU_WRONG_STREAM: &str = "[redteam] attack=smmu-wrong-stream result=refused";
 const LINE_SMMU_CROSS_TENANT: &str = "[redteam] attack=smmu-cross-tenant result=refused";
 const LINE_SMMU_STREAM_ABORT: &str = "[redteam] attack=smmu-stream-abort result=refused";
+const LINE_SET_SID_CROSS_TENANT: &str = "[redteam] attack=set-sid-cross-tenant result=refused";
 const LINE_SOFTCCT_INCORRECT_ELISION: &str = "[redteam] attack=softcct-incorrect-elision result=refused";
 const LINE_SOFTCCT_CREDIT_EXHAUSTED: &str = "[redteam] attack=softcct-credit-exhausted result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
@@ -177,6 +178,7 @@ struct RedTeamReport {
     smmu_wrong_stream: bool,
     smmu_cross_tenant: bool,
     smmu_stream_abort: bool,
+    set_sid_cross_tenant: bool,
     softcct_incorrect_elision: bool,
     softcct_credit_exhausted: bool,
     class: bool,
@@ -224,6 +226,7 @@ impl RedTeamReport {
             && self.smmu_wrong_stream
             && self.smmu_cross_tenant
             && self.smmu_stream_abort
+            && self.set_sid_cross_tenant
             && self.softcct_incorrect_elision
             && self.softcct_credit_exhausted
             && self.class
@@ -269,6 +272,7 @@ fn run_redteam() -> RedTeamReport {
     let smmu_wrong_stream = run_smmu_wrong_stream_demo();
     let smmu_cross_tenant = run_smmu_cross_tenant_demo();
     let smmu_stream_abort = run_smmu_stream_abort_demo();
+    let set_sid_cross_tenant = run_set_sid_cross_tenant_demo();
     let softcct_incorrect_elision = run_softcct_incorrect_elision_demo();
     let softcct_credit_exhausted = run_softcct_credit_exhausted_demo();
     let sfi = run_softsfi_demo();
@@ -379,6 +383,9 @@ fn run_redteam() -> RedTeamReport {
         // Soft-SMMU unbound walk → StreamAbort; after unbind aborts again.
         // Not set-sid-unbound Soft-CP Fault / SubmitSid / NotMapped / WrongStream.
         smmu_stream_abort: smmu_stream_abort.all_ok(),
+        // Soft-SMMU set_sid foreign tenant on Bound SID → CrossTenant.
+        // Not smmu-cross-tenant bind_stream / set-sid-unbound Soft-CP Fault / SubmitSid.
+        set_sid_cross_tenant: set_sid_cross_tenant.all_ok(),
         // SoftCCT incorrect_elide dual-proof fold → refused.
         // Diligence banner sibling; not UCIe / qos-credits / softcct-credit-exhausted.
         softcct_incorrect_elision: softcct_incorrect_elision.all_ok(),
@@ -455,6 +462,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.smmu_wrong_stream, LINE_SMMU_WRONG_STREAM);
     emit(r.smmu_cross_tenant, LINE_SMMU_CROSS_TENANT);
     emit(r.smmu_stream_abort, LINE_SMMU_STREAM_ABORT);
+    emit(r.set_sid_cross_tenant, LINE_SET_SID_CROSS_TENANT);
     emit(r.softcct_incorrect_elision, LINE_SOFTCCT_INCORRECT_ELISION);
     emit(r.softcct_credit_exhausted, LINE_SOFTCCT_CREDIT_EXHAUSTED);
     emit_tagged(r.class, LINE_CLASS);
@@ -580,6 +588,10 @@ mod tests {
             "Soft-SMMU unbound walk → StreamAbort"
         );
         assert!(
+            r.set_sid_cross_tenant,
+            "Soft-SMMU set_sid foreign tenant → CrossTenant"
+        );
+        assert!(
             r.softcct_incorrect_elision,
             "SoftCCT incorrect_elide dual-proof → refused"
         );
@@ -691,6 +703,10 @@ mod tests {
             "[redteam] attack=smmu-stream-abort result=refused"
         );
         assert_eq!(
+            LINE_SET_SID_CROSS_TENANT,
+            "[redteam] attack=set-sid-cross-tenant result=refused"
+        );
+        assert_eq!(
             LINE_SOFTCCT_INCORRECT_ELISION,
             "[redteam] attack=softcct-incorrect-elision result=refused"
         );
@@ -736,6 +752,7 @@ mod tests {
             LINE_SMMU_WRONG_STREAM,
             LINE_SMMU_CROSS_TENANT,
             LINE_SMMU_STREAM_ABORT,
+            LINE_SET_SID_CROSS_TENANT,
             LINE_SOFTCCT_INCORRECT_ELISION,
             LINE_SOFTCCT_CREDIT_EXHAUSTED,
         ] {
