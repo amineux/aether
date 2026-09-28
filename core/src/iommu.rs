@@ -2130,6 +2130,53 @@ pub fn run_smmu_stream_abort_demo() -> SmmuStreamAbortReport {
     }
 }
 
+/// Host red-team report for Soft-SMMU SET_SID foreign-tenant refuse.
+///
+/// Sell line `[redteam] attack=set-sid-cross-tenant` — existing
+/// [`IommuMap::set_sid`] path only. Tenant A binds Bound STE; Tenant B
+/// `set_sid` on A's Bound SID → [`MapError::CrossTenant`]. Same-tenant
+/// `set_sid` admits. **Not** `smmu-cross-tenant` (`bind_stream`), **not**
+/// set-sid-unbound Soft-CP Fault / SubmitSid / WrongStream.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SetSidCrossTenantReport {
+    /// Tenant A bind + set_sid admits.
+    pub owner_ok: bool,
+    /// Tenant B set_sid on A's Bound SID → `MapError::CrossTenant`.
+    pub cross_tenant: bool,
+    /// Same-tenant set_sid still admits (sibling contrast).
+    pub same_tenant_ok: bool,
+}
+
+impl SetSidCrossTenantReport {
+    pub fn all_ok(&self) -> bool {
+        self.owner_ok && self.cross_tenant && self.same_tenant_ok
+    }
+}
+
+/// Soft-SMMU `set_sid` foreign tenant on Bound SID → [`MapError::CrossTenant`].
+/// SET_SID tenant honesty — not bind_stream CrossTenant / set-sid-unbound Soft-CP Fault.
+pub fn run_set_sid_cross_tenant_demo() -> SetSidCrossTenantReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(2))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(5), 1);
+
+    iommu.bind_stream(&cap_a, sid).unwrap();
+    let owner_ok = iommu.set_sid(&cap_a, sid) == Ok(sid);
+    let cross_tenant = iommu.set_sid(&cap_b, sid) == Err(MapError::CrossTenant);
+    let same_tenant_ok = iommu.set_sid(&cap_a, sid) == Ok(sid);
+
+    SetSidCrossTenantReport {
+        owner_ok,
+        cross_tenant,
+        same_tenant_ok,
+    }
+}
 
 
 #[cfg(test)]
@@ -2374,6 +2421,15 @@ mod tests {
         assert!(r.unbound_abort, "unbound walk → StreamAbort");
         assert!(r.mapped_ok, "bound+pin walk admits");
         assert!(r.after_unbind, "after unbind → StreamAbort");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn set_sid_cross_tenant_demo_refuses_foreign_set() {
+        let r = run_set_sid_cross_tenant_demo();
+        assert!(r.owner_ok, "owner bind+set_sid admits");
+        assert!(r.cross_tenant, "foreign set_sid → CrossTenant");
+        assert!(r.same_tenant_ok, "same-tenant set_sid admits");
         assert!(r.all_ok());
     }
 
