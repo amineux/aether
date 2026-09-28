@@ -4,7 +4,7 @@ Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
 `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`, `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`,
-`run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_softsfi_demo`,
+`run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_cross_tenant_demo`, `run_softsfi_demo`,
 `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
 `[redteam] attack=blast-nodes result=refused` (`admit_nodes` → `BlastRadius`;
@@ -81,6 +81,8 @@ Smmu-not-mapped needle: `[redteam] attack=smmu-not-mapped result=refused`
 (Soft-SMMU Bound `walk` / `resolve_result` IOVA hole → `MapError::NotMapped`; mapped admits; not WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap).
 Smmu-wrong-stream needle: `[redteam] attack=smmu-wrong-stream result=refused`
 (Soft-SMMU `resolve_submit` armed submit_sid ≠ packet → `MapError::WrongStream`; matching admits; no-latch stays SubmitSid; not Stage2Fault / NotMapped / Overlap / StreamAbort).
+Smmu-cross-tenant needle: `[redteam] attack=smmu-cross-tenant result=refused`
+(Soft-SMMU `bind_stream` foreign tenant on Bound STE → `MapError::CrossTenant`; same-tenant re-bind admits; not WrongStream / Overlap / NotMapped / CapError::CrossTenant mint / set-sid-unbound Soft-CP Fault).
 Softcct-incorrect-elision needle: `[redteam] attack=softcct-incorrect-elision result=refused`
 (SoftCCT `incorrect_elide` dual-proof fold; diligence `[softcct] incorrect-elision=refused` sibling; not UCIe / qos-credits / softcct-credit-exhausted).
 
