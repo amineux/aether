@@ -69,7 +69,7 @@ pub use bootfs::{
 };
 pub use caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability, CdtNode};
 pub use chipsync::{
-    run_chipsync_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport,
+    run_chipsync_demo, run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo, run_softcct_demo, BufferLabel, ChipletCoherenceTable, ChipletSyncReport, ChipsyncUnboundReport,
     ScopedFence, ScopedWork, SignalKind, SoftCct, SoftCctCreditExhaustedReport, SoftCctIncorrectElisionReport, SoftCctReport, SoftChipletSync, SyncScope,
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
