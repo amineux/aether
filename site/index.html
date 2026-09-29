@@ -35,6 +35,7 @@
         <li><a href="#sell">Sell</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
         <li><a href="#status">Status</a></li>
+        <li><a href="#kv">KV grant</a></li>
         <li><a href="#pitch">Pitch</a></li>
         <li class="nav-mobile-only"><a href="https://github.com/amineux/aether">GitHub</a></li>
       </ul>
@@ -1219,6 +1220,62 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
                 <p>Research leave-behind. One-page sell pack is <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a> (this page <a href="#sell">#sell</a>). Partner demos this quarter: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). Week 1 20-minute pack is <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a> — wired to Event wait, fabric-class admit, SoftSFI <code>ATOMIC_ADD</code>, partner-hello, and doorbell. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices. M5–M6 freeze-v1 named (research <code>IreeHalCmd</code> v1 stays; port skipped). Next-twelve-month calendar is <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (Sep 2026 → Sep 2027; this page <a href="#roadmap">#roadmap</a>). Closed Sep → Mar record is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a>. Horizon is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A Soft-SMMU IOVA host proof landed; kernel PCI bind still optional. Deep-dive agenda is a script, not a meeting that happened.</p>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="kv">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">KV grant — disaggregated prefill / decode</p>
+            <h2>The fabric moves 32 bytes of authority. The KV page stays. The weights never enter the grant.</h2>
+            <p class="lede">SM partitions name the processors. They do not name one sequence's token window, and they do not give that window a lifetime. Prefill and decode are two GPUs of the same tenant. A neighbor shares the HBM bank. Decode receives <code>READ|MAP</code> only. End of sequence revokes the cap, including the derived copy. Script: <a href="https://github.com/amineux/aether/blob/main/docs/pitch/KV_FABRIC.md">docs/pitch/KV_FABRIC.md</a>. Command: <code>make kv-fabric</code>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>toy bytes · soft SMMU · not NVLink · not CUDA · not MIG</div>
+        </div>
+
+        <div class="proof-board" data-reveal>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">moves</span></div>
+            <h3>32 B</h3>
+            <p>Grant record on the fabric. Sequence, layer range, token window, object id, rights.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">stays</span></div>
+            <h3>128 KiB</h3>
+            <p>KV page, resident on the producer. A copy path would have moved this. The grant does not.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip wait">not in the grant</span></div>
+            <h3>8 MiB</h3>
+            <p>Weights, a different object, same bank. Decode's cap cannot name them. Toy footprint, not a model.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">refused</span></div>
+            <h3>7 attacks</h3>
+            <p>Forge, write, re-grant, weights, out-of-window, wrong stream, revoke. A stolen object id still fails: the page knows its tenant. A's missed wave does not stop B.</p>
+          </article>
+        </div>
+
+        <div class="pitch-proof" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>make kv-fabric</span></div>
+            <pre><span class="cmd">$ make kv-fabric</span>   <span class="ok"># host; no QEMU</span>
+
+<span class="ok">[kv] handoff read-only seq=1 layers=0..4 tokens=0..128</span>
+<span class="ok">[kv] fabric-bytes=32 copy-bytes=131072 weights-stay=8388608</span>
+<span class="ok">[kv] attack=forge result=refused</span>
+<span class="ok">[kv] attack=write result=refused</span>
+<span class="ok">[kv] attack=regrant result=refused</span>
+<span class="ok">[kv] attack=weights result=refused</span>
+<span class="ok">[kv] attack=oob result=refused</span>
+<span class="ok">[kv] attack=wrong-sid result=refused</span>
+<span class="ok">[kv] attack=revoke result=refused</span>
+<span class="ok">[kv] deadline-miss seq=1 neighbor=live</span>
+<span class="ok">[kv] dma decode-writable=false</span>
+<span class="ok">[kv] not-nvlink not-cuda not-mig soft-smmu=software</span></pre>
           </div>
         </div>
       </div>

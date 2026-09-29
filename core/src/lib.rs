@@ -24,6 +24,7 @@ pub mod fence;
 pub mod greenctx;
 pub mod hodge;
 pub mod iommu;
+pub mod kvfabric;
 pub mod laplacian;
 pub mod mmap;
 pub mod noi;
@@ -87,6 +88,11 @@ pub use greenctx::{
     SOFT_SM_POOL, SOFT_WQ_POOL, SPLIT_30, SPLIT_70,
 };
 pub use hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo, FlowClass, HodgeClassUnauthorizedReport, HodgeError, HodgeQuota, HodgeQuotaReport};
+pub use kvfabric::{
+    admit_kv_wave, attend, pin_kv, run_kv_fabric_demo, try_regrant, AttendReq, KvError, KvKind,
+    KvLedger, KvObject, KvReport, KvWindow, DEMO_BYTES_PER_TOKEN, DEMO_KV_BYTES, DEMO_LAYERS,
+    DEMO_TOKENS, DEMO_WEIGHT_BYTES, GRANT_RECORD_BYTES, SID_DECODE, SID_NEIGHBOR, SID_PREFILL,
+};
 pub use iommu::{
     run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
     MappedRegion, MmId, SoftPte, SoftSmmuDump, SetSidCrossTenantReport, SmmuCrossTenantReport, SmmuStreamAbortReport, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,

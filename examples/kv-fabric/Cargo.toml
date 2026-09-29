@@ -1,0 +1,17 @@
+[package]
+name = "aether-kv-fabric"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host clip: sequence-scoped KV grant for disaggregated prefill/decode"
+publish = false
+
+[[bin]]
+name = "aether-kv-fabric"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+
+[lints]
+workspace = true

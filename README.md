@@ -26,7 +26,9 @@ ASIC tiles rather than a host CPU with bolt-on devices.
 > (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
 > (Event in `make diligence-demo`) → admit class (fabric-class in
 > `make red-team`) → sandbox hole (`ATOMIC_ADD` + `[softsfi] heap=refused`
-> in `make red-team`).
+> in `make red-team`). GPU-fabric leave-behind: `make kv-fabric`
+> (sequence-scoped KV grant; [`docs/pitch/KV_FABRIC.md`](docs/pitch/KV_FABRIC.md);
+> site [`#kv`](https://amineux.github.io/aether/#kv)). Not NVLink, not CUDA, not MIG.
 
 ```
 make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
@@ -41,6 +43,7 @@ make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
 make accel-test   # path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)
 make qemu-accel   # accel-test + path_a tests; attach -device aether-accel if QEMU_ACCEL is set
 make red-team     # host diligence clip: named attacks refused (scripted stdout)
+make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 make design-win-standin # admit the IREE HAL research stand-in (not a partner)
 ```
@@ -254,6 +257,7 @@ host/aether-pjrt std host shim: abi nouns → IreeHalCmd → IreeShapedCp; Event
 host/aether-mp-shim  MicroPerceptron-shaped thin IreeHalCmd consumer (inspiration name only; secondary to PJRT; `make mp-shim`)
 examples/diligence-demo  host Path B partner clip (`make diligence-demo`)
 examples/red-team        host red-team clip (`make red-team`; named attacks refused)
+examples/kv-fabric      prefill→decode KV grant (`make kv-fabric`; 32-byte record, weights stay)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not a MicroPerceptron port)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
@@ -362,6 +366,7 @@ Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
 - [docs/SELL_PACK.md](docs/SELL_PACK.md) — one-page “what you get today” (commands that exist; 2028 handoff or freeze)
 - [docs/pitch/partner-one-pager.md](docs/pitch/partner-one-pager.md) — printable partner cut
 - [docs/PITCH.md](docs/PITCH.md) — 8-minute founder call script (`make diligence-demo` / `make red-team`)
+- [docs/pitch/KV_FABRIC.md](docs/pitch/KV_FABRIC.md) — GPU-fabric leave-behind (`make kv-fabric`; not NVLink, not CUDA, not MIG)
 - [docs/WEEK1_CALL.md](docs/WEEK1_CALL.md) — 20-minute Week 1 partner-call pack (captured logs + IREE stand-in)
 - [docs/pitch/transcript.txt](docs/pitch/transcript.txt) — expected refuse-path serial (from in-tree prints / CI greps)
 - [docs/pitch/diligence-demo.log](docs/pitch/diligence-demo.log) — captured `make diligence-demo` stdout

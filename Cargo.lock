@@ -52,6 +52,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-kv-fabric"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+]
+
+[[package]]
 name = "aether-mp-shim"
 version = "0.1.0"
 dependencies = [

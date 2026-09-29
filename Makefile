@@ -59,7 +59,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         qemu-blk qemu-blk-ci \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup partner-hello partner-hello-ci \
-        diligence-demo red-team design-win-check design-win-standin \
+        diligence-demo red-team kv-fabric design-win-check design-win-standin \
         mp-shim mp-shim-ci \
         test test-host target target-riscv target-aarch64 clean help
 
@@ -85,6 +85,7 @@ help:
 	@echo "  make smmu-bringup - Soft SMMU dump/replay kit (JSONL + golden + host tests)"
 	@echo "  make diligence-demo - host Path B partner clip (no QEMU; greps golden lines)"
 	@echo "  make red-team     - host diligence clip: named attacks refused (scripted stdout)"
+	@echo "  make kv-fabric    - host KV-grant clip: prefill hands decode a 32-byte capability (not a copy)"
 	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
@@ -197,6 +198,31 @@ red-team:
 	grep -q "\\[redteam\\] what this is not: confidential GPU; not HW MIG; Soft SMMU is software" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] sealed" $(REDTEAM_LOG)
 	@echo "red-team: named attacks refused (host clip)"
+
+# Disaggregated prefill/decode: the fabric carries a 32-byte KV grant.
+# Weights stay resident. Toy bytes. Soft SMMU is software.
+# Not NVLink, not CUDA, not MIG, not measured TTFT.
+KV_LOG := $(BUILD)/kv-fabric.log
+
+kv-fabric:
+	mkdir -p $(BUILD)
+	rm -f $(KV_LOG)
+	cargo run -p aether-kv-fabric --quiet --bin aether-kv-fabric \
+		> $(KV_LOG)
+	cat $(KV_LOG)
+	grep -q "\\[kv\\] handoff read-only seq=1 layers=0..4 tokens=0..128" $(KV_LOG)
+	grep -q "\\[kv\\] fabric-bytes=32 copy-bytes=131072 weights-stay=8388608" $(KV_LOG)
+	grep -q "\\[kv\\] attack=forge result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=write result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=regrant result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=weights result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=oob result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=wrong-sid result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] attack=revoke result=refused" $(KV_LOG)
+	grep -q "\\[kv\\] deadline-miss seq=1 neighbor=live" $(KV_LOG)
+	grep -q "\\[kv\\] dma decode-writable=false" $(KV_LOG)
+	grep -q "\\[kv\\] not-nvlink not-cuda not-mig soft-smmu=software" $(KV_LOG)
+	@echo "kv-fabric: grant record moved, KV and weights stayed"
 
 # Filled DESIGN_WIN worksheet. One cargo run, no pipes, no pipefail
 # (POSIX /bin/sh on Ubuntu Make). Same as `cargo run -p aether-design-win-check`.

@@ -47,6 +47,7 @@ git clone https://github.com/amineux/aether.git
 cd aether
 make diligence-demo
 make red-team
+make kv-fabric
 make partner-hello
 make mp-shim
 make design-win-standin
@@ -86,6 +87,7 @@ and [qemu/README.md](../qemu/README.md).
 | PJRT-shaped host nouns | Device / MemorySpace / Buffer / Executable / Event. Event create/record/wait on **existing** SoftChipletSync fences (PR #74). Not `GetPjRtApi`. | `[event]` in `make diligence-demo` |
 | Soft SMMU SID-at-submit | STE→CD→Stage-1/2 software walk. SET_SID at the job head. A real device can DMA past it. | `[blast]` / `[sid]` |
 | Blast-radius refuse | Two tenants. CrossCut + wrong-SID abort. | `make red-team` · `wrong-sid-crosscut` |
+| KV grant | Prefill hands decode READ+MAP on one token window. Fabric carries 32 bytes. Weights stay. Stolen object id, write, regrant, OOB, wrong SID, and revoke all refuse. Neighbor on the same HBM bank still runs. Toy bytes. Not NVLink, not CUDA, not MIG, not TTFT. | `make kv-fabric` |
 | SoftCmdFirewall | Copy-then-validate. Command-stream integrity, not confidential GPU. | `make red-team` · `softcmdfirewall` |
 | SoftGreenCtx | Fake 70/30 SM/WQ partition + interference vs unpartitioned (integer milli). Not HW MIG. | `[greenctx]` 70/30 + `interference partitioned` in `make diligence-demo` |
 | SoftCCT / Event counts | Package ≪ broadcast (`1` vs `10`). Chiplet-local vs package. Not latency. | `[softcct] package fences=` + `[event] fence counts` |

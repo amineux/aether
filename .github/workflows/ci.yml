@@ -32,6 +32,9 @@ jobs:
       - name: Red-team diligence clip (host stdout)
         run: make red-team
 
+      - name: KV fabric grant clip (host stdout)
+        run: make kv-fabric
+
       - name: Design-win worksheet checker
         run: make design-win-check
 

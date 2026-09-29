@@ -11,6 +11,7 @@ members = [
     "examples/accel-client",
     "examples/design-win-check",
     "examples/partner-hello",
+    "examples/kv-fabric",
 ]
 default-members = [
     "core",
@@ -23,6 +24,7 @@ default-members = [
     "examples/accel-client",
     "examples/design-win-check",
     "examples/partner-hello",
+    "examples/kv-fabric",
 ]
 exclude = ["kernel", "user/init", "user/probe"]
 
