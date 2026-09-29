@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -45,7 +45,8 @@
 //! `stamp_queue_sid` second SID → `HalError::Busy` (pending sticky SID;
 //! not BAR0 / SoftNPU). SET_SID unbound is Soft-CP `set_sid` / submit
 //! without Bound SID → `HalError::Fault` (SID-at-submit `StreamAbort`
-//! foundation; not xqueue-sid-override / PASID). Submit-sid is Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid` (walk still OK; not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget). Sid-budget is Soft-SMMU `bind_stream` over `SID_BUDGET_PER_TENANT` → `MapError::SidBudget` (peer tenant still has budget; not set-sid-unbound / SubmitSid / xqueue Busy). Stage2-fault is Soft-SMMU `unbind_stage2` then nested walk → `MapError::Stage2Fault` (S1 remains / SID still Bound; not PASID stale / SubmitSid / StreamAbort). SoftNoI-exhausted is `admit` past `MAX_NOI_TENANTS` → `NoiError::Exhausted` (not softnoi-is OverBudget / fabric-class RingExhausted). Hodge harmonic-tree is
+//! foundation; not xqueue-sid-override / PASID). Submit-sid is Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid` (walk still OK; not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget). Sid-budget is Soft-SMMU `bind_stream` over `SID_BUDGET_PER_TENANT` → `MapError::SidBudget` (peer tenant still has budget; not set-sid-unbound / SubmitSid / xqueue Busy). Stage2-fault is Soft-SMMU `unbind_stage2` then nested walk → `MapError::Stage2Fault` (S1 remains / SID still Bound; not PASID stale / SubmitSid / StreamAbort). SoftNoI-exhausted is `admit` past `MAX_NOI_TENANTS` → `NoiError::Exhausted` (not softnoi-is OverBudget / fabric-class RingExhausted). SoftNoI-unbound is
+//! `SoftNoI::release` unknown / already-released → `NoiError::Unbound` (not softnoi-exhausted / softnoi-is / greenctx-unbound / set-sid-unbound). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -76,7 +77,7 @@ use aether_core::chipsync::{run_softcct_credit_exhausted_demo, run_softcct_incor
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
-use aether_core::noi::{run_softnoi_demo, run_softnoi_exhausted_demo};
+use aether_core::noi::{run_softnoi_demo, run_softnoi_exhausted_demo, run_softnoi_unbound_demo};
 use aether_core::color::{run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo};
 use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_hbm_bw_demo, run_outside_slice_demo,
@@ -117,6 +118,7 @@ const LINE_SUBMIT_SID: &str = "[redteam] attack=submit-sid result=refused";
 const LINE_SID_BUDGET: &str = "[redteam] attack=sid-budget result=refused";
 const LINE_STAGE2_FAULT: &str = "[redteam] attack=stage2-fault result=refused";
 const LINE_SOFTNOI_EXHAUSTED: &str = "[redteam] attack=softnoi-exhausted result=refused";
+const LINE_SOFTNOI_UNBOUND: &str = "[redteam] attack=softnoi-unbound result=refused";
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
@@ -168,6 +170,7 @@ struct RedTeamReport {
     sid_budget: bool,
     stage2_fault: bool,
     softnoi_exhausted: bool,
+    softnoi_unbound: bool,
     hodge_harmonic_tree: bool,
     hodge_curl_tree: bool,
     hodge_quota: bool,
@@ -217,6 +220,7 @@ impl RedTeamReport {
             && self.sid_budget
             && self.stage2_fault
             && self.softnoi_exhausted
+            && self.softnoi_unbound
             && self.hodge_harmonic_tree
             && self.hodge_curl_tree
             && self.hodge_quota
@@ -263,6 +267,7 @@ fn run_redteam() -> RedTeamReport {
     let sid_budget = run_sid_budget_demo();
     let stage2_fault = run_stage2_fault_demo();
     let softnoi_exhausted = run_softnoi_exhausted_demo();
+    let softnoi_unbound = run_softnoi_unbound_demo();
     let hodge_ht = run_hodge_harmonic_tree_demo();
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
@@ -350,6 +355,9 @@ fn run_redteam() -> RedTeamReport {
         // SoftNoI admit past MAX_NOI_TENANTS → Exhausted.
         // Not softnoi-is OverBudget / fabric-class RingExhausted.
         softnoi_exhausted: softnoi_exhausted.all_ok(),
+        // SoftNoI release unknown / already-released → Unbound.
+        // Not softnoi-exhausted / softnoi-is / greenctx-unbound / set-sid-unbound.
+        softnoi_unbound: softnoi_unbound.all_ok(),
         // OperatorKernelHandle::bind(Tree, Harmonic) → HarmonicTreeReduce.
         // Existing Hodge / opkernel path — not SoftNoI fabric-class Curl ring.
         hodge_harmonic_tree: hodge_ht.all_ok(),
@@ -458,6 +466,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.sid_budget, LINE_SID_BUDGET);
     emit(r.stage2_fault, LINE_STAGE2_FAULT);
     emit(r.softnoi_exhausted, LINE_SOFTNOI_EXHAUSTED);
+    emit(r.softnoi_unbound, LINE_SOFTNOI_UNBOUND);
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
@@ -544,6 +553,10 @@ mod tests {
         assert!(
             r.softnoi_exhausted,
             "admit past MAX_NOI_TENANTS → Exhausted"
+        );
+        assert!(
+            r.softnoi_unbound,
+            "SoftNoI::release unknown → Unbound"
         );
         assert!(
             r.hodge_harmonic_tree,
@@ -665,6 +678,10 @@ mod tests {
             "[redteam] attack=softnoi-exhausted result=refused"
         );
         assert_eq!(
+            LINE_SOFTNOI_UNBOUND,
+            "[redteam] attack=softnoi-unbound result=refused"
+        );
+        assert_eq!(
             LINE_HODGE_HARMONIC_TREE,
             "[redteam] attack=hodge-harmonic-tree result=refused"
         );
@@ -757,6 +774,7 @@ mod tests {
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,
             LINE_SET_SID_UNBOUND,
+            LINE_SOFTNOI_UNBOUND,
             LINE_HODGE_HARMONIC_TREE,
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
