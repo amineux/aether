@@ -67,13 +67,15 @@
 //! `migrate_to_yield` when dest is bound to another queue → `GreenCtxError::Busy` (not greenctx-unbound;
 //! not greenctx-overcommit / exhausted; not xqueue-sid-override Soft-CP Busy; not HW MIG / BAR0 / SoftNPU). Smmu-overlap is Soft-SMMU
 //! `map` same-SID overlapping guest PA → `MapError::Overlap` (disjoint pin admits; not CrossTenant /
-//! WrongStream / Stage2Fault / SubmitSid / SidBudget). The closer names what this is **not**:
+//! WrongStream / Stage2Fault / SubmitSid / SidBudget). Chipsync-unbound is SoftChipletSync
+//! `arrive` when `arrived >= expected` → `PartitionError::Unbound` (expect(1)+first arrive OK;
+//! not FenceNotReady / softcct CreditExhausted / greenctx-unbound). The closer names what this is **not**:
 //! confidential GPU, HW MIG, hardware SMMU (Soft SMMU is software).
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
 use aether_core::blast::run_blast_demo;
-use aether_core::chipsync::{run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
+use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
@@ -136,6 +138,7 @@ const LINE_SMMU_STREAM_ABORT: &str = "[redteam] attack=smmu-stream-abort result=
 const LINE_SET_SID_CROSS_TENANT: &str = "[redteam] attack=set-sid-cross-tenant result=refused";
 const LINE_SOFTCCT_INCORRECT_ELISION: &str = "[redteam] attack=softcct-incorrect-elision result=refused";
 const LINE_SOFTCCT_CREDIT_EXHAUSTED: &str = "[redteam] attack=softcct-credit-exhausted result=refused";
+const LINE_CHIPSYNC_UNBOUND: &str = "[redteam] attack=chipsync-unbound result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -188,6 +191,7 @@ struct RedTeamReport {
     set_sid_cross_tenant: bool,
     softcct_incorrect_elision: bool,
     softcct_credit_exhausted: bool,
+    chipsync_unbound: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -238,6 +242,7 @@ impl RedTeamReport {
             && self.set_sid_cross_tenant
             && self.softcct_incorrect_elision
             && self.softcct_credit_exhausted
+            && self.chipsync_unbound
             && self.class
             && self.atomic
             && self.tensor
@@ -286,6 +291,7 @@ fn run_redteam() -> RedTeamReport {
     let set_sid_cross_tenant = run_set_sid_cross_tenant_demo();
     let softcct_incorrect_elision = run_softcct_incorrect_elision_demo();
     let softcct_credit_exhausted = run_softcct_credit_exhausted_demo();
+    let chipsync_unbound = run_chipsync_unbound_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -409,6 +415,9 @@ fn run_redteam() -> RedTeamReport {
         // SoftCCT record past MAX_CCT_ENTRIES → CreditExhausted.
         // Not Timeline qos-credits / incorrect-elision / UCIe.
         softcct_credit_exhausted: softcct_credit_exhausted.all_ok(),
+        // SoftChipletSync arrive when arrived >= expected → Unbound.
+        // Not FenceNotReady / softcct CreditExhausted / greenctx-unbound.
+        chipsync_unbound: chipsync_unbound.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -484,6 +493,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.set_sid_cross_tenant, LINE_SET_SID_CROSS_TENANT);
     emit(r.softcct_incorrect_elision, LINE_SOFTCCT_INCORRECT_ELISION);
     emit(r.softcct_credit_exhausted, LINE_SOFTCCT_CREDIT_EXHAUSTED);
+    emit(r.chipsync_unbound, LINE_CHIPSYNC_UNBOUND);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -626,6 +636,10 @@ mod tests {
             r.softcct_credit_exhausted,
             "SoftCCT record past MAX_CCT_ENTRIES → CreditExhausted"
         );
+        assert!(
+            r.chipsync_unbound,
+            "SoftChipletSync extra arrive → Unbound"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -749,6 +763,10 @@ mod tests {
             LINE_SOFTCCT_CREDIT_EXHAUSTED,
             "[redteam] attack=softcct-credit-exhausted result=refused"
         );
+        assert_eq!(
+            LINE_CHIPSYNC_UNBOUND,
+            "[redteam] attack=chipsync-unbound result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -792,6 +810,7 @@ mod tests {
             LINE_SET_SID_CROSS_TENANT,
             LINE_SOFTCCT_INCORRECT_ELISION,
             LINE_SOFTCCT_CREDIT_EXHAUSTED,
+            LINE_CHIPSYNC_UNBOUND,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

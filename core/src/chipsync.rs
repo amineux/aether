@@ -891,6 +891,43 @@ pub fn run_softcct_credit_exhausted_demo() -> SoftCctCreditExhaustedReport {
     }
 }
 
+/// Host red-team report for SoftChipletSync extra-arrive refuse.
+///
+/// Sell line `[redteam] attack=chipsync-unbound` — existing
+/// [`SoftChipletSync::arrive`] path only. `expect(1)` then arrive OK once;
+/// second arrive → [`PartitionError::Unbound`]. **Not** FenceNotReady /
+/// softcct CreditExhausted / greenctx-unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ChipsyncUnboundReport {
+    /// expect(1) + first arrive admits.
+    pub first_ok: bool,
+    /// Second arrive → `PartitionError::Unbound`.
+    pub second_unbound: bool,
+}
+
+impl ChipsyncUnboundReport {
+    pub fn all_ok(&self) -> bool {
+        self.first_ok && self.second_unbound
+    }
+}
+
+/// SoftChipletSync `arrive` when `arrived >= expected` → [`PartitionError::Unbound`].
+/// Extra-arrive refuse — not FenceNotReady / softcct CreditExhausted / greenctx-unbound.
+pub fn run_chipsync_unbound_demo() -> ChipsyncUnboundReport {
+    let mut s = SoftChipletSync::new(PartitionId(1));
+    s.open(SyncScope::Chiplet);
+    let expect_ok = s.expect(ChipletId(0), 1).is_ok();
+    let first = s.arrive(ChipletId(0), None);
+    let first_ok = expect_ok && first.is_ok();
+    let second_unbound =
+        s.arrive(ChipletId(0), None) == Err(PartitionError::Unbound);
+
+    ChipsyncUnboundReport {
+        first_ok,
+        second_unbound,
+    }
+}
+
 
 #[cfg(test)]
 mod tests {
@@ -1120,6 +1157,14 @@ mod tests {
         assert!(r.fill_ok, "fill MAX_CCT_ENTRIES admits");
         assert!(r.exhausted, "one over → CreditExhausted");
         assert!(r.update_ok, "existing label update admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn chipsync_unbound_demo_extra_arrive() {
+        let r = run_chipsync_unbound_demo();
+        assert!(r.first_ok, "expect(1) + first arrive OK");
+        assert!(r.second_unbound, "second arrive → Unbound");
         assert!(r.all_ok());
     }
 
