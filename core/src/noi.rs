@@ -679,6 +679,46 @@ pub fn run_softnoi_exhausted_demo() -> SoftNoiExhaustedReport {
     }
 }
 
+/// Host red-team report for SoftNoI release unknown-tenant refuse.
+///
+/// Sell line `[redteam] attack=softnoi-unbound` — existing [`SoftNoI::release`]
+/// path only. Admit tenant A, release A OK; release A again / never-admitted
+/// → [`NoiError::Unbound`]. **Not** softnoi-exhausted / softnoi-is /
+/// greenctx-unbound / set-sid-unbound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftNoiUnboundReport {
+    /// Admit then first release succeeds.
+    pub release_ok: bool,
+    /// Second release of same tenant → `NoiError::Unbound`.
+    pub double_release: bool,
+    /// Never-admitted tenant → `NoiError::Unbound`.
+    pub never_admitted: bool,
+}
+
+impl SoftNoiUnboundReport {
+    pub fn all_ok(&self) -> bool {
+        self.release_ok && self.double_release && self.never_admitted
+    }
+}
+
+/// SoftNoI `release` unknown / already-released tenant → [`NoiError::Unbound`].
+/// Occupancy honesty — not Exhausted / OverBudget / greenctx-unbound.
+pub fn run_softnoi_unbound_demo() -> SoftNoiUnboundReport {
+    let mut n = SoftNoI::new();
+    n.enable(true);
+    let admit = n.admit(TenantId(1), DEMO_LIGHT_DEMAND);
+    let first = n.release(TenantId(1));
+    let release_ok = admit.is_ok() && first.is_ok();
+    let double_release = n.release(TenantId(1)) == Err(NoiError::Unbound);
+    let never_admitted = n.release(TenantId(99)) == Err(NoiError::Unbound);
+
+    SoftNoiUnboundReport {
+        release_ok,
+        double_release,
+        never_admitted,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,6 +824,15 @@ mod tests {
         assert!(r.two_admit, "two light tenants admit");
         assert!(r.third_exhausted, "third → Exhausted");
         assert!(r.occupancy_max, "occupancy stays at max");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn softnoi_unbound_demo_unknown_release() {
+        let r = run_softnoi_unbound_demo();
+        assert!(r.release_ok, "admit + first release OK");
+        assert!(r.double_release, "second release → Unbound");
+        assert!(r.never_admitted, "never-admitted → Unbound");
         assert!(r.all_ok());
     }
 
