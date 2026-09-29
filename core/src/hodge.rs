@@ -154,6 +154,64 @@ pub fn run_hodge_quota_demo() -> HodgeQuotaReport {
     }
 }
 
+/// Host red-team report for FlowQuota authorize class refuse.
+///
+/// Sell line `[redteam] attack=hodge-class-unauthorized` — existing
+/// [`authorize`] path only. FlowQuota badge Gradient|Curl: Gradient+Curl
+/// authorize OK; Harmonic → [`HodgeError::ClassNotAuthorized`]. Wrong kind
+/// (Memory) → ClassNotAuthorized. FlowQuota without WRITE → ClassNotAuthorized.
+/// **Not** QuotaExceeded / CurlOnTree / HarmonicTreeReduce; **not** CapTable
+/// milestone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HodgeClassUnauthorizedReport {
+    /// FlowQuota Gradient|Curl: Gradient + Curl authorize OK.
+    pub badge_ok: bool,
+    /// Harmonic on Gradient|Curl badge → `ClassNotAuthorized`.
+    pub harmonic_refused: bool,
+    /// Wrong kind (Memory) → `ClassNotAuthorized`.
+    pub wrong_kind: bool,
+    /// FlowQuota without WRITE → `ClassNotAuthorized`.
+    pub no_write: bool,
+}
+
+impl HodgeClassUnauthorizedReport {
+    pub fn all_ok(&self) -> bool {
+        self.badge_ok && self.harmonic_refused && self.wrong_kind && self.no_write
+    }
+}
+
+/// `authorize` badge / kind / WRITE refuses → [`HodgeError::ClassNotAuthorized`].
+/// Cap class surface — not QuotaExceeded / CurlOnTree / HarmonicTreeReduce / CapTable.
+pub fn run_hodge_class_unauthorized_demo() -> HodgeClassUnauthorizedReport {
+    use crate::types::TenantId;
+
+    let cap = Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 1, TenantId(1))
+        .with_badge(CLASS_GRADIENT | CLASS_CURL)
+        .with_generation(1);
+    let badge_ok = authorize(&cap, FlowClass::Gradient).is_ok()
+        && authorize(&cap, FlowClass::Curl).is_ok();
+    let harmonic_refused =
+        authorize(&cap, FlowClass::Harmonic) == Err(HodgeError::ClassNotAuthorized);
+
+    let mem = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(1))
+        .with_generation(1);
+    let wrong_kind =
+        authorize(&mem, FlowClass::Gradient) == Err(HodgeError::ClassNotAuthorized);
+
+    let no_write_cap = Capability::new(CapKind::FlowQuota, CapRights(CapRights::READ), 3, TenantId(1))
+        .with_badge(CLASS_ALL)
+        .with_generation(1);
+    let no_write =
+        authorize(&no_write_cap, FlowClass::Gradient) == Err(HodgeError::ClassNotAuthorized);
+
+    HodgeClassUnauthorizedReport {
+        badge_ok,
+        harmonic_refused,
+        wrong_kind,
+        no_write,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -210,6 +268,16 @@ mod tests {
         let r = run_hodge_quota_demo();
         assert!(r.empty_refused, "empty admit → QuotaExceeded");
         assert!(r.generous_ok, "generous Gradient/Curl/Harmonic admit");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn hodge_class_unauthorized_demo_refuses() {
+        let r = run_hodge_class_unauthorized_demo();
+        assert!(r.badge_ok, "Gradient|Curl badge admits Gradient+Curl");
+        assert!(r.harmonic_refused, "Harmonic → ClassNotAuthorized");
+        assert!(r.wrong_kind, "Memory kind → ClassNotAuthorized");
+        assert!(r.no_write, "FlowQuota without WRITE → ClassNotAuthorized");
         assert!(r.all_ok());
     }
 }

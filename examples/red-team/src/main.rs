@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -51,7 +51,9 @@
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
 //! (sibling of HarmonicTreeReduce; not SoftNoI fabric-class). Hodge-quota is
 //! `HodgeQuota::empty().admit(...)` → `HodgeError::QuotaExceeded` (generous admit
-//! succeeds; not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable). Firewall identity guest PA is SoftCmdFirewall
+//! succeeds; not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable). Hodge-class-unauthorized is
+//! `authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind / no WRITE →
+//! `HodgeError::ClassNotAuthorized` (not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable). Firewall identity guest PA is SoftCmdFirewall
 //! `admit_packed` with `iova < SOFT_SMMU_IOVA_BASE` → `HalError::Fault`
 //! (addr-cap; **not** mutation-during-validate — `softcmdfirewall` stays
 //! separate; not confidential GPU). Greenctx-overcommit is SoftGreenPool
@@ -85,7 +87,7 @@ use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::run_typed_window_sid_demo;
 use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
-use aether_core::hodge::run_hodge_quota_demo;
+use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
     run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
@@ -118,6 +120,7 @@ const LINE_SOFTNOI_EXHAUSTED: &str = "[redteam] attack=softnoi-exhausted result=
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
+const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
@@ -168,6 +171,7 @@ struct RedTeamReport {
     hodge_harmonic_tree: bool,
     hodge_curl_tree: bool,
     hodge_quota: bool,
+    hodge_class_unauthorized: bool,
     firewall_ident_pa: bool,
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
@@ -216,6 +220,7 @@ impl RedTeamReport {
             && self.hodge_harmonic_tree
             && self.hodge_curl_tree
             && self.hodge_quota
+            && self.hodge_class_unauthorized
             && self.firewall_ident_pa
             && self.greenctx_overcommit
             && self.greenctx_unbound
@@ -261,6 +266,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_ht = run_hodge_harmonic_tree_demo();
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
+    let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let greenctx_over = run_greenctx_overcommit_demo();
@@ -353,6 +359,9 @@ fn run_redteam() -> RedTeamReport {
         // HodgeQuota::empty().admit → QuotaExceeded; generous admits.
         // Not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable.
         hodge_quota: hodge_quota.all_ok(),
+        // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
+        // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
+        hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -452,6 +461,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
+    emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
@@ -546,6 +556,10 @@ mod tests {
         assert!(
             r.hodge_quota,
             "HodgeQuota::empty().admit → QuotaExceeded"
+        );
+        assert!(
+            r.hodge_class_unauthorized,
+            "authorize badge/kind/WRITE → ClassNotAuthorized"
         );
         assert!(
             r.firewall_ident_pa,
@@ -663,6 +677,10 @@ mod tests {
             "[redteam] attack=hodge-quota result=refused"
         );
         assert_eq!(
+            LINE_HODGE_CLASS_UNAUTHORIZED,
+            "[redteam] attack=hodge-class-unauthorized result=refused"
+        );
+        assert_eq!(
             LINE_FIREWALL_IDENT_PA,
             "[redteam] attack=firewall-ident-pa result=refused"
         );
@@ -742,6 +760,7 @@ mod tests {
             LINE_HODGE_HARMONIC_TREE,
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
+            LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_FIREWALL_IDENT_PA,
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,

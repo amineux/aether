@@ -86,7 +86,7 @@ pub use greenctx::{
     SoftGreenCtx, SoftGreenPool, DEMO_MEMCPY_BYTES, MAX_GREEN_CTX, SHARED_BW_TAX_MILLI,
     SOFT_SM_POOL, SOFT_WQ_POOL, SPLIT_30, SPLIT_70,
 };
-pub use hodge::{run_hodge_quota_demo, FlowClass, HodgeError, HodgeQuota, HodgeQuotaReport};
+pub use hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo, FlowClass, HodgeClassUnauthorizedReport, HodgeError, HodgeQuota, HodgeQuotaReport};
 pub use iommu::{
     run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
     MappedRegion, MmId, SoftPte, SoftSmmuDump, SetSidCrossTenantReport, SmmuCrossTenantReport, SmmuStreamAbortReport, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
