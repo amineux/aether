@@ -10,6 +10,8 @@ what you get today. Commands that exist. Ask: bring your opcode table.
 Site: [`#sell`](https://amineux.github.io/aether/#sell) ·
 [`#roadmap`](https://amineux.github.io/aether/#roadmap).
 Next year: [`docs/YEAR_AHEAD.md`](docs/YEAR_AHEAD.md).
+**Applications:** [`docs/APPLICATIONS.md`](docs/APPLICATIONS.md) — where the
+current mechanisms fit, what is demonstrated, and what still needs silicon.
 
 **An accelerator-first fabric kernel** — a research prototype for how operating
 systems should look when the package is a mesh of CPU, NPU, GPU, and custom

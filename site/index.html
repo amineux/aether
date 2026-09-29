@@ -31,6 +31,7 @@
         <li><a href="#solution">Solution</a></li>
         <li><a href="#how">How it works</a></li>
         <li><a href="#market">Market</a></li>
+        <li><a href="#applications">Applications</a></li>
         <li><a href="#partners">Why partner</a></li>
         <li><a href="#sell">Sell</a></li>
         <li><a href="#roadmap">Roadmap</a></li>
@@ -421,10 +422,53 @@
       </div>
     </section>
 
+    <section class="band" id="applications">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">05 — Applications</p>
+          <h2>Own the boundary between tenants and tiles.</h2>
+          <p class="lede">Aether’s first concrete fit is multi-tenant inference on heterogeneous accelerator packages. The host clips make the ownership and refusal rules inspectable; partner silicon is needed to establish device behavior.</p>
+        </div>
+        <div class="applications-grid">
+          <article class="application-card" data-reveal>
+            <small>Demonstrated · <code>make kv-fabric</code></small>
+            <h3>Disaggregated LLM serving</h3>
+            <p>Let a decode tile read one sequence’s KV window through a narrow, revocable grant while weights stay with the producer. The clip checks tenant, bounds, write, stream, deadline, and revoke paths.</p>
+          </article>
+          <article class="application-card" data-reveal data-d="1">
+            <small>Demonstrated · host model</small>
+            <h3>Shared accelerator inference</h3>
+            <p>Give each tenant explicit memory and stream ownership, then refuse unauthorized mappings or placement. This shows software invariants, not hardware isolation or a confidential GPU.</p>
+          </article>
+          <article class="application-card" data-reveal data-d="2">
+            <small>Demonstrated · research stand-in</small>
+            <h3>Custom NPU integration</h3>
+            <p>Keep compiler-facing runtime concepts above a frozen packet so a silicon team can map its own command processor and stream IDs. The in-tree PJRT/IREE-shaped consumers are not production plugins.</p>
+          </article>
+          <article class="application-card" data-reveal>
+            <small>Demonstrated · modeled rates</small>
+            <h3>Fabric workload admission</h3>
+            <p>Use tenant budgets and fabric classes to admit or refuse another workload before it consumes a protected share. Current admission rates are software inputs, not measured hardware counters.</p>
+          </article>
+          <article class="application-card" data-reveal data-d="1">
+            <small>Next direction · needs device validation</small>
+            <h3>Mixed-deadline edge inference</h3>
+            <p>Isolate time-sensitive vision or control work from best-effort analytics with deadline-aware placement and spatial budgets. A real driver and latency-under-contention measurements remain necessary.</p>
+          </article>
+          <article class="application-card" data-reveal data-d="2">
+            <small>Next direction · needs security review</small>
+            <h3>Private multi-customer models</h3>
+            <p>Apply tenant-scoped model and KV ownership to shared serving hardware. Hardware-enforced DMA isolation, side-channel review, and key lifecycle work are prerequisites for security claims.</p>
+          </article>
+        </div>
+        <p class="application-boundary">Run the current clips with <code>make kv-fabric</code>, <code>make diligence-demo</code>, and <code>make red-team</code>. <a href="https://github.com/amineux/aether/blob/main/docs/APPLICATIONS.md">Read the application map and validation boundaries.</a></p>
+      </div>
+    </section>
+
     <section class="band" id="partners">
       <div class="wrap">
         <div class="sec-head" data-reveal>
-          <p class="kicker">05 — Why partner</p>
+          <p class="kicker">06 — Why partner</p>
           <h2>A contract you can clone. Not a booked lab.</h2>
           <p class="lede">What a silicon OS team can evaluate today: a frozen packet, a PJRT-shaped host shim, Soft SMMU SIDs, and a two-tenant refuse. Proof is host-test behavior already in the tree — mechanisms, not invented FLOPs. Research HAL; <code>PartnerNpuStub</code> stays a leftover no-op. One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a>. Diligence: <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Next-year calendar: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a>. Sell goals live in <a href="#sell">#sell</a>.</p>
         </div>
