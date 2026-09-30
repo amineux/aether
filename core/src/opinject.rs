@@ -606,6 +606,60 @@ pub fn run_opinject_demo() -> OpInjectReport {
     }
 }
 
+/// Host red-team report for OperatorInject stale OpCall version refuse.
+///
+/// Sell line `[redteam] attack=opinject-stale-version` — existing
+/// [`OperatorInject::submit`] path only. Correct slot version admits;
+/// wrong version → [`InjectError::StaleVersion`]. **Not** HW MIG / BAR0 /
+/// SoftNPU / CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectStaleVersionReport {
+    /// Correct-version memcpy admits.
+    pub current_ok: bool,
+    /// Stale version → `InjectError::StaleVersion`.
+    pub stale_refused: bool,
+}
+
+impl OpInjectStaleVersionReport {
+    pub fn all_ok(&self) -> bool {
+        self.current_ok && self.stale_refused
+    }
+}
+
+/// OperatorInject `submit` with wrong OpCall version → [`InjectError::StaleVersion`].
+/// Version gate — not HW MIG / BAR0 / SoftNPU / CapTable.
+pub fn run_opinject_stale_version_demo() -> OpInjectStaleVersionReport {
+    let mut bytes = [0u8; OPINJECT_SPAN as usize];
+    for i in 0..DEMO_WORDS {
+        let off = (i as usize) * 4;
+        bytes[off..off + 4].copy_from_slice(&(i as i32 + 1).to_le_bytes());
+    }
+    let sandbox = toy_sandbox();
+    let mut inj = OperatorInject::with_resident_memcpy_saxpy();
+    let mv = inj.slot_version(SLOT_MEMCPY).unwrap_or(0);
+    let mut mem = FlatOpMem {
+        base: OPINJECT_BASE,
+        bytes: &mut bytes,
+    };
+    let current_ok = inj
+        .submit(
+            &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+            &sandbox,
+            &mut mem,
+        )
+        .is_ok();
+    let stale_refused = inj.submit(
+        &OpCall::memcpy(99, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+        &sandbox,
+        &mut mem,
+    ) == Err(InjectError::StaleVersion);
+
+    OpInjectStaleVersionReport {
+        current_ok,
+        stale_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -693,5 +747,13 @@ mod tests {
     #[test]
     fn demo_report_all_ok() {
         assert!(run_opinject_demo().all_ok());
+    }
+
+    #[test]
+    fn opinject_stale_version_demo_all_ok() {
+        let r = run_opinject_stale_version_demo();
+        assert!(r.current_ok, "correct version admits");
+        assert!(r.stale_refused, "stale version → StaleVersion");
+        assert!(r.all_ok());
     }
 }
