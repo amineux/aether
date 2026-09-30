@@ -660,6 +660,61 @@ pub fn run_opinject_stale_version_demo() -> OpInjectStaleVersionReport {
     }
 }
 
+/// Host red-team report for OperatorInject SidSandbox OOB refuse.
+///
+/// Sell line `[redteam] attack=opinject-oob` — existing
+/// [`OperatorInject::submit`] span escaping [`SidSandbox`] →
+/// [`InjectError::Oob`]. In-window memcpy admits. **Not** softsfi-oob /
+/// outside-slice / HW MIG / BAR0 / SoftNPU / CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectOobReport {
+    /// In-sandbox memcpy admits.
+    pub in_window_ok: bool,
+    /// Span escaping SidSandbox → `InjectError::Oob`.
+    pub oob_refused: bool,
+}
+
+impl OpInjectOobReport {
+    pub fn all_ok(&self) -> bool {
+        self.in_window_ok && self.oob_refused
+    }
+}
+
+/// OperatorInject `submit` with span escaping SidSandbox → [`InjectError::Oob`].
+/// SID window gate — not softsfi-oob / outside-slice / HW MIG / BAR0.
+pub fn run_opinject_oob_demo() -> OpInjectOobReport {
+    let mut bytes = [0u8; OPINJECT_SPAN as usize];
+    for i in 0..DEMO_WORDS {
+        let off = (i as usize) * 4;
+        bytes[off..off + 4].copy_from_slice(&(i as i32 + 1).to_le_bytes());
+    }
+    let sandbox = toy_sandbox();
+    let mut inj = OperatorInject::with_resident_memcpy_saxpy();
+    let mv = inj.slot_version(SLOT_MEMCPY).unwrap_or(0);
+    let mut mem = FlatOpMem {
+        base: OPINJECT_BASE,
+        bytes: &mut bytes,
+    };
+    let in_window_ok = inj
+        .submit(
+            &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+            &sandbox,
+            &mut mem,
+        )
+        .is_ok();
+    // dst at OPINJECT_SPAN escapes the toy SidSandbox window [BASE, BASE+SPAN).
+    let oob_refused = inj.submit(
+        &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_SPAN),
+        &sandbox,
+        &mut mem,
+    ) == Err(InjectError::Oob);
+
+    OpInjectOobReport {
+        in_window_ok,
+        oob_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -754,6 +809,14 @@ mod tests {
         let r = run_opinject_stale_version_demo();
         assert!(r.current_ok, "correct version admits");
         assert!(r.stale_refused, "stale version → StaleVersion");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn opinject_oob_demo_all_ok() {
+        let r = run_opinject_oob_demo();
+        assert!(r.in_window_ok, "in-sandbox memcpy admits");
+        assert!(r.oob_refused, "escaping SidSandbox → Oob");
         assert!(r.all_ok());
     }
 }

@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -48,7 +48,8 @@
 //! foundation; not xqueue-sid-override / PASID). Submit-sid is Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid` (walk still OK; not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget). Sid-budget is Soft-SMMU `bind_stream` over `SID_BUDGET_PER_TENANT` → `MapError::SidBudget` (peer tenant still has budget; not set-sid-unbound / SubmitSid / xqueue Busy). Stage2-fault is Soft-SMMU `unbind_stage2` then nested walk → `MapError::Stage2Fault` (S1 remains / SID still Bound; not PASID stale / SubmitSid / StreamAbort). SoftNoI-exhausted is `admit` past `MAX_NOI_TENANTS` → `NoiError::Exhausted` (not softnoi-is OverBudget / fabric-class RingExhausted). SoftNoI-unbound is
 //! `SoftNoI::release` unknown / already-released → `NoiError::Unbound` (not softnoi-exhausted / softnoi-is / greenctx-unbound / set-sid-unbound). SoftNoI-ring-exhausted is
 //! `SoftNoI::admit_class` Curl / Ring fabric-class → `NoiError::RingExhausted` (first light Curl OK; not softnoi-is OverBudget / softnoi-exhausted / SoftNoI∩SpectralCut). Opinject-stale-version is
-//! `OperatorInject::submit` wrong OpCall version → `InjectError::StaleVersion` (correct version admits; not HW MIG / BAR0 / SoftNPU / CapTable). Hodge harmonic-tree is
+//! `OperatorInject::submit` wrong OpCall version → `InjectError::StaleVersion` (correct version admits; not HW MIG / BAR0 / SoftNPU / CapTable). Opinject-oob is
+//! `OperatorInject::submit` span escaping SidSandbox → `InjectError::Oob` (in-window admits; not softsfi-oob / outside-slice). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -82,7 +83,7 @@ use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_de
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
 use aether_core::noi::{run_softnoi_demo, run_softnoi_exhausted_demo, run_softnoi_ring_exhausted_demo, run_softnoi_unbound_demo};
-use aether_core::opinject::run_opinject_stale_version_demo;
+use aether_core::opinject::{run_opinject_oob_demo, run_opinject_stale_version_demo};
 use aether_core::color::{run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo};
 use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_hbm_bw_demo, run_outside_slice_demo,
@@ -144,6 +145,7 @@ const LINE_SOFTCCT_INCORRECT_ELISION: &str = "[redteam] attack=softcct-incorrect
 const LINE_SOFTCCT_CREDIT_EXHAUSTED: &str = "[redteam] attack=softcct-credit-exhausted result=refused";
 const LINE_CHIPSYNC_UNBOUND: &str = "[redteam] attack=chipsync-unbound result=refused";
 const LINE_OPINJECT_STALE_VERSION: &str = "[redteam] attack=opinject-stale-version result=refused";
+const LINE_OPINJECT_OOB: &str = "[redteam] attack=opinject-oob result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -199,6 +201,7 @@ struct RedTeamReport {
     softcct_credit_exhausted: bool,
     chipsync_unbound: bool,
     opinject_stale_version: bool,
+    opinject_oob: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -252,6 +255,7 @@ impl RedTeamReport {
             && self.softcct_credit_exhausted
             && self.chipsync_unbound
             && self.opinject_stale_version
+            && self.opinject_oob
             && self.class
             && self.atomic
             && self.tensor
@@ -303,6 +307,7 @@ fn run_redteam() -> RedTeamReport {
     let softcct_credit_exhausted = run_softcct_credit_exhausted_demo();
     let chipsync_unbound = run_chipsync_unbound_demo();
     let opinject_stale_version = run_opinject_stale_version_demo();
+    let opinject_oob = run_opinject_oob_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -435,6 +440,9 @@ fn run_redteam() -> RedTeamReport {
         // OperatorInject submit wrong OpCall version → StaleVersion.
         // Not HW MIG / BAR0 / SoftNPU / CapTable.
         opinject_stale_version: opinject_stale_version.all_ok(),
+        // OperatorInject submit span escaping SidSandbox → Oob.
+        // Not softsfi-oob / outside-slice / HW MIG / BAR0.
+        opinject_oob: opinject_oob.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -513,6 +521,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.softcct_credit_exhausted, LINE_SOFTCCT_CREDIT_EXHAUSTED);
     emit(r.chipsync_unbound, LINE_CHIPSYNC_UNBOUND);
     emit(r.opinject_stale_version, LINE_OPINJECT_STALE_VERSION);
+    emit(r.opinject_oob, LINE_OPINJECT_OOB);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -667,6 +676,10 @@ mod tests {
             r.opinject_stale_version,
             "OperatorInject submit stale version → StaleVersion"
         );
+        assert!(
+            r.opinject_oob,
+            "OperatorInject submit SidSandbox escape → Oob"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -802,6 +815,10 @@ mod tests {
             LINE_OPINJECT_STALE_VERSION,
             "[redteam] attack=opinject-stale-version result=refused"
         );
+        assert_eq!(
+            LINE_OPINJECT_OOB,
+            "[redteam] attack=opinject-oob result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -848,6 +865,7 @@ mod tests {
             LINE_SOFTCCT_CREDIT_EXHAUSTED,
             LINE_CHIPSYNC_UNBOUND,
             LINE_OPINJECT_STALE_VERSION,
+            LINE_OPINJECT_OOB,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
