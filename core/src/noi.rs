@@ -719,6 +719,50 @@ pub fn run_softnoi_unbound_demo() -> SoftNoiUnboundReport {
     }
 }
 
+/// Host red-team report for SoftNoI Curl ring-capacity refuse.
+///
+/// Sell line `[redteam] attack=softnoi-ring-exhausted` — existing
+/// [`SoftNoI::admit_class`] Curl / [`CollectiveKind::Ring`] fabric-class path
+/// only. First light Curl admits; second light Curl → [`NoiError::RingExhausted`].
+/// **Not** softnoi-is `OverBudget` / softnoi-exhausted / SoftNoI∩SpectralCut.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftNoiRingExhaustedReport {
+    /// First light Curl / Ring fabric-class admit OK.
+    pub first_curl_ok: bool,
+    /// Second light Curl → `NoiError::RingExhausted`.
+    pub second_ring_exhausted: bool,
+    /// Curl admit/refuse counters: 1 admitted, ≥1 refused.
+    pub curl_counters: bool,
+}
+
+impl SoftNoiRingExhaustedReport {
+    pub fn all_ok(&self) -> bool {
+        self.first_curl_ok && self.second_ring_exhausted && self.curl_counters
+    }
+}
+
+/// SoftNoI `admit_class` Curl past [`NOI_RING_CAPACITY`] → [`NoiError::RingExhausted`].
+/// Fabric-class ring reserve — not softnoi-is OverBudget / softnoi-exhausted / SoftNoI∩SpectralCut.
+pub fn run_softnoi_ring_exhausted_demo() -> SoftNoiRingExhaustedReport {
+    let mut n = SoftNoI::new();
+    n.enable(true);
+    let ring = CollectiveKind::Ring.fabric_class();
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let first = n.admit_class(a, DEMO_LIGHT_DEMAND, ring);
+    let first_curl_ok = first.is_ok() && ring == FlowClass::Curl;
+    let second = n.admit_class(b, DEMO_LIGHT_DEMAND, ring);
+    let second_ring_exhausted = second == Err(NoiError::RingExhausted);
+    let curl_counters =
+        n.admitted_class(FlowClass::Curl) == 1 && n.refused_class(FlowClass::Curl) >= 1;
+
+    SoftNoiRingExhaustedReport {
+        first_curl_ok,
+        second_ring_exhausted,
+        curl_counters,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,6 +877,15 @@ mod tests {
         assert!(r.release_ok, "admit + first release OK");
         assert!(r.double_release, "second release → Unbound");
         assert!(r.never_admitted, "never-admitted → Unbound");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn softnoi_ring_exhausted_demo_second_curl() {
+        let r = run_softnoi_ring_exhausted_demo();
+        assert!(r.first_curl_ok, "first light Curl admits");
+        assert!(r.second_ring_exhausted, "second Curl → RingExhausted");
+        assert!(r.curl_counters, "curl admit/refuse counters");
         assert!(r.all_ok());
     }
 
