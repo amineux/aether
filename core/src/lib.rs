@@ -105,8 +105,8 @@ pub use mmap::{
     BOOT_RESERVE_FLOOR, FRAME_CAP_BYTES, MB1_BOOT_MAGIC, MB2_BOOT_MAGIC,
 };
 pub use noi::{
-    fabric_is_milli, is_milli, run_softnoi_demo, run_softnoi_exhausted_demo, run_softnoi_unbound_demo, tput_con, tput_solo,
-    IsEstimate, NoiError, NoiOccupant, NoiTput, SoftNoI, SoftNoiExhaustedReport, SoftNoiReport, SoftNoiUnboundReport,
+    fabric_is_milli, is_milli, run_softnoi_demo, run_softnoi_exhausted_demo, run_softnoi_ring_exhausted_demo, run_softnoi_unbound_demo, tput_con, tput_solo,
+    IsEstimate, NoiError, NoiOccupant, NoiTput, SoftNoI, SoftNoiExhaustedReport, SoftNoiReport, SoftNoiRingExhaustedReport, SoftNoiUnboundReport,
     DEMO_HEAVY_DEMAND, DEMO_LIGHT_DEMAND, IS_BUDGET_MILLI, IS_SOLO_MILLI, MAX_NOI_TENANTS,
     NOI_CAPACITY, NOI_RING_CAPACITY,
 };
