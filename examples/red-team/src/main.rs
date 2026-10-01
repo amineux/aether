@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_smmu_bad_range_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -52,7 +52,8 @@
 //! `OperatorInject::submit` span escaping SidSandbox → `InjectError::Oob` (in-window admits; not softsfi-oob / outside-slice). Opinject-not-running is
 //! `OperatorInject::submit` while worker not running → `InjectError::NotRunning` (start then submit admits; not StaleVersion / Oob / Busy / UnknownSlot; not HW MIG / BAR0 / SoftNPU / CapTable). Opinject-busy is
 //! `OperatorInject::start` while already running → `InjectError::Busy` (first start OK; hot-add without relaunch; not NotRunning / xqueue Busy / greenctx Busy; not HW MIG / BAR0 / SoftNPU / CapTable). Opinject-unknown-slot is
-//! `OperatorInject::submit` empty / mismatched slot → `InjectError::UnknownSlot` (published SLOT_MEMCPY admits; not StaleVersion / Oob / NotRunning; not CapTable). Hodge harmonic-tree is
+//! `OperatorInject::submit` empty / mismatched slot → `InjectError::UnknownSlot` (published SLOT_MEMCPY admits; not StaleVersion / Oob / NotRunning; not CapTable). Smmu-bad-range is
+//! `IommuMap::map_window` zero-length / overflowing window and `bind_mm` reserved `MmId(0)` → `MapError::BadRange` (valid window + mm admit; not CrossTenant / WrongStream / Overlap / TableFull; not CXL.mem silicon / BAR0; Soft SMMU is software). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -95,7 +96,7 @@ use aether_core::partition::{
 use aether_core::space::run_silent_remote_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
-use aether_core::window::run_typed_window_sid_demo;
+use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
 use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
@@ -152,6 +153,7 @@ const LINE_OPINJECT_OOB: &str = "[redteam] attack=opinject-oob result=refused";
 const LINE_OPINJECT_NOT_RUNNING: &str = "[redteam] attack=opinject-not-running result=refused";
 const LINE_OPINJECT_BUSY: &str = "[redteam] attack=opinject-busy result=refused";
 const LINE_OPINJECT_UNKNOWN_SLOT: &str = "[redteam] attack=opinject-unknown-slot result=refused";
+const LINE_SMMU_BAD_RANGE: &str = "[redteam] attack=smmu-bad-range result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -211,6 +213,7 @@ struct RedTeamReport {
     opinject_not_running: bool,
     opinject_busy: bool,
     opinject_unknown_slot: bool,
+    smmu_bad_range: bool,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -268,6 +271,7 @@ impl RedTeamReport {
             && self.opinject_not_running
             && self.opinject_busy
             && self.opinject_unknown_slot
+            && self.smmu_bad_range
             && self.class
             && self.atomic
             && self.tensor
@@ -323,6 +327,7 @@ fn run_redteam() -> RedTeamReport {
     let opinject_not_running = run_opinject_not_running_demo();
     let opinject_busy = run_opinject_busy_demo();
     let opinject_unknown_slot = run_opinject_unknown_slot_demo();
+    let smmu_bad_range = run_smmu_bad_range_demo();
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -467,6 +472,8 @@ fn run_redteam() -> RedTeamReport {
         // OperatorInject submit empty / mismatched slot → UnknownSlot.
         // Not StaleVersion / Oob / NotRunning; not CapTable.
         opinject_unknown_slot: opinject_unknown_slot.all_ok(),
+        // map_window zero / overflow + bind_mm reserved MmId(0) → BadRange.
+        smmu_bad_range: smmu_bad_range.all_ok(),
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -549,6 +556,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.opinject_not_running, LINE_OPINJECT_NOT_RUNNING);
     emit(r.opinject_busy, LINE_OPINJECT_BUSY);
     emit(r.opinject_unknown_slot, LINE_OPINJECT_UNKNOWN_SLOT);
+    emit(r.smmu_bad_range, LINE_SMMU_BAD_RANGE);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -719,6 +727,10 @@ mod tests {
             r.opinject_unknown_slot,
             "OperatorInject submit unknown slot → UnknownSlot"
         );
+        assert!(
+            r.smmu_bad_range,
+            "map_window zero/overflow + bind_mm MmId(0) → BadRange"
+        );
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -870,6 +882,10 @@ mod tests {
             LINE_OPINJECT_UNKNOWN_SLOT,
             "[redteam] attack=opinject-unknown-slot result=refused"
         );
+        assert_eq!(
+            LINE_SMMU_BAD_RANGE,
+            "[redteam] attack=smmu-bad-range result=refused"
+        );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
         assert_eq!(LINE_TENSOR, "[softsfi] tensor=refused");
@@ -920,6 +936,7 @@ mod tests {
         LINE_OPINJECT_NOT_RUNNING,
         LINE_OPINJECT_BUSY,
         LINE_OPINJECT_UNKNOWN_SLOT,
+        LINE_SMMU_BAD_RANGE,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
