@@ -774,6 +774,52 @@ pub fn run_opinject_not_running_demo() -> OpInjectNotRunningReport {
     }
 }
 
+/// Host red-team report for ResidentWorker start while already running.
+///
+/// Sell line `[redteam] attack=opinject-busy` — existing
+/// [`ResidentWorker::start`] / [`OperatorInject::start`] while running →
+/// [`InjectError::Busy`]. First start OK; second Busy; hot-add still works
+/// without calling start again. **Not** NotRunning / xqueue Busy /
+/// greenctx Busy; not HW MIG / BAR0 / SoftNPU / CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectBusyReport {
+    /// First `start` admits.
+    pub first_ok: bool,
+    /// Second `start` while running → `InjectError::Busy`.
+    pub busy_refused: bool,
+    /// Hot-add scale without relaunch (epoch / launches unchanged).
+    pub hot_add_no_relaunch: bool,
+}
+
+impl OpInjectBusyReport {
+    pub fn all_ok(&self) -> bool {
+        self.first_ok && self.busy_refused && self.hot_add_no_relaunch
+    }
+}
+
+/// OperatorInject / ResidentWorker `start` while already running → [`InjectError::Busy`].
+/// Start-once gate — not NotRunning / xqueue Busy / greenctx Busy.
+pub fn run_opinject_busy_demo() -> OpInjectBusyReport {
+    let mut inj = OperatorInject::new();
+    let first_ok = inj.start().is_ok() && inj.running() && inj.launches() == 1;
+    let busy_refused = inj.start() == Err(InjectError::Busy);
+    let epoch0 = inj.epoch();
+    let launches0 = inj.launches();
+    let hot = inj.hot_add_scale();
+    let hot_add_no_relaunch = hot.is_ok()
+        && inj.epoch() == epoch0
+        && inj.launches() == launches0
+        && inj.running()
+        && launches0 == 1
+        && inj.table.get(SLOT_SCALE).is_some();
+
+    OpInjectBusyReport {
+        first_ok,
+        busy_refused,
+        hot_add_no_relaunch,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -885,6 +931,15 @@ mod tests {
         let r = run_opinject_not_running_demo();
         assert!(r.not_running_refused, "submit/hot_add while stopped → NotRunning");
         assert!(r.after_start_ok, "start then submit admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn opinject_busy_demo_all_ok() {
+        let r = run_opinject_busy_demo();
+        assert!(r.first_ok, "first start admits");
+        assert!(r.busy_refused, "second start → Busy");
+        assert!(r.hot_add_no_relaunch, "hot-add without relaunch");
         assert!(r.all_ok());
     }
 }
