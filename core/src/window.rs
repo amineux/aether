@@ -227,6 +227,63 @@ pub fn run_typed_window_sid_demo() -> TypedWindowSidReport {
     }
 }
 
+/// Host red-team report for Soft-SMMU bad-range refuse.
+///
+/// Sell line `[redteam] attack=smmu-bad-range` — existing
+/// [`IommuMap::map_window`] / [`IommuMap::bind_mm`] only. A zero-length
+/// window, a window whose `base + len` overflows, and the reserved
+/// PASID-0 [`crate::iommu::MmId`] are all [`MapError::BadRange`]. A valid
+/// window and a valid mm admit. **Not** CrossTenant / WrongStream /
+/// Overlap / TableFull; not CXL.mem silicon / BAR0; not hardware SMMU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuBadRangeReport {
+    /// Valid window pin and valid mm bind admit.
+    pub valid_ok: bool,
+    /// `map_window` with `len == 0` → `BadRange`.
+    pub zero_len: bool,
+    /// `map_window` with `base + len` overflowing `u64` → `BadRange`.
+    pub overflow: bool,
+    /// `bind_mm` with reserved `MmId(0)` → `BadRange`.
+    pub reserved_mm: bool,
+}
+
+impl SmmuBadRangeReport {
+    pub fn all_ok(&self) -> bool {
+        self.valid_ok && self.zero_len && self.overflow && self.reserved_mm
+    }
+}
+
+/// Zero / overflowing window and reserved mm → [`MapError::BadRange`].
+/// Reuses [`IommuMap::map_window`] / [`IommuMap::bind_mm`] only.
+pub fn run_smmu_bad_range_demo() -> SmmuBadRangeReport {
+    use crate::caps::{CapKind, CapRights};
+    use crate::iommu::MmId;
+    use crate::types::{ChipletId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let tenant = TenantId(1);
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, tenant).with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+    let good = TypedWindow::new(PhysAddr(0xB000), 0x1000, WindowKind::Hbm, sid, tenant);
+    let zero = TypedWindow::new(PhysAddr(0xC000), 0, WindowKind::Hbm, sid, tenant);
+    let over = TypedWindow::new(PhysAddr(u64::MAX - 0xFFF), 0x2000, WindowKind::Hbm, sid, tenant);
+
+    let valid_ok = iommu.map_window(&cap, good).is_ok()
+        && iommu
+            .bind_mm(&cap, StreamId::accel(ChipletId(0), TileId(2), 3), MmId(0x0100))
+            .is_ok();
+    let zero_len = iommu.map_window(&cap, zero) == Err(MapError::BadRange);
+    let overflow = iommu.map_window(&cap, over) == Err(MapError::BadRange);
+    let reserved_mm = iommu.bind_mm(&cap, sid, MmId(0)) == Err(MapError::BadRange);
+
+    SmmuBadRangeReport {
+        valid_ok,
+        zero_len,
+        overflow,
+        reserved_mm,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -241,6 +298,16 @@ mod tests {
 
     fn win(kind: WindowKind, sid: StreamId, tenant: TenantId) -> TypedWindow {
         TypedWindow::new(PhysAddr(0xB000), 0x1000, kind, sid, tenant)
+    }
+
+    #[test]
+    fn smmu_bad_range_demo_all_ok() {
+        let r = run_smmu_bad_range_demo();
+        assert!(r.valid_ok, "valid window + mm admit");
+        assert!(r.zero_len, "zero-length window → BadRange");
+        assert!(r.overflow, "base+len overflow → BadRange");
+        assert!(r.reserved_mm, "MmId(0) → BadRange");
+        assert!(r.all_ok());
     }
 
     #[test]
