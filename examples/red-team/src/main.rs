@@ -54,7 +54,7 @@
 //! `OperatorInject::start` while already running → `InjectError::Busy` (first start OK; hot-add without relaunch; not NotRunning / xqueue Busy / greenctx Busy; not HW MIG / BAR0 / SoftNPU / CapTable). Opinject-unknown-slot is
 //! `OperatorInject::submit` empty / mismatched slot → `InjectError::UnknownSlot` (published SLOT_MEMCPY admits; not StaleVersion / Oob / NotRunning; not CapTable). Smmu-bad-range is
 //! `IommuMap::map_window` zero-length / overflowing window and `bind_mm` reserved `MmId(0)` → `MapError::BadRange` (valid window + mm admit; not CrossTenant / WrongStream / Overlap / TableFull; not CXL.mem silicon / BAR0; Soft SMMU is software). Cut-conductance is
-//! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Hodge harmonic-tree is
+//! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -82,6 +82,9 @@
 //!
 //! Run: `make red-team` or `cargo run -p aether-redteam`.
 
+mod fuzz;
+
+use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
 use aether_core::cut::run_cut_conductance_demo;
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
@@ -157,6 +160,8 @@ const LINE_OPINJECT_BUSY: &str = "[redteam] attack=opinject-busy result=refused"
 const LINE_OPINJECT_UNKNOWN_SLOT: &str = "[redteam] attack=opinject-unknown-slot result=refused";
 const LINE_SMMU_BAD_RANGE: &str = "[redteam] attack=smmu-bad-range result=refused";
 const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refused";
+/// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
+const LINE_TENANT_FUZZ: &str = "[redteam] attack=tenant-fuzz result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
 const LINE_ATOMIC: &str = "[redteam] ATOMIC_ADD accept/reject";
 const LINE_TENSOR: &str = "[softsfi] tensor=refused";
@@ -218,6 +223,7 @@ struct RedTeamReport {
     opinject_unknown_slot: bool,
     smmu_bad_range: bool,
     cut_conductance: bool,
+    tenant_fuzz: TenantFuzzReport,
     class: bool,
     atomic: bool,
     tensor: bool,
@@ -277,6 +283,7 @@ impl RedTeamReport {
             && self.opinject_unknown_slot
             && self.smmu_bad_range
             && self.cut_conductance
+            && self.tenant_fuzz.all_ok()
             && self.class
             && self.atomic
             && self.tensor
@@ -334,6 +341,7 @@ fn run_redteam() -> RedTeamReport {
     let opinject_unknown_slot = run_opinject_unknown_slot_demo();
     let smmu_bad_range = run_smmu_bad_range_demo();
     let cut_conductance = run_cut_conductance_demo();
+    let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
@@ -482,6 +490,9 @@ fn run_redteam() -> RedTeamReport {
         smmu_bad_range: smmu_bad_range.all_ok(),
         // SpectralCut over the conductance bound → ConductanceExceeded. Cut-only.
         cut_conductance: cut_conductance.all_ok(),
+        // Bounded seeded hostile-tenant fuzz: evidence, not a proof, not a hardware claim.
+        // unmap_stream / unmap excluded as kernel-trust primitives (issue #161).
+        tenant_fuzz,
         // Fabric-class tag: Gradient admits; second Curl refuses (ring).
         class: noi.class_grad_admit && noi.class_curl_refuse,
         // SID-proved toy fetch-add: in-bounds accept, foreign span Oob.
@@ -511,6 +522,22 @@ fn emit_tagged(ok: bool, line: &str) {
     } else {
         println!("{line} FAIL");
     }
+}
+
+/// Needle: `LINE_TENANT_FUZZ seed=… ops=… escapes=… unnamed=… variants=…`.
+/// Every count comes from the run; nothing is hardcoded. Bounded, seeded
+/// fuzz evidence — not a proof, not a hardware claim. `unmap_stream` /
+/// `unmap` are excluded as kernel-trust primitives (issue #161).
+fn emit_tenant_fuzz(f: &TenantFuzzReport) {
+    let head = if f.all_ok() {
+        LINE_TENANT_FUZZ.to_string()
+    } else {
+        LINE_TENANT_FUZZ.replace("result=refused", "result=LEAKED")
+    };
+    println!(
+        "{head} seed={:#X} ops={} escapes={} unnamed={} variants={}",
+        f.seed, f.ops, f.escapes, f.unnamed, f.variants
+    );
 }
 
 fn print_clip(r: &RedTeamReport) {
@@ -566,6 +593,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.opinject_unknown_slot, LINE_OPINJECT_UNKNOWN_SLOT);
     emit(r.smmu_bad_range, LINE_SMMU_BAD_RANGE);
     emit(r.cut_conductance, LINE_CUT_CONDUCTANCE);
+    emit_tenant_fuzz(&r.tenant_fuzz);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
     emit_tagged(r.tensor, LINE_TENSOR);
@@ -744,6 +772,12 @@ mod tests {
             r.cut_conductance,
             "SpectralCut over conductance bound → ConductanceExceeded"
         );
+        assert!(
+            r.tenant_fuzz.all_ok(),
+            "tenant-fuzz: escapes=0 unnamed=0 (bounded seeded fuzz)"
+        );
+        assert_eq!(r.tenant_fuzz.escapes, 0);
+        assert_eq!(r.tenant_fuzz.unnamed, 0);
         assert!(r.class, "fabric-class Gradient admit / Curl refuse");
         assert!(r.atomic, "ATOMIC_ADD accept/reject");
         assert!(r.tensor, "SoftSFI tensor named refuse");
@@ -902,6 +936,10 @@ mod tests {
         assert_eq!(
             LINE_CUT_CONDUCTANCE,
             "[redteam] attack=cut-conductance result=refused"
+        );
+        assert_eq!(
+            LINE_TENANT_FUZZ,
+            "[redteam] attack=tenant-fuzz result=refused"
         );
         assert_eq!(LINE_CLASS, "[redteam] fabric-class admit/refuse");
         assert_eq!(LINE_ATOMIC, "[redteam] ATOMIC_ADD accept/reject");
