@@ -820,6 +820,76 @@ pub fn run_opinject_busy_demo() -> OpInjectBusyReport {
     }
 }
 
+/// Host red-team report for OperatorInject submit unknown / mismatched slot.
+///
+/// Sell line `[redteam] attack=opinject-unknown-slot` — existing
+/// [`OperatorInject::submit`] empty or kind-mismatched slot →
+/// [`InjectError::UnknownSlot`]. Published SLOT_MEMCPY admits. **Not**
+/// StaleVersion / Oob / NotRunning; not CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectUnknownSlotReport {
+    /// Published memcpy admits.
+    pub published_ok: bool,
+    /// Unpublished scale slot → `InjectError::UnknownSlot`.
+    pub empty_refused: bool,
+    /// Slot/kind mismatch → `InjectError::UnknownSlot`.
+    pub mismatch_refused: bool,
+}
+
+impl OpInjectUnknownSlotReport {
+    pub fn all_ok(&self) -> bool {
+        self.published_ok && self.empty_refused && self.mismatch_refused
+    }
+}
+
+/// OperatorInject `submit` empty or mismatched slot → [`InjectError::UnknownSlot`].
+/// Slot table gate — not StaleVersion / Oob / NotRunning / CapTable.
+pub fn run_opinject_unknown_slot_demo() -> OpInjectUnknownSlotReport {
+    let mut bytes = [0u8; OPINJECT_SPAN as usize];
+    for i in 0..DEMO_WORDS {
+        let off = (i as usize) * 4;
+        bytes[off..off + 4].copy_from_slice(&(i as i32 + 1).to_le_bytes());
+    }
+    let sandbox = toy_sandbox();
+    let mut inj = OperatorInject::with_resident_memcpy_saxpy();
+    let mv = inj.slot_version(SLOT_MEMCPY).unwrap_or(0);
+    let mut mem = FlatOpMem {
+        base: OPINJECT_BASE,
+        bytes: &mut bytes,
+    };
+    let published_ok = inj
+        .submit(
+            &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+            &sandbox,
+            &mut mem,
+        )
+        .is_ok();
+    // SCALE unpublished at seed → UnknownSlot (empty slot).
+    let empty_refused = inj.submit(
+        &OpCall::scale(1, DEMO_WORDS, 1, OPINJECT_BASE, OPINJECT_DST),
+        &sandbox,
+        &mut mem,
+    ) == Err(InjectError::UnknownSlot);
+    // Published MEMCPY slot with Saxpy kind → UnknownSlot (kind mismatch).
+    let mismatch = OpCall::new(
+        SLOT_MEMCPY,
+        InjectKind::Saxpy,
+        mv,
+        DEMO_WORDS,
+        0,
+        OPINJECT_BASE,
+        OPINJECT_DST,
+    );
+    let mismatch_refused =
+        inj.submit(&mismatch, &sandbox, &mut mem) == Err(InjectError::UnknownSlot);
+
+    OpInjectUnknownSlotReport {
+        published_ok,
+        empty_refused,
+        mismatch_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -940,6 +1010,15 @@ mod tests {
         assert!(r.first_ok, "first start admits");
         assert!(r.busy_refused, "second start → Busy");
         assert!(r.hot_add_no_relaunch, "hot-add without relaunch");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn opinject_unknown_slot_demo_all_ok() {
+        let r = run_opinject_unknown_slot_demo();
+        assert!(r.published_ok, "published SLOT_MEMCPY admits");
+        assert!(r.empty_refused, "unpublished scale → UnknownSlot");
+        assert!(r.mismatch_refused, "kind mismatch → UnknownSlot");
         assert!(r.all_ok());
     }
 }
