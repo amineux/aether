@@ -483,6 +483,59 @@ pub fn bind_window(
     cut.allow_window(win, caller)
 }
 
+/// Host red-team report for SpectralCut conductance bound refuse.
+///
+/// Sell line `[redteam] attack=cut-conductance` — existing
+/// [`SpectralCut::from_mask`] / [`SpectralCut::qemu_chiplet_cut`] /
+/// [`SpectralCut::min_balanced`] only. The chiplet split admits under a
+/// generous bound; the same split under a too-tight bound is
+/// [`CutError::ConductanceExceeded`]. **Not** CrossCut / Unbalanced /
+/// EmptyPart / NoCut; cut-only path, no SoftNoI mixing; not an EDA
+/// package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutConductanceReport {
+    /// Chiplet cut under a generous bound admits with `phi <= bound`.
+    pub under_ok: bool,
+    /// Same mask, bound 1 milli → `ConductanceExceeded`.
+    pub from_mask_refused: bool,
+    /// `qemu_chiplet_cut` with bound 1 milli → `ConductanceExceeded`.
+    pub chiplet_cut_refused: bool,
+    /// `min_balanced` with bound 1 milli → `ConductanceExceeded`.
+    pub min_balanced_refused: bool,
+}
+
+impl CutConductanceReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok
+            && self.from_mask_refused
+            && self.chiplet_cut_refused
+            && self.min_balanced_refused
+    }
+}
+
+/// SpectralCut over the conductance bound → [`CutError::ConductanceExceeded`].
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_conductance_demo() -> CutConductanceReport {
+    let g = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+
+    let under_ok = SpectralCut::from_mask(CutId(1), &g, chiplet0, 400)
+        .is_ok_and(|c| c.phi_milli > 0 && c.phi_milli <= c.bound_milli);
+    let from_mask_refused =
+        SpectralCut::from_mask(CutId(2), &g, chiplet0, 1) == Err(CutError::ConductanceExceeded);
+    let chiplet_cut_refused = SpectralCut::qemu_chiplet_cut(1).map(|(_, c)| c)
+        == Err(CutError::ConductanceExceeded);
+    let min_balanced_refused =
+        SpectralCut::min_balanced(CutId(3), &g, 1) == Err(CutError::ConductanceExceeded);
+
+    CutConductanceReport {
+        under_ok,
+        from_mask_refused,
+        chiplet_cut_refused,
+        min_balanced_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -502,6 +555,16 @@ mod tests {
             cut.allow_place(&g, TileId(1), Some(BankId(0))).unwrap_err(),
             CutError::CrossCut
         );
+    }
+
+    #[test]
+    fn cut_conductance_demo_all_ok() {
+        let r = run_cut_conductance_demo();
+        assert!(r.under_ok, "chiplet cut under bound admits");
+        assert!(r.from_mask_refused, "from_mask tight bound → ConductanceExceeded");
+        assert!(r.chiplet_cut_refused, "qemu_chiplet_cut tight bound");
+        assert!(r.min_balanced_refused, "min_balanced tight bound");
+        assert!(r.all_ok());
     }
 
     #[test]
