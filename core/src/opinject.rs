@@ -715,6 +715,65 @@ pub fn run_opinject_oob_demo() -> OpInjectOobReport {
     }
 }
 
+/// Host red-team report for OperatorInject submit while worker not running.
+///
+/// Sell line `[redteam] attack=opinject-not-running` — existing
+/// [`OperatorInject::submit`] (and hot_add_scale) when worker stopped →
+/// [`InjectError::NotRunning`]. Start then submit admits. **Not**
+/// StaleVersion / Oob / Busy / UnknownSlot; not HW MIG / BAR0 / SoftNPU /
+/// CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectNotRunningReport {
+    /// Submit while stopped → `InjectError::NotRunning`.
+    pub not_running_refused: bool,
+    /// After `start`, published memcpy admits.
+    pub after_start_ok: bool,
+}
+
+impl OpInjectNotRunningReport {
+    pub fn all_ok(&self) -> bool {
+        self.not_running_refused && self.after_start_ok
+    }
+}
+
+/// OperatorInject `submit` while worker not running → [`InjectError::NotRunning`].
+/// Worker-running gate — not StaleVersion / Oob / Busy / UnknownSlot.
+pub fn run_opinject_not_running_demo() -> OpInjectNotRunningReport {
+    let mut bytes = [0u8; OPINJECT_SPAN as usize];
+    for i in 0..DEMO_WORDS {
+        let off = (i as usize) * 4;
+        bytes[off..off + 4].copy_from_slice(&(i as i32 + 1).to_le_bytes());
+    }
+    let sandbox = toy_sandbox();
+    // Seed table without starting the resident worker.
+    let mut inj = OperatorInject::new();
+    let _ = inj.publish(SLOT_MEMCPY, InjectKind::Memcpy);
+    let mv = inj.slot_version(SLOT_MEMCPY).unwrap_or(0);
+    let mut mem = FlatOpMem {
+        base: OPINJECT_BASE,
+        bytes: &mut bytes,
+    };
+    let not_running_refused = inj.submit(
+        &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+        &sandbox,
+        &mut mem,
+    ) == Err(InjectError::NotRunning)
+        && inj.hot_add_scale() == Err(InjectError::NotRunning);
+    let _ = inj.start();
+    let after_start_ok = inj
+        .submit(
+            &OpCall::memcpy(mv, DEMO_WORDS, OPINJECT_BASE, OPINJECT_DST),
+            &sandbox,
+            &mut mem,
+        )
+        .is_ok();
+
+    OpInjectNotRunningReport {
+        not_running_refused,
+        after_start_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -817,6 +876,15 @@ mod tests {
         let r = run_opinject_oob_demo();
         assert!(r.in_window_ok, "in-sandbox memcpy admits");
         assert!(r.oob_refused, "escaping SidSandbox → Oob");
+        assert!(r.all_ok());
+    }
+
+
+    #[test]
+    fn opinject_not_running_demo_all_ok() {
+        let r = run_opinject_not_running_demo();
+        assert!(r.not_running_refused, "submit/hot_add while stopped → NotRunning");
+        assert!(r.after_start_ok, "start then submit admits");
         assert!(r.all_ok());
     }
 }
