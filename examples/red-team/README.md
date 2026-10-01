@@ -3,7 +3,7 @@
 Host stdout a buyer can grep. Reuses `run_blast_demo`, `run_blast_hops_demo`,
 `run_blast_nodes_demo`, `run_bank_color_demo`, `run_uncolored_compute_demo`,
 `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
-`run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`, `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_smmu_bad_range_demo`, `run_cut_conductance_demo`,
+`run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`, `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_smmu_bad_range_demo`, `run_cut_conductance_demo`, `run_tenant_fuzz_demo`,
 `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_chipsync_unbound_demo`, `run_softsfi_demo`,
 `run_softnoi_demo`, and `run_sva_demo`.
 Not a new isolator, not a QEMU guest, not a slide. Blast-nodes needle:
@@ -80,6 +80,11 @@ Cut-conductance needle: `[redteam] attack=cut-conductance result=refused`
 (`SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound →
 `CutError::ConductanceExceeded`; chiplet cut under a generous bound admits; cut-only path, no
 SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver).
+Tenant-fuzz needle: `[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=<n>`
+(bounded seeded fuzz, not a proof, not a hardware claim; fixed-seed xorshift, no wall clock; tenant B vs tenant A's
+canary over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs;
+`escapes` and `variants` are counted from the run; `IommuMap::unmap_stream` / `unmap` are excluded as
+kernel-trust primitives; known open item: https://github.com/amineux/aether/issues/161).
 Hodge harmonic-tree needle: `[redteam] attack=hodge-harmonic-tree result=refused`
 (`OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`;
 not SoftNoI fabric-class Curl ring).
