@@ -12,6 +12,6 @@ If private reporting is unavailable, open an issue requesting a private contact
 without exploit details. Maintainer response times are not currently guaranteed.
 
 Current scope is the latest main research code; historical versions have no
-separate security maintenance commitment. Dependency review and host tests are
+separate security maintenance commitment. RustSec dependency audit and host tests are
 engineering checks, not an independent security audit. Maintainers should enable
 private vulnerability reporting and require CI checks through repository settings.
