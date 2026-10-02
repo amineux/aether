@@ -1051,3 +1051,19 @@ h2 {
 }
 
 }
+.timing-panel { display: grid; grid-template-columns: 1fr 1fr; gap: 65px; border-top: 1px solid var(--line); padding: 35px 0 65px; }
+.timing-panel h3 { font-size: 25px; margin-block: 18px; }
+.timing-panel p:not(.eyebrow) { color: var(--muted); font-size: 12px; }
+.timing-sources { display: flex; flex-wrap: wrap; gap: 15px; margin-top: 20px; font-size: 10px; color: var(--mint); }
+.evaluation-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+.evaluation-grid h3 { font-size: 25px; }
+.evaluation-grid ul { color: var(--muted); font-size: 12px; padding-left: 18px; line-height: 2; }
+.evaluation-close { display: grid; grid-template-columns: 1fr auto; gap: 45px; align-items: center; margin-block: 30px; }
+.evaluation-close p, .evaluation-section .path-note { color: var(--muted); font-size: 12px; }
+.evaluation-section .path-note { font-size: 10px; }
+.evaluation-section .path-note a { text-decoration: underline; color: var(--mint); }
+@media (max-width: 760px) {
+  .timing-panel, .evaluation-grid, .evaluation-close { grid-template-columns: 1fr; gap: 20px; }
+  .timing-panel { padding-bottom: 50px; }
+  .evaluation-close .button { justify-self: start; }
+}

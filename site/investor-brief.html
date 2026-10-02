@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aether — investor conversation brief</title>
+  <meta name="description" content="Aether's investment thesis, technical evidence, commercial hypotheses, validation milestones and open risks in one shareable brief.">
+  <link rel="canonical" href="https://amineux.github.io/aether/investor-brief.html">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/fonts.css">
+  <link rel="stylesheet" href="./css/brief.css">
+</head>
+<body>
+  <a class="skip" href="#brief">Skip to brief</a>
+  <nav class="toolbar" aria-label="Brief actions">
+    <a href="./">← Aether overview</a>
+    <div>
+      <button id="copy-link" type="button">Copy brief link</button>
+      <button id="print-brief" type="button">Print / save PDF</button>
+      <a href="./investor-brief.md" download>Download text ↓</a>
+    </div>
+    <span id="copy-status" role="status" aria-live="polite"></span>
+  </nav>
+  <main class="brief" id="brief">
+    <header class="brief-header">
+      <div class="wordmark">aether<span>.</span></div>
+      <p class="eyebrow">INVESTOR CONVERSATION BRIEF · 2 OCTOBER 2026</p>
+      <h1>The isolation layer<br>for shared AI compute.</h1>
+      <p class="standfirst">A research-stage venture testing a focused commercial entry point: workload isolation for accelerator teams building NPU runtimes.</p>
+      <div class="stage">Research prototype <span>Open source · MIT OR Apache-2.0</span></div>
+    </header>
+    <section class="intro-grid">
+      <div><h2>Investment thesis</h2><p>Accelerator teams may need better ways to control memory access, resource interference and failure containment across workloads. Aether explores a common capability contract with named, inspectable refusal paths. The initial product hypothesis is an integration component around that boundary.</p></div>
+      <div><h2>Initial buyer &amp; offer</h2><p><strong>User:</strong> runtime and systems engineers.<br><strong>Buyer:</strong> CTO or head of software.<br><strong>Offer:</strong> one bounded evaluation and integration pilot, with a workload, environment, baseline, acceptance criteria and fixed end date.</p></div>
+    </section>
+    <section>
+      <h2>Technical foundation — evidence available today</h2>
+      <ul class="evidence">
+        <li>Rust capability and tenant models with host tests and named refusal demos.</li>
+        <li>QEMU boot checks for x86, RISC-V and ARM; software accelerator paths.</li>
+        <li>Recorded evidence bundles with commit, toolchain, lockfile and command logs.</li>
+        <li>Host/QEMU CI and RustSec audit passed for the <a href="https://github.com/amineux/aether/pull/170">maturity release</a>.</li>
+      </ul>
+      <p class="source-note">Inspect: <a href="https://github.com/amineux/aether">repository</a> · <a href="https://github.com/amineux/aether/actions/runs/37059229950">validated CI</a> · <a href="https://github.com/amineux/aether/actions/runs/37059229955">dependency audit</a> · <a href="https://github.com/amineux/aether/blob/main/docs/business/INVESTOR_EVIDENCE.md">evidence index</a>.</p>
+    </section>
+    <section>
+      <h2>Why this problem matters — and what already exists</h2>
+      <p><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/introduction.html">NVIDIA MIG</a> provides hardware partitioning and isolation on supported GPUs. <a href="https://docs.kernel.org/arch/x86/sva.html">Linux SVA/PASID</a> supports shared addressing and process-aware device transactions on suitable platforms. These are established mechanisms, not gaps Aether has already displaced.</p>
+      <p><strong>Our inference:</strong> isolation is a real systems concern. Whether a reusable capability component solves an unmet problem for NPU teams must be demonstrated through discovery and a customer baseline. No performance superiority or commercial moat is established.</p>
+    </section>
+    <section class="commercial">
+      <h2>Proposed commercial progression</h2>
+      <div class="path"><span>Paid evaluation</span><i aria-hidden="true">→</i><span>Reusable integration</span><i aria-hidden="true">→</i><span>Annual support</span></div>
+      <p>Potential paid value: supported releases, integration tooling and validated hardware support around the open-source core. Validate pricing, buyer urgency and reuse with a second customer before assuming product economics.</p>
+    </section>
+    <section>
+      <h2>The next 90 days — proposed evidence gates</h2>
+      <table><thead><tr><th scope="col">Window</th><th scope="col">Milestone</th><th scope="col">Decision evidence</th></tr></thead><tbody>
+        <tr><th scope="row">Weeks 1–3</th><td>Validate demand</td><td>Target 10–15 discovery conversations; three independent repeated problems and two technical follow-ups.</td></tr>
+        <tr><th scope="row">Weeks 4–6</th><td>Customer-shaped proof</td><td>One workload and baseline; independent reproduction and customer-confirmed relevance.</td></tr>
+        <tr><th scope="row">Weeks 7–13</th><td>Paid pilot &amp; repeatability</td><td>Payment evidence and a second similar opportunity; measured integration hours and shared delivery work.</td></tr>
+      </tbody></table>
+      <p class="source-note">Targets are not achieved traction. <a href="https://github.com/amineux/aether/blob/main/docs/MATURITY.md">Full execution plan ↗</a></p>
+    </section>
+    <section class="intro-grid">
+      <div><h2>What capital would unlock</h2><p>Customer validation, agreed runtime or hardware integration, and independent reproduction. Define the amount, budget and required expertise against the evaluation scope and access. No round size, valuation or funding commitment is announced.</p></div>
+      <div><h2>Open risks</h2><p>No verified customers, revenue, hardware isolation or production certification are claimed. Soft SMMU is software; the partner NPU driver is a no-op stub. Runtime shims are not production plugins. No formal verification.</p></div>
+    </section>
+    <aside class="risk"><strong>Security diligence:</strong> <a href="https://github.com/amineux/aether/issues/161">issue #161</a> tracks unchecked raw unmap helpers. Tenant reachability is not established; bounded fuzz excludes those kernel-trust primitives. Review the <a href="https://github.com/amineux/aether/blob/main/docs/SECURITY.md">security model</a> before scoping an evaluation.</aside>
+    <footer><div><strong>Founder / maintainer: amineux</strong><br><a href="https://github.com/amineux">github.com/amineux</a></div><div><a href="https://amineux.github.io/aether/">amineux.github.io/aether</a><br>Keep commercial and workload details private.</div></footer>
+  </main>
+  <script src="./js/brief.js"></script>
+</body>
+</html>

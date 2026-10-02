@@ -3,6 +3,8 @@
 Updated 2 October 2026. Research-stage venture.
 https://amineux.github.io/aether/
 
+Formatted, shareable version: https://amineux.github.io/aether/investor-brief.html
+
 ## Thesis and initial buyer
 Build a capability-based isolation layer for shared AI accelerators. Start with
 small accelerator companies building NPU runtimes. Validate whether workload
@@ -34,6 +36,15 @@ These are proposed milestones, not achieved traction.
 Investment would fund customer validation, an agreed runtime/hardware integration
 and independent reproduction. Amount and budget are not announced; define them
 against the evaluation scope and required access.
+
+## Existing mechanisms and the opportunity hypothesis
+NVIDIA MIG provides hardware partitioning and isolation on supported GPUs:
+https://docs.nvidia.com/datacenter/tesla/mig-user-guide/introduction.html
+Linux SVA/PASID supports shared addressing and process-aware device transactions
+on suitable platforms: https://docs.kernel.org/arch/x86/sva.html
+Our inference is that isolation is a real systems concern. Aether must establish
+an unmet NPU-team need and measurable value against an existing customer baseline.
+It has not displaced these mechanisms or demonstrated performance superiority.
 
 ## Risks and diligence
 No verified customers, revenue, hardware validation or production certification
