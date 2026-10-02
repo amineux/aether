@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Aether — fabric kernel for AI silicon</title>
+  <title>Aether — fabric kernel for AI silicon · investor brief</title>
   <meta name="description" content="Aether is an accelerator-first fabric kernel for chiplet packages of CPU, NPU, GPU, and custom ASIC tiles. Frozen IreeHalCmd, PJRT-shaped host shim, Soft SMMU SID, blast-radius refuse — a contract you can clone.">
   <meta name="theme-color" content="#070809">
   <link rel="canonical" href="https://amineux.github.io/aether/">
@@ -27,6 +27,7 @@
       </a>
       <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false"><span></span></button>
       <ul class="nav-links">
+        <li><a href="#investors">Investors</a></li>
         <li><a href="#problem">Problem</a></li>
         <li><a href="#solution">Solution</a></li>
         <li><a href="#how">How it works</a></li>
@@ -48,13 +49,14 @@
       <div class="hero-grid" aria-hidden="true"></div>
       <div class="wrap hero-inner">
         <div>
-          <p class="eyebrow"><i></i> freeze-v1 · R5 foundation seals · M0–M6 complete · next year is YEAR_AHEAD</p>
+          <p class="eyebrow"><i></i> open-source startup · investor brief · freeze-v1 · research prototype</p>
           <h1><span>Aether</span></h1>
           <p class="one-liner">Fabric kernel for AI silicon.</p>
           <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
           <p class="hero-horizon">Research <code>IreeHalCmd</code> v1 is frozen. Isolation is the product. The next twelve months: sell the demos we can run — <a href="#roadmap">YEAR_AHEAD</a>.</p>
           <div class="cta-row">
-            <a class="btn btn-primary" href="https://github.com/amineux/aether">View on GitHub</a>
+            <a class="btn btn-primary" href="#investors">Investor brief</a>
+            <a class="btn btn-ghost" href="https://github.com/amineux/aether">View on GitHub</a>
             <a class="btn btn-ghost" href="#sell">Sell / Design-win</a>
             <a class="btn btn-ghost" href="#roadmap">Next-year roadmap</a>
           </div>
@@ -119,6 +121,82 @@
             <circle class="pkt pkt-b" r="3.5" fill="#6AA8FF"/>
           </svg>
         </aside>
+      </div>
+    </section>
+
+    <section class="band alt" id="investors" aria-labelledby="inv-h">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">Investor brief</p>
+            <h2 id="inv-h">Aether, as a startup: the isolation layer for chiplet packages.</h2>
+            <p class="lede">Aether is an open-source, research-stage fabric kernel that the owner (<a href="https://github.com/amineux/aether">amineux</a>) is positioning as a startup. Every number below was counted from the repository and GitHub on 1 October 2026. Where we have nothing to claim, we say so in <a href="#inv-limits">Honest limits</a>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>Counted from the repo · no revenue · no silicon</div>
+        </div>
+
+        <div class="sell-goals">
+          <article class="glass sell-goal" data-reveal data-d="1" aria-labelledby="inv-problem">
+            <small>01</small>
+            <h3 id="inv-problem">Problem</h3>
+            <p>Packages are becoming meshes of CPU, NPU, GPU and custom ASIC dies, but the operating-system layer is still a Linux device driver plus a vendor runtime. Weights and KV caches from different tenants sit on the same package, and nothing at the OS layer treats a tenant, a memory bank or a blast radius as a first-class object that can be refused.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="2" aria-labelledby="inv-solution">
+            <small>02</small>
+            <h3 id="inv-solution">Solution</h3>
+            <p>A capability-based fabric kernel in which tiles are peers and every access is checked against a tenant, a stream ID, a cut or a quota. The product is the <em>refuse path</em>: a named, testable error for each way a tenant can step outside its slice. It runs today as software models (Soft SMMU, SoftNoI, SoftGreenCtx, SpectralCut) on a frozen research packet (<code>IreeHalCmd</code> v1) behind a host shim.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="3" aria-labelledby="inv-why">
+            <small>03</small>
+            <h3 id="inv-why">Why now</h3>
+            <p>The industry is assembling products from chiplets after the fact, so the programming model cannot be whatever the interposer happens to make coherent. Transport (UCIe, EMIB) moves bytes; it does not name tenants, cuts or fences. That is an argument about structure, not a market forecast: no market-size figure is claimed on this page.</p>
+          </article>
+        </div>
+
+        <div class="glass inv-block" data-reveal aria-labelledby="inv-traction">
+          <h3 id="inv-traction">Traction signals (engineering, not commercial)</h3>
+          <ul class="inv-list">
+            <li><strong>161 pull requests merged, 0 open</strong> on <code>amineux/aether</code> (GitHub count with main at <code>f18e51d</code>, before this page's own pull request); 148 commits on main; repository created 6 Sep 2026.</li>
+            <li><strong>Rounds of refuse-path sealing:</strong> Rounds 5–14 are narrated in <a href="#sell">Sell</a>. Round 14 merged today as #159 (<code>smmu-bad-range</code>), #160 (<code>cut-conductance</code>), #162 (<code>tenant-fuzz</code>) and #163 (site).</li>
+            <li><strong>50 named <code>[redteam] attack=… result=refused</code> lines</strong> printed by one command, <code>make red-team</code>, in the current tree, plus the fabric-class, <code>ATOMIC_ADD</code> and four <code>[softsfi]</code> lines. The command exits non-zero if any of them is not refused.</li>
+            <li><strong>548 host tests</strong> pass under <code>cargo test --workspace</code>.</li>
+            <li><strong>CI on three targets</strong> for every pull request: x86_64 (<code>cargo test + make qemu</code>), <code>make qemu-aarch64-ci</code> and <code>make qemu-riscv-ci</code>. Pull requests #159, #160, #162 and #163 merged with all three green.</li>
+            <li><strong>No third-party crates:</strong> the root <code>Cargo.lock</code> lists 11 packages, all in this workspace, none from a registry. Licence: MIT OR Apache-2.0.</li>
+          </ul>
+          <p class="inv-note">The newest signal, a bounded, seeded hostile-tenant fuzz run inside <code>make red-team</code>:</p>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>make red-team (host)</span></div>
+            <pre aria-label="Tenant fuzz output line"><span class="ok">[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=29</span></pre>
+          </div>
+          <p class="inv-note">Read it with its caveats: tenant B runs 4096 hostile operations from a fixed seed (<code>0x5AE7</code>, no wall clock) against existing Soft-SMMU, green-context, NoI, timeline, colour and operator-inject APIs while tenant A holds a canary. <code>escapes</code>, <code>unnamed</code> and <code>variants</code> are counted by the run (29 distinct error variants were hit). This is bounded, deterministic evidence: <strong>not a proof, not a hardware claim</strong>, and it deliberately <strong>excludes</strong> <code>IommuMap::unmap_stream</code> and <code>unmap</code> (see the open gap below).</p>
+        </div>
+
+        <div class="glass inv-block" id="inv-limits" data-reveal aria-labelledby="inv-limits-h">
+          <h3 id="inv-limits-h">Honest limits</h3>
+          <ul class="inv-list">
+            <li><strong>An open gap, stated plainly:</strong> the fuzz found that <code>IommuMap::unmap_stream</code> and <code>unmap</code> take no tenant check, so a caller passing another tenant's stream ID and IOVA can drop that tenant's pin (the checked <code>unmap_for</code> correctly returns <code>CrossTenant</code>). It is tracked as <a href="https://github.com/amineux/aether/issues/161">issue #161</a>. The fix is a core change that may touch the freeze and needs the owner's decision. We publish it because finding and logging a hole like this is what the process is for.</li>
+            <li><strong>Software, not silicon.</strong> Soft SMMU is software, not a hardware SMMU. No tape-out and no FLOPs or benchmark claims are made.</li>
+            <li><strong>No customers, revenue, valuation, funding amount or partner</strong> is claimed. The IREE HAL stand-in is a public-nouns stand-in, not a partner, and <code>PartnerNpuStub</code> is a labelled no-op.</li>
+            <li><strong>No formal verification.</strong> Tests, CI and a bounded fuzz are evidence; they are not proofs.</li>
+            <li><strong>Research prototype.</strong> The team, market size and competitor figures are not stated on this page because they are not verifiable from the repository.</li>
+          </ul>
+        </div>
+
+        <div class="glass inv-block" data-reveal aria-labelledby="inv-ask">
+          <h3 id="inv-ask">The ask</h3>
+          <p class="callout">No amount, valuation or terms are proposed here. We are looking for three kinds of conversation:</p>
+          <ul class="inv-list">
+            <li><strong>Design partners</strong> building chiplet or multi-tenant accelerator packages: bring your opcode table and see whether the refuse paths fit it (<a href="#sell">Sell</a>).</li>
+            <li><strong>Technical diligence:</strong> clone the repo and run <code>make red-team</code> and <code>make diligence-demo</code>; read <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE.md</a> and issue #161, then tell us what to break next.</li>
+            <li><strong>Investors</strong> who fund chiplet and secure-substrate software and are comfortable with a research-stage company.</li>
+          </ul>
+          <p class="inv-note"><strong>Contact:</strong> [placeholder — open an issue at <a href="https://github.com/amineux/aether/issues">github.com/amineux/aether/issues</a> or reach the owner, <a href="https://github.com/amineux">@amineux</a>, on GitHub. No email address is published here.]</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://github.com/amineux/aether/issues">Open an issue</a>
+            <a class="btn btn-ghost" href="https://github.com/amineux/aether">View the repository</a>
+            <a class="btn btn-ghost" href="#problem">Technical detail below</a>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -1438,6 +1516,7 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
       </div>
       <div class="foot-links">
         <a href="https://github.com/amineux/aether">GitHub</a>
+        <a href="#investors">Investor brief</a>
         <a href="#sell">Sell</a>
         <a href="#roadmap">Roadmap</a>
         <a href="#partners">Why partner</a>
