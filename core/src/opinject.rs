@@ -820,6 +820,65 @@ pub fn run_opinject_busy_demo() -> OpInjectBusyReport {
     }
 }
 
+/// Host red-team report for OperatorInject BadArg refuse.
+///
+/// Sell line `[redteam] attack=opinject-bad-arg` — existing
+/// [`OpTable::publish`] / [`OpCall::from_le_bytes`] / [`OperatorInject::submit`]
+/// paths that already return [`InjectError::BadArg`] (e.g. `kind.slot() != slot`
+/// on publish; `n == 0` on submit). Valid publish admits. **Not**
+/// UnknownSlot / StaleVersion / Oob / NotRunning / Busy; not CapTable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpInjectBadArgReport {
+    /// Matching slot/kind publish admits.
+    pub publish_ok: bool,
+    /// `kind.slot() != slot` on publish → `InjectError::BadArg`.
+    pub publish_mismatch: bool,
+    /// Packed OpCall with slot≠kind.slot() decode → `InjectError::BadArg`.
+    pub decode_mismatch: bool,
+    /// Submit with `n == 0` → `InjectError::BadArg`.
+    pub submit_zero_n: bool,
+}
+
+impl OpInjectBadArgReport {
+    pub fn all_ok(&self) -> bool {
+        self.publish_ok && self.publish_mismatch && self.decode_mismatch && self.submit_zero_n
+    }
+}
+
+/// OperatorInject publish / decode / submit BadArg paths → [`InjectError::BadArg`].
+/// Arg gate — not UnknownSlot / StaleVersion / Oob / NotRunning / Busy / CapTable.
+pub fn run_opinject_bad_arg_demo() -> OpInjectBadArgReport {
+    let mut table = OpTable::new();
+    let publish_ok = table.publish(SLOT_MEMCPY, InjectKind::Memcpy).is_ok();
+    let publish_mismatch =
+        table.publish(SLOT_MEMCPY, InjectKind::Saxpy) == Err(InjectError::BadArg);
+
+    // Packed: slot byte = SLOT_MEMCPY, kind byte = Saxpy → BadArg at decode.
+    let mut packed = [0u8; OP_CALL_SIZE];
+    packed[0] = SLOT_MEMCPY;
+    packed[1] = InjectKind::Saxpy as u8;
+    let decode_mismatch = OpCall::from_le_bytes(packed) == Err(InjectError::BadArg);
+
+    let mut bytes = [0u8; OPINJECT_SPAN as usize];
+    let sandbox = toy_sandbox();
+    let mut inj = OperatorInject::with_resident_memcpy_saxpy();
+    let mv = inj.slot_version(SLOT_MEMCPY).unwrap_or(0);
+    let mut mem = FlatOpMem {
+        base: OPINJECT_BASE,
+        bytes: &mut bytes,
+    };
+    let zero = OpCall::memcpy(mv, 0, OPINJECT_BASE, OPINJECT_DST);
+    let submit_zero_n = inj.submit(&zero, &sandbox, &mut mem) == Err(InjectError::BadArg);
+
+    OpInjectBadArgReport {
+        publish_ok,
+        publish_mismatch,
+        decode_mismatch,
+        submit_zero_n,
+    }
+}
+
+
 /// Host red-team report for OperatorInject submit unknown / mismatched slot.
 ///
 /// Sell line `[redteam] attack=opinject-unknown-slot` — existing
@@ -1010,6 +1069,16 @@ mod tests {
         assert!(r.first_ok, "first start admits");
         assert!(r.busy_refused, "second start → Busy");
         assert!(r.hot_add_no_relaunch, "hot-add without relaunch");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn opinject_bad_arg_demo_all_ok() {
+        let r = run_opinject_bad_arg_demo();
+        assert!(r.publish_ok, "matching publish admits");
+        assert!(r.publish_mismatch, "kind.slot()!=slot → BadArg");
+        assert!(r.decode_mismatch, "packed slot≠kind → BadArg");
+        assert!(r.submit_zero_n, "submit n==0 → BadArg");
         assert!(r.all_ok());
     }
 
