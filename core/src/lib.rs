@@ -112,7 +112,7 @@ pub use noi::{
 };
 pub use observe::{EventKind, EventRing, KernelEvent};
 pub use opinject::{
-    run_opinject_demo, run_opinject_oob_demo, run_opinject_stale_version_demo, run_opinject_not_running_demo, run_opinject_busy_demo, run_opinject_unknown_slot_demo, FlatOpMem, InjectError, InjectKind, OpCall, OpInjectOobReport, OpInjectReport, OpInjectStaleVersionReport, OpInjectNotRunningReport, OpInjectBusyReport, OpInjectUnknownSlotReport, OpSlot, OpTable,
+    run_opinject_demo, run_opinject_oob_demo, run_opinject_stale_version_demo, run_opinject_not_running_demo, run_opinject_busy_demo, run_opinject_unknown_slot_demo, run_opinject_bad_arg_demo, FlatOpMem, InjectError, InjectKind, OpCall, OpInjectOobReport, OpInjectReport, OpInjectStaleVersionReport, OpInjectNotRunningReport, OpInjectBusyReport, OpInjectUnknownSlotReport, OpInjectBadArgReport, OpSlot, OpTable,
     OperatorInject, ResidentWorker, DEMO_WORDS, MAX_OP_SLOTS, OPINJECT_BASE, OPINJECT_DST,
     OPINJECT_SID, OPINJECT_SPAN, OP_CALL_SIZE, SLOT_MEMCPY, SLOT_SAXPY, SLOT_SCALE,
 };

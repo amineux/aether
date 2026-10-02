@@ -72,6 +72,10 @@ greenctx Busy; not HW MIG / BAR0 / SoftNPU / CapTable).
 Opinject-unknown-slot needle: `[redteam] attack=opinject-unknown-slot result=refused`
 (`OperatorInject::submit` empty or kind-mismatched slot → `InjectError::UnknownSlot`;
 published SLOT_MEMCPY admits; not StaleVersion / Oob / NotRunning; not CapTable).
+Opinject-bad-arg needle: `[redteam] attack=opinject-bad-arg result=refused`
+(`OpTable::publish` / decode / submit BadArg paths — `kind.slot()!=slot`, `n==0` →
+`InjectError::BadArg`; valid publish admits; not UnknownSlot / StaleVersion / Oob /
+NotRunning / Busy; not CapTable).
 Smmu-bad-range needle: `[redteam] attack=smmu-bad-range result=refused`
 (`IommuMap::map_window` zero-length or `base+len`-overflowing window, and `bind_mm` reserved
 `MmId(0)` → `MapError::BadRange`; valid window + mm admit; not CrossTenant / WrongStream /
