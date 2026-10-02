@@ -6,7 +6,35 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  host-evidence:
+    name: Locked host evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Record and validate host evidence
+        run: python3 scripts/collect_evidence.py --output "${{ runner.temp }}/aether-evidence"
+      - name: Evidence failure-path tests
+        run: python3 -m unittest discover -s scripts -p test_collect_evidence.py
+      - name: Preserve evidence including failed checks
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: host-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/aether-evidence
+          if-no-files-found: error
+          retention-days: 30
+
   test-and-qemu:
     name: cargo test + make qemu
     runs-on: ubuntu-latest
@@ -24,7 +52,7 @@ jobs:
             qemu-system-x86 binutils gcc
 
       - name: Host tests
-        run: cargo test --workspace
+        run: cargo test --workspace --locked
 
       - name: Diligence demo (host Path B; no QEMU rebuild)
         run: make diligence-demo
