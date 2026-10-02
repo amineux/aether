@@ -46,6 +46,7 @@
 <div class="actions">
 <a class="button primary" href="#investors">Explore the investment thesis ↗</a>
 <a class="text-link" href="#evidence">Inspect the evidence ↓</a>
+<a class="text-link" href="./investor-brief.html">Read the investor brief ↗</a>
 </div>
 <p class="hero-note">A reproducible software foundation. The next proof is with a customer.</p>
 </div>
@@ -201,6 +202,12 @@
 </article>
 </div>
 </section>
+<div class="wrap">
+<div class="timing-panel" id="why-now">
+  <div><p class="eyebrow">WHY THIS OPPORTUNITY MATTERS</p><h3>Isolation is already<br>a deployment concern.</h3><p>NVIDIA’s MIG documentation describes hardware partitioning and isolation for supported GPUs. Linux SVA/PASID provides shared addressing and process-aware device transactions on suitable platforms.</p><div class="timing-sources"><a href="https://docs.nvidia.com/datacenter/tesla/mig-user-guide/introduction.html">NVIDIA MIG documentation ↗</a><a href="https://docs.kernel.org/arch/x86/sva.html">Linux SVA documentation ↗</a></div></div>
+  <div><p class="eyebrow">THE OPEN COMMERCIAL QUESTION</p><h3>Can NPU teams reuse<br>a better boundary contract?</h3><p>Our inference: the technical problem is meaningful, but established mechanisms are the starting baseline. Discovery must identify a specific unmet need; a customer evaluation must show whether Aether adds value. This is an opportunity hypothesis, not proof of demand or an advantage over hardware isolation.</p><a class="text-link" href="#evaluation">See the proposed evaluation ↗</a></div>
+</div>
+</div>
 <section class="section evidence-section" id="evidence">
 <div class="wrap">
 <div class="section-top">
@@ -401,7 +408,7 @@ python3 scripts/collect_evidence.py</code>
 <div class="resource-links">
 <a href="https://github.com/amineux/aether/blob/main/docs/business/INVESTOR_EVIDENCE.md">Investor evidence index <span>↗</span>
 </a>
-<a href="./investor-brief.md" download>Download the investor brief <span>↓</span>
+<a href="./investor-brief.html">Read or print the investor brief <span>↗</span>
 </a>
 <a href="./research.html">Explore the technical archive <span>↗</span>
 </a>
@@ -423,6 +430,16 @@ python3 scripts/collect_evidence.py</code>
 </details>
 </div>
 </div>
+</section>
+<section class="section wrap evaluation-section" id="evaluation">
+  <div class="section-top"><p class="eyebrow">06 / THE DESIGN-PARTNER OFFER</p><span class="section-label">Proposed scope · criteria agreed before work begins</span></div>
+  <div class="split-heading"><h2>Bring a workload.<br><span>Define the proof.</span></h2><p>For accelerator teams with a specific isolation or interference problem. Start with a technical scoping conversation and agree on the environment before committing to an integration.</p></div>
+  <div class="evaluation-grid">
+    <article class="card"><span class="card-number">WHAT WE WOULD EVALUATE</span><h3>One bounded question.</h3><ul><li>Unauthorized access refusal, with valid controls.</li><li>Fault containment while a legitimate workload runs.</li><li>Overhead against the buyer’s current approach.</li><li>Recovery behavior and integration hours.</li></ul></article>
+    <article class="card"><span class="card-number">WHAT A PARTNER WOULD PROVIDE</span><h3>Access and an engineer.</h3><ul><li>One workload and supported environment.</li><li>A named technical owner and baseline.</li><li>Hardware or interface access where needed.</li><li>Written thresholds and an evaluation end date.</li></ul></article>
+  </div>
+  <div class="evaluation-close"><p>Proposed deliverables: integration component, reproduction bundle, evaluation report and documentation. Scope, fee and acceptance are agreed together. A software-only evaluation cannot establish hardware isolation.</p><a class="button primary" href="https://github.com/amineux/aether/issues/new?title=Evaluation%20scoping%20conversation&amp;body=Please%20share%20a%20way%20to%20continue%20a%20private%20technical%20scoping%20conversation.">Start an evaluation conversation ↗</a></div>
+  <p class="path-note">Public starting point: <a href="https://github.com/amineux/aether/blob/main/docs/business/EVALUATION.md">evaluation worksheet</a> and <a href="https://github.com/amineux/aether/blob/main/docs/business/PILOT.md">pilot terms worksheet</a>. Keep proprietary workloads and commercial information private.</p>
 </section>
 <section class="contact-section" id="contact">
 <div class="wrap contact-inner">
