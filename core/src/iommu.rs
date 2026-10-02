@@ -1848,6 +1848,80 @@ pub fn run_stage2_fault_demo() -> Stage2FaultReport {
 }
 
 
+/// Host red-team report for Soft-SMMU table-full refuse.
+///
+/// Sell line `[redteam] attack=smmu-table-full` — existing
+/// [`IommuMap::map`] / [`IommuMap::bind_stream`] paths only. Filling past
+/// [`MAX_MAPS`] regions or [`MAX_STES`] STE slots → [`MapError::TableFull`].
+/// A valid smaller fill admits. **Not** Overlap / BadRange / CrossTenant /
+/// SidBudget; Soft SMMU is software; not BAR0 / CXL silicon.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuTableFullReport {
+    /// Fewer than [`MAX_MAPS`] pins admit.
+    pub maps_under_ok: bool,
+    /// Pin past [`MAX_MAPS`] → `MapError::TableFull`.
+    pub maps_full: bool,
+    /// Fewer than [`MAX_STES`] binds admit (across tenant SID budgets).
+    pub stes_under_ok: bool,
+    /// Bind past [`MAX_STES`] → `MapError::TableFull`.
+    pub stes_full: bool,
+}
+
+impl SmmuTableFullReport {
+    pub fn all_ok(&self) -> bool {
+        self.maps_under_ok && self.maps_full && self.stes_under_ok && self.stes_full
+    }
+}
+
+/// Soft-SMMU `map` / `bind_stream` past table capacity → [`MapError::TableFull`].
+/// Table-slot honesty — not Overlap / BadRange / CrossTenant / SidBudget.
+pub fn run_smmu_table_full_demo() -> SmmuTableFullReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let mut maps_under_ok = true;
+    for i in 0..MAX_MAPS {
+        let pa = PhysAddr(0x1000 + (i as u64) * 0x2000);
+        if iommu.map(&cap, MapRequest::pin(pa, 0x1000)).is_err() {
+            maps_under_ok = false;
+            break;
+        }
+    }
+    let overflow_pa = PhysAddr(0x1000 + (MAX_MAPS as u64) * 0x2000);
+    let maps_full =
+        iommu.map(&cap, MapRequest::pin(overflow_pa, 0x1000)) == Err(MapError::TableFull);
+
+    let mut iommu2 = IommuMap::new();
+    let mut stes_under_ok = true;
+    for i in 0..MAX_STES {
+        let tenant = TenantId((i / SID_BUDGET_PER_TENANT) as u32 + 1);
+        let c = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, tenant)
+            .with_generation(1);
+        let sid = StreamId::accel(ChipletId(0), TileId(i as u16), 0);
+        if iommu2.bind_stream(&c, sid).is_err() {
+            stes_under_ok = false;
+            break;
+        }
+    }
+    let cap3 = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(3))
+        .with_generation(1);
+    let stes_full = iommu2.bind_stream(
+        &cap3,
+        StreamId::accel(ChipletId(0), TileId(MAX_STES as u16), 0),
+    ) == Err(MapError::TableFull);
+
+    SmmuTableFullReport {
+        maps_under_ok,
+        maps_full,
+        stes_under_ok,
+        stes_full,
+    }
+}
+
+
 /// Host red-team report for Soft-SMMU same-SID guest-PA overlap refuse.
 ///
 /// Sell line `[redteam] attack=smmu-overlap` — existing [`IommuMap::map`] path
@@ -2377,6 +2451,16 @@ mod tests {
             iommu.stream_state(StreamId::from_raw(0)),
             StreamState::Unbound
         );
+    }
+
+    #[test]
+    fn smmu_table_full_demo_all_ok() {
+        let r = run_smmu_table_full_demo();
+        assert!(r.maps_under_ok, "MAX_MAPS pins admit");
+        assert!(r.maps_full, "map past MAX_MAPS → TableFull");
+        assert!(r.stes_under_ok, "MAX_STES binds admit");
+        assert!(r.stes_full, "bind past MAX_STES → TableFull");
+        assert!(r.all_ok());
     }
 
     #[test]
