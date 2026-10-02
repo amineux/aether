@@ -92,6 +92,10 @@ Cut-conductance needle: `[redteam] attack=cut-conductance result=refused`
 (`SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound →
 `CutError::ConductanceExceeded`; chiplet cut under a generous bound admits; cut-only path, no
 SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver).
+Accel-shape-overflow needle: `[redteam] attack=accel-shape-overflow result=refused`
+(SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape`; i32 Mul overflow →
+`AccelError::Overflow`; tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out;
+software SoftNpu only).
 Tenant-fuzz needle: `[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=<n>`
 (bounded seeded fuzz, not a proof, not a hardware claim; fixed-seed xorshift, no wall clock; tenant B vs tenant A's
 canary over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs;

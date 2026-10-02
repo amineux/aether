@@ -698,6 +698,81 @@ pub fn matmul_i32_slices(
     Ok(())
 }
 
+/// Host red-team report for SoftNpu shape / overflow refuse.
+///
+/// Sell line `[redteam] attack=accel-shape-overflow` — existing
+/// [`SoftNpu::execute`] shape/DMA refuse only. `m`/`n`/`k` 0 or >64 →
+/// [`AccelError::BadShape`]; a clear i32 elementwise product overflow →
+/// [`AccelError::Overflow`]. Valid tiny matmul admits. **Not** new SoftNPU
+/// opcodes (KILL); not FLOPs/tape-out claims; software SoftNpu only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccelShapeOverflowReport {
+    /// Tiny 2×2×2 I32 matmul admits.
+    pub tiny_ok: bool,
+    /// `m == 0` → `AccelError::BadShape`.
+    pub zero_shape: bool,
+    /// `m > 64` → `AccelError::BadShape`.
+    pub oversize_shape: bool,
+    /// Elementwise Mul I32 overflow → `AccelError::Overflow`.
+    pub overflow: bool,
+}
+
+impl AccelShapeOverflowReport {
+    pub fn all_ok(&self) -> bool {
+        self.tiny_ok && self.zero_shape && self.oversize_shape && self.overflow
+    }
+}
+
+/// SoftNpu `execute` BadShape / Overflow refuse paths.
+/// Software SoftNpu only — not new opcodes / FLOPs / tape-out.
+pub fn run_accel_shape_overflow_demo() -> AccelShapeOverflowReport {
+    // Tiny matmul: A=[1,2;3,4] B=[5,6;7,8] → C=[19,22;43,50]
+    let mut buf = [0u8; 64];
+    for (i, v) in [1i32, 2, 3, 4, 5, 6, 7, 8].iter().enumerate() {
+        buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    let mut mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut buf,
+    };
+    let tiny = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+    let tiny_ok = SoftNpu::new().execute(&tiny, &mut mem).is_ok();
+
+    let mut dummy = [0u8; 16];
+    let mut mem0 = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut dummy,
+    };
+    let zero = AccelJobDesc::matmul_i32(0, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+    let zero_shape =
+        SoftNpu::new().execute(&zero, &mut mem0) == Err(AccelError::BadShape);
+    let big = AccelJobDesc::matmul_i32(65, 1, 1, PhysAddr(0), PhysAddr(0), PhysAddr(0), 1);
+    let oversize_shape =
+        SoftNpu::new().execute(&big, &mut mem0) == Err(AccelError::BadShape);
+
+    let mut obuf = [0u8; 64];
+    for (i, v) in [i32::MAX, 2].iter().enumerate() {
+        obuf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    for (i, v) in [2i32, 3].iter().enumerate() {
+        obuf[8 + i * 4..8 + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    let mut omem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut obuf,
+    };
+    let mul = AccelJobDesc::mul_i32(1, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+    let overflow =
+        SoftNpu::new().execute(&mul, &mut omem) == Err(AccelError::Overflow);
+
+    AccelShapeOverflowReport {
+        tiny_ok,
+        zero_shape,
+        oversize_shape,
+        overflow,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -792,6 +867,16 @@ mod tests {
         // I * B + bias = [1,2; 3,4] + [10,20] per column → [11, 22; 13, 24]
         assert_eq!(c0, 11);
         assert_eq!(c1, 22);
+    }
+
+    #[test]
+    fn accel_shape_overflow_demo_all_ok() {
+        let r = run_accel_shape_overflow_demo();
+        assert!(r.tiny_ok, "tiny matmul admits");
+        assert!(r.zero_shape, "m==0 → BadShape");
+        assert!(r.oversize_shape, "m>64 → BadShape");
+        assert!(r.overflow, "mul i32 overflow → Overflow");
+        assert!(r.all_ok());
     }
 
     #[test]
