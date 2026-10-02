@@ -483,6 +483,83 @@ pub fn bind_window(
     cut.allow_window(win, caller)
 }
 
+/// Host red-team report for SpectralCut NotBound refuse.
+///
+/// Sell line `[redteam] attack=cut-not-bound` — existing
+/// [`bind_place`] / [`bind_window`] only. A SpectralCut cap without
+/// [`CapRights::BIND`] (READ-only) or a missing CapTable entry →
+/// [`CutError::NotBound`]. With [`CapRights::CUT_FULL`] bind admits.
+/// Cut-only sell; **Not** ConductanceExceeded / CrossCut; not CapTable
+/// red-team rewrite; not SoftNoI∩SpectralCut; not Laplacian elevate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutNotBoundReport {
+    /// CUT_FULL bind_place / bind_window admit.
+    pub bind_ok: bool,
+    /// READ-only SpectralCut cap → `CutError::NotBound` on bind_place.
+    pub place_not_bound: bool,
+    /// READ-only SpectralCut cap → `CutError::NotBound` on bind_window.
+    pub window_not_bound: bool,
+    /// Empty / missing CapTable entry → `CutError::NotBound`.
+    pub empty_table: bool,
+}
+
+impl CutNotBoundReport {
+    pub fn all_ok(&self) -> bool {
+        self.bind_ok && self.place_not_bound && self.window_not_bound && self.empty_table
+    }
+}
+
+/// `bind_place` / `bind_window` without BIND → [`CutError::NotBound`].
+/// Cap BIND gate — not ConductanceExceeded / CrossCut / CapTable rewrite.
+pub fn run_cut_not_bound_demo() -> CutNotBoundReport {
+    use crate::caps::{CapKind, CapRights, CapTable, Capability};
+    use crate::types::TenantId;
+    use crate::window::{TypedWindow, WindowKind};
+    use crate::iommu::StreamId;
+    use crate::types::{ChipletId, PhysAddr};
+
+    let t = TenantId(1);
+    let (g, cut) = SpectralCut::qemu_chiplet_cut(400).unwrap();
+    let mut tab = CapTable::new(t);
+    let full = tab
+        .mint(Capability::new(
+            CapKind::SpectralCut,
+            CapRights::CUT_FULL,
+            cut.id.0,
+            t,
+        ))
+        .unwrap();
+    let read_only = tab
+        .mint(Capability::new(
+            CapKind::SpectralCut,
+            CapRights(CapRights::READ),
+            cut.id.0,
+            t,
+        ))
+        .unwrap();
+    let sid = StreamId::accel(ChipletId(0), TileId(2), 0);
+    let win = TypedWindow::new(PhysAddr(0xB000), 0x1000, WindowKind::Hbm, sid, t);
+
+    let bind_ok = bind_place(&tab, full, &cut, &g, TileId(2), Some(BankId(0))).is_ok()
+        && bind_window(&tab, full, &cut, &win, t).is_ok();
+    let place_not_bound =
+        bind_place(&tab, read_only, &cut, &g, TileId(2), Some(BankId(0)))
+            == Err(CutError::NotBound);
+    let window_not_bound =
+        bind_window(&tab, read_only, &cut, &win, t) == Err(CutError::NotBound);
+    let empty = CapTable::new(t);
+    let empty_table =
+        bind_place(&empty, full, &cut, &g, TileId(2), Some(BankId(0))) == Err(CutError::NotBound);
+
+    CutNotBoundReport {
+        bind_ok,
+        place_not_bound,
+        window_not_bound,
+        empty_table,
+    }
+}
+
+
 /// Host red-team report for SpectralCut conductance bound refuse.
 ///
 /// Sell line `[redteam] attack=cut-conductance` — existing
@@ -555,6 +632,16 @@ mod tests {
             cut.allow_place(&g, TileId(1), Some(BankId(0))).unwrap_err(),
             CutError::CrossCut
         );
+    }
+
+    #[test]
+    fn cut_not_bound_demo_all_ok() {
+        let r = run_cut_not_bound_demo();
+        assert!(r.bind_ok, "CUT_FULL bind_place/window admit");
+        assert!(r.place_not_bound, "READ-only → NotBound on place");
+        assert!(r.window_not_bound, "READ-only → NotBound on window");
+        assert!(r.empty_table, "empty CapTable → NotBound");
+        assert!(r.all_ok());
     }
 
     #[test]

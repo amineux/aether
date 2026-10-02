@@ -80,6 +80,10 @@ Smmu-table-full needle: `[redteam] attack=smmu-table-full result=refused`
 (`IommuMap::map` past `MAX_MAPS` / `bind_stream` past `MAX_STES` → `MapError::TableFull`;
 smaller fill admits; not Overlap / BadRange / CrossTenant / SidBudget; Soft SMMU is software;
 not BAR0 / CXL silicon).
+Cut-not-bound needle: `[redteam] attack=cut-not-bound result=refused`
+(`bind_place` / `bind_window` without BIND — READ-only SpectralCut or empty CapTable →
+`CutError::NotBound`; CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable
+rewrite; not SoftNoI∩SpectralCut; not Laplacian elevate).
 Cut-conductance needle: `[redteam] attack=cut-conductance result=refused`
 (`SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound →
 `CutError::ConductanceExceeded`; chiplet cut under a generous bound admits; cut-only path, no
