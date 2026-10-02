@@ -76,6 +76,10 @@ Smmu-bad-range needle: `[redteam] attack=smmu-bad-range result=refused`
 (`IommuMap::map_window` zero-length or `base+len`-overflowing window, and `bind_mm` reserved
 `MmId(0)` → `MapError::BadRange`; valid window + mm admit; not CrossTenant / WrongStream /
 Overlap / TableFull; Soft SMMU is software; not hardware SMMU / CXL.mem silicon / BAR0).
+Smmu-table-full needle: `[redteam] attack=smmu-table-full result=refused`
+(`IommuMap::map` past `MAX_MAPS` / `bind_stream` past `MAX_STES` → `MapError::TableFull`;
+smaller fill admits; not Overlap / BadRange / CrossTenant / SidBudget; Soft SMMU is software;
+not BAR0 / CXL silicon).
 Cut-conductance needle: `[redteam] attack=cut-conductance result=refused`
 (`SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound →
 `CutError::ConductanceExceeded`; chiplet cut under a generous bound admits; cut-only path, no

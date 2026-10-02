@@ -94,8 +94,8 @@ pub use kvfabric::{
     DEMO_TOKENS, DEMO_WEIGHT_BYTES, GRANT_RECORD_BYTES, SID_DECODE, SID_NEIGHBOR, SID_PREFILL,
 };
 pub use iommu::{
-    run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
-    MappedRegion, MmId, SoftPte, SoftSmmuDump, SetSidCrossTenantReport, SmmuCrossTenantReport, SmmuStreamAbortReport, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, Stage2FaultReport, SteConfig, SteTableDump,
+    run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_stream_abort_demo, run_smmu_wrong_stream_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_table_full_demo, run_stage2_fault_demo, AtcDumpLine, CdTableDump, InvCmd, IommuMap, MapError, MapRequest,
+    MappedRegion, MmId, SoftPte, SoftSmmuDump, SetSidCrossTenantReport, SmmuCrossTenantReport, SmmuStreamAbortReport, SmmuWrongStreamReport, SmmuNotMappedReport, SmmuOverlapReport, SmmuTableFullReport, Stage2FaultReport, SteConfig, SteTableDump,
     StreamId, StreamState, WalkResult, DEFAULT_STREAM, SET_SID, SID_BUDGET_PER_TENANT,
     SOFT_SMMU_IOVA_BASE, SOFT_SMMU_IPA_BASE,
 };
