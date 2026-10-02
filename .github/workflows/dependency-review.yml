@@ -1,0 +1,22 @@
+name: dependency audit
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '23 7 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dependency-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install RustSec audit CLI
+        run: cargo install cargo-audit --locked
+      - name: Check locked dependencies against RustSec advisories
+        run: cargo audit

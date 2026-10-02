@@ -68,6 +68,16 @@ transfer. There is no IPC except capability-checked messages.
 
 ## Quickstart
 
+**Maturity and commercial validation:** start with
+[the 90-day evidence plan](docs/MATURITY.md), then the
+[discovery](docs/business/DISCOVERY.md),
+[evaluation](docs/business/EVALUATION.md), and
+[paid-pilot](docs/business/PILOT.md) worksheets. The
+[investor evidence index](docs/business/INVESTOR_EVIDENCE.md) separates software
+results from customer and hardware claims. Capture fresh host evidence with
+`python3 scripts/collect_evidence.py`; CI retains logs and a commit/toolchain
+manifest, including failures. These templates do not establish customer traction.
+
 **Host tests** (any `x86_64-unknown-linux-gnu` rustc 1.83+):
 
 ```bash

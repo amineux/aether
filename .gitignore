@@ -5,6 +5,8 @@
 
 # Build artifacts
 /build
+__pycache__/
+*.pyc
 boot/x86_64/kernel.bin
 
 # Editor / OS
