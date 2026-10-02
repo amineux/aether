@@ -1,0 +1,1546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Aether — historical technical archive</title>
+  <meta name="description" content="Aether is an accelerator-first fabric kernel for chiplet packages of CPU, NPU, GPU, and custom ASIC tiles. Frozen IreeHalCmd, PJRT-shaped host shim, Soft SMMU SID, blast-radius refuse — a contract you can clone.">
+  <meta name="theme-color" content="#070809">
+  <link rel="canonical" href="https://amineux.github.io/aether/research.html">
+  <meta property="og:title" content="Aether — fabric kernel for AI silicon">
+  <meta property="og:description" content="Accelerators are activities on a capability fabric, not devices behind ioctl. Frozen IreeHalCmd + PJRT-shaped host shim + Soft SMMU SID + blast-radius refuse.">
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://amineux.github.io/aether/">
+  <meta name="twitter:card" content="summary">
+  <meta name="twitter:title" content="Aether — fabric kernel for AI silicon">
+  <link rel="icon" href="./assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="./css/fonts.css">
+  <link rel="stylesheet" href="./css/styles.css">
+</head>
+<body>
+  <aside style="padding:16px 24px;background:#1b291f;color:#d2e9be;text-align:center;position:relative;z-index:90">Technical archive from 1 October 2026. Counts and roadmap entries are historical. <a href="./">View the current investor overview →</a></aside>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="nav">
+    <div class="nav-inner">
+      <a class="brand" href="#hero">
+        <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#10131a"/><path d="M20 44 L32 16 L44 44" stroke="#3DDC97" stroke-width="3.2" fill="none" stroke-linejoin="round"/><path d="M24.6 34.2 H39.4" stroke="#6AA8FF" stroke-width="2.2"/><circle cx="32" cy="16" r="2.4" fill="#6AA8FF"/></svg>
+        Aether
+      </a>
+      <button class="nav-toggle" type="button" aria-label="Open menu" aria-expanded="false"><span></span></button>
+      <ul class="nav-links">
+        <li><a href="#investors">Investors</a></li>
+        <li><a href="#problem">Problem</a></li>
+        <li><a href="#solution">Solution</a></li>
+        <li><a href="#how">How it works</a></li>
+        <li><a href="#market">Market</a></li>
+        <li><a href="#partners">Why partner</a></li>
+        <li><a href="#sell">Sell</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="#status">Status</a></li>
+        <li><a href="#kv">KV grant</a></li>
+        <li><a href="#pitch">Pitch</a></li>
+        <li class="nav-mobile-only"><a href="https://github.com/amineux/aether">GitHub</a></li>
+      </ul>
+      <a class="nav-cta" href="https://github.com/amineux/aether">GitHub</a>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" id="hero">
+      <div class="hero-grid" aria-hidden="true"></div>
+      <div class="wrap hero-inner">
+        <div>
+          <p class="eyebrow"><i></i> open-source startup · investor brief · freeze-v1 · research prototype</p>
+          <h1><span>Aether</span></h1>
+          <p class="one-liner">Fabric kernel for AI silicon.</p>
+          <p class="deck">An operating system for packages that are a mesh of CPU, NPU, GPU, and custom ASIC tiles — not a host CPU with bolt-on devices. Accelerators are activities on a capability fabric, not ioctl endpoints.</p>
+          <p class="hero-horizon">Research <code>IreeHalCmd</code> v1 is frozen. Isolation is the product. The next twelve months: sell the demos we can run — <a href="#roadmap">YEAR_AHEAD</a>.</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="#investors">Investor brief</a>
+            <a class="btn btn-ghost" href="https://github.com/amineux/aether">View on GitHub</a>
+            <a class="btn btn-ghost" href="#sell">Sell / Design-win</a>
+            <a class="btn btn-ghost" href="#roadmap">Next-year roadmap</a>
+          </div>
+          <div class="hero-meta">
+            <span><strong>make qemu</strong> · x86_64 · RISC-V · aarch64</span>
+            <span><strong>MIT OR Apache-2.0</strong></span>
+            <span><strong>freeze-v1</strong> · research packet stays</span>
+          </div>
+        </div>
+
+        <aside class="package-card" data-reveal>
+          <div class="vis-label"><span>Package fabric · illustrative QEMU topology</span><span class="pulse" aria-hidden="true"></span></div>
+          <svg viewBox="0 0 520 360" role="img" aria-label="Chiplet package: two dies with CPU, NPU, GPU, ASIC tiles and HBM banks connected by a capability fabric. A SpectralCut runs between the chiplets.">
+            <defs>
+              <linearGradient id="pkg" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#161b24"/>
+                <stop offset="1" stop-color="#0c0f14"/>
+              </linearGradient>
+              <filter id="glow" x="-40%" y="-40%" width="180%" height="180%">
+                <feGaussianBlur stdDeviation="3" result="b"/>
+                <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+              </filter>
+            </defs>
+            <rect x="16" y="12" width="488" height="336" rx="22" fill="url(#pkg)" stroke="rgba(255,255,255,0.08)"/>
+            <text x="36" y="40" fill="#5c6272" font-size="11" font-family="IBM Plex Mono, monospace">PACKAGE</text>
+            <text x="400" y="40" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">UCIe / EMIB</text>
+
+            <rect x="36" y="56" width="200" height="200" rx="16" fill="#121722" stroke="rgba(61,220,151,0.28)"/>
+            <text x="52" y="80" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">CHIPLET 0</text>
+            <rect x="52" y="96" width="78" height="58" rx="10" fill="#182033" stroke="rgba(106,168,255,0.4)"/>
+            <text x="76" y="122" fill="#6AA8FF" font-size="12" font-weight="700" font-family="Syne, sans-serif">CPU 0</text>
+            <text x="68" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">tile</text>
+            <rect x="142" y="96" width="78" height="58" rx="10" fill="#13261d" stroke="rgba(61,220,151,0.45)"/>
+            <text x="163" y="122" fill="#3DDC97" font-size="12" font-weight="700" font-family="Syne, sans-serif">NPU 2</text>
+            <text x="158" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">waves</text>
+            <rect x="52" y="168" width="168" height="68" rx="10" fill="#1a1710" stroke="rgba(240,195,106,0.35)"/>
+            <text x="104" y="198" fill="#f0c36a" font-size="12" font-weight="700" font-family="Syne, sans-serif">HBM bank 0</text>
+            <text x="92" y="216" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">typed DEVICE_HBM</text>
+
+            <rect x="284" y="56" width="200" height="200" rx="16" fill="#121722" stroke="rgba(106,168,255,0.28)"/>
+            <text x="300" y="80" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">CHIPLET 1</text>
+            <rect x="300" y="96" width="78" height="58" rx="10" fill="#182033" stroke="rgba(106,168,255,0.4)"/>
+            <text x="324" y="122" fill="#6AA8FF" font-size="12" font-weight="700" font-family="Syne, sans-serif">CPU 1</text>
+            <text x="316" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">tile</text>
+            <rect x="390" y="96" width="78" height="58" rx="10" fill="#23181c" stroke="rgba(240,113,141,0.4)"/>
+            <text x="413" y="122" fill="#f0718d" font-size="12" font-weight="700" font-family="Syne, sans-serif">GPU 3</text>
+            <text x="414" y="140" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">tile</text>
+            <rect x="300" y="168" width="168" height="68" rx="10" fill="#1a1710" stroke="rgba(240,195,106,0.35)"/>
+            <text x="348" y="198" fill="#f0c36a" font-size="12" font-weight="700" font-family="Syne, sans-serif">HBM bank 1</text>
+            <text x="336" y="216" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">typed DEVICE_HBM</text>
+
+            <line x1="236" y1="125" x2="284" y2="125" stroke="rgba(255,255,255,0.18)" stroke-dasharray="4 5"/>
+            <line x1="220" y1="200" x2="300" y2="200" stroke="rgba(255,255,255,0.18)" stroke-dasharray="4 5"/>
+            <line x1="260" y1="56" x2="260" y2="256" stroke="#3DDC97" stroke-opacity="0.85" stroke-dasharray="3 7" filter="url(#glow)"/>
+            <text x="244" y="274" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">SPECTRALCUT</text>
+
+            <rect x="36" y="292" width="448" height="40" rx="10" fill="#0e131b" stroke="rgba(61,220,151,0.2)"/>
+            <circle cx="62" cy="312" r="4" fill="#3DDC97"/>
+            <text x="78" y="317" fill="#c6cad4" font-size="12" font-family="Manrope, sans-serif">Capability fabric · endpoints · FlowClass · no ioctl surface</text>
+
+            <circle class="pkt" r="4" fill="#3DDC97" filter="url(#glow)"/>
+            <circle class="pkt pkt-b" r="3.5" fill="#6AA8FF"/>
+          </svg>
+        </aside>
+      </div>
+    </section>
+
+    <section class="band alt" id="investors" aria-labelledby="inv-h">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">Investor brief</p>
+            <h2 id="inv-h">Aether, as a startup: the isolation layer for chiplet packages.</h2>
+            <p class="lede">Aether is an open-source, research-stage fabric kernel that the owner (<a href="https://github.com/amineux/aether">amineux</a>) is positioning as a startup. Every number below was counted from the repository and GitHub on 1 October 2026. Where we have nothing to claim, we say so in <a href="#inv-limits">Honest limits</a>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>Counted from the repo · no revenue · no silicon</div>
+        </div>
+
+        <div class="sell-goals">
+          <article class="glass sell-goal" data-reveal data-d="1" aria-labelledby="inv-problem">
+            <small>01</small>
+            <h3 id="inv-problem">Problem</h3>
+            <p>Packages are becoming meshes of CPU, NPU, GPU and custom ASIC dies, but the operating-system layer is still a Linux device driver plus a vendor runtime. Weights and KV caches from different tenants sit on the same package, and nothing at the OS layer treats a tenant, a memory bank or a blast radius as a first-class object that can be refused.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="2" aria-labelledby="inv-solution">
+            <small>02</small>
+            <h3 id="inv-solution">Solution</h3>
+            <p>A capability-based fabric kernel in which tiles are peers and every access is checked against a tenant, a stream ID, a cut or a quota. The product is the <em>refuse path</em>: a named, testable error for each way a tenant can step outside its slice. It runs today as software models (Soft SMMU, SoftNoI, SoftGreenCtx, SpectralCut) on a frozen research packet (<code>IreeHalCmd</code> v1) behind a host shim.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="3" aria-labelledby="inv-why">
+            <small>03</small>
+            <h3 id="inv-why">Why now</h3>
+            <p>The industry is assembling products from chiplets after the fact, so the programming model cannot be whatever the interposer happens to make coherent. Transport (UCIe, EMIB) moves bytes; it does not name tenants, cuts or fences. That is an argument about structure, not a market forecast: no market-size figure is claimed on this page.</p>
+          </article>
+        </div>
+
+        <div class="glass inv-block" data-reveal aria-labelledby="inv-traction">
+          <h3 id="inv-traction">Traction signals (engineering, not commercial)</h3>
+          <ul class="inv-list">
+            <li><strong>161 pull requests merged, 0 open</strong> on <code>amineux/aether</code> (GitHub count with main at <code>f18e51d</code>, before this page's own pull request); 148 commits on main; repository created 6 Sep 2026.</li>
+            <li><strong>Rounds of refuse-path sealing:</strong> Rounds 5–15 are narrated in <a href="#sell">Sell</a>. Round 15 merged today as #165 (<code>smmu-table-full</code>), #166 (<code>cut-not-bound</code>), #167 (<code>opinject-bad-arg</code>), #168 (<code>accel-shape-overflow</code>) and this site fold. Round 14 was #159–#163. Open owner decision: <a href="https://github.com/amineux/aether/issues/161">issue #161</a>.</li>
+            <li><strong>50 named <code>[redteam] attack=… result=refused</code> lines</strong> printed by one command, <code>make red-team</code>, in the current tree, plus the fabric-class, <code>ATOMIC_ADD</code> and four <code>[softsfi]</code> lines. The command exits non-zero if any of them is not refused.</li>
+            <li><strong>548 host tests</strong> pass under <code>cargo test --workspace</code>.</li>
+            <li><strong>CI on three targets</strong> for every pull request: x86_64 (<code>cargo test + make qemu</code>), <code>make qemu-aarch64-ci</code> and <code>make qemu-riscv-ci</code>. Pull requests #159, #160, #162 and #163 merged with all three green.</li>
+            <li><strong>No third-party crates:</strong> the root <code>Cargo.lock</code> lists 11 packages, all in this workspace, none from a registry. Licence: MIT OR Apache-2.0.</li>
+          </ul>
+          <p class="inv-note">The newest signal, a bounded, seeded hostile-tenant fuzz run inside <code>make red-team</code>:</p>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>make red-team (host)</span></div>
+            <pre aria-label="Tenant fuzz output line"><span class="ok">[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=29</span></pre>
+          </div>
+          <p class="inv-note">Read it with its caveats: tenant B runs 4096 hostile operations from a fixed seed (<code>0x5AE7</code>, no wall clock) against existing Soft-SMMU, green-context, NoI, timeline, colour and operator-inject APIs while tenant A holds a canary. <code>escapes</code>, <code>unnamed</code> and <code>variants</code> are counted by the run (29 distinct error variants were hit). This is bounded, deterministic evidence: <strong>not a proof, not a hardware claim</strong>, and it deliberately <strong>excludes</strong> <code>IommuMap::unmap_stream</code> and <code>unmap</code> (see the open gap below).</p>
+        </div>
+
+        <div class="glass inv-block" id="inv-limits" data-reveal aria-labelledby="inv-limits-h">
+          <h3 id="inv-limits-h">Honest limits</h3>
+          <ul class="inv-list">
+            <li><strong>An open gap, stated plainly:</strong> the fuzz found that <code>IommuMap::unmap_stream</code> and <code>unmap</code> take no tenant check, so a caller passing another tenant's stream ID and IOVA can drop that tenant's pin (the checked <code>unmap_for</code> correctly returns <code>CrossTenant</code>). It is tracked as <a href="https://github.com/amineux/aether/issues/161">issue #161</a>. The fix is a core change that may touch the freeze and needs the owner's decision. We publish it because finding and logging a hole like this is what the process is for.</li>
+            <li><strong>Software, not silicon.</strong> Soft SMMU is software, not a hardware SMMU. No tape-out and no FLOPs or benchmark claims are made.</li>
+            <li><strong>No customers, revenue, valuation, funding amount or partner</strong> is claimed. The IREE HAL stand-in is a public-nouns stand-in, not a partner, and <code>PartnerNpuStub</code> is a labelled no-op.</li>
+            <li><strong>No formal verification.</strong> Tests, CI and a bounded fuzz are evidence; they are not proofs.</li>
+            <li><strong>Research prototype.</strong> The team, market size and competitor figures are not stated on this page because they are not verifiable from the repository.</li>
+          </ul>
+        </div>
+
+        <div class="glass inv-block" data-reveal aria-labelledby="inv-ask">
+          <h3 id="inv-ask">The ask</h3>
+          <p class="callout">No amount, valuation or terms are proposed here. We are looking for three kinds of conversation:</p>
+          <ul class="inv-list">
+            <li><strong>Design partners</strong> building chiplet or multi-tenant accelerator packages: bring your opcode table and see whether the refuse paths fit it (<a href="#sell">Sell</a>).</li>
+            <li><strong>Technical diligence:</strong> clone the repo and run <code>make red-team</code> and <code>make diligence-demo</code>; read <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE.md</a> and issue #161, then tell us what to break next.</li>
+            <li><strong>Investors</strong> who fund chiplet and secure-substrate software and are comfortable with a research-stage company.</li>
+          </ul>
+          <p class="inv-note"><strong>Contact:</strong> [placeholder — open an issue at <a href="https://github.com/amineux/aether/issues">github.com/amineux/aether/issues</a> or reach the owner, <a href="https://github.com/amineux">@amineux</a>, on GitHub. No email address is published here.]</p>
+          <div class="cta-row">
+            <a class="btn btn-primary" href="https://github.com/amineux/aether/issues">Open an issue</a>
+            <a class="btn btn-ghost" href="https://github.com/amineux/aether">View the repository</a>
+            <a class="btn btn-ghost" href="#problem">Technical detail below</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="problem">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">01 — Problem</p>
+          <h2>Linux + ioctl was not designed for this package.</h2>
+          <p class="lede">Traditional kernels treat GPUs and NPUs as PCIe endpoints: a userspace runtime, an ioctl, and a hope the driver flushed the right caches. That model is already strained on a discrete GPU. It fails on a mesh of chiplets.</p>
+        </div>
+        <div class="problem-grid">
+          <article class="glass" data-reveal data-d="1">
+            <div class="icon-dot">⏱</div>
+            <h3>Deadlines, not best-effort</h3>
+            <p>Inference latency is a deadline. A best-effort ioctl and a userspace poll loop are the wrong primitive when a wave must complete against a partition quota.</p>
+          </article>
+          <article class="glass" data-reveal data-d="2">
+            <div class="icon-dot blue">◎</div>
+            <h3>Typed memory, not one VA</h3>
+            <p>Tile SRAM, HBM, and a CXL region are different places. “Shared memory” across dies is often not cache-coherent. A pointer both sides “have” is a bug.</p>
+          </article>
+          <article class="glass" data-reveal data-d="3">
+            <div class="icon-dot">⚿</div>
+            <h3>Weights and KV are secrets</h3>
+            <p>Multi-tenant packages hold other people’s models. Isolation has to be spatial — slices, banks, blast radius — not a file permission and a hope.</p>
+          </article>
+          <article class="glass" data-reveal data-d="4">
+            <div class="icon-dot blue">⬡</div>
+            <h3>UCIe is transport</h3>
+            <p>Chiplets extend the NoC. UCIe, EMIB, and UALink move bytes. They are not a programming model, and they do not name tenants, cuts, or fences.</p>
+          </article>
+        </div>
+        <div class="fail-row" data-reveal>
+          <div class="fail-card old">
+            <h3>CUDA-as-device / ioctl host</h3>
+            <ul>
+              <li>Host CPU owns the story; accelerators are endpoints</li>
+              <li>Unified VA as the default fiction</li>
+              <li>Time-sliced isolation (MIG-class) bolted onto a device driver</li>
+              <li>Compiler runtime papers over the OS gap</li>
+            </ul>
+          </div>
+          <div class="fail-vs">VS</div>
+          <div class="fail-card new">
+            <h3>What the package actually is</h3>
+            <ul>
+              <li>Tiles are first-class peers on a fabric</li>
+              <li>Memory is a typed place; UNIFIED is a cap bit</li>
+              <li>The scarce resource is HBM banks and NPU waves</li>
+              <li>The OS must schedule partitions — compilers keep FLOPs</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="solution">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">02 — Solution</p>
+          <h2>Five thesis lines. One kernel bet.</h2>
+          <p class="lede">Aether is a capability machine whose primitive is a typed message, not a POSIX process. The interfaces and invariants are what we would pitch to an AI-chip OS team — not a claim of production silicon.</p>
+        </div>
+        <div class="thesis">
+          <article class="thesis-line" data-reveal>
+            <div>
+              <strong>Accelerators are activities, not devices.</strong>
+              <p>A CPU tile and a virt accel share one Activity / EndpointId. There is no <code>/dev</code> ioctl surface. The fabric is the only IPC.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="1">
+            <div>
+              <strong>Memory is a typed place.</strong>
+              <p>HOST, DEVICE_HBM, TILE_SRAM, CXL_REGION, SCRATCH, STREAMING. Unified memory is an explicit capability bit, never the default. Remote access is an Exchange.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="2">
+            <div>
+              <strong>The kernel schedules partitions and fences.</strong>
+              <p>Compilers schedule FLOPs. No in-kernel graph IR. The host ABI is shaped like PJRT / IREE HAL — Device, MemorySpace, Buffer, Executable, Event.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="3">
+            <div>
+              <strong>Chiplets extend the NoC; UCIe is transport.</strong>
+              <p>Route tags (die / chiplet / tile / hop) are architectural. Silicon steers on the header without parsing tensors.</p>
+            </div>
+          </article>
+          <article class="thesis-line" data-reveal data-d="4">
+            <div>
+              <strong>Isolation is spatial first.</strong>
+              <p>Slices, columns, bank color, SpectralCut, blast radius. QoS is an invariant, not a hint. Temporal sharing comes second.</p>
+            </div>
+          </article>
+        </div>
+
+        <div class="arch" data-reveal>
+          <div class="arch-caption">
+            <h3>Architecture</h3>
+            <span>Tenants → caps / fabric / sched / arenas / HAL → tiles</span>
+          </div>
+          <div class="arch-board">
+            <div class="arch-row tenants">
+              <div class="node tenant"><small>Tenant A</small><b>init / runtime</b></div>
+              <div class="node tenant"><small>Tenant B</small><b>isolated · no forge</b></div>
+            </div>
+            <div class="arch-flow" aria-hidden="true">↓ CPtr only</div>
+            <div class="arch-row kernel">
+              <div class="node mod"><small>Caps</small><b>Capability spaces</b></div>
+              <div class="node mod"><small>Fabric</small><b>IPC + FlowClass</b></div>
+              <div class="node mod"><small>Sched</small><b>prio · deadline · steal</b></div>
+              <div class="node mod"><small>Arenas</small><b>bank-aware tensors</b></div>
+              <div class="node mod"><small>HAL</small><b>AccelDevice</b></div>
+            </div>
+            <div class="arch-flow" aria-hidden="true">↓ ownership transfer · refuse CrossCut</div>
+            <div class="arch-row tiles">
+              <div class="node tile"><small>Tile</small><b>CPU</b></div>
+              <div class="node tile"><small>Tile</small><b>NPU / wave</b></div>
+              <div class="node tile"><small>Tile</small><b>GPU</b></div>
+              <div class="node tile"><small>Tile</small><b>Custom ASIC</b></div>
+            </div>
+            <p class="arch-note">Event ring observes fabric, scheduler, and HAL. Cross-tenant mint is rejected. Tenant B cannot hold A’s Memory, SpectralCut, or Activity.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="how">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">03 — How it works</p>
+          <h2>The programming model, made visible.</h2>
+          <p class="lede">Four surfaces a silicon OS actually has to get right. Implemented as types and refusal rules in <code>aether-core</code> — not slideware.</p>
+        </div>
+        <div class="how-grid">
+          <article class="explainer" data-reveal>
+            <div class="copy">
+              <h3>Activities, not ioctls</h3>
+              <p>Every compute unit is an Activity behind a uniform endpoint. Drivers may still talk MMIO; the ABI does not. Send, recv, map, and accel require a CPtr. Bulk tensors ride in a Memory cap, not the 64-byte control payload.</p>
+              <div class="chip-row">
+                <span class="chip on">SYNC / ASYNC</span>
+                <span class="chip on">GRANT</span>
+                <span class="chip">ChipletRoute</span>
+                <span class="chip">badge</span>
+              </div>
+            </div>
+            <svg viewBox="0 0 420 220" role="img" aria-label="Two fabric endpoints exchanging a capability-checked message with a Memory cap grant.">
+              <rect x="8" y="20" width="130" height="150" rx="14" fill="#121722" stroke="rgba(106,168,255,0.35)"/>
+              <text x="28" y="48" fill="#6AA8FF" font-size="13" font-family="Syne, sans-serif" font-weight="700">Endpoint A</text>
+              <text x="28" y="70" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">Activity</text>
+              <rect x="24" y="88" width="98" height="28" rx="6" fill="#182033" stroke="rgba(61,220,151,0.3)"/>
+              <text x="36" y="107" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">CPtr · send</text>
+              <rect x="24" y="124" width="98" height="28" rx="6" fill="#1a1710"/>
+              <text x="36" y="143" fill="#f0c36a" font-size="11" font-family="IBM Plex Mono, monospace">Memory cap</text>
+
+              <path d="M148 95 H272" stroke="#3DDC97" stroke-width="1.5" fill="none"/>
+              <polygon points="272,95 262,90 262,100" fill="#3DDC97"/>
+              <rect x="176" y="62" width="72" height="50" rx="8" fill="#0e1612" stroke="#3DDC97"/>
+              <text x="188" y="84" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">MSG</text>
+              <text x="186" y="100" fill="#8b91a3" font-size="10" font-family="IBM Plex Mono, monospace">+ GRANT</text>
+
+              <rect x="282" y="20" width="130" height="150" rx="14" fill="#121722" stroke="rgba(61,220,151,0.35)"/>
+              <text x="300" y="48" fill="#3DDC97" font-size="13" font-family="Syne, sans-serif" font-weight="700">Endpoint B</text>
+              <text x="300" y="70" fill="#8b91a3" font-size="11" font-family="IBM Plex Mono, monospace">NPU queue</text>
+              <rect x="298" y="88" width="98" height="28" rx="6" fill="#13261d"/>
+              <text x="310" y="107" fill="#c6cad4" font-size="11" font-family="IBM Plex Mono, monospace">recv · badge</text>
+              <rect x="298" y="124" width="98" height="28" rx="6" fill="#1a1710"/>
+              <text x="310" y="143" fill="#f0c36a" font-size="11" font-family="IBM Plex Mono, monospace">cap inserted</text>
+              <text x="8" y="202" fill="#5c6272" font-size="11" font-family="IBM Plex Mono, monospace">No AF_UNIX · no signals · no “just write this PA”</text>
+            </svg>
+          </article>
+
+          <article class="explainer reverse" data-reveal>
+            <div class="copy">
+              <h3>Typed places</h3>
+              <p>A buffer binds to a space. <code>(place, local)</code> addresses refuse a silent remote load — the HAL will not pretend HBM is in the CPU coherence domain. UNIFIED is never implied by MEM_FULL.</p>
+              <div class="chip-row">
+                <span class="chip on">place + local</span>
+                <span class="chip">UNIFIED cap bit</span>
+                <span class="chip">Exchange = DMA/NoC</span>
+              </div>
+            </div>
+            <div class="places" aria-label="Six typed memory spaces">
+              <div class="place"><span class="tag">HOST</span><b>Host DRAM</b><span>CPU-local</span></div>
+              <div class="place"><span class="tag">DEVICE_HBM</span><b>HBM banks</b><span>color + tenant</span></div>
+              <div class="place"><span class="tag">TILE_SRAM</span><b>On-tile</b><span>honest first place</span></div>
+              <div class="place"><span class="tag">CXL_REGION</span><b>CXL.mem stub</b><span>typed window; not silicon</span></div>
+              <div class="place"><span class="tag">SCRATCH</span><b>Scratch</b><span>ephemeral</span></div>
+              <div class="place"><span class="tag">STREAMING</span><b>Streaming</b><span>no random load</span></div>
+            </div>
+          </article>
+
+          <article class="explainer" data-reveal>
+            <div class="copy">
+              <h3>Fence-ordered jobs</h3>
+              <p>submit → fence / timeline → complete or timeout. Credit-limited per partition — not CUDA streams. Waiting before a fence retires refuses as <code>PartitionError::FenceNotReady</code>; complete then wait is the path. Host Event create / record / wait is a research noun over those existing SoftChipletSync fences — not a new packet, not a PJRT plugin, not a CUDA stream. Named phases (Compute, Exchange, Barrier) are tags. The kernel does not fuse them.</p>
+            </div>
+            <div class="fence" aria-label="Submit, fence, complete">
+              <div class="fence-step">
+                <div class="n">01</div>
+                <b>Submit</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">AccelJobDesc against a partition + cut</p>
+              </div>
+              <div class="fence-step">
+                <div class="n">02</div>
+                <b>Fence</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">Timeline + credits; doorbell, not a stream</p>
+              </div>
+              <div class="fence-step">
+                <div class="n">03</div>
+                <b>Complete</b>
+                <p class="muted" style="margin:6px 0 0;font-size:13px">Used-ring IRQ · reply to completion_ep</p>
+              </div>
+            </div>
+          </article>
+
+          <article class="explainer reverse" data-reveal>
+            <div class="copy">
+              <h3>SpectralCut + Hodge</h3>
+              <p>A cut is a capability: a bipartition of the package affinity graph. Cross-cut tile/bank placement is refused. Every fabric header carries a FlowClass. Gradient may tree-offload; curl and harmonic must not — folding a cycle onto a tree deadlocks. The Hodge bind also refuses <code>Tree + Curl</code> as <code>HodgeError::CurlOnTree</code>; that is separate from the SoftNoI ring-capacity check. SoftNoI admit now reads a software fabric-class tag at submit (tree / ring / persistent). Curl still needs reserved ring capacity even when IS is 1.0. Not a DMA header, not topology synth.</p>
+              <div class="cut-legend">
+                <span><i class="swatch" style="background:#3DDC97"></i>Strong on-die</span>
+                <span><i class="swatch" style="background:#6AA8FF"></i>Weak EMIB</span>
+                <span><i class="swatch" style="background:#f0718d"></i>Harmonic + TREE refused</span>
+              </div>
+            </div>
+            <div>
+              <svg viewBox="0 0 420 168" role="img" aria-label="Two-chiplet affinity graph with a SpectralCut through weak EMIB edges.">
+                <line x1="70" y1="44" x2="130" y2="44" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="70" y1="44" x2="100" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="130" y1="44" x2="100" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="290" y1="44" x2="350" y2="44" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="290" y1="44" x2="320" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="350" y1="44" x2="320" y2="108" stroke="#3DDC97" stroke-width="2"/>
+                <line x1="130" y1="44" x2="290" y2="44" stroke="#6AA8FF" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <line x1="100" y1="108" x2="320" y2="108" stroke="#6AA8FF" stroke-width="1.5" stroke-dasharray="5 5"/>
+                <line x1="210" y1="16" x2="210" y2="140" stroke="#3DDC97" stroke-dasharray="2 6" stroke-opacity="0.85"/>
+                <circle cx="70" cy="44" r="16" fill="#182033" stroke="#6AA8FF"/><text x="58" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">CPU0</text>
+                <circle cx="130" cy="44" r="16" fill="#13261d" stroke="#3DDC97"/><text x="118" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">NPU</text>
+                <circle cx="100" cy="108" r="16" fill="#1a1710" stroke="#f0c36a"/><text x="86" y="112" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">bank0</text>
+                <circle cx="290" cy="44" r="16" fill="#182033" stroke="#6AA8FF"/><text x="278" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">CPU1</text>
+                <circle cx="350" cy="44" r="16" fill="#23181c" stroke="#f0718d"/><text x="339" y="48" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">GPU</text>
+                <circle cx="320" cy="108" r="16" fill="#1a1710" stroke="#f0c36a"/><text x="306" y="112" fill="#c6cad4" font-size="10" font-family="IBM Plex Mono, monospace">bank1</text>
+                <text x="168" y="160" fill="#3DDC97" font-size="11" font-family="IBM Plex Mono, monospace">L = D − A · refuse CrossCut</text>
+              </svg>
+              <div class="hodge">
+                <div class="hodge-card">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><path d="M16 44 L60 12 L104 44" fill="none" stroke="#3DDC97" stroke-width="1.6"/><circle cx="16" cy="44" r="4" fill="#3DDC97"/><circle cx="60" cy="12" r="4" fill="#3DDC97"/><circle cx="104" cy="44" r="4" fill="#3DDC97"/></svg>
+                  <h4>Gradient</h4>
+                  <p>Trees, broadcast, allreduce.</p>
+                  <div class="ok">TREE_OFFLOAD ok</div>
+                </div>
+                <div class="hodge-card">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><circle cx="60" cy="30" r="18" fill="none" stroke="#6AA8FF" stroke-width="1.6"/><circle cx="78" cy="18" r="3.5" fill="#6AA8FF"/></svg>
+                  <h4>Curl</h4>
+                  <p>Cycles that must stay cycles.</p>
+                  <div class="ok">RING_RESERVE · no tree</div>
+                </div>
+                <div class="hodge-card bad">
+                  <svg viewBox="0 0 120 56" aria-hidden="true"><circle cx="48" cy="30" r="16" fill="none" stroke="#f0718d" stroke-width="1.6"/><path d="M78 16 L104 44 M104 16 L78 44" stroke="#f0718d" stroke-width="1.8"/></svg>
+                  <h4>Harmonic</h4>
+                  <p>Persistent homology. Do not fold.</p>
+                  <div class="no">TREE_OFFLOAD refused</div>
+                </div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="market">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">04 — Market need</p>
+          <h2>The gap is a missing package OS.</h2>
+          <p class="lede">No invented TAM. The argument is structural: custom silicon is proliferating, the interconnect era is chiplet-shaped, and the OS layer under heterogeneous packages is still a Linux device driver plus a vendor runtime.</p>
+        </div>
+        <div class="market-grid">
+          <div data-reveal>
+            <p class="callout">CUDA’s moat is real — and it has left the <em>package operating system</em> underserved. Vendor compilers already schedule FLOPs. What they do not have is a kernel that can name tiles, banks, tenants, and cuts as first-class objects.</p>
+            <p class="muted">Linux still sees an NPU as a device. Runtimes still see the OS as a driver host. Hyperscalers already isolate tenants in time. Weights and KV caches on a multi-die package need isolation in <em>space</em> — a capability, a bank color, a blast radius — not another ioctl.</p>
+            <p class="note-box"><strong>Illustrative, not a forecast.</strong> As more inference moves onto heterogeneous packages, the scarce layer is the one that can refuse a CrossCut and a silent remote load. That is an OS problem. It is not a bigger CUDA library.</p>
+          </div>
+          <div class="dyn" data-reveal data-d="2">
+            <article>
+              <h3>Custom ASICs are no longer rare</h3>
+              <p>Training and inference houses, hyperscalers, and startups are tape-outing domain silicon. Each package still inherits a host-centric OS story.</p>
+            </article>
+            <article>
+              <h3>UCIe / EMIB is the assembly era</h3>
+              <p>Dies are mixed after the fact. The programming model cannot be “whatever the interposer happens to make coherent.” Transport is not ABI.</p>
+            </article>
+            <article>
+              <h3>Multi-tenant secrets on-package</h3>
+              <p>Weights and KV are the crown jewels. Spatial isolation generalized beyond a single-GPU MIG slice is the OS work the stack still treats as driver folklore.</p>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="partners">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">05 — Why partner</p>
+          <h2>A contract you can clone. Not a booked lab.</h2>
+          <p class="lede">What a silicon OS team can evaluate today: a frozen packet, a PJRT-shaped host shim, Soft SMMU SIDs, and a two-tenant refuse. Proof is host-test behavior already in the tree — mechanisms, not invented FLOPs. Research HAL; <code>PartnerNpuStub</code> stays a leftover no-op. One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a>. Diligence: <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. Next-year calendar: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a>. Sell goals live in <a href="#sell">#sell</a>.</p>
+        </div>
+
+        <div class="gets-caption" data-reveal>
+          <h3>What a partner gets today</h3>
+          <span>Four surfaces in tree · host-tested · not a vendor announcement</span>
+        </div>
+        <div class="gets-grid">
+          <article class="glass gets-card" data-reveal>
+            <div class="icon-dot">⌘</div>
+            <small>Frozen packet</small>
+            <h3><code>IreeHalCmd</code></h3>
+            <p>96-byte little-endian IREE HAL nouns. Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>, Soft-SMMU <code>ssid = 2</code>. Offsets locked in <code>ACCEL.md</code>. Aether stays out of the ISA; the partner CP fills opcode, shape, typed places, fence.</p>
+            <div class="chip-row">
+              <span class="chip on">IreeShapedCp</span>
+              <span class="chip">not a signed vendor</span>
+            </div>
+          </article>
+          <article class="glass gets-card" data-reveal data-d="1">
+            <div class="icon-dot blue">◎</div>
+            <small>Host contract</small>
+            <h3>PJRT-shaped shim</h3>
+            <p><code>host/aether-pjrt</code> packs that frozen packet onto <code>IreeShapedCp</code>. Device, MemorySpace, Buffer, Executable, Event — compiler nouns on purpose. Event create / record / wait lowers onto existing SoftChipletSync chiplet or package fences. Not a new packet. Not <code>GetPjRtApi</code>, not an IREE HAL driver, not a plugin.</p>
+            <div class="chip-row">
+              <span class="chip on">aether-pjrt</span>
+              <span class="chip on">Event on fences</span>
+              <span class="chip">SoftNPU = qemu demo</span>
+            </div>
+          </article>
+          <article class="glass gets-card" data-reveal data-d="2">
+            <div class="icon-dot">⚿</div>
+            <small>Stream identity</small>
+            <h3>Soft SMMU SID</h3>
+            <p>STE→CD→Stage-1/2 software walk. SET_SID at Soft-CP submit; StreamId inherits / sticks on the XQueue. An unbound SET_SID refuses as <code>HalError::Fault</code> — no silent DMA. Bind-at-map is not enough. Path-A BAR DMA host-proves the same walk (wrong SID aborts). Software tables — partner silicon still required for a hardware SMMU.</p>
+            <div class="chip-row">
+              <span class="chip on">SET_SID-at-submit</span>
+              <span class="chip on">path-A IOVA</span>
+              <span class="chip">not Tegra / Host1x</span>
+            </div>
+          </article>
+          <article class="glass gets-card" data-reveal data-d="3">
+            <div class="icon-dot blue">⬡</div>
+            <small>Isolation</small>
+            <h3>Blast-radius refuse</h3>
+            <p>Two tenants. Cross-tenant mint is a type error. SpectralCut CrossCut is refused. Wrong-SID walk aborts. Spatial slice + QoS + blast radius as capabilities — not a MIG product feature we ship.</p>
+            <div class="chip-row">
+              <span class="chip on">run_blast_demo</span>
+              <span class="chip">not a second World</span>
+            </div>
+          </article>
+        </div>
+
+        <div class="proof-caption" data-reveal>
+          <h3>Host-test proof points</h3>
+          <span>Same clips the kernel serial-prints · cargo test --workspace</span>
+        </div>
+        <div class="proof-board">
+          <article class="proof-card" data-reveal>
+            <div class="proof-head">
+              <span class="proof-serial">[blast]</span>
+              <span class="badge done">abort</span>
+            </div>
+            <h3>Wrong-SID abort</h3>
+            <p>A’s arena pins on SID-A. Walk of that IOVA on unbound SID-B is <code>StreamAbort</code>. After B binds SID-B for B’s arena, walking A’s IOVA on SID-B is <code>WrongStream</code>.</p>
+            <p class="proof-src">run_blast_demo() · serial <code>[blast] Soft SMMU wrong SID abort</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="1">
+            <div class="proof-head">
+              <span class="proof-serial">[firewall]</span>
+              <span class="badge done">hold</span>
+            </div>
+            <h3>Copy-then-validate</h3>
+            <p>Kernel-owned arena first; opcodes / relocs / SID / addr caps on the copy. A client that mutates during validate is ignored. Without the firewall the sneak lands. Command-stream integrity — not confidential GPU.</p>
+            <p class="proof-src">run_firewall_demo() · serial <code>[firewall] copy-then-validate race sealed</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="2">
+            <div class="proof-head">
+              <span class="proof-serial">[softcct]</span>
+              <span class="badge done">1 ≪ 10</span>
+            </div>
+            <h3>Fence elision vs broadcast</h3>
+            <p>Last-writer chiplet per buffer label. Same-chiplet consume elides; cross-chiplet cannot. SoftCCT refuses incorrect elision when the writer chiplet is ignored (<code>[softcct] incorrect-elision=refused</code>). Fence <em>counts</em> only — not a latency claim.</p>
+            <div class="meter" aria-label="SoftCCT package fences versus broadcast baseline">
+              <div class="meter-row"><span>package</span><i style="--w:10%"><b></b></i><em>1</em></div>
+              <div class="meter-row bcast"><span>broadcast</span><i style="--w:100%"><b></b></i><em>10</em></div>
+            </div>
+            <p class="proof-src">run_softcct_demo() · two-chiplet clip: 1 package fence vs 10-fence broadcast</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">[scope]</span>
+              <span class="badge done">soft≠strict</span>
+            </div>
+            <h3>Scope policy stays explicit</h3>
+            <p>On the same scoped <code>ChipletTaskScope</code> job, Strict refuses remote steal while Soft allows it after local-first. Thin host exploration only — not ChipletFleet, not a new placement claim, and unscoped boot work remains unrestricted.</p>
+            <p class="proof-src">run_chiplet_scope_demo() · serial <code>[scope] soft≠strict</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">[softnoi]</span>
+              <span class="badge done">IS gate</span>
+            </div>
+            <h3>Admit / refuse on IS + class</h3>
+            <p>Fake shared NoI. Projected <code>IS = max T_solo / T_con</code>. Budget 1.5. Light 400+400 admits (IS = 1.0). Heavy 800+800 refuses the second tenant (IS = 1.6). A software fabric-class tag (tree → Gradient, ring → Curl, persistent → Harmonic) feeds the same admit: second light Curl refuses <code>RingExhausted</code> even at IS = 1.0. Integer throughput units — not FLOPs, not topology synth, not a DMA header.</p>
+            <div class="meter" aria-label="SoftNoI-IS light admit, heavy refuse, and Curl ring-reserve refuse">
+              <div class="meter-row"><span>light</span><i style="--w:62%"><b></b></i><em>1.0 admit</em></div>
+              <div class="meter-row refuse"><span>heavy</span><i style="--w:100%"><b></b></i><em>1.6 refuse</em></div>
+              <div class="meter-row refuse"><span>curl</span><i style="--w:50%"><b></b></i><em>ring refuse</em></div>
+            </div>
+            <p class="proof-src">run_softnoi_demo() · serial <code>[softnoi] class tag curl ring-reserve refuse</code></p>
+          </article>
+          <article class="proof-card" data-reveal data-d="4">
+            <div class="proof-head">
+              <span class="proof-serial">[pjrt]</span>
+              <span class="badge done">wait</span>
+            </div>
+            <h3>Event on existing fences</h3>
+            <p><code>create_event(Chiplet | Package)</code> / record / wait lower onto SoftChipletSync. Job Events from <code>execute</code> stay on the partition CP-shaped timeline. Timeline wait-before-retire is <code>PartitionError::FenceNotReady</code>; Event wait-before-record is <code>NotReady</code>. Not a new packet, not <code>GetPjRtApi</code>, not a CUDA stream.</p>
+            <p class="proof-src">host/aether-pjrt · <code>IreeHalCmd</code> offsets unchanged · not a plugin</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="5">
+            <div class="proof-head">
+              <span class="proof-serial">[softsfi]</span>
+              <span class="badge done">RMW</span>
+            </div>
+            <h3>One honest <code>atomic_add</code></h3>
+            <p>SID-proved toy fetch-add on the Soft-CP bytecode. In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width is a named refuse (<code>[softsfi] unknown=refused</code>). Load/store without a proved base window refuses as <code>SfiError::UnknownBase</code> (<code>[softsfi] unknown-base=refused</code>), not <code>Unmodeled</code>. Sequential software RMW — not a hardware atomic, not NVVM, not “safe kernels.”</p>
+            <p class="proof-src">run_softsfi_demo() · serial <code>[softsfi] heap=refused</code> · <code>[softsfi] unknown=refused</code> · <code>[softsfi] unknown-base=refused</code></p>
+          </article>
+          <article class="proof-card proof-wide" data-reveal data-d="6">
+            <div class="proof-head">
+              <span class="proof-serial">[sva]</span>
+              <span class="badge done">fault</span>
+            </div>
+            <h3>PASID stale-translate fault</h3>
+            <p>Bind process mm ↔ Soft-SMMU SSID. Soft-CP DMA uses that process VA. Host unmap → SSID TLB invalidate. Skip the invalidate and the ATC still hits the old PA — that stale translate is the negative test, not a unified VA. After <code>InvCmd::CfgCd</code> the walk is <code>NotMapped</code>.</p>
+            <p class="proof-src">run_sva_demo() · serial <code>[sva] unmap invalidates SSID TLB; stale translate faults</code> · not ARM SVA / CUDA UVA / hardware SMMU</p>
+          </article>
+          <article class="proof-card proof-wide" data-reveal data-d="7">
+            <div class="proof-head">
+              <span class="proof-serial">[path-a]</span>
+              <span class="badge done">IOVA</span>
+            </div>
+            <h3>Path-A BAR · Soft-SMMU IOVA</h3>
+            <p>The frozen job wire carries non-identity IOVAs. DMA walks path-A <code>stream_id</code> (ssid 4). Wrong SID aborts. Host contract on <code>PathABar</code> — not a guest PCI bind, not a QEMU IOMMU, not hardware SMMU. Path B / <code>make qemu</code> stays canonical. Default CI does not rebuild QEMU.</p>
+            <p class="proof-src"><code>make accel-test</code> · <code>drivers/src/path_a.rs</code> · optional <code>make qemu-accel</code></p>
+          </article>
+        </div>
+
+        <div class="horizon-card year-ahead" data-reveal>
+          <div class="horizon-card-copy">
+            <p class="kicker">Next year · YEAR_AHEAD · TWO_YEAR_PLAN</p>
+            <h3>freeze-v1 named. M0–M6 landed. Next year is sell, then wait for a table.</h3>
+            <p>Not tape-out. Not a foundry calendar. Research <code>IreeHalCmd</code> v1 stays until a real partner CP brings an opcode list. Next-twelve-month calendar is <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (Sep 2026 → Sep 2027). Closed Sep → Mar record: <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a>. Partner demos: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. 2028 handoff or freeze lives on <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> — not this year’s climax. Same strip on <a href="#roadmap">#roadmap</a>.</p>
+          </div>
+          <div class="horizon-row" aria-label="Next twelve months: Now landed, 2027 leftovers gated, 2028 handoff">
+            <div class="horizon-phase done">
+              <small>Now</small>
+              <b>Landed</b>
+              <p>Sell pack · freeze-v1</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase gated">
+              <small>2027 H1 leftover</small>
+              <b>Gated</b>
+              <p>CapTable only if alias</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase gated">
+              <small>2027 H2</small>
+              <b>Wait for table</b>
+              <p>Real opcode list, or stay v1</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase end">
+              <small>2028</small>
+              <b>Handoff</b>
+              <p>Signed list or ABI freeze</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="partner-cta" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>run the diligence demo</span></div>
+            <pre><span class="cmd">$ git clone https://github.com/amineux/aether.git && cd aether</span>
+<span class="cmd">$ make diligence-demo</span>
+<span class="ok">[event] SoftChipletSync create/record/wait
+[event] fence counts chiplet-local vs package
+[softcct] package fences=
+[softcct] incorrect-elision=refused
+[scope] soft≠strict
+[softcct] single-chiplet=noop
+[greenctx] interference partitioned 70/30 vs unpartitioned
+[greenctx] migrate-to-yield A 30->70 SID unchanged
+[cdt] revoke descendants ok
+[softcp] sparsify DROP
+[opinject] resident worker + hot-add sealed
+[partner-hello] bad executable 0xDEAD refused
+[diligence] host Path B sealed</span>
+<span class="cmd">$ make red-team</span>
+<span class="ok">[redteam] attack=blast-hops result=refused
+[redteam] attack=blast-nodes result=refused
+[redteam] attack=fence-not-ready result=refused
+[redteam] attack=silent-remote result=refused
+[redteam] attack=uncolored-compute result=refused
+[redteam] attack=typed-window-sid result=refused
+[redteam] attack=hbm-bw result=refused
+[redteam] attack=foreign-tenant-color result=refused
+[redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=set-sid-unbound result=refused
+[redteam] attack=submit-sid result=refused
+[redteam] attack=sid-budget result=refused
+[redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
+[redteam] attack=firewall-ident-pa result=refused
+[redteam] attack=hodge-harmonic-tree result=refused
+[redteam] attack=hodge-curl-tree result=refused
+[redteam] attack=hodge-quota result=refused
+[redteam] attack=greenctx-overcommit result=refused
+[redteam] attack=greenctx-unbound result=refused
+[redteam] attack=greenctx-exhausted result=refused
+[redteam] attack=greenctx-busy result=refused
+[redteam] attack=smmu-overlap result=refused
+[redteam] attack=smmu-not-mapped result=refused
+[redteam] attack=smmu-wrong-stream result=refused
+[redteam] attack=smmu-cross-tenant result=refused
+[redteam] attack=smmu-stream-abort result=refused
+[redteam] attack=softcct-incorrect-elision result=refused
+[redteam] attack=softcct-credit-exhausted result=refused
+[redteam] attack=hodge-class-unauthorized result=refused
+[redteam] attack=softnoi-unbound result=refused
+[redteam] attack=chipsync-unbound result=refused
+[redteam] attack=softnoi-ring-exhausted result=refused
+[redteam] attack=opinject-stale-version result=refused
+[redteam] attack=opinject-oob result=refused
+[redteam] attack=opinject-not-running result=refused
+[redteam] attack=opinject-busy result=refused
+[redteam] attack=opinject-unknown-slot result=refused
+[redteam] attack=smmu-bad-range result=refused
+[redteam] attack=cut-conductance result=refused
+[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=29
+[redteam] attack=smmu-table-full result=refused
+[redteam] attack=cut-not-bound result=refused
+[redteam] attack=opinject-bad-arg result=refused
+[redteam] attack=accel-shape-overflow result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
+[softsfi] unknown=refused
+[softsfi] unknown-base=refused
+[redteam] sealed</span>
+<span class="cmd">$ make partner-hello</span>
+<span class="ok">[partner-hello] ok</span>
+<span class="cmd">$ make qemu</span>
+<span class="ok">[blast] Soft SMMU wrong SID abort  ok
+[firewall] copy-then-validate race sealed</span></pre>
+          </div>
+          <div class="partner-cta-copy">
+            <h3>Clone it. Run the diligence demo.</h3>
+            <p><code>make diligence-demo</code> is the host Path B partner clip (no QEMU). <code>make red-team</code> is the named-attack refuse clip. Week 1 walk: isolation → packet (<code>make partner-hello</code> / doorbell) → wait → admit class → sandbox hole. Path B <code>make qemu</code> is the bootable slice. Optional path-A IOVA: <code>make accel-test</code> (no QEMU rebuild). Eight-minute call script: <a href="#pitch">#pitch</a>.</p>
+            <div class="cta-row" style="margin-top:18px">
+              <a class="btn btn-primary" href="https://github.com/amineux/aether">Clone on GitHub</a>
+              <a class="btn btn-ghost" href="#sell">Sell / Design-win</a>
+              <a class="btn btn-ghost" href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">Sell pack</a>
+            </div>
+            <p class="muted partner-cta-note">Your compiler keeps the ISA and fusion. Aether admits the job against a partition, a cut, a bank color, and a fence. No booked silicon bring-up. No vendor announcement.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="sell">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">06 — Sell / Design-win</p>
+            <h2>What you get today. Commands that exist. Bring your opcode table.</h2>
+            <p class="lede">One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">docs/SELL_PACK.md</a>. Printable cut: <a href="https://github.com/amineux/aether/blob/main/docs/pitch/partner-one-pager.md">partner-one-pager</a>. Next-year calendar: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (this page <a href="#roadmap">#roadmap</a>). Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a>. This-quarter demos: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. Isolation is the product. Soft SMMU is software. Path B is canonical. freeze-v1: research <code>IreeHalCmd</code> v1 stays. No NVIDIA partnership. No FLOPs. No tape-out.</p>
+          </div>
+          <div class="honest-pill" data-reveal>Ask: opcode table · freeze-v1 · YEAR_AHEAD</div>
+        </div>
+
+        <div class="gets-caption" data-reveal>
+          <h3>Next-year sell goals</h3>
+          <span>Sep 2026 → Sep 2027 · YEAR_AHEAD · M0–M6 already landed</span>
+        </div>
+        <div class="sell-goals">
+          <article class="glass sell-goal" data-reveal>
+            <small>01</small>
+            <h3>Run the host clips</h3>
+            <p>Every first meeting: <code>make diligence-demo</code> then <code>make red-team</code>. No QEMU required. Captured logs live in <code>docs/pitch/</code> if cargo is cold.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="1">
+            <small>02</small>
+            <h3>Collect an opcode table</h3>
+            <p>Fill <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a> against frozen <code>IreeHalCmd</code> — or a written no. The IREE HAL stand-in is a research mapping, not a partner.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="2">
+            <small>03</small>
+            <h3>Walk the five beats</h3>
+            <p>Isolation → packet → wait → admit class → <code>ATOMIC_ADD</code> + named refuses. Round 5 sealed fence-not-ready, unbound SET_SID, Hodge Tree+Curl, SoftSFI unknown-base, and Soft≠Strict scope honesty. Round 6 sealed Soft-SMMU SubmitSid / SidBudget / Stage2Fault and SoftNoI Exhausted refuse lines. Round 7 sealed HodgeQuota empty admit → QuotaExceeded and SoftGreenPool create → Overcommit. Round 8 added SoftGreenPool migrate_to_yield → Unbound and create past MAX_GREEN_CTX → Exhausted. Round 9 sealed migrate_to_yield with a destination bound elsewhere → Busy; same-SID overlapping guest PA → Overlap; a Bound walk hole → NotMapped; armed≠packet → WrongStream; SoftCCT dual-proof incorrect-elision refusal; and CCT record past <code>MAX_CCT_ENTRIES</code> → CreditExhausted. Round 10 sealed Soft-SMMU <code>bind_stream</code> foreign tenant on a Bound STE → CrossTenant, unbound <code>walk</code>/<code>translate_result</code>/<code>resolve_result</code> → StreamAbort, and Bound-SID <code>set_sid</code> foreign tenant → CrossTenant. Round 11 sealed FlowQuota <code>authorize</code> → ClassNotAuthorized, SoftNoI <code>release</code> unknown → Unbound, and SoftChipletSync extra <code>arrive</code> → Unbound. Round 12 sealed SoftNoI Curl <code>admit_class</code> → RingExhausted, OperatorInject stale OpCall version → StaleVersion, and OperatorInject SidSandbox escape → Oob. Round 13 sealed OperatorInject submit while stopped → NotRunning, ResidentWorker start-while-running → Busy, and submit empty/mismatched slot → UnknownSlot. Round 14 sealed Soft-SMMU <code>map_window</code> zero-length or overflowing window and <code>bind_mm</code> reserved <code>MmId(0)</code> → BadRange, SpectralCut over its conductance bound → ConductanceExceeded, and a bounded seeded hostile-tenant fuzz (seed <code>0x5AE7</code>, 4096 ops, no wall clock; evidence, not a proof, not a hardware claim). The fuzz excludes <code>IommuMap::unmap_stream</code> / <code>unmap</code> as kernel-trust primitives: they take no tenant check, and that is an open known gap (<a href="https://github.com/amineux/aether/issues/161">issue #161</a>). Round 15 adds Soft-SMMU <code>map</code> past <code>MAX_MAPS</code> / <code>bind_stream</code> past <code>MAX_STES</code> → TableFull, <code>bind_place</code> / <code>bind_window</code> without BIND → NotBound, OperatorInject publish/decode/submit → BadArg, and SoftNpu <code>execute</code> BadShape / Overflow (tiny matmul admits; software SoftNpu only; not new opcodes; not FLOPs/tape-out). Same tree, frozen packet, software proofs. Commands below exist in <code>make help</code>. Thin third consumer: <code>make mp-shim</code> (inspiration name only).</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="3">
+            <small>04</small>
+            <h3>Leave the packet</h3>
+            <p><code>make partner-hello</code> is clone-and-run. Doorbell is a second consumer of the same 96-byte image. <code>make mp-shim</code> is a MicroPerceptron-<em>shaped</em> third consumer (PR #83) — inspiration name only, not a port.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="4">
+            <small>05</small>
+            <h3>Offer path-A IOVA</h3>
+            <p>Optional host proof: <code>make accel-test</code>. Wrong SID aborts. Stock <code>make qemu</code> stays path B. Do not rebuild QEMU on the call.</p>
+          </article>
+          <article class="glass sell-goal" data-reveal data-d="5">
+            <small>06</small>
+            <h3>Hold the 2028 stop</h3>
+            <p>Signed opcode list from a real partner CP, or freeze the research ABI. Horizon, not this year’s climax. Hardware SMMU stays partner silicon. Not a foundry date. Spine: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a>.</p>
+          </article>
+        </div>
+
+        <div class="gets-caption" data-reveal>
+          <h3>Makefile targets that exist</h3>
+          <span>POSIX /bin/sh safe · no pipefail · no invented names</span>
+        </div>
+        <div class="sell-cmds">
+          <article class="proof-card" data-reveal>
+            <div class="proof-head">
+              <span class="proof-serial">make diligence-demo</span>
+              <span class="badge done">wait</span>
+            </div>
+            <h3>Host Path B</h3>
+            <p>R5 foundation fold on Host Path B: two-tenant refuse, frozen <code>IreeHalCmd</code> submit + wait, Event create/record/wait, GreenCtx migrate with SID unchanged, CDT descendant revoke, and partner-hello bad-executable refuse. Grep <code>[event] fence counts</code>, <code>[softcct] package fences=</code>, <code>[softcct] single-chiplet=noop</code>, <code>[softcct] incorrect-elision=refused</code>, <code>[scope] soft≠strict</code>, <code>[greenctx] migrate-to-yield A 30->70 SID unchanged</code>, <code>[cdt] revoke descendants ok</code>, <code>[softcp] sparsify DROP</code>, <code>[opinject] resident worker + hot-add sealed</code>, <code>[partner-hello] bad executable 0xDEAD refused</code>.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="1">
+            <div class="proof-head">
+              <span class="proof-serial">make red-team</span>
+              <span class="badge done">refuse</span>
+            </div>
+            <h3>Named attacks</h3>
+            <p><code>[redteam] attack=… result=refused</code> including the R5–R15 foundation needles: <code>attack=fence-not-ready</code> (<code>PartitionError::FenceNotReady</code>), <code>attack=set-sid-unbound</code> (<code>HalError::Fault</code>), <code>attack=submit-sid</code> (<code>MapError::SubmitSid</code>), <code>attack=sid-budget</code> (<code>MapError::SidBudget</code>), <code>attack=stage2-fault</code> (<code>MapError::Stage2Fault</code>), <code>attack=softnoi-exhausted</code> (<code>NoiError::Exhausted</code>), <code>attack=hodge-curl-tree</code> (<code>HodgeError::CurlOnTree</code>), <code>attack=hodge-quota</code> (<code>HodgeError::QuotaExceeded</code>), <code>attack=greenctx-overcommit</code> (<code>GreenCtxError::Overcommit</code>), <code>attack=greenctx-unbound</code> (<code>GreenCtxError::Unbound</code>), <code>attack=greenctx-exhausted</code> (<code>GreenCtxError::Exhausted</code>), <code>attack=greenctx-busy</code> (<code>GreenCtxError::Busy</code>), <code>attack=smmu-overlap</code> (<code>MapError::Overlap</code>), <code>attack=smmu-not-mapped</code> (<code>MapError::NotMapped</code>), <code>attack=smmu-wrong-stream</code> (<code>MapError::WrongStream</code>), <code>attack=smmu-cross-tenant</code> (<code>MapError::CrossTenant</code>), <code>attack=smmu-stream-abort</code> (<code>MapError::StreamAbort</code>), <code>attack=softcct-incorrect-elision</code> (dual-proof refuse), and <code>attack=softcct-credit-exhausted</code> (<code>PartitionError::CreditExhausted</code>), <code>attack=hodge-class-unauthorized</code> (<code>HodgeError::ClassNotAuthorized</code>), <code>attack=softnoi-unbound</code> (<code>NoiError::Unbound</code>), and <code>attack=chipsync-unbound</code> (<code>PartitionError::Unbound</code>), <code>attack=softnoi-ring-exhausted</code> (<code>NoiError::RingExhausted</code>), <code>attack=opinject-stale-version</code> (<code>InjectError::StaleVersion</code>), and <code>attack=opinject-oob</code> (<code>InjectError::Oob</code>), <code>attack=opinject-not-running</code> (<code>InjectError::NotRunning</code>), <code>attack=opinject-busy</code> (<code>InjectError::Busy</code>), and <code>attack=opinject-unknown-slot</code> (<code>InjectError::UnknownSlot</code>), <code>attack=smmu-bad-range</code> (<code>MapError::BadRange</code>), and <code>attack=cut-conductance</code> (<code>CutError::ConductanceExceeded</code>; cut-only). <code>attack=tenant-fuzz</code> is a bounded seeded fuzz with <code>escapes</code> and <code>variants</code> counted from the run: not a proof, not a hardware claim, and <code>unmap_stream</code> / <code>unmap</code> are excluded (known open item, issue #161). Round 15: <code>attack=smmu-table-full</code> (<code>MapError::TableFull</code>), <code>attack=cut-not-bound</code> (<code>CutError::NotBound</code>; cut-only), <code>attack=opinject-bad-arg</code> (<code>InjectError::BadArg</code>), and <code>attack=accel-shape-overflow</code> (<code>AccelError::BadShape</code> / <code>Overflow</code>; software SoftNpu only). Also <code>attack=blast-hops</code> (<code>admit_hops</code> → <code>BlastRadius</code>; not a CrossCut rehash), <code>attack=blast-nodes</code>, <code>attack=silent-remote</code>, <code>attack=uncolored-compute</code>, <code>attack=typed-window-sid</code>, <code>attack=hbm-bw</code> (soft meter → <code>QosExceeded</code>; not CXL product / tape-out), <code>attack=foreign-tenant-color</code>, <code>attack=xqueue-sid-override</code>, <code>attack=firewall-ident-pa</code>, <code>attack=hodge-harmonic-tree</code>. Fabric-class admit/refuse. <code>ATOMIC_ADD</code> accept/reject. <code>[softsfi] heap=refused</code>, <code>[softsfi] unknown=refused</code>, and <code>[softsfi] unknown-base=refused</code>. Closer: not confidential GPU, not HW MIG, Soft SMMU is software.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="2">
+            <div class="proof-head">
+              <span class="proof-serial">make partner-hello</span>
+              <span class="badge done">packet</span>
+            </div>
+            <h3>Frozen <code>IreeHalCmd</code></h3>
+            <p>Magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>. Bad executable refused on the same frozen packet. No QEMU rebuild. Not a signed vendor.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="3">
+            <div class="proof-head">
+              <span class="proof-serial">make design-win-standin</span>
+              <span class="badge done">map</span>
+            </div>
+            <h3>Freeze-v1 / IREE stand-in</h3>
+            <p>Admits the filled public-noun worksheet. Not a partner. Packet offsets stay (magic <code>0xAE7E1EE1</code>). Blank they fill: <code>make design-win-check</code>.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="4">
+            <div class="proof-head">
+              <span class="proof-serial">make accel-test</span>
+              <span class="badge done">IOVA</span>
+            </div>
+            <h3>Path-A Soft-SMMU IOVA</h3>
+            <p>Host <code>PathABar</code>. Job wire carries non-identity IOVAs. Wrong SID aborts. Kernel PCI bind still optional. CI does not rebuild QEMU.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="5">
+            <div class="proof-head">
+              <span class="proof-serial">make mp-shim</span>
+              <span class="badge done">sketch</span>
+            </div>
+            <h3>MP-shaped consumer</h3>
+            <p>Thin third caller of frozen <code>IreeHalCmd</code> (PR #83). Exercises <code>Mul</code> / <code>Max</code> additive research ops on freeze-v1 (same 96-byte packet). Inspiration name only. Secondary to PJRT. Not a MicroPerceptron port. No QEMU rebuild.</p>
+          </article>
+          <article class="proof-card" data-reveal data-d="6">
+            <div class="proof-head">
+              <span class="proof-serial">make qemu</span>
+              <span class="badge stub">optional</span>
+            </div>
+            <h3>Path-B guest</h3>
+            <p>Stock QEMU, in-kernel SoftNPU BAR. Use if they want the bootable slice. Skip if the laptop has no QEMU. PJRT <code>Add</code> / <code>Relu</code> / <code>Mul</code> / <code>Max</code> (PR #84 / #88 / #92) stay additive research opcodes on freeze-v1 — same 96-byte packet, not FLOPs, not freeze-v2. Max is the last SoftNPU elementwise on freeze-v1.</p>
+          </article>
+        </div>
+
+        <div class="horizon-card sell-ask" data-reveal>
+          <div class="horizon-card-copy">
+            <p class="kicker">The ask</p>
+            <h3>Bring your opcode table.</h3>
+            <p>Fill DESIGN_WIN.md — opcode names, SID budget, memory spaces, queue count, event/fence scope — against frozen <code>IreeHalCmd</code>. If the HAL contract matches the chip, that is the conversation. If it does not, a written no with reasons is a good outcome. Not a logo. Not an NDA draft in this meeting. Not NVIDIA. Calendar: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> · printable <a href="https://github.com/amineux/aether/blob/main/docs/pitch/partner-one-pager.md">one-pager</a>.</p>
+          </div>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>leave-behind</span></div>
+            <pre><span class="cmd">$ make diligence-demo</span>
+<span class="ok">[event] SoftChipletSync create/record/wait
+[event] fence counts chiplet-local vs package
+[softcct] package fences=
+[softcct] incorrect-elision=refused
+[scope] soft≠strict
+[softcct] single-chiplet=noop
+[greenctx] interference partitioned 70/30 vs unpartitioned
+[greenctx] migrate-to-yield A 30->70 SID unchanged
+[cdt] revoke descendants ok
+[softcp] sparsify DROP
+[opinject] resident worker + hot-add sealed
+[partner-hello] bad executable 0xDEAD refused
+[diligence] host Path B sealed</span>
+<span class="cmd">$ make red-team</span>
+<span class="ok">[redteam] attack=blast-hops result=refused
+[redteam] attack=blast-nodes result=refused
+[redteam] attack=fence-not-ready result=refused
+[redteam] attack=silent-remote result=refused
+[redteam] attack=uncolored-compute result=refused
+[redteam] attack=typed-window-sid result=refused
+[redteam] attack=hbm-bw result=refused
+[redteam] attack=foreign-tenant-color result=refused
+[redteam] attack=xqueue-sid-override result=refused
+[redteam] attack=set-sid-unbound result=refused
+[redteam] attack=submit-sid result=refused
+[redteam] attack=sid-budget result=refused
+[redteam] attack=stage2-fault result=refused
+[redteam] attack=softnoi-exhausted result=refused
+[redteam] attack=firewall-ident-pa result=refused
+[redteam] attack=hodge-harmonic-tree result=refused
+[redteam] attack=hodge-curl-tree result=refused
+[redteam] attack=hodge-quota result=refused
+[redteam] attack=greenctx-overcommit result=refused
+[redteam] attack=greenctx-unbound result=refused
+[redteam] attack=greenctx-exhausted result=refused
+[redteam] attack=greenctx-busy result=refused
+[redteam] attack=smmu-overlap result=refused
+[redteam] attack=smmu-not-mapped result=refused
+[redteam] attack=smmu-wrong-stream result=refused
+[redteam] attack=smmu-cross-tenant result=refused
+[redteam] attack=smmu-stream-abort result=refused
+[redteam] attack=softcct-incorrect-elision result=refused
+[redteam] attack=softcct-credit-exhausted result=refused
+[redteam] attack=hodge-class-unauthorized result=refused
+[redteam] attack=softnoi-unbound result=refused
+[redteam] attack=chipsync-unbound result=refused
+[redteam] attack=softnoi-ring-exhausted result=refused
+[redteam] attack=opinject-stale-version result=refused
+[redteam] attack=opinject-oob result=refused
+[redteam] attack=opinject-not-running result=refused
+[redteam] attack=opinject-busy result=refused
+[redteam] attack=opinject-unknown-slot result=refused
+[redteam] attack=smmu-bad-range result=refused
+[redteam] attack=cut-conductance result=refused
+[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=29
+[redteam] attack=smmu-table-full result=refused
+[redteam] attack=cut-not-bound result=refused
+[redteam] attack=opinject-bad-arg result=refused
+[redteam] attack=accel-shape-overflow result=refused
+[redteam] fabric-class admit/refuse
+[redteam] ATOMIC_ADD accept/reject
+[softsfi] heap=refused
+[softsfi] unknown=refused
+[softsfi] unknown-base=refused
+[redteam] sealed</span>
+<span class="cmd">$ make partner-hello &amp;&amp; make mp-shim</span>
+<span class="ok">[partner-hello] ok
+[mp-shim] ok</span>
+<span class="cmd">$ make design-win-standin</span>
+<span class="ok">freeze-v1 · IREE HAL stand-in (not a partner)</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="roadmap">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">07 — Two-year roadmap</p>
+            <h2>M0–M6 complete. freeze-v1 named. Next year is YEAR_AHEAD — sell the demos, wait for a real opcode table.</h2>
+            <p class="lede">Next twelve months: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (Sep 2026 → Sep 2027). <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> is the closed Sep → Mar record — M0–M6 landed, do not re-schedule. Horizon: <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. Path B is canonical. Soft SMMU is software. We do not tape out chips. The landed Year-1 / Months 1–5 / H2 2026 cards stay below.</p>
+          </div>
+          <div class="honest-pill" data-reveal>YEAR_AHEAD · M0–M6 landed · 2028 is horizon, not climax</div>
+        </div>
+        <div class="horizon-card year-ahead year-strip" data-reveal>
+          <div class="horizon-card-copy">
+            <p class="kicker">Next 12 months · YEAR_AHEAD</p>
+            <h3>Now landed. Leftovers gated. 2028 is the handoff, not this year’s climax.</h3>
+            <p>Sell the demos we can run. Do not invent silicon. Opcode v2 only when a real partner brings a table (dual ACCEL.md + <code>ireecp</code> + host pack/unpack). One port only if path B doorbell fails a partner ask. Full MicroPerceptron port stays optional / later. <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD.md</a> · this page <a href="#sell">#sell</a>.</p>
+          </div>
+          <div class="horizon-row" aria-label="Next twelve months: Now landed, 2027 leftovers gated, 2028 handoff">
+            <div class="horizon-phase done">
+              <small>Now</small>
+              <b>Landed</b>
+              <p>Sell pack · freeze-v1 · M0–M6</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase gated">
+              <small>2027 H1 leftover</small>
+              <b>Gated</b>
+              <p>CapTable / REVOKE if alias</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase gated">
+              <small>2027 H2</small>
+              <b>Wait for table</b>
+              <p>Real opcode list, or stay v1</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+            <div class="horizon-phase end">
+              <small>2028</small>
+              <b>Handoff</b>
+              <p>Signed list or ABI freeze</p>
+              <span class="fill" aria-hidden="true"><i></i></span>
+            </div>
+          </div>
+        </div>
+        <div class="timeline">
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Year-1</div>
+              <h3>Working vertical slice</h3>
+              <ul>
+                <li>QEMU x86_64 ring-3 <code>/init</code> over <code>syscall</code> / <code>sysret</code></li>
+                <li>SoftNPU virtqueue path B (in-kernel BAR is the canonical stock-QEMU demo; golden MMIO trace); I32 plus software F16/F32 (not a tensor ISA). Path A is an optional in-tree QEMU device model (<code>qemu/</code>; <code>make accel-test</code>)</li>
+                <li>Soft SMMU — STE→CD→Stage-1/2 software walk + ATS invalidate (not hardware SMMU; partner silicon still required)</li>
+                <li>Soft-CP — packed <code>CpCmd</code> + Soft SMMU SID + IRQ/fence (software model, not a silicon driver)</li>
+                <li>SMP smoke — QEMU <code>-smp 2</code>, INIT-SIPI, per-CPU <code>gs</code>; APs kernel-only</li>
+                <li>Per-task PML4 + SMEP/SMAP — documented x86 subset (CR3 + USER-local 2 MiB)</li>
+                <li>User-level threads — additive <code>SYS_CLONE=10</code> shares the caller aspace (not Linux clone / fork)</li>
+                <li>Growable user <code>mmap</code> — additive <code>SYS_MMAP=11</code> anonymous 4 KiB USER pages (not POSIX <code>mmap</code>; no file / no <code>MAP_SHARED</code>)</li>
+                <li>In-kernel ramfs — loader <code>open</code>s <code>/init</code> (and x86 <code>/probe</code>); seeded from x86 virtio-blk (AETHFS01) or embedded blobs; not POSIX</li>
+                <li>Multiboot mmap → frames — documented x86 subset (clip + bitmap cap; RISC-V / aarch64 take the explicit fallback)</li>
+                <li>Cap CDT / revoke — small parent/child + <code>revoke_in</code>; not a seL4 CNode; no user syscall</li>
+                <li>OperatorKernelHandle + SparsifiedCollective — Hodge-bound collective cap; drop below-threshold harmonic (integer milli, not an eigensolve)</li>
+                <li>Fence / timeline — CP-shaped seq / wait / complete + credit limit (software model; timeout is software; not a silicon fence)</li>
+                <li>Bank coloring — Compute refuse, Exchange may transfer</li>
+                <li>AffinityLaplacian n≤32 — prototype eigensolve in sched (not GiFt-Placer); orphaned heat/commute helpers deleted, not elevated</li>
+                <li>RISC-V U-mode <code>/init</code> over <code>ecall</code> / <code>sret</code> (Sv39 isolate; in-kernel SoftNPU; PLIC software doorbell, not virtio-mmio; not product-class)</li>
+                <li>aarch64 EL0 <code>/init</code> over <code>svc</code> / <code>eret</code> (TTBR0 isolate; in-kernel SoftNPU; not GICv3 / virtio-mmio; not product-class)</li>
+                <li>Diligence pack + non-claims — research leave-behind, not a vendor pitch</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Hardening</div>
+              <h3>x86 map, slide, and isolate</h3>
+              <ul>
+                <li>Higher-half kernel — <code>ffffffff80000000+PA</code>; trampoline still copies to physical <code>0x400000</code></li>
+                <li>KASLR boot-time slide — 0 / 16 / 32 MiB dual-map; cmdline / entropy; not a secret-slide claim</li>
+                <li>PIE reloc — <code>.rela.dyn</code> applied at boot; unused link-time alias unmapped</li>
+                <li>KPTI user CR3 — no HH / no identity DMA in user map (4 KiB trampoline; not Meltdown-complete)</li>
+                <li>PCID tagged TLB — tags KPTI <code>mov cr3</code> when CPUID advertises it; stock <code>qemu64</code> often full-flushes</li>
+                <li>One-page COW — <code>/init</code> and <code>/probe</code> share a RO template until write fault (not <code>fork</code>)</li>
+                <li>Identity teardown — kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Month 1–2</div>
+              <h3>Opcodes then PJRT — SIX_MONTH spine</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">M1 opcodes</span>
+                <span class="chip on">M2 PJRT shim</span>
+                <span class="chip on">Soft SMMU kit</span>
+                <span class="chip wait">path A optional</span>
+              </div>
+              <ul>
+                <li><code>IreeShapedCp</code> (PR #38) — IREE HAL-shaped <code>AccelDevice</code>, <code>backend = 4</code>; frozen <code>IreeHalCmd</code> from public IREE HAL nouns; M1 spine; not a signed vendor; SoftNPU path B and Soft-CP stay</li>
+                <li><code>IreeHalCmd</code> freeze (PR #45) — <code>ACCEL.md</code> wording locked so PJRT hosts pack that packet only</li>
+                <li>PJRT/IREE host shim (PR #41) — <code>host/aether-pjrt</code> packs frozen <code>IreeHalCmd</code> onto <code>IreeShapedCp</code>; not a plugin, not a vendor runtime; SoftNPU stays the path-B qemu demo</li>
+                <li><code>SIX_MONTH_PLAN</code> (PR #44) — Falsifier spine is opcodes → PJRT; OS-completeness M3–M4 clock stays killed; Year-1 + hardening are not re-scheduled</li>
+                <li>Exploration A–E landed as digests, not calendar pillars: A merged into M2; B two-tenant blast-radius clip (PR #43); C <code>ChipletTaskScope</code> stub (PR #40); D CDT property tests (PR #39; not a proof); E <code>TypedWindow</code> pin stub (PR #42; CXL.mem stays killed)</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Month 3–4</div>
+              <h3>SID-at-submit + XQueue — SpectraScout bites</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">M4 XQueue</span>
+                <span class="chip on">M3 SID-at-submit</span>
+                <span class="chip on">Soft SMMU kit</span>
+                <span class="chip on">SoftChipletSync</span>
+                <span class="chip on">SoftGreenCtx</span>
+                <span class="chip on">SoftCCT</span>
+              </div>
+              <ul>
+                <li>Soft-CP XQueue (PR #47) — two software queues; queue-boundary suspend/resume; SID sticks on the queue. XSched-shaped open queue object; not a silicon queuing unit; not an XSched LD_PRELOAD shim. <code>IreeShapedCp</code> stays a single mailbox. Path B SoftNPU / <code>make qemu</code> unchanged</li>
+                <li>Soft SMMU bring-up kit (PR #48) — docs + dump/replay of the existing STE→CD→S1/S2 walk + ATS; <code>make smmu-bringup</code> / CI scripts. Software tables only; not a Soft-SMMU redo; not hardware SMMU; not a half-year pillar</li>
+                <li>Soft-CP SID-at-submit (PR #49) — Host1x-shaped SET_SID at Soft-CP submit; StreamId inherits / sticks on the XQueue. Not a Tegra / Host1x driver; not hardware SID programming. SoftNPU path B stays a Bound-SID walk without a submit latch</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · after M3–M4</div>
+              <h3>SoftChipletSync + SoftCCT</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">SoftChipletSync</span>
+                <span class="chip on">SoftCCT</span>
+                <span class="chip on">M4 XQueue</span>
+                <span class="chip on">M3 SID-at-submit</span>
+                <span class="chip wait">path A optional</span>
+              </div>
+              <ul>
+                <li>SoftChipletSync (PR #51) — chiplet-local fence domains on the existing seq / wait / complete model; scopes collapsed to <code>chiplet|package</code> (Wave/Cu alias Chiplet — same cost+signal; PR #102). Fleet-shaped hierarchical counters: chiplet-local signal is free; package-scope is one fence per participating chiplet. Soft-CP and IreeShapedCp <code>submit_scoped</code> run a producer/consumer across two fake chiplets. Host tests measure fence counts. Not a Vulkan timeline, not UCIe, not ChipletFleet placement, not a multi-chiplet latency claim. SID-at-submit, XQueue, and path-B SoftNPU stay</li>
+                <li>SoftCCT — elision layer on SoftChipletSync. Soft-CP buffer labels + last-writer chiplet (CPElide MICRO’24 inspiration). Package-scope fence only when CCT says a cross-chiplet hazard. Same-chiplet consume on ≥2 fake chiplets elides; single-chiplet CCT is a no-op (<code>[softcct] single-chiplet=noop</code> on host diligence). Host tests: CCT fence count ≪ broadcast baseline; incorrect elision (ignore writer chiplet) fails. Not a full coherence protocol, not a Vulkan / ROCm product, not a latency claim from single-die numbers</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · Month 5</div>
+              <h3>Four exploration digests — not one spine</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">SoftGreenCtx</span>
+                <span class="chip on">SoftCmdFirewall</span>
+                <span class="chip on">SoftCCT</span>
+                <span class="chip on">SoftSFI</span>
+              </div>
+              <ul>
+                <li>SoftGreenCtx (PR #54) — Soft-CP partitions a fake SM / work-queue pool 70/30. Two XQueues bind to those SoftGreenCtx slices. Host tests co-run memcpy-like kernels and report BW interference vs an unpartitioned baseline (normalized integer units, not FLOPs). Queue A can migrate-to-yield onto the larger slice at a queue boundary; Soft-SMMU SID is unchanged. CUDA Green Contexts / DetShare are inspiration only (DetShare has no public repo). Soft partition — not HW MIG, not a BAR firewall. Residual shared-HBM tax stays on so the 70% slice is still below solo. Path B SoftNPU / <code>make qemu</code> unchanged. <code>IreeShapedCp</code> stays a single mailbox</li>
+                <li>SoftCmdFirewall (PR #55) — copy-then-validate on Soft-CP submit; kernel-owned arena; opcodes / relocs / SID / addr caps on the copy. Mutation-during-validate fails without the firewall. Host1x lesson. Not confidential GPU, not a Tegra driver, not SEC2</li>
+                <li>SoftCCT (PR #57) — deepen landed SoftChipletSync: last-writer chiplet per buffer label elides the package fence when the consumer is on that chiplet; labeled chiplet0→1; package-fence ≪ broadcast; incorrect elision fails; single-chiplet CCT is a no-op (<code>[softcct] single-chiplet=noop</code>). CPElide inspiration. Not UCIe, not a coherence directory, not a multi-chiplet latency claim. Fence counts only</li>
+                <li>SoftSFI (PR #56) — toy Soft-CP bytecode memory sandbox (<code>load</code> / <code>store</code> / <code>add</code> / <code>dma</code> / SID-proved <code>atomic_add</code>); bounds verifier against the SID-mapped Soft-SMMU window; two tenants SFI+SID. GPU-AToLL-shaped. Not a verified multi-tenant GPU, not NVRTC, not confidential GPU. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named refuse. Unknown opcode / illegal width → <code>[softsfi] unknown=refused</code>. <code>atomic_add</code> is a sequential toy RMW, not a hardware atomic. No new syscall</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · H2 2026</div>
+              <h3>Three explorations — not Month 5</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">SoftNoI-IS</span>
+                <span class="chip on">PASID/SVA</span>
+                <span class="chip on">OperatorInject</span>
+                <span class="chip on">path A IOVA</span>
+              </div>
+              <ul>
+                <li>SoftNoI-IS (PR #60) — Interference Score admit on a fake shared NoI. SoftChipletSync advertises per-tenant IS; Soft-CP <code>submit_xqueue_noi</code> refuses when projected <code>IS &gt; 1.5</code>. Light 400+400 admits (IS = 1.0); heavy 800+800 refuses the second tenant (IS = 1.6). PARL / NoI inspiration. Admit control, not topology synthesis, not UniCNet. Integer throughput units, not FLOPs. Default <code>submit_xqueue</code> stays ungated. Path B SoftNPU / <code>make qemu</code> unchanged. Fabric-class tags (PR #75) deepen this same admit — see the 2027 H1 slices card</li>
+                <li>PASID/SVA (PR #62) — bind process mm ↔ Soft-SMMU SSID (the PASID <em>is</em> that software SSID); Soft-CP DMA uses the process VA; host unmap → SSID TLB invalidate; a skipped invalidate is a stale translate. Linux SVA shape. Software only — not ARM SVA, not PCIe PASID/PRI, not CUDA UVA, not hardware SMMU. No zero-copy SVA without the unmap → invalidate path. Path B still uses allocated IOVAs</li>
+                <li>OperatorInject (PR #61) — Soft-CP resident worker + versioned <code>memcpy</code> / <code>saxpy</code>; <code>scale</code> hot-adds without restart (<code>epoch</code> / <code>launches</code> unchanged). SID-at-submit + SoftCmdFirewall copy-then-validate still gate the packed image. Own IR only. GPUOS / Mirage MPK inspiration — not NVRTC / CUDA, not a full LLM compiler. Distinct from landed <code>OperatorKernelHandle</code></li>
+                <li>Path-A Soft-SMMU IOVA host proof (PR #78) — job wire carries IOVAs, DMA walks ssid 4, wrong SID aborts (<code>make accel-test</code> / <code>PathABar</code>). Kernel <code>VirtioAccelMmio</code> BAR0 bind still optional. <code>-device aether-accel</code> model landed. Stock QEMU stays path B. CI does not rebuild QEMU. Soft SMMU stays software</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl now" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Done · 2027 H1 slices</div>
+              <h3>Three deepenings — not a new calendar</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">Event wait</span>
+                <span class="chip on">fabric-class</span>
+                <span class="chip on">ATOMIC_ADD</span>
+                <span class="chip on">path A IOVA</span>
+              </div>
+              <ul>
+                <li>PJRT Event (PR #74) — <code>host/aether-pjrt</code> Event create / record / wait on existing SoftChipletSync chiplet-local or package-scope fences. Job Events from <code>execute</code> stay on the partition CP-shaped <code>Timeline</code>. Wait-before-record / wait-before-complete is <code>NotReady</code>. Wrong-SID still refuses. TRANSFER-only images still <code>Fault</code>. <code>IreeHalCmd</code> offsets unchanged. Not a new packet, not a PJRT plugin, not <code>GetPjRtApi</code> / XLA / <code>iree_hal_driver_t</code>, not a CUDA stream, not a silicon fence. Path B / <code>make qemu</code> unchanged</li>
+                <li>Fabric-class SoftNoI (PR #75) — software tag on <code>AccelJobDesc.flow</code> from collective type (tree → Gradient, ring → Curl, persistent → Harmonic). SoftNoI <code>admit_class</code>: Curl needs reserved ring capacity (400). Same light demand admits as Gradient/Harmonic and refuses the second Curl (<code>RingExhausted</code>) even when projected IS is still 1.0. Not a <code>CpCmd</code> / vendor header, not FlowHodgeQuota DMA-header theater, not topology synth, not UniCNet. Default <code>submit_xqueue</code> stays ungated. Integer counters only, not FLOPs</li>
+                <li>SoftSFI <code>atomic_add</code> (PR #73) — one honest side-effect: SID-proved toy word fetch-add (<code>rd = mem[rs+imm]; mem[rs+imm] += rt</code>, wrapping u32). In-range accept; cross-tenant <code>Oob</code>. Tensor stays <code>Unmodeled</code>. Heap/alloc is a named <code>Unmodeled</code> refuse (<code>[softsfi] heap=refused</code>), not a bump allocator. Unknown opcode / illegal width → <code>[softsfi] unknown=refused</code>. Sequential software RMW — not a coherent hardware atomic, not NVVM, not “safe kernels.” Path B SoftNPU / <code>make qemu</code> unchanged</li>
+                <li>Week 1 call pack (PR #77) — isolation (<code>make red-team</code>) → packet (<code>make partner-hello</code> / doorbell) → wait (Event) → admit class (fabric-class) → sandbox hole (<code>ATOMIC_ADD</code>). Commands that exist. Not a new kernel milestone</li>
+                <li>Path-A Soft-SMMU IOVA (PR #78) — host <code>PathABar</code> + <code>make accel-test</code>; wrong SID aborts. Path B / <code>make qemu</code> stays canonical. Not a QEMU rebuild in default CI. Kernel PCI bind still optional. Soft SMMU stays software</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl next" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Horizon · Sep 2026 → Sep 2028</div>
+              <h3>Next two years — deepen, then stop or partner</h3>
+              <div class="chip-row" style="margin:0 0 12px">
+                <span class="chip on">H2 2026 done</span>
+                <span class="chip on">M0–M6 landed</span>
+                <span class="chip on">freeze-v1</span>
+                <span class="chip wait">2027 leftovers gated</span>
+                <span class="chip wait">2028 handoff or freeze</span>
+              </div>
+              <div class="horizon-row" aria-label="Next twelve months then 2028 handoff">
+                <div class="horizon-phase done">
+                  <small>Now</small>
+                  <b>Landed</b>
+                  <p>Sell pack · freeze-v1</p>
+                  <span class="fill" aria-hidden="true"><i></i></span>
+                </div>
+                <div class="horizon-phase gated">
+                  <small>2027 H1 leftover</small>
+                  <b>Gated</b>
+                  <p>CapTable only if alias</p>
+                  <span class="fill" aria-hidden="true"><i></i></span>
+                </div>
+                <div class="horizon-phase gated">
+                  <small>2027 H2</small>
+                  <b>Wait for table</b>
+                  <p>Real opcode list, or stay v1</p>
+                  <span class="fill" aria-hidden="true"><i></i></span>
+                </div>
+                <div class="horizon-phase end">
+                  <small>2028</small>
+                  <b>Handoff</b>
+                  <p>Signed list or ABI freeze</p>
+                  <span class="fill" aria-hidden="true"><i></i></span>
+                </div>
+              </div>
+              <ul>
+                <li>Next twelve months in <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (Sep 2026 → Sep 2027). Closed Sep → Mar record in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a> (M0–M6 landed). Horizon in <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>. Landed slices: Event create/record/wait on existing fences (still not a plugin), fabric-class tags into SoftNoI admit, SID-proved SoftSFI <code>atomic_add</code> (tensor <code>Unmodeled</code>), SoftSFI heap named refuse (PR #80; not a bump allocator), thin MicroPerceptron-shaped <code>IreeHalCmd</code> consumer (PR #83; <code>host/aether-mp-shim</code>; inspiration name only; secondary to PJRT; not a port), PJRT shim <code>Add</code> / <code>Relu</code> / <code>Mul</code> / <code>Max</code> on the frozen packet (PR #84 / #88 / Max; offsets unchanged; additive on freeze-v1; last SoftNPU elementwise), SoftGreenCtx interference leave-behind (M3; <code>[greenctx] interference partitioned 70/30 vs unpartitioned</code>; not HW MIG), SoftCCT/Event fence-count polish (M4; <code>[softcct] package fences=</code> + <code>[event] fence counts</code>; not latency), M5–M6 freeze-v1 (research <code>IreeHalCmd</code> v1 stays; no real partner table; <code>make design-win-standin</code> is the freeze proof). Week 1 call pack walks those slices. Gated leftover: per-task <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots (gate still closed — PJRT / MP shims do not mint World <code>CPtr</code>s). Port <strong>skipped</strong> (path B doorbell has not failed a partner ask). Opcode v2 only if a real partner table forces a dual update of ACCEL.md + <code>ireecp</code> + host pack/unpack. 2028 is still a signed opcode list or a research ABI freeze — not tape-out, not this year’s climax</li>
+                <li>2028 maintains the Soft SMMU bring-up kit as the silicon handoff. Hardware SMMU is partner silicon, not a software milestone. Year-end is a <strong>signed opcode list</strong> from a real partner CP, or a <strong>research ABI freeze</strong> — not a manufacturing climax, not tape-out. <code>PartnerNpuStub</code> stays a labeled no-op until a signed list retires it</li>
+                <li>Path B stays canonical. Soft SMMU stays software. ABI 0–11 frozen. No FLOPs. MicroPerceptron-shaped thin consumer landed as a research sketch (inspiration name only; secondary to PJRT). Full virtio-accel port stays later. Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts). Kernel PCI bind still optional. Default CI does not rebuild QEMU</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Open · gated leave-behind</div>
+              <h3>Guest PCI bind / hardware SMMU still gated</h3>
+              <ul>
+                <li>Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts; <code>make accel-test</code>). Kernel <code>VirtioAccelMmio</code> PCI BAR0 bind is still optional. Stock QEMU stays path B. Default CI does not rebuild QEMU</li>
+                <li>Hardware SMMU — program a real SID / PT on partner silicon; Soft SMMU is a deepened software table only (the bring-up kit dumps those tables)</li>
+                <li><code>AccelDevice</code> / <code>AccelJobDesc</code> ABI stays frozen. The partner-shaped packet landed as <code>IreeShapedCp</code> — not a signed vendor</li>
+                <li><code>PartnerNpuStub</code> stays a labeled sketch — no second-stub enrichment theater</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Deferred · after this subset</div>
+              <h3>Remaining isolation (not a product MM)</h3>
+              <ul>
+                <li><code>fork</code> / POSIX <code>mmap</code> — growable anonymous <code>SYS_MMAP=11</code> landed; no file-backed / <code>MAP_SHARED</code> / new aspace</li>
+                <li>Per-task cap tables — World still shares one <code>CapTable</code>; no <code>SYS_REVOKE</code></li>
+                <li>ELF past this subset — ramfs + x86 virtio-blk seed landed for <code>/init</code> + <code>/probe</code>; kernel is static-PIE; user ELFs stay non-PIE; no user <code>open</code>/<code>read</code></li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Later · research</div>
+              <h3>Package topology as a solver input</h3>
+              <ul>
+                <li>AffinityLaplacian n≤32 already landed as a prototype eigensolve — not GiFt-Placer, not an EDA package solver. Orphaned heat-kernel / commute-time helpers deleted (zero consumers; not elevated). Chiplet-local steal is an exploration digest (PR #40 stub), not ChipletFleet</li>
+                <li>CXL.mem window stays killed as a milestone — <code>TypedWindow</code> is an exploration digest pin stub (PR #42; SID refuse), not silicon</li>
+                <li>Formal subset of caps — inspired by seL4, not a proof claim. CDT property tests (PR #39) are host tests, not a seL4 CNode</li>
+              </ul>
+            </div>
+          </article>
+          <article class="tl future" data-reveal>
+            <div class="tl-dot" aria-hidden="true"></div>
+            <div class="tl-card">
+              <div class="tl-when">Optional later · docs</div>
+              <h3>Bring-up notes if a team asks — not manufacturing</h3>
+              <ul>
+                <li>Optional how-to: map a command processor into <code>AccelDevice</code></li>
+                <li>In-tree <code>ACCEL.md</code> / <code>DILIGENCE.md</code> / <code>YEAR_AHEAD.md</code> / <code>SIX_MONTH_PLAN.md</code> / <code>MONTH5_PLAN.md</code> / <code>TWO_YEAR_PLAN.md</code> / <code>bringup/BRINGUP.md</code> stay the leave-behind</li>
+                <li>Not a foundry playbook, not a tape-out checklist, not a climax goal</li>
+                <li>No certification claim — orientation docs only if someone needs them</li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="status">
+      <div class="wrap">
+        <div class="sec-head" data-reveal>
+          <p class="kicker">08 — Status / proof</p>
+          <h2>What you can boot. What is still open.</h2>
+          <p class="lede">A working QEMU vertical slice — not a product kernel, not tape-out. Year-1, the x86 hardening stack, the Month 1–2 opcode / PJRT spine, Month 3–4 SID / XQueue, SoftChipletSync scoped timelines, the Month 5 exploration digests, the H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS), three 2027 H1 deepen slices (Event wait, fabric-class SoftNoI, SoftSFI <code>atomic_add</code>), and M5–M6 freeze-v1 (research <code>IreeHalCmd</code> v1 stays; diligence refresh; port skipped) have landed. Next twelve months: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a>. Week 1 call pack walks those slices. Path-A Soft-SMMU IOVA host proof landed (wrong SID aborts); kernel PCI bind still optional. Path B / <code>make qemu</code> stays canonical. Host tests execute the same <code>run_boot_demo()</code> the guest prints. Gated leftovers: <code>CapTable</code> / <code>SYS_REVOKE</code> only if two shim tenants alias slots; guest PCI BAR0 bind; hardware SMMU on partner silicon. M5–M6 is done — not still open. Site refresh is not a milestone.</p>
+        </div>
+        <div class="status-grid">
+          <div class="term" data-reveal>
+            <div class="term-bar"><i></i><i></i><i></i><span>make qemu</span></div>
+            <pre><span class="cmd">$ make qemu</span>
+[init] ring-3 /init (static ELF64 non-PIE @ 0x2000000)
+[sched] kthread-B tick=…
+<span class="ok">FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE
+  CUT BIND + HODGE FLOW CLASS ENFORCED
+  TYPED SPACE + ACTIVITY ENDPOINT + FENCE-ORDERED JOB
+  RING-3 /init VIA SYSCALL/SYSRET</span>
+
+Also: <span class="cmd">make test</span> · <span class="cmd">make qemu-riscv</span> · <span class="cmd">make qemu-aarch64</span> · <span class="cmd">make accel-test</span>
+CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch64-ci</pre>
+          </div>
+          <div class="proof-list" data-reveal data-d="2">
+            <div class="proof">
+              <span class="badge done">Ships</span>
+              <div>
+                <a href="https://github.com/amineux/aether">github.com/amineux/aether</a>
+                <p>Caps, fabric, arenas, SoftNPU (I32 + software F16/F32), in-kernel virtqueue BAR (path B + golden MMIO trace), optional path-A QEMU device model (Soft-SMMU IOVA / wrong-SID host proof; not a guest PCI bind), Soft-CP (packed <code>CpCmd</code> + SET_SID-at-submit + two software XQueues, queue-boundary only + SoftGreenCtx SM/WQ 70/30 partitions + SoftCmdFirewall copy-then-validate + SoftSFI toy bytecode sandbox + OperatorInject resident worker + SoftNoI-IS admit + PASID/SVA mm↔SSID), IreeShapedCp (IREE HAL packet, backend 4; not a vendor), host PJRT/IREE-shaped shim (<code>aether-pjrt</code> packs frozen <code>IreeHalCmd</code> → IreeShapedCp; Event create/record/wait on existing SoftChipletSync fences; additive <code>Add</code>/<code>Relu</code>/<code>Mul</code>/<code>Max</code> research ops on freeze-v1; SoftNPU is the qemu demo; not a plugin), Soft SMMU (STE→CD→S1/S2 + ATS invalidate + dump/replay kit), SpectralCut, Laplacian n≤32 (heat/commute orphans deleted, not elevated), Hodge, OperatorKernelHandle, SparsifiedCollective, fence/timeline, SoftChipletSync (SyncScope collapsed to chiplet|package; Wave/Cu alias Chiplet; not UCIe), SoftCCT (last-writer chiplet elision; <code>[softcct] single-chiplet=noop</code>; not a coherence protocol), SoftGreenCtx (fake SM/WQ partitions; memcpy interference vs unpartitioned; migrate-to-yield without SID change; not MIG), SoftCmdFirewall (copy-then-validate; not confidential GPU), SoftSFI (toy ISA bounds + SID-proved <code>atomic_add</code>; tensor/heap <code>Unmodeled</code>; <code>[softsfi] unknown=refused</code>; not a verified multi-tenant GPU), OperatorInject (resident worker + hot-add scale; not NVRTC), SoftNoI-IS (fake NoI IS admit; fabric-class tree/ring/persistent tag; refuse IS &gt; 1.5 or Curl ring-exhaust; not topology synth), PASID/SVA (mm↔SSID bind; Soft-CP DMA via process VA; unmap→SSID TLB; not ARM SVA / CUDA UVA / hardware SMMU), Week 1 call pack (isolation → packet → wait → admit class → sandbox hole), Multiboot mmap, x86 ring-3, RISC-V U-mode /init + PLIC SoftNPU doorbell, aarch64 EL0 /init + TTBR0 isolate, in-kernel ramfs for /init (virtio-blk or embedded), SYS_CLONE, SYS_MMAP, SMP smoke, per-task PML4, small cap CDT, higher-half + KASLR + PIE + KPTI + PCID + one-page COW + identity teardown.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge done">CI</span>
+              <div>
+                <a href="https://github.com/amineux/aether/actions">Actions on every push / PR</a>
+                <p><code>cargo test --workspace</code>, Soft SMMU dump/replay (<code>scripts/smmu_{dump,replay}.py --check</code>), <code>make accel-test</code> (path-A Soft-SMMU IOVA / wrong-SID; no QEMU rebuild), <code>make qemu-ci</code>, <code>make qemu-blk-ci</code>, <code>make qemu-pcid-ci</code>, <code>make qemu-nopcid-ci</code>, <code>make qemu-smp-ci</code>, <code>make qemu-riscv-ci</code>, <code>make qemu-aarch64-ci</code>.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge stub">Stub</span>
+              <div>
+                <strong>Honest limits</strong>
+                <p>No hardware SMMU (Soft SMMU is a deepened software STE→CD→S1/S2 walk + ATS invalidate + dump/replay kit, not silicon; partner silicon still required). Soft-CP is a software model, not a silicon driver: XQueue is two software queues with queue-boundary suspend/resume, not a silicon queuing unit and not an XSched LD_PRELOAD shim; SET_SID-at-submit is Host1x-shaped, not a Tegra driver; SoftGreenCtx is a fake SM/WQ partition, not HW MIG, not a BAR firewall, not a CUDA driver, and not a DetShare port; SoftCmdFirewall is copy-then-validate, not confidential GPU and not SEC2; SoftSFI is a toy bytecode sandbox, not a verified multi-tenant GPU and not NVRTC — <code>atomic_add</code> is a sequential SID-proved toy RMW, not a hardware atomic and not “safe kernels.” OperatorInject is a resident worker + versioned op table, not NVRTC, not CUDA, not a full LLM compiler, and not NVIDIA. SoftNoI-IS is runtime admit on a fake shared NoI (PARL/NoI Interference Score) plus a software fabric-class tag, not topology synthesis and not UniCNet. PASID/SVA is software bind + SSID TLB invalidate, not ARM SVA, not PCIe PASID/PRI, not CUDA UVA, and not hardware SMMU. IreeShapedCp is an IREE HAL-shaped software packet, not an IREE runtime and not a signed vendor. <code>aether-pjrt</code> is a host contract that packs frozen <code>IreeHalCmd</code> onto IreeShapedCp; Event create/record/wait is a research noun over existing SoftChipletSync fences, not a PJRT plugin / IREE HAL driver / vendor runtime / CUDA stream. SoftChipletSync is chiplet-local fence domains on the existing seq / wait / complete model, not UCIe sync, not a Vulkan timeline, not ChipletFleet, and not a multi-chiplet latency claim. SoftCCT is last-writer-chiplet elision on that object (CPElide inspiration), not a full coherence protocol and not a Vulkan / ROCm product. The four Month 5 digests are not one product isolation spine. PASID/SVA, OperatorInject, and SoftNoI-IS landed as H2 2026 explorations — not Month 5, not hardware. Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices — not a new calendar, not tape-out. Week 1 call pack walks those slices; it is not a new isolator. SMP is a QEMU <code>-smp 2</code> smoke, not a product scheduler. Per-task PML4 is a documented x86 subset. Higher-half is <code>ffffffff80000000+PA</code> plus a boot-time KASLR slide (dual-map; PIE <code>.rela.dyn</code> applied; unused alias unmapped). KPTI user CR3 drops HH and the identity DMA window (4 KiB trampoline; not Meltdown-complete). PCID tags those CR3 switches when CPUID advertises it; stock qemu64 often full-flushes. Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands; SoftNPU is Soft SMMU + HH. Cap CDT is a small <code>revoke_in</code> tree, not a seL4 CNode; no user syscall. VirtIO-Accel path B is the in-kernel BAR (canonical stock-QEMU demo + golden MMIO trace). Path A is an optional in-tree QEMU device model, not an upstream virtio tree. Soft-SMMU IOVA on path-A BAR DMA is a host proof (wrong SID aborts); the guest does not yet bind PCI BAR0. Default CI does not rebuild QEMU. RISC-V U-mode /init is a documented subset (PLIC software doorbell; no virtio-mmio). aarch64 EL0 /init is a documented subset (TTBR0 isolate; no GICv3 / virtio-mmio). Neither port is product-class. No CXL.mem window. No FLOP benchmarks. No vendor deal. No silicon bring-up booked.</p>
+              </div>
+            </div>
+            <div class="proof">
+              <span class="badge done">Docs</span>
+              <div>
+                <a href="https://github.com/amineux/aether/tree/main/docs">ARCHITECTURE · ACCEL · HOST · SELL_PACK · SELL_GOALS · DILIGENCE · PITCH · WEEK1_CALL · DESIGN_WIN · YEAR_AHEAD · SIX_MONTH_FORWARD · SIX_MONTH_PLAN · MONTH5_PLAN · TWO_YEAR_PLAN · YEAR2_PLAN · ROADMAP</a>
+                <p>Research leave-behind. One-page sell pack is <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK</a> (this page <a href="#sell">#sell</a>). Partner demos this quarter: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_GOALS.md">SELL_GOALS</a>. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>. The 8-minute call script is <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">PITCH</a> (this page <a href="#pitch">#pitch</a>). Week 1 20-minute pack is <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL</a> — wired to Event wait, fabric-class admit, SoftSFI <code>ATOMIC_ADD</code>, partner-hello, and doorbell. M1–M4 (opcodes, PJRT, XQueue, SID-at-submit) and SoftChipletSync are in <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_PLAN.md">SIX_MONTH_PLAN</a>. The four Month 5 digests (SoftGreenCtx, SoftCmdFirewall, SoftCCT, SoftSFI) are in <a href="https://github.com/amineux/aether/blob/main/docs/MONTH5_PLAN.md">MONTH5_PLAN</a>. H2 2026 explorations (PASID/SVA, OperatorInject, SoftNoI-IS) landed; Event wait, fabric-class SoftNoI, and SoftSFI <code>atomic_add</code> landed as 2027 H1 deepen slices. M5–M6 freeze-v1 named (research <code>IreeHalCmd</code> v1 stays; port skipped). Next-twelve-month calendar is <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> (Sep 2026 → Sep 2027; this page <a href="#roadmap">#roadmap</a>). Closed Sep → Mar record is <a href="https://github.com/amineux/aether/blob/main/docs/SIX_MONTH_FORWARD.md">SIX_MONTH_FORWARD</a>. Horizon is <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a> (Sep 2026 → Sep 2028; 2028 is a partner handoff or a research ABI freeze, not tape-out). Path-A Soft-SMMU IOVA host proof landed; kernel PCI bind still optional. Deep-dive agenda is a script, not a meeting that happened.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band alt" id="kv">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">KV grant — disaggregated prefill / decode</p>
+            <h2>The fabric moves 32 bytes of authority. The KV page stays. The weights never enter the grant.</h2>
+            <p class="lede">SM partitions name the processors. They do not name one sequence's token window, and they do not give that window a lifetime. Prefill and decode are two GPUs of the same tenant. A neighbor shares the HBM bank. Decode receives <code>READ|MAP</code> only. End of sequence revokes the cap, including the derived copy. Script: <a href="https://github.com/amineux/aether/blob/main/docs/pitch/KV_FABRIC.md">docs/pitch/KV_FABRIC.md</a>. Command: <code>make kv-fabric</code>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>toy bytes · soft SMMU · not NVLink · not CUDA · not MIG</div>
+        </div>
+
+        <div class="proof-board" data-reveal>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">moves</span></div>
+            <h3>32 B</h3>
+            <p>Grant record on the fabric. Sequence, layer range, token window, object id, rights.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">stays</span></div>
+            <h3>128 KiB</h3>
+            <p>KV page, resident on the producer. A copy path would have moved this. The grant does not.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip wait">not in the grant</span></div>
+            <h3>8 MiB</h3>
+            <p>Weights, a different object, same bank. Decode's cap cannot name them. Toy footprint, not a model.</p>
+          </article>
+          <article class="proof-card">
+            <div class="proof-head"><span class="chip on">refused</span></div>
+            <h3>7 attacks</h3>
+            <p>Forge, write, re-grant, weights, out-of-window, wrong stream, revoke. A stolen object id still fails: the page knows its tenant. A's missed wave does not stop B.</p>
+          </article>
+        </div>
+
+        <div class="pitch-proof" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>make kv-fabric</span></div>
+            <pre><span class="cmd">$ make kv-fabric</span>   <span class="ok"># host; no QEMU</span>
+
+<span class="ok">[kv] handoff read-only seq=1 layers=0..4 tokens=0..128</span>
+<span class="ok">[kv] fabric-bytes=32 copy-bytes=131072 weights-stay=8388608</span>
+<span class="ok">[kv] attack=forge result=refused</span>
+<span class="ok">[kv] attack=write result=refused</span>
+<span class="ok">[kv] attack=regrant result=refused</span>
+<span class="ok">[kv] attack=weights result=refused</span>
+<span class="ok">[kv] attack=oob result=refused</span>
+<span class="ok">[kv] attack=wrong-sid result=refused</span>
+<span class="ok">[kv] attack=revoke result=refused</span>
+<span class="ok">[kv] deadline-miss seq=1 neighbor=live</span>
+<span class="ok">[kv] dma decode-writable=false</span>
+<span class="ok">[kv] not-nvlink not-cuda not-mig soft-smmu=software</span></pre>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="band" id="pitch">
+      <div class="wrap">
+        <div class="road-intro">
+          <div class="sec-head" style="margin:0" data-reveal>
+            <p class="kicker">09 — 8-minute pitch</p>
+            <h2>A call script. Isolation is the product, not FLOPs.</h2>
+            <p class="lede">Read this on a live call. One-page leave-behind: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK.md</a> (this page <a href="#sell">#sell</a>). Next-year calendar: <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD.md</a> (this page <a href="#roadmap">#roadmap</a>). Full presenter notes in <a href="https://github.com/amineux/aether/blob/main/docs/PITCH.md">docs/PITCH.md</a>. Week 1 20-minute pack: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>. Proof commands that exist: <code>make diligence-demo</code>, <code>make red-team</code>, <code>make partner-hello</code>, <code>make mp-shim</code>, <code>make design-win-standin</code>, <code>make accel-test</code>. What to show next: isolation → packet → wait → admit class → sandbox hole. Call worksheet: <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a>.</p>
+          </div>
+          <div class="honest-pill" data-reveal>8 min · refuse paths · not a vendor pitch</div>
+        </div>
+
+        <ol class="beats">
+          <li class="beat glass" data-reveal>
+            <div class="beat-meta"><span class="chip on">0:00–1:30</span><span class="beat-n">01</span></div>
+            <h3>Problem</h3>
+            <p>Multi-tenant accelerator packages need a <strong>fabric kernel</strong>, not a bigger Linux driver. ioctl + a userspace runtime is already strained on a discrete GPU; it fails on a mesh of CPU, NPU, GPU, and ASIC tiles. Weights and KV are secrets. Isolation — blast radius, who can name a tile or a stream — is the product. FLOPs stay in the compiler.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="1">
+            <div class="beat-meta"><span class="chip on">1:30–3:00</span><span class="beat-n">02</span></div>
+            <h3>What ships</h3>
+            <p>Three frozen surfaces: <code>IreeHalCmd</code> (96-byte LE, magic <code>0xAE7E1EE1</code>, <code>backend = 4</code>), PJRT-shaped host nouns in <code>aether-pjrt</code> (Event create/record/wait on existing SoftChipletSync fences; not <code>GetPjRtApi</code>, not a plugin), Soft SMMU SID-at-submit (Host1x-shaped SET_SID at the job head). Research opcodes, public IREE HAL nouns — <strong>not a signed vendor</strong>. Soft SMMU is software. <code>PartnerNpuStub</code> is a leftover no-op.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="2">
+            <div class="beat-meta"><span class="chip on">3:00–5:00</span><span class="beat-n">03</span></div>
+            <h3>Live proof</h3>
+            <p>On a call, run <code>make diligence-demo</code> (host Path B; greps <code>examples/diligence-demo/expected.txt</code>) then <code>make red-team</code> (<code>[redteam] attack=… result=refused</code>). Optional: <code>make qemu</code>, <code>make design-win-check</code>, <code>make accel-test</code> (path-A Soft-SMMU IOVA / wrong-SID; no QEMU rebuild). Doorbell second consumer is <code>cargo run -p aether-accel-client</code> — not a Makefile target. What to show next: isolation (<code>make red-team</code>) → packet (<code>make partner-hello</code> / doorbell) → wait (Event) → admit class (fabric-class) → sandbox hole (<code>ATOMIC_ADD</code>).</p>
+            <div class="chip-row">
+              <span class="chip on">isolation</span>
+              <span class="chip on">packet</span>
+              <span class="chip on">wait</span>
+              <span class="chip on">admit class</span>
+              <span class="chip on">ATOMIC_ADD</span>
+            </div>
+          </li>
+          <li class="beat glass" data-reveal data-d="3">
+            <div class="beat-meta"><span class="chip wait">5:00–6:30</span><span class="beat-n">04</span></div>
+            <h3>What we will not claim</h3>
+            <p>No NVIDIA partnership. No FLOPs. No tape-out. No hardware SMMU. No MIG-class isolation (SoftGreenCtx is a fake 70/30 SM/WQ partition). No confidential GPU (SoftCmdFirewall is copy-then-validate). If they push, stop. Non-claims live in <a href="https://github.com/amineux/aether/blob/main/docs/DILIGENCE.md">DILIGENCE</a>.</p>
+          </li>
+          <li class="beat glass" data-reveal data-d="4">
+            <div class="beat-meta"><span class="chip wait">6:30–8:00</span><span class="beat-n">05</span></div>
+            <h3>2028 close</h3>
+            <p><a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a> is the next twelve months (sell the demos; wait for a real table). <a href="https://github.com/amineux/aether/blob/main/docs/TWO_YEAR_PLAN.md">TWO_YEAR_PLAN</a>: 2028 is a <strong>signed opcode list</strong> from a real partner CP, or a <strong>research ABI freeze</strong> — horizon, not this year’s climax. Not a foundry date. Ask: <em>bring your opcode table.</em> Fill <a href="https://github.com/amineux/aether/blob/main/docs/DESIGN_WIN.md">DESIGN_WIN.md</a> — or a written no. Not a logo.</p>
+          </li>
+        </ol>
+
+        <div class="pitch-proof" data-reveal>
+          <div class="term">
+            <div class="term-bar"><i></i><i></i><i></i><span>Makefile targets that exist</span></div>
+            <pre><span class="cmd">$ make diligence-demo</span>  <span class="ok"># host Path B; greps expected.txt</span>
+<span class="cmd">$ make red-team</span>          <span class="ok"># named attacks refused</span>
+<span class="cmd">$ make partner-hello</span>     <span class="ok"># frozen IreeHalCmd; no QEMU</span>
+<span class="cmd">$ make mp-shim</span>           <span class="ok"># MP-shaped thin consumer (not a port)</span>
+<span class="cmd">$ make design-win-standin</span> <span class="ok"># freeze-v1 · IREE HAL stand-in</span>
+<span class="cmd">$ make qemu</span>              <span class="ok"># path-B guest serial (optional on a call)</span>
+<span class="cmd">$ make accel-test</span>        <span class="ok"># path-A IOVA / wrong-SID (optional; no QEMU rebuild)</span>
+
+<span class="ok">[event] SoftChipletSync create/record/wait</span>
+<span class="ok">[event] fence counts chiplet-local vs package</span>
+<span class="ok">[softcct] package fences=</span>
+<span class="ok">[softcct] incorrect-elision=refused</span>
+<span class="ok">[scope] soft≠strict</span>
+<span class="ok">[softcct] single-chiplet=noop</span>
+<span class="ok">[greenctx] interference partitioned 70/30 vs unpartitioned</span>
+<span class="ok">[greenctx] migrate-to-yield A 30->70 SID unchanged</span>
+<span class="ok">[cdt] revoke descendants ok</span>
+<span class="ok">[softcp] sparsify DROP</span>
+<span class="ok">[opinject] resident worker + hot-add sealed</span>
+<span class="ok">[partner-hello] bad executable 0xDEAD refused</span>
+<span class="ok">[redteam] fabric-class admit/refuse</span>
+<span class="ok">[redteam] ATOMIC_ADD accept/reject</span>
+<span class="ok">[softsfi] heap=refused</span>
+<span class="ok">[softsfi] unknown=refused</span>
+<span class="ok">[softsfi] unknown-base=refused</span>
+<span class="ok">[redteam] attack=wrong-sid-crosscut result=refused</span>
+<span class="ok">[redteam] attack=blast-hops result=refused</span>
+<span class="ok">[redteam] attack=blast-nodes result=refused</span>
+<span class="ok">[redteam] attack=fence-not-ready result=refused</span>
+<span class="ok">[redteam] attack=silent-remote result=refused</span>
+<span class="ok">[redteam] attack=uncolored-compute result=refused</span>
+<span class="ok">[redteam] attack=typed-window-sid result=refused</span>
+<span class="ok">[redteam] attack=hbm-bw result=refused</span>
+<span class="ok">[redteam] attack=foreign-tenant-color result=refused</span>
+<span class="ok">[redteam] attack=xqueue-sid-override result=refused</span>
+<span class="ok">[redteam] attack=set-sid-unbound result=refused</span>
+<span class="ok">[redteam] attack=submit-sid result=refused</span>
+<span class="ok">[redteam] attack=sid-budget result=refused</span>
+<span class="ok">[redteam] attack=stage2-fault result=refused</span>
+<span class="ok">[redteam] attack=softnoi-exhausted result=refused</span>
+<span class="ok">[redteam] attack=firewall-ident-pa result=refused</span>
+<span class="ok">[redteam] attack=hodge-harmonic-tree result=refused</span>
+<span class="ok">[redteam] attack=hodge-curl-tree result=refused</span>
+<span class="ok">[redteam] attack=hodge-quota result=refused</span>
+<span class="ok">[redteam] attack=greenctx-overcommit result=refused</span>
+<span class="ok">[redteam] attack=greenctx-unbound result=refused</span>
+<span class="ok">[redteam] attack=greenctx-exhausted result=refused</span>
+<span class="ok">[redteam] attack=greenctx-busy result=refused</span>
+<span class="ok">[redteam] attack=smmu-overlap result=refused</span>
+<span class="ok">[redteam] attack=smmu-not-mapped result=refused</span>
+<span class="ok">[redteam] attack=smmu-wrong-stream result=refused</span>
+<span class="ok">[redteam] attack=smmu-cross-tenant result=refused</span>
+<span class="ok">[redteam] attack=smmu-stream-abort result=refused</span>
+<span class="ok">[redteam] attack=softcct-incorrect-elision result=refused</span>
+<span class="ok">[redteam] attack=softcct-credit-exhausted result=refused</span>
+<span class="ok">[redteam] attack=hodge-class-unauthorized result=refused</span>
+<span class="ok">[redteam] attack=softnoi-unbound result=refused</span>
+<span class="ok">[redteam] attack=chipsync-unbound result=refused</span>
+<span class="ok">[redteam] attack=softnoi-ring-exhausted result=refused</span>
+<span class="ok">[redteam] attack=opinject-stale-version result=refused</span>
+<span class="ok">[redteam] attack=opinject-oob result=refused</span>
+<span class="ok">[redteam] attack=opinject-not-running result=refused</span>
+<span class="ok">[redteam] attack=opinject-busy result=refused</span>
+<span class="ok">[redteam] attack=opinject-unknown-slot result=refused</span>
+<span class="ok">[redteam] attack=smmu-bad-range result=refused</span>
+<span class="ok">[redteam] attack=cut-conductance result=refused</span>
+<span class="ok">[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=29</span>
+<span class="ok">[redteam] attack=smmu-table-full result=refused</span>
+<span class="ok">[redteam] attack=cut-not-bound result=refused</span>
+<span class="ok">[redteam] attack=opinject-bad-arg result=refused</span>
+<span class="ok">[redteam] attack=accel-shape-overflow result=refused</span>
+<span class="ok">[diligence] host Path B sealed</span>
+<span class="ok">[redteam] sealed</span></pre>
+          </div>
+          <div class="disclaimer" style="margin:0">
+            <strong>No partnership. No FLOPs. No tape-out.</strong>
+            <span>Hardware SMMU, MIG-class isolation, and confidential GPU are non-claims. Soft SMMU is a software table. Fill DESIGN_WIN.md. One-page pack: <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">SELL_PACK.md</a>. Week 1: <a href="https://github.com/amineux/aether/blob/main/docs/WEEK1_CALL.md">WEEK1_CALL.md</a>.</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap foot">
+      <div>
+        <a class="brand" href="#hero">
+          <svg viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14" fill="#10131a"/><path d="M20 44 L32 16 L44 44" stroke="#3DDC97" stroke-width="3.2" fill="none" stroke-linejoin="round"/><path d="M24.6 34.2 H39.4" stroke="#6AA8FF" stroke-width="2.2"/><circle cx="32" cy="16" r="2.4" fill="#6AA8FF"/></svg>
+          Aether
+        </a>
+        <p>Accelerator-first fabric kernel. Dual-licensed MIT OR Apache-2.0. Contact via GitHub issues or the repo owner.</p>
+      </div>
+      <div class="foot-links">
+        <a href="https://github.com/amineux/aether">GitHub</a>
+        <a href="#investors">Investor brief</a>
+        <a href="#sell">Sell</a>
+        <a href="#roadmap">Roadmap</a>
+        <a href="#partners">Why partner</a>
+        <a href="https://github.com/amineux/aether/blob/main/docs/YEAR_AHEAD.md">YEAR_AHEAD</a>
+        <a href="https://github.com/amineux/aether/blob/main/docs/SELL_PACK.md">Sell pack</a>
+        <a href="#pitch">Pitch</a>
+        <a href="https://github.com/amineux/aether/blob/main/LICENSE">License</a>
+        <a href="https://github.com/amineux/aether/issues">Contact</a>
+      </div>
+    </div>
+  </footer>
+  <script src="./js/app.js"></script>
+</body>
+</html>
