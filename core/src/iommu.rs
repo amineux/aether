@@ -1921,6 +1921,59 @@ pub fn run_smmu_table_full_demo() -> SmmuTableFullReport {
     }
 }
 
+/// Host red-team report for Soft-SMMU per-CD IOVA window-full refuse.
+///
+/// Sell line `[redteam] attack=smmu-window-full` — existing
+/// [`IommuMap::map`] → `alloc_in_window` path only. A pin whose page-aligned
+/// span exceeds the per-CD IOVA window (`1 << SOFT_SMMU_CD_SHIFT` = 4 MiB) →
+/// [`MapError::TableFull`]. Small pin admits. **Not** `smmu-table-full`
+/// (MAX_MAPS/MAX_STES slot count) rehash; Soft SMMU software only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuWindowFullReport {
+    /// Small pin (well under the 4 MiB CD window) admits.
+    pub small_ok: bool,
+    /// Pin with page-aligned span past the CD window → `MapError::TableFull`.
+    pub window_full: bool,
+}
+
+impl SmmuWindowFullReport {
+    pub fn all_ok(&self) -> bool {
+        self.small_ok && self.window_full
+    }
+}
+
+/// Soft-SMMU `alloc_in_window` past per-CD IOVA window → [`MapError::TableFull`].
+/// Window-span honesty — not MAX_MAPS/MAX_STES slot-count TableFull.
+pub fn run_smmu_window_full_demo() -> SmmuWindowFullReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(1), 0);
+    iommu.bind_stream(&cap, sid).unwrap();
+
+    let small_ok = iommu
+        .map(&cap, MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, sid))
+        .is_ok();
+
+    // Fresh map so the oversize pin is alone in the CD window.
+    let mut iommu2 = IommuMap::new();
+    let sid2 = StreamId::accel(ChipletId(0), TileId(2), 0);
+    iommu2.bind_stream(&cap, sid2).unwrap();
+    // 0x400001 page-aligns past 1<<SOFT_SMMU_CD_SHIFT (4 MiB).
+    let window_full = iommu2.map(
+        &cap,
+        MapRequest::pin_accel(PhysAddr(0x2000), 0x400001, sid2),
+    ) == Err(MapError::TableFull);
+
+    SmmuWindowFullReport {
+        small_ok,
+        window_full,
+    }
+}
+
 
 /// Host red-team report for Soft-SMMU same-SID guest-PA overlap refuse.
 ///
@@ -2460,6 +2513,14 @@ mod tests {
         assert!(r.maps_full, "map past MAX_MAPS → TableFull");
         assert!(r.stes_under_ok, "MAX_STES binds admit");
         assert!(r.stes_full, "bind past MAX_STES → TableFull");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_window_full_demo_all_ok() {
+        let r = run_smmu_window_full_demo();
+        assert!(r.small_ok, "small pin under CD window admits");
+        assert!(r.window_full, "pin past CD window → TableFull");
         assert!(r.all_ok());
     }
 

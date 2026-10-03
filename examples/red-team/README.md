@@ -84,6 +84,10 @@ Smmu-table-full needle: `[redteam] attack=smmu-table-full result=refused`
 (`IommuMap::map` past `MAX_MAPS` / `bind_stream` past `MAX_STES` → `MapError::TableFull`;
 smaller fill admits; not Overlap / BadRange / CrossTenant / SidBudget; Soft SMMU is software;
 not BAR0 / CXL silicon).
+Smmu-window-full needle: `[redteam] attack=smmu-window-full result=refused`
+(Soft-SMMU `alloc_in_window` pin whose page-aligned span exceeds the per-CD IOVA window
+(`1 << SOFT_SMMU_CD_SHIFT` = 4 MiB) → `MapError::TableFull`; small pin admits; not
+MAX_MAPS/MAX_STES slot-count rehash; Soft SMMU software only).
 Cut-not-bound needle: `[redteam] attack=cut-not-bound result=refused`
 (`bind_place` / `bind_window` without BIND — READ-only SpectralCut or empty CapTable →
 `CutError::NotBound`; CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable

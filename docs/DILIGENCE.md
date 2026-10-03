@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `softnoi-unbound` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `hodge-class-unauthorized` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `smmu-cross-tenant` + `smmu-stream-abort` + `set-sid-cross-tenant` + `softcct-incorrect-elision` + `softcct-credit-exhausted` + `chipsync-unbound` + `softnoi-ring-exhausted` + `opinject-stale-version` + `opinject-oob` + `opinject-not-running` + `opinject-busy` + `opinject-unknown-slot` + `opinject-bad-arg` + `smmu-bad-range` + `smmu-table-full` + `cut-not-bound` + `cut-conductance` + `accel-shape-overflow` + `tenant-fuzz` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `softnoi-unbound` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `hodge-class-unauthorized` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `smmu-cross-tenant` + `smmu-stream-abort` + `set-sid-cross-tenant` + `softcct-incorrect-elision` + `softcct-credit-exhausted` + `chipsync-unbound` + `softnoi-ring-exhausted` + `opinject-stale-version` + `opinject-oob` + `opinject-not-running` + `opinject-busy` + `opinject-unknown-slot` + `opinject-bad-arg` + `smmu-bad-range` + `smmu-table-full` + `smmu-window-full` + `cut-not-bound` + `cut-conductance` + `accel-shape-overflow` + `tenant-fuzz` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -446,6 +446,7 @@ Expected stdout (CI greps these):
 [redteam] attack=opinject-bad-arg result=refused
 [redteam] attack=smmu-bad-range result=refused
 [redteam] attack=smmu-table-full result=refused
+[redteam] attack=smmu-window-full result=refused
 [redteam] attack=cut-not-bound result=refused
 [redteam] attack=cut-conductance result=refused
 [redteam] attack=accel-shape-overflow result=refused
