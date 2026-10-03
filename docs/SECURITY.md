@@ -98,7 +98,9 @@ not cross-read. Software only. Sell clip: `[softsfi] heap=refused`.
 
 PASID / SVA (`core/src/sva.rs`, `IommuMap::bind_mm` / `map_va` /
 `unmap_va`) binds a process mm to a Soft-SMMU SSID so Soft-CP DMA
-uses that process VA. Host unmap invalidates the SSID ATC. Skipping
+uses that process VA. Host unmap invalidates the SSID ATC. Unmap is
+tenant-checked (Memory+MAP cap; another tenant's pin is
+`MapError::CrossTenant` and stays mapped; issue #161). Skipping
 invalidate is a stale translate. Linux SVA / PASID inspiration. It
 is **not** ARM SVA, **not** PCIe PASID/PRI, **not** CUDA UVA, and
 **not** zero-copy SVA without invalidate. No new syscall.

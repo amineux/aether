@@ -88,6 +88,10 @@ Smmu-ssid-abort needle: `[redteam] attack=smmu-ssid-abort result=refused`
 (Soft-SMMU SSID ≥ `MAX_CDS` / above `S1CDMax` on `bind_stream` / `map` / `walk` →
 `MapError::StreamAbort`; in-range SSID bind admits; not unbound-walk StreamAbort rehash;
 not TableFull; Soft SMMU is software).
+Smmu-unmap-cross-tenant needle: `[redteam] attack=smmu-unmap-cross-tenant result=refused`
+(Soft-SMMU `unmap_stream` / `unmap` now take a Memory+MAP cap: tenant B unmapping tenant A's pin with
+A's raw SID + IOVA → `MapError::CrossTenant`, A's pin untouched, owner unmap still admits; issue #161;
+unmap path only, not the bind-time smmu-cross-tenant; no new Error variant; Soft SMMU is software).
 Smmu-window-full needle: `[redteam] attack=smmu-window-full result=refused`
 (Soft-SMMU `alloc_in_window` pin whose page-aligned span exceeds the per-CD IOVA window
 (`1 << SOFT_SMMU_CD_SHIFT` = 4 MiB) → `MapError::TableFull`; small pin admits; not
@@ -110,8 +114,8 @@ matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software S
 Tenant-fuzz needle: `[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=<n>`
 (bounded seeded fuzz, not a proof, not a hardware claim; fixed-seed xorshift, no wall clock; tenant B vs tenant A's
 canary over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs;
-`escapes` and `variants` are counted from the run; `IommuMap::unmap_stream` / `unmap` are excluded as
-kernel-trust primitives; known open item: https://github.com/amineux/aether/issues/161).
+`escapes` and `variants` are counted from the run; B also drives the cap-checked `IommuMap::unmap_stream` /
+`unmap` / `unmap_for` against A's pin, which must be `CrossTenant`; https://github.com/amineux/aether/issues/161).
 Hodge harmonic-tree needle: `[redteam] attack=hodge-harmonic-tree result=refused`
 (`OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`;
 not SoftNoI fabric-class Curl ring).

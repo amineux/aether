@@ -569,18 +569,38 @@ impl<M: DmaView> SoftCommandProcessor<M> {
             .map_err(map_hal_error)
     }
 
-    /// Unmap process VA and invalidate this SSID's software TLB.
-    pub fn unmap_va(&mut self, sid: StreamId, va: PhysAddr) -> Result<(), HalError> {
+    /// Tenant-checked unmap by IOVA (Memory+MAP). Another tenant's pin is
+    /// refused and left mapped.
+    pub fn unmap_with_cap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<(), HalError> {
         self.iommu
-            .unmap_va(sid, va)
+            .unmap(cap, iova)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
+    /// Unmap process VA and invalidate this SSID's software TLB.
+    /// Tenant-checked (Memory+MAP; another tenant's pin is refused).
+    pub fn unmap_va(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        va: PhysAddr,
+    ) -> Result<(), HalError> {
+        self.iommu
+            .unmap_va(cap, sid, va)
             .map(|_| ())
             .map_err(map_hal_error)
     }
 
     /// Fault injection: drop S1, leave SSID ATC. Not a public submit path.
-    pub fn unmap_va_keep_atc(&mut self, sid: StreamId, va: PhysAddr) -> Result<(), HalError> {
+    pub fn unmap_va_keep_atc(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        va: PhysAddr,
+    ) -> Result<(), HalError> {
         self.iommu
-            .unmap_va_keep_atc(sid, va)
+            .unmap_va_keep_atc(cap, sid, va)
             .map(|_| ())
             .map_err(map_hal_error)
     }
@@ -1220,7 +1240,9 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu.unmap(iova).map(|_| ()).map_err(map_hal_error)
+        // Tenant-less unmap is refused (issue #161). Use [`Self::unmap_with_cap`].
+        let _ = iova;
+        Err(HalError::NoMemoryCap)
     }
 
     fn bind_sva(&mut self, _mm: u16, _stream_id: u32) -> Result<u8, HalError> {
@@ -1238,10 +1260,10 @@ impl<M: DmaView> AccelDevice for SoftCommandProcessor<M> {
     }
 
     fn unmap_va(&mut self, stream_id: u32, va: PhysAddr) -> Result<(), HalError> {
-        self.iommu
-            .unmap_va(StreamId::from_raw(stream_id), va)
-            .map(|_| ())
-            .map_err(map_hal_error)
+        // Tenant-less unmap is refused (issue #161). Use the inherent
+        // cap-taking `SoftCommandProcessor::unmap_va`.
+        let _ = (stream_id, va);
+        Err(HalError::NoMemoryCap)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {

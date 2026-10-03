@@ -81,6 +81,15 @@ impl PartnerNpuStub {
         self.last_cmd
     }
 
+    /// Tenant-checked unmap (Memory+MAP). Another tenant's pin is refused
+    /// (`HalError::Fault`) and left mapped.
+    pub fn unmap_with_cap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap(cap, iova)
+            .map(|_| ())
+            .map_err(|_| HalError::Fault)
+    }
+
     pub fn map_with_cap(
         &mut self,
         cap: &Capability,
@@ -144,10 +153,9 @@ impl AccelDevice for PartnerNpuStub {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu
-            .unmap(iova)
-            .map(|_| ())
-            .map_err(|_| HalError::Fault)
+        // Tenant-less unmap is refused (issue #161). Use [`Self::unmap_with_cap`].
+        let _ = iova;
+        Err(HalError::NoMemoryCap)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
