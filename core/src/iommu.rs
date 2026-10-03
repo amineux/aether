@@ -1921,6 +1921,60 @@ pub fn run_smmu_table_full_demo() -> SmmuTableFullReport {
     }
 }
 
+/// Host red-team report for Soft-SMMU SSID-over-S1CDMax StreamAbort refuse.
+///
+/// Sell line `[redteam] attack=smmu-ssid-abort` — existing
+/// [`IommuMap::bind_stream`] / [`IommuMap::map`] / [`IommuMap::walk`] paths
+/// only. SSID ≥ [`MAX_CDS`] / above `S1CDMax` → [`MapError::StreamAbort`].
+/// In-range SSID bind admits. **Not** `smmu-stream-abort` (unbound walk)
+/// rehash; **not** TableFull; Soft SMMU is software.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuSsidAbortReport {
+    /// In-range SSID bind admits.
+    pub in_range_ok: bool,
+    /// SSID ≥ MAX_CDS bind_stream → `MapError::StreamAbort`.
+    pub bind_abort: bool,
+    /// SSID ≥ MAX_CDS map → `MapError::StreamAbort`.
+    pub map_abort: bool,
+    /// SSID ≥ MAX_CDS walk → `MapError::StreamAbort`.
+    pub walk_abort: bool,
+}
+
+impl SmmuSsidAbortReport {
+    pub fn all_ok(&self) -> bool {
+        self.in_range_ok && self.bind_abort && self.map_abort && self.walk_abort
+    }
+}
+
+/// Soft-SMMU SSID ≥ MAX_CDS / above S1CDMax → [`MapError::StreamAbort`].
+/// SSID-range honesty — not unbound-walk StreamAbort / TableFull.
+pub fn run_smmu_ssid_abort_demo() -> SmmuSsidAbortReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let good = StreamId::accel(ChipletId(0), TileId(0), 0);
+    let in_range_ok = iommu.bind_stream(&cap, good).is_ok();
+
+    let bad = StreamId::accel(ChipletId(0), TileId(0), MAX_CDS as u8);
+    let bind_abort = iommu.bind_stream(&cap, bad) == Err(MapError::StreamAbort);
+    let map_abort = iommu.map(
+        &cap,
+        MapRequest::pin_accel(PhysAddr(0x1000), 0x1000, bad),
+    ) == Err(MapError::StreamAbort);
+    let walk_abort =
+        iommu.walk(bad, PhysAddr(SOFT_SMMU_IOVA_BASE)) == Err(MapError::StreamAbort);
+
+    SmmuSsidAbortReport {
+        in_range_ok,
+        bind_abort,
+        map_abort,
+        walk_abort,
+    }
+}
+
 
 /// Host red-team report for Soft-SMMU same-SID guest-PA overlap refuse.
 ///
@@ -2460,6 +2514,16 @@ mod tests {
         assert!(r.maps_full, "map past MAX_MAPS → TableFull");
         assert!(r.stes_under_ok, "MAX_STES binds admit");
         assert!(r.stes_full, "bind past MAX_STES → TableFull");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn smmu_ssid_abort_demo_all_ok() {
+        let r = run_smmu_ssid_abort_demo();
+        assert!(r.in_range_ok, "in-range SSID bind admits");
+        assert!(r.bind_abort, "SSID≥MAX_CDS bind → StreamAbort");
+        assert!(r.map_abort, "SSID≥MAX_CDS map → StreamAbort");
+        assert!(r.walk_abort, "SSID≥MAX_CDS walk → StreamAbort");
         assert!(r.all_ok());
     }
 
