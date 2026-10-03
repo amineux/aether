@@ -12,6 +12,13 @@ Clone-and-run leave-behind: [PARTNER.md](PARTNER.md). Blank worksheet:
 [DESIGN_WIN.md](DESIGN_WIN.md). Filled IREE HAL research stand-in
 (not a partner): [design-win/iree-hal-standin.md](design-win/iree-hal-standin.md).
 
+Buyer evidence process: [BUYER_VALIDATION.md](BUYER_VALIDATION.md).
+Copy the [conversation record](buyer-validation/conversation-template.md).
+A table or written no is discovery evidence; qualification also requires buyer
+pain, technical provenance, an adoption path, and confirmed follow-up. The
+six-week commercial review keeps research v1 frozen and preserves the 2028
+horizon.
+
 **The ask (say it this way):** bring your opcode table.
 
 Runnable demos this quarter: [SELL_GOALS.md](SELL_GOALS.md).

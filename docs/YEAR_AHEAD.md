@@ -19,6 +19,13 @@ demos: [SELL_GOALS.md](SELL_GOALS.md). Week 1 20-minute pack:
 [WEEK1_CALL.md](WEEK1_CALL.md). Eight-minute script:
 [PITCH.md](PITCH.md).
 
+Buyer evidence process: [BUYER_VALIDATION.md](BUYER_VALIDATION.md).
+Copy the [conversation record](buyer-validation/conversation-template.md).
+A table or written no is discovery evidence; qualification also requires buyer
+pain, technical provenance, an adoption path, and confirmed follow-up. The
+six-week commercial review keeps research v1 frozen and preserves the 2028
+horizon.
+
 **Ask:** bring your opcode table.
 
 ---

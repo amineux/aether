@@ -3,6 +3,13 @@
 What a silicon or compiler team can **run** this quarter. Not a
 kernel feature. Not a partnership announcement. Research prototype.
 
+Buyer evidence process: [BUYER_VALIDATION.md](BUYER_VALIDATION.md).
+Copy the [conversation record](buyer-validation/conversation-template.md).
+A table or written no is discovery evidence; qualification also requires buyer
+pain, technical provenance, an adoption path, and confirmed follow-up. The
+six-week commercial review keeps research v1 frozen and preserves the 2028
+horizon.
+
 **The ask:** bring your opcode table. Fill
 [DESIGN_WIN.md](DESIGN_WIN.md) against frozen `IreeHalCmd`. A filled
 worksheet, or a written no with reasons, is a good outcome. The IREE

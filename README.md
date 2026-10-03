@@ -6,6 +6,7 @@ GitHub Actions to Pages (kernel `docs/` are untouched).
 
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
+**Buyer validation:** [questions, evidence gates and product/services decision](docs/BUYER_VALIDATION.md).
 **Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
 Site: [`#sell`](https://amineux.github.io/aether/#sell) ·
 [`#roadmap`](https://amineux.github.io/aether/#roadmap).

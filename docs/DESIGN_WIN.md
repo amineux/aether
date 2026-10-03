@@ -52,6 +52,20 @@ cargo run -p aether-design-win-check -- docs/design-win/iree-hal-standin.toml
 
 ---
 
+## 0. Buyer context and qualification
+
+Before filling technical rows, copy the blank
+[buyer conversation record](buyer-validation/conversation-template.md) and use
+[BUYER_VALIDATION.md](BUYER_VALIDATION.md) for exact questions, evidence gates,
+and product-versus-services review. Record a real team, costly problem, current
+alternative, buyer acceptance criteria, technical provenance, sponsor/budget
+path, and buyer-confirmed next action or written no. Keep unknowns explicit.
+
+A fixture pass proves research packet checks only. A completed worksheet is
+technical discovery, not automatically a qualified conversation, funded pilot,
+or signed design win. Their unsupported requirements belong in the companion
+record; do not coerce them into frozen research values.
+
 ## 1. Opcode names → `IreeHalCmd` / `AccelOp`
 
 Fill **their** command-processor names. v1 pack emits

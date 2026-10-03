@@ -3,7 +3,10 @@
 One page. Clone this tree. Run the named Makefile targets. Research
 prototype. Isolation is the product (blast radius), not FLOPs.
 
-**Ask:** bring your opcode table.
+**Ask:** bring your opcode table and a concrete runtime problem to validate.
+Use [BUYER_VALIDATION.md](BUYER_VALIDATION.md) for exact questions, evidence
+requirements, and product-versus-services gates. “Isolation is the product” is
+our value hypothesis; the demos do not establish buyer demand.
 
 **2028:** a signed opcode list from a real partner command processor,
 **or** freeze the research ABI and stop inventing partners. Not a
@@ -116,7 +119,11 @@ re-schedule.
 2. **Collect an opcode table — or a written no.** Fill
    [DESIGN_WIN.md](DESIGN_WIN.md) against frozen `IreeHalCmd`. The
    IREE HAL stand-in (`make design-win-standin`) is the research
-   mapping, not a logo.
+   mapping, not a logo. Record buyer pain, acceptance criteria, sponsor/budget
+   path, and a confirmed next action in the [conversation record](buyer-validation/conversation-template.md).
+   A filled table alone is not qualification. Review the evidence after the
+   six-week validation cycle; use [BUYER_VALIDATION.md](BUYER_VALIDATION.md)
+   to choose product evaluation, services, more discovery, or a pause.
 3. **Walk the five beats on the same tree.** Isolation → packet →
    wait → admit class → `ATOMIC_ADD`. Commands above exist today.
 4. **Leave the packet.** `make partner-hello` is clone-and-run.
