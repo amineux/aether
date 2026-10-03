@@ -88,6 +88,10 @@ Smmu-ssid-abort needle: `[redteam] attack=smmu-ssid-abort result=refused`
 (Soft-SMMU SSID ≥ `MAX_CDS` / above `S1CDMax` on `bind_stream` / `map` / `walk` →
 `MapError::StreamAbort`; in-range SSID bind admits; not unbound-walk StreamAbort rehash;
 not TableFull; Soft SMMU is software).
+Smmu-window-full needle: `[redteam] attack=smmu-window-full result=refused`
+(Soft-SMMU `alloc_in_window` pin whose page-aligned span exceeds the per-CD IOVA window
+(`1 << SOFT_SMMU_CD_SHIFT` = 4 MiB) → `MapError::TableFull`; small pin admits; not
+MAX_MAPS/MAX_STES slot-count rehash; Soft SMMU software only).
 Cut-not-bound needle: `[redteam] attack=cut-not-bound result=refused`
 (`bind_place` / `bind_window` without BIND — READ-only SpectralCut or empty CapTable →
 `CutError::NotBound`; CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable
