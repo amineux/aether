@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_accel_shape_overflow_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_accel_shape_overflow_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -55,7 +55,8 @@
 //! `OperatorInject::submit` empty / mismatched slot → `InjectError::UnknownSlot` (published SLOT_MEMCPY admits; not StaleVersion / Oob / NotRunning; not CapTable). Opinject-bad-arg is
 //! `OpTable::publish` / decode / submit BadArg paths (kind.slot()!=slot, n==0) → `InjectError::BadArg` (valid publish admits; not UnknownSlot / StaleVersion / Oob / NotRunning / Busy; not CapTable). Smmu-bad-range is
 //! `IommuMap::map_window` zero-length / overflowing window and `bind_mm` reserved `MmId(0)` → `MapError::BadRange` (valid window + mm admit; not CrossTenant / WrongStream / Overlap / TableFull; not CXL.mem silicon / BAR0; Soft SMMU is software). Smmu-table-full is
-//! `IommuMap::map` past `MAX_MAPS` / `bind_stream` past `MAX_STES` → `MapError::TableFull` (smaller fill admits; not Overlap / BadRange / CrossTenant / SidBudget; Soft SMMU is software; not BAR0 / CXL silicon). Cut-not-bound is
+//! `IommuMap::map` past `MAX_MAPS` / `bind_stream` past `MAX_STES` → `MapError::TableFull` (smaller fill admits; not Overlap / BadRange / CrossTenant / SidBudget; Soft SMMU is software; not BAR0 / CXL silicon). Smmu-ssid-abort is
+//! Soft-SMMU SSID ≥ `MAX_CDS` / above `S1CDMax` on `bind_stream` / `map` / `walk` → `MapError::StreamAbort` (in-range SSID bind admits; not unbound-walk StreamAbort rehash; not TableFull; Soft SMMU is software). Cut-not-bound is
 //! `bind_place` / `bind_window` without BIND (READ-only SpectralCut or empty CapTable) → `CutError::NotBound` (CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable rewrite; not SoftNoI∩SpectralCut; not Laplacian elevate). Cut-conductance is
 //! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Accel-shape-overflow is
 //! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
@@ -93,7 +94,7 @@ use aether_core::blast::run_blast_demo;
 use aether_core::accel::run_accel_shape_overflow_demo;
 use aether_core::cut::{run_cut_conductance_demo, run_cut_not_bound_demo};
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
-use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
+use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
 use aether_core::fence::run_fence_not_ready_demo;
 use aether_core::noi::{run_softnoi_demo, run_softnoi_exhausted_demo, run_softnoi_ring_exhausted_demo, run_softnoi_unbound_demo};
@@ -166,6 +167,7 @@ const LINE_OPINJECT_UNKNOWN_SLOT: &str = "[redteam] attack=opinject-unknown-slot
 const LINE_OPINJECT_BAD_ARG: &str = "[redteam] attack=opinject-bad-arg result=refused";
 const LINE_SMMU_BAD_RANGE: &str = "[redteam] attack=smmu-bad-range result=refused";
 const LINE_SMMU_TABLE_FULL: &str = "[redteam] attack=smmu-table-full result=refused";
+const LINE_SMMU_SSID_ABORT: &str = "[redteam] attack=smmu-ssid-abort result=refused";
 const LINE_CUT_NOT_BOUND: &str = "[redteam] attack=cut-not-bound result=refused";
 const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
@@ -233,6 +235,7 @@ struct RedTeamReport {
     opinject_bad_arg: bool,
     smmu_bad_range: bool,
     smmu_table_full: bool,
+    smmu_ssid_abort: bool,
     cut_not_bound: bool,
     cut_conductance: bool,
     accel_shape_overflow: bool,
@@ -297,6 +300,7 @@ impl RedTeamReport {
             && self.opinject_bad_arg
             && self.smmu_bad_range
             && self.smmu_table_full
+            && self.smmu_ssid_abort
             && self.cut_not_bound
             && self.cut_conductance
             && self.accel_shape_overflow
@@ -359,6 +363,7 @@ fn run_redteam() -> RedTeamReport {
     let opinject_bad_arg = run_opinject_bad_arg_demo();
     let smmu_bad_range = run_smmu_bad_range_demo();
     let smmu_table_full = run_smmu_table_full_demo();
+    let smmu_ssid_abort = run_smmu_ssid_abort_demo();
     let cut_not_bound = run_cut_not_bound_demo();
     let cut_conductance = run_cut_conductance_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
@@ -513,6 +518,8 @@ fn run_redteam() -> RedTeamReport {
         smmu_bad_range: smmu_bad_range.all_ok(),
         // map past MAX_MAPS / bind_stream past MAX_STES → TableFull.
         smmu_table_full: smmu_table_full.all_ok(),
+        // Soft-SMMU SSID ≥ MAX_CDS / above S1CDMax → StreamAbort.
+        smmu_ssid_abort: smmu_ssid_abort.all_ok(),
         // bind_place/window without BIND → NotBound. Cut-only.
         cut_not_bound: cut_not_bound.all_ok(),
         // SpectralCut over the conductance bound → ConductanceExceeded. Cut-only.
@@ -623,6 +630,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.opinject_bad_arg, LINE_OPINJECT_BAD_ARG);
     emit(r.smmu_bad_range, LINE_SMMU_BAD_RANGE);
     emit(r.smmu_table_full, LINE_SMMU_TABLE_FULL);
+    emit(r.smmu_ssid_abort, LINE_SMMU_SSID_ABORT);
     emit(r.cut_not_bound, LINE_CUT_NOT_BOUND);
     emit(r.cut_conductance, LINE_CUT_CONDUCTANCE);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
@@ -810,6 +818,10 @@ mod tests {
             "map past MAX_MAPS / bind_stream past MAX_STES → TableFull"
         );
         assert!(
+            r.smmu_ssid_abort,
+            "SSID ≥ MAX_CDS / above S1CDMax → StreamAbort"
+        );
+        assert!(
             r.cut_not_bound,
             "bind_place/window without BIND → NotBound"
         );
@@ -991,6 +1003,10 @@ mod tests {
             "[redteam] attack=smmu-table-full result=refused"
         );
         assert_eq!(
+            LINE_SMMU_SSID_ABORT,
+            "[redteam] attack=smmu-ssid-abort result=refused"
+        );
+        assert_eq!(
             LINE_CUT_NOT_BOUND,
             "[redteam] attack=cut-not-bound result=refused"
         );
@@ -1059,6 +1075,7 @@ mod tests {
         LINE_OPINJECT_BAD_ARG,
         LINE_SMMU_BAD_RANGE,
         LINE_SMMU_TABLE_FULL,
+        LINE_SMMU_SSID_ABORT,
         LINE_CUT_NOT_BOUND,
         LINE_CUT_CONDUCTANCE,
         LINE_ACCEL_SHAPE_OVERFLOW,
