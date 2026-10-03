@@ -773,6 +773,68 @@ pub fn run_accel_shape_overflow_demo() -> AccelShapeOverflowReport {
     }
 }
 
+
+/// Host red-team report for SoftNpu UnsupportedDType refuse.
+///
+/// Sell line `[redteam] attack=accel-unsupported-dtype` — existing
+/// SoftNpu F16 path when [`DmaView`] lacks u16 →
+/// [`AccelError::UnsupportedDType`]. Tiny I32 matmul admits. **Not** new
+/// SoftNPU opcodes (KILL); **not** BadShape/Overflow rehash
+/// (`accel-shape-overflow`); software SoftNpu only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccelUnsupportedDTypeReport {
+    /// Tiny 2×2×2 I32 matmul admits.
+    pub tiny_ok: bool,
+    /// F16 matmul on a DmaView without u16 → `AccelError::UnsupportedDType`.
+    pub f16_no_u16: bool,
+    /// Nop on the same no-u16 view still admits (dtype path not taken).
+    pub nop_ok: bool,
+}
+
+impl AccelUnsupportedDTypeReport {
+    pub fn all_ok(&self) -> bool {
+        self.tiny_ok && self.f16_no_u16 && self.nop_ok
+    }
+}
+
+/// SoftNpu F16 without u16 DMA → [`AccelError::UnsupportedDType`].
+/// Software SoftNpu only — not new opcodes / BadShape / Overflow rehash.
+pub fn run_accel_unsupported_dtype_demo() -> AccelUnsupportedDTypeReport {
+    // Tiny I32 matmul admits (dtype path not involved).
+    let mut buf = [0u8; 64];
+    for (i, v) in [1i32, 2, 3, 4, 5, 6, 7, 8].iter().enumerate() {
+        buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    let mut mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut buf,
+    };
+    let tiny = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+    let tiny_ok = SoftNpu::new().execute(&tiny, &mut mem).is_ok();
+
+    struct No16;
+    impl DmaView for No16 {
+        fn load_i32(&self, _: PhysAddr) -> Result<i32, AccelError> {
+            Ok(0)
+        }
+        fn store_i32(&mut self, _: PhysAddr, _: i32) -> Result<(), AccelError> {
+            Ok(())
+        }
+    }
+    let job = AccelJobDesc::matmul_f16(2, 2, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+    let f16_no_u16 =
+        SoftNpu::new().execute(&job, &mut No16) == Err(AccelError::UnsupportedDType);
+    let mut nop = job;
+    nop.op = AccelOp::Nop;
+    let nop_ok = SoftNpu::new().execute(&nop, &mut No16).is_ok();
+
+    AccelUnsupportedDTypeReport {
+        tiny_ok,
+        f16_no_u16,
+        nop_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -876,6 +938,15 @@ mod tests {
         assert!(r.zero_shape, "m==0 → BadShape");
         assert!(r.oversize_shape, "m>64 → BadShape");
         assert!(r.overflow, "mul i32 overflow → Overflow");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn accel_unsupported_dtype_demo_all_ok() {
+        let r = run_accel_unsupported_dtype_demo();
+        assert!(r.tiny_ok, "tiny i32 matmul admits");
+        assert!(r.f16_no_u16, "f16 without u16 → UnsupportedDType");
+        assert!(r.nop_ok, "nop on no-u16 view admits");
         assert!(r.all_ok());
     }
 
