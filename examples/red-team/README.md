@@ -100,6 +100,9 @@ Accel-shape-overflow needle: `[redteam] attack=accel-shape-overflow result=refus
 (SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape`; i32 Mul overflow →
 `AccelError::Overflow`; tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out;
 software SoftNpu only).
+Accel-unsupported-dtype needle: `[redteam] attack=accel-unsupported-dtype result=refused`
+(SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType`; tiny I32
+matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only).
 Tenant-fuzz needle: `[redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=<n>`
 (bounded seeded fuzz, not a proof, not a hardware claim; fixed-seed xorshift, no wall clock; tenant B vs tenant A's
 canary over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs;

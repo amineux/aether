@@ -49,7 +49,7 @@ pub mod types;
 pub mod window;
 
 pub use abi::{Buffer, Device, Event, Executable};
-pub use accel::{demo_f16_f32_ok, run_accel_shape_overflow_demo, AccelError, AccelJobDesc, AccelOp, AccelShapeOverflowReport, Completion, DType, SoftNpu};
+pub use accel::{demo_f16_f32_ok, run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo, AccelError, AccelJobDesc, AccelOp, AccelShapeOverflowReport, AccelUnsupportedDTypeReport, Completion, DType, SoftNpu};
 pub use activity::{Activity, ActivityId, ActivityKind};
 pub use arena::{ArenaAllocator, ArenaError, ArenaId, ArenaRequest};
 pub use aspace::{

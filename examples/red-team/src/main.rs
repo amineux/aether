@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_accel_shape_overflow_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -59,7 +59,8 @@
 //! Soft-SMMU SSID ≥ `MAX_CDS` / above `S1CDMax` on `bind_stream` / `map` / `walk` → `MapError::StreamAbort` (in-range SSID bind admits; not unbound-walk StreamAbort rehash; not TableFull; Soft SMMU is software). Cut-not-bound is
 //! `bind_place` / `bind_window` without BIND (READ-only SpectralCut or empty CapTable) → `CutError::NotBound` (CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable rewrite; not SoftNoI∩SpectralCut; not Laplacian elevate). Cut-conductance is
 //! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Accel-shape-overflow is
-//! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
+//! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Accel-unsupported-dtype is
+//! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -91,7 +92,7 @@ mod fuzz;
 
 use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
-use aether_core::accel::run_accel_shape_overflow_demo;
+use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo};
 use aether_core::cut::{run_cut_conductance_demo, run_cut_not_bound_demo};
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
@@ -171,6 +172,7 @@ const LINE_SMMU_SSID_ABORT: &str = "[redteam] attack=smmu-ssid-abort result=refu
 const LINE_CUT_NOT_BOUND: &str = "[redteam] attack=cut-not-bound result=refused";
 const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
+const LINE_ACCEL_UNSUPPORTED_DTYPE: &str = "[redteam] attack=accel-unsupported-dtype result=refused";
 /// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
 const LINE_TENANT_FUZZ: &str = "[redteam] attack=tenant-fuzz result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
@@ -239,6 +241,7 @@ struct RedTeamReport {
     cut_not_bound: bool,
     cut_conductance: bool,
     accel_shape_overflow: bool,
+    accel_unsupported_dtype: bool,
     tenant_fuzz: TenantFuzzReport,
     class: bool,
     atomic: bool,
@@ -304,6 +307,7 @@ impl RedTeamReport {
             && self.cut_not_bound
             && self.cut_conductance
             && self.accel_shape_overflow
+            && self.accel_unsupported_dtype
             && self.tenant_fuzz.all_ok()
             && self.class
             && self.atomic
@@ -367,6 +371,7 @@ fn run_redteam() -> RedTeamReport {
     let cut_not_bound = run_cut_not_bound_demo();
     let cut_conductance = run_cut_conductance_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
+    let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
     let noi = run_softnoi_demo();
@@ -526,6 +531,8 @@ fn run_redteam() -> RedTeamReport {
         cut_conductance: cut_conductance.all_ok(),
         // SoftNpu BadShape / Overflow refuse. Software SoftNpu only.
         accel_shape_overflow: accel_shape_overflow.all_ok(),
+        // SoftNpu F16 without u16 → UnsupportedDType. Software SoftNpu only.
+        accel_unsupported_dtype: accel_unsupported_dtype.all_ok(),
         // Bounded seeded hostile-tenant fuzz: evidence, not a proof, not a hardware claim.
         // unmap_stream / unmap excluded as kernel-trust primitives (issue #161).
         tenant_fuzz,
@@ -634,6 +641,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.cut_not_bound, LINE_CUT_NOT_BOUND);
     emit(r.cut_conductance, LINE_CUT_CONDUCTANCE);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
+    emit(r.accel_unsupported_dtype, LINE_ACCEL_UNSUPPORTED_DTYPE);
     emit_tenant_fuzz(&r.tenant_fuzz);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
@@ -834,6 +842,10 @@ mod tests {
             "SoftNpu BadShape / Overflow refuse"
         );
         assert!(
+            r.accel_unsupported_dtype,
+            "SoftNpu F16 without u16 → UnsupportedDType"
+        );
+        assert!(
             r.tenant_fuzz.all_ok(),
             "tenant-fuzz: escapes=0 unnamed=0 (bounded seeded fuzz)"
         );
@@ -1019,6 +1031,10 @@ mod tests {
             "[redteam] attack=accel-shape-overflow result=refused"
         );
         assert_eq!(
+            LINE_ACCEL_UNSUPPORTED_DTYPE,
+            "[redteam] attack=accel-unsupported-dtype result=refused"
+        );
+        assert_eq!(
             LINE_TENANT_FUZZ,
             "[redteam] attack=tenant-fuzz result=refused"
         );
@@ -1079,6 +1095,7 @@ mod tests {
         LINE_CUT_NOT_BOUND,
         LINE_CUT_CONDUCTANCE,
         LINE_ACCEL_SHAPE_OVERFLOW,
+        LINE_ACCEL_UNSUPPORTED_DTYPE,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
