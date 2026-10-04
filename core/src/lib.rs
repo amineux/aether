@@ -75,7 +75,7 @@ pub use chipsync::{
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
 pub use color::{admit_wave, run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo, BankColor, BankColorReport, ColorError, ForeignTenantColorReport, UncoloredComputeReport};
-pub use cut::{run_cut_conductance_demo, run_cut_not_bound_demo, AffinityGraph, CutConductanceReport, CutError, CutId, CutNotBoundReport, SpectralCut};
+pub use cut::{run_cut_empty_part_demo, run_cut_conductance_demo, run_cut_not_bound_demo, AffinityGraph, CutConductanceReport, CutEmptyPartReport, CutError, CutId, CutNotBoundReport, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
