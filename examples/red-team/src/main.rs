@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_smmu_unmap_cross_tenant_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_smmu_unmap_cross_tenant_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -60,7 +60,10 @@
 //! Soft-SMMU `alloc_in_window` pin whose page-aligned span exceeds the per-CD IOVA window (`1 << SOFT_SMMU_CD_SHIFT` = 4 MiB) → `MapError::TableFull` (small pin admits; not MAX_MAPS/MAX_STES slot-count rehash; Soft SMMU software only). Smmu-unmap-cross-tenant is
 //! `IommuMap::unmap_stream` / `unmap` / `unmap_va` now take a Memory+MAP cap: another tenant unmapping A's pin (A's raw SID + IOVA) → `MapError::CrossTenant` with the pin untouched, owner unmap still admits (issue #161; unmap path only, not the bind-time smmu-cross-tenant; no new Error variant / ABI / wire change; Soft SMMU is software). Cut-not-bound is
 //! `bind_place` / `bind_window` without BIND (READ-only SpectralCut or empty CapTable) → `CutError::NotBound` (CUT_FULL admits; cut-only; not ConductanceExceeded / CrossCut; not CapTable rewrite; not SoftNoI∩SpectralCut; not Laplacian elevate). Cut-conductance is
-//! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Accel-shape-overflow is
+//! `SpectralCut::from_mask` / `qemu_chiplet_cut` / `min_balanced` over the conductance bound → `CutError::ConductanceExceeded` (chiplet cut under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / EmptyPart; not an EDA package solver). Cut-empty-part is
+//! `SpectralCut::from_mask` with left mask 0 or all-ones → `CutError::EmptyPart` (chiplet-balanced mask under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / Unbalanced / ConductanceExceeded; not cut-not-bound / cut-conductance rehash; not an EDA package solver). Cut-unbalanced is
+//! `SpectralCut::from_mask` with unbalanced partition → `CutError::Unbalanced` (chiplet-balanced mask under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / ConductanceExceeded; not cut-not-bound / cut-conductance / cut-empty-part rehash; not an EDA package solver). Cut-too-large is
+//! `SpectralCut::min_balanced` on `two_chiplet_mesh(16)` (n > ENUM_MAX=8) → `CutError::TooLarge` (min_balanced on qemu_package n=6 admits; enumeration refuse only — Fiedler/from_placement still works at n=16, not a placement kill; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / Unbalanced / ConductanceExceeded; not cut-not-bound / cut-conductance rehash; not an EDA package solver). Accel-shape-overflow is
 //! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Accel-unsupported-dtype is
 //! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. B also drives the cap-checked `IommuMap::unmap_stream` / `unmap` / `unmap_for` against A's pin (must be `CrossTenant`; issue #161 fixed). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
@@ -95,7 +98,7 @@ mod fuzz;
 use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
 use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo};
-use aether_core::cut::{run_cut_conductance_demo, run_cut_not_bound_demo};
+use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo};
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_unmap_cross_tenant_demo, run_smmu_window_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
@@ -175,6 +178,9 @@ const LINE_SMMU_WINDOW_FULL: &str = "[redteam] attack=smmu-window-full result=re
 const LINE_SMMU_UNMAP_CROSS_TENANT: &str = "[redteam] attack=smmu-unmap-cross-tenant result=refused";
 const LINE_CUT_NOT_BOUND: &str = "[redteam] attack=cut-not-bound result=refused";
 const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refused";
+const LINE_CUT_EMPTY_PART: &str = "[redteam] attack=cut-empty-part result=refused";
+const LINE_CUT_UNBALANCED: &str = "[redteam] attack=cut-unbalanced result=refused";
+const LINE_CUT_TOO_LARGE: &str = "[redteam] attack=cut-too-large result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
 const LINE_ACCEL_UNSUPPORTED_DTYPE: &str = "[redteam] attack=accel-unsupported-dtype result=refused";
 /// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
@@ -246,6 +252,9 @@ struct RedTeamReport {
     smmu_unmap_cross_tenant: bool,
     cut_not_bound: bool,
     cut_conductance: bool,
+    cut_empty_part: bool,
+    cut_unbalanced: bool,
+    cut_too_large: bool,
     accel_shape_overflow: bool,
     accel_unsupported_dtype: bool,
     tenant_fuzz: TenantFuzzReport,
@@ -314,6 +323,9 @@ impl RedTeamReport {
             && self.smmu_unmap_cross_tenant
             && self.cut_not_bound
             && self.cut_conductance
+            && self.cut_empty_part
+            && self.cut_unbalanced
+            && self.cut_too_large
             && self.accel_shape_overflow
             && self.accel_unsupported_dtype
             && self.tenant_fuzz.all_ok()
@@ -380,6 +392,9 @@ fn run_redteam() -> RedTeamReport {
     let smmu_unmap_cross_tenant = run_smmu_unmap_cross_tenant_demo();
     let cut_not_bound = run_cut_not_bound_demo();
     let cut_conductance = run_cut_conductance_demo();
+    let cut_empty_part = run_cut_empty_part_demo();
+    let cut_unbalanced = run_cut_unbalanced_demo();
+    let cut_too_large = run_cut_too_large_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
@@ -543,6 +558,12 @@ fn run_redteam() -> RedTeamReport {
         cut_not_bound: cut_not_bound.all_ok(),
         // SpectralCut over the conductance bound → ConductanceExceeded. Cut-only.
         cut_conductance: cut_conductance.all_ok(),
+        // from_mask mask 0 / all-ones → EmptyPart. Cut-only.
+        cut_empty_part: cut_empty_part.all_ok(),
+        // from_mask unbalanced partition → Unbalanced. Cut-only.
+        cut_unbalanced: cut_unbalanced.all_ok(),
+        // min_balanced n>ENUM_MAX → TooLarge. Enumeration refuse only; placement still ok.
+        cut_too_large: cut_too_large.all_ok(),
         // SoftNpu BadShape / Overflow refuse. Software SoftNpu only.
         accel_shape_overflow: accel_shape_overflow.all_ok(),
         // SoftNpu F16 without u16 → UnsupportedDType. Software SoftNpu only.
@@ -657,6 +678,9 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.smmu_unmap_cross_tenant, LINE_SMMU_UNMAP_CROSS_TENANT);
     emit(r.cut_not_bound, LINE_CUT_NOT_BOUND);
     emit(r.cut_conductance, LINE_CUT_CONDUCTANCE);
+    emit(r.cut_empty_part, LINE_CUT_EMPTY_PART);
+    emit(r.cut_unbalanced, LINE_CUT_UNBALANCED);
+    emit(r.cut_too_large, LINE_CUT_TOO_LARGE);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
     emit(r.accel_unsupported_dtype, LINE_ACCEL_UNSUPPORTED_DTYPE);
     emit_tenant_fuzz(&r.tenant_fuzz);
@@ -863,6 +887,18 @@ mod tests {
             "SpectralCut over conductance bound → ConductanceExceeded"
         );
         assert!(
+            r.cut_empty_part,
+            "from_mask empty left/right → EmptyPart"
+        );
+        assert!(
+            r.cut_unbalanced,
+            "from_mask unbalanced partition → Unbalanced"
+        );
+        assert!(
+            r.cut_too_large,
+            "min_balanced n>ENUM_MAX → TooLarge (placement still ok)"
+        );
+        assert!(
             r.accel_shape_overflow,
             "SoftNpu BadShape / Overflow refuse"
         );
@@ -1060,6 +1096,18 @@ mod tests {
             "[redteam] attack=cut-conductance result=refused"
         );
         assert_eq!(
+            LINE_CUT_EMPTY_PART,
+            "[redteam] attack=cut-empty-part result=refused"
+        );
+        assert_eq!(
+            LINE_CUT_UNBALANCED,
+            "[redteam] attack=cut-unbalanced result=refused"
+        );
+        assert_eq!(
+            LINE_CUT_TOO_LARGE,
+            "[redteam] attack=cut-too-large result=refused"
+        );
+        assert_eq!(
             LINE_ACCEL_SHAPE_OVERFLOW,
             "[redteam] attack=accel-shape-overflow result=refused"
         );
@@ -1129,6 +1177,9 @@ mod tests {
         LINE_SMMU_UNMAP_CROSS_TENANT,
         LINE_CUT_NOT_BOUND,
         LINE_CUT_CONDUCTANCE,
+        LINE_CUT_EMPTY_PART,
+        LINE_CUT_UNBALANCED,
+        LINE_CUT_TOO_LARGE,
         LINE_ACCEL_SHAPE_OVERFLOW,
         LINE_ACCEL_UNSUPPORTED_DTYPE,
         ] {

@@ -613,6 +613,138 @@ pub fn run_cut_conductance_demo() -> CutConductanceReport {
     }
 }
 
+/// Host red-team report for SpectralCut empty-part refuse.
+///
+/// Sell line `[redteam] attack=cut-empty-part` — existing
+/// [`SpectralCut::from_mask`] only. Left mask 0 or all-ones →
+/// [`CutError::EmptyPart`]. Chiplet-balanced mask under a generous
+/// bound admits. **Not** CrossCut / Unbalanced / ConductanceExceeded /
+/// cut-not-bound / cut-conductance rehash; cut-only path, no SoftNoI
+/// mixing; not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutEmptyPartReport {
+    /// Chiplet cut under a generous bound admits.
+    pub under_ok: bool,
+    /// Left mask 0 → `EmptyPart`.
+    pub zero_mask_refused: bool,
+    /// All-ones left → `EmptyPart` (right empty).
+    pub all_ones_refused: bool,
+}
+
+impl CutEmptyPartReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok && self.zero_mask_refused && self.all_ones_refused
+    }
+}
+
+/// SpectralCut empty left/right → [`CutError::EmptyPart`].
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_empty_part_demo() -> CutEmptyPartReport {
+    let g = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+    let all = vert_mask(g.n);
+
+    let under_ok = SpectralCut::from_mask(CutId(1), &g, chiplet0, 400)
+        .is_ok_and(|c| c.phi_milli > 0 && c.phi_milli <= c.bound_milli);
+    let zero_mask_refused =
+        SpectralCut::from_mask(CutId(2), &g, 0, 400) == Err(CutError::EmptyPart);
+    let all_ones_refused =
+        SpectralCut::from_mask(CutId(3), &g, all, 400) == Err(CutError::EmptyPart);
+
+    CutEmptyPartReport {
+        under_ok,
+        zero_mask_refused,
+        all_ones_refused,
+    }
+}
+
+/// Host red-team report for SpectralCut unbalanced refuse.
+///
+/// Sell line `[redteam] attack=cut-unbalanced` — existing
+/// [`SpectralCut::from_mask`] only. Unbalanced partition (e.g. single
+/// vertex on qemu_package) → [`CutError::Unbalanced`]. Chiplet-balanced
+/// mask under a generous bound admits. **Not** CrossCut / EmptyPart /
+/// ConductanceExceeded / cut-not-bound / cut-conductance / cut-empty-part
+/// rehash; cut-only path, no SoftNoI mixing; not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutUnbalancedReport {
+    /// Chiplet-balanced mask under a generous bound admits.
+    pub under_ok: bool,
+    /// Single-vertex left (`0b000001`) → `Unbalanced`.
+    pub unbalanced_refused: bool,
+}
+
+impl CutUnbalancedReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok && self.unbalanced_refused
+    }
+}
+
+/// SpectralCut unbalanced partition → [`CutError::Unbalanced`].
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_unbalanced_demo() -> CutUnbalancedReport {
+    let g = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+
+    let under_ok = SpectralCut::from_mask(CutId(1), &g, chiplet0, 400)
+        .is_ok_and(|c| c.phi_milli > 0 && c.phi_milli <= c.bound_milli);
+    let unbalanced_refused =
+        SpectralCut::from_mask(CutId(2), &g, 0b000001, 400) == Err(CutError::Unbalanced);
+
+    CutUnbalancedReport {
+        under_ok,
+        unbalanced_refused,
+    }
+}
+
+/// Host red-team report for SpectralCut enumeration-too-large refuse.
+///
+/// Sell line `[redteam] attack=cut-too-large` — existing
+/// [`SpectralCut::min_balanced`] only. On `AffinityGraph::two_chiplet_mesh(16)`
+/// (n > [`ENUM_MAX`]=8) → [`CutError::TooLarge`]. `min_balanced` on
+/// `qemu_package` (n=6) under a generous bound admits. **Honesty:** this is
+/// an enumeration refuse only; [`SpectralCut::from_fiedler`] /
+/// [`SpectralCut::from_placement`] still work at n=16 — not a placement kill.
+/// **Not** CrossCut / EmptyPart / Unbalanced / ConductanceExceeded /
+/// cut-not-bound / cut-conductance rehash; cut-only path, no SoftNoI mixing;
+/// not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutTooLargeReport {
+    /// `min_balanced` on qemu_package (n=6) under a generous bound admits.
+    pub under_ok: bool,
+    /// `min_balanced` on two_chiplet_mesh(16) → `TooLarge`.
+    pub enum_refused: bool,
+    /// Fiedler/from_placement still admits at n=16 (honesty: not a placement kill).
+    pub placement_ok: bool,
+}
+
+impl CutTooLargeReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok && self.enum_refused && self.placement_ok
+    }
+}
+
+/// SpectralCut `min_balanced` n > ENUM_MAX → [`CutError::TooLarge`].
+/// Enumeration refuse only; Fiedler/from_placement still works at n=16.
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_too_large_demo() -> CutTooLargeReport {
+    let g_small = AffinityGraph::qemu_package();
+    let g16 = AffinityGraph::two_chiplet_mesh(16);
+
+    let under_ok = SpectralCut::min_balanced(CutId(1), &g_small, 400).is_ok_and(|c| {
+        c.phi_milli > 0 && c.phi_milli <= c.bound_milli
+    });
+    let enum_refused =
+        SpectralCut::min_balanced(CutId(2), &g16, 400) == Err(CutError::TooLarge);
+    let placement_ok = SpectralCut::from_placement(CutId(3), &g16, 400).is_ok();
+
+    CutTooLargeReport {
+        under_ok,
+        enum_refused,
+        placement_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -651,6 +783,32 @@ mod tests {
         assert!(r.from_mask_refused, "from_mask tight bound → ConductanceExceeded");
         assert!(r.chiplet_cut_refused, "qemu_chiplet_cut tight bound");
         assert!(r.min_balanced_refused, "min_balanced tight bound");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn cut_empty_part_demo_all_ok() {
+        let r = run_cut_empty_part_demo();
+        assert!(r.under_ok, "chiplet cut under bound admits");
+        assert!(r.zero_mask_refused, "mask 0 → EmptyPart");
+        assert!(r.all_ones_refused, "all-ones → EmptyPart");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn cut_unbalanced_demo_all_ok() {
+        let r = run_cut_unbalanced_demo();
+        assert!(r.under_ok, "chiplet-balanced mask admits");
+        assert!(r.unbalanced_refused, "0b000001 → Unbalanced");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn cut_too_large_demo_all_ok() {
+        let r = run_cut_too_large_demo();
+        assert!(r.under_ok, "min_balanced qemu_package admits");
+        assert!(r.enum_refused, "min_balanced n=16 → TooLarge");
+        assert!(r.placement_ok, "from_placement n=16 still admits");
         assert!(r.all_ok());
     }
 
