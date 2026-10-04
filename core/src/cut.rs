@@ -613,6 +613,51 @@ pub fn run_cut_conductance_demo() -> CutConductanceReport {
     }
 }
 
+/// Host red-team report for SpectralCut empty-part refuse.
+///
+/// Sell line `[redteam] attack=cut-empty-part` — existing
+/// [`SpectralCut::from_mask`] only. Left mask 0 or all-ones →
+/// [`CutError::EmptyPart`]. Chiplet-balanced mask under a generous
+/// bound admits. **Not** CrossCut / Unbalanced / ConductanceExceeded /
+/// cut-not-bound / cut-conductance rehash; cut-only path, no SoftNoI
+/// mixing; not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutEmptyPartReport {
+    /// Chiplet cut under a generous bound admits.
+    pub under_ok: bool,
+    /// Left mask 0 → `EmptyPart`.
+    pub zero_mask_refused: bool,
+    /// All-ones left → `EmptyPart` (right empty).
+    pub all_ones_refused: bool,
+}
+
+impl CutEmptyPartReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok && self.zero_mask_refused && self.all_ones_refused
+    }
+}
+
+/// SpectralCut empty left/right → [`CutError::EmptyPart`].
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_empty_part_demo() -> CutEmptyPartReport {
+    let g = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+    let all = vert_mask(g.n);
+
+    let under_ok = SpectralCut::from_mask(CutId(1), &g, chiplet0, 400)
+        .is_ok_and(|c| c.phi_milli > 0 && c.phi_milli <= c.bound_milli);
+    let zero_mask_refused =
+        SpectralCut::from_mask(CutId(2), &g, 0, 400) == Err(CutError::EmptyPart);
+    let all_ones_refused =
+        SpectralCut::from_mask(CutId(3), &g, all, 400) == Err(CutError::EmptyPart);
+
+    CutEmptyPartReport {
+        under_ok,
+        zero_mask_refused,
+        all_ones_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -651,6 +696,15 @@ mod tests {
         assert!(r.from_mask_refused, "from_mask tight bound → ConductanceExceeded");
         assert!(r.chiplet_cut_refused, "qemu_chiplet_cut tight bound");
         assert!(r.min_balanced_refused, "min_balanced tight bound");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn cut_empty_part_demo_all_ok() {
+        let r = run_cut_empty_part_demo();
+        assert!(r.under_ok, "chiplet cut under bound admits");
+        assert!(r.zero_mask_refused, "mask 0 → EmptyPart");
+        assert!(r.all_ones_refused, "all-ones → EmptyPart");
         assert!(r.all_ok());
     }
 
