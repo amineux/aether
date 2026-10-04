@@ -658,6 +658,45 @@ pub fn run_cut_empty_part_demo() -> CutEmptyPartReport {
     }
 }
 
+/// Host red-team report for SpectralCut unbalanced refuse.
+///
+/// Sell line `[redteam] attack=cut-unbalanced` — existing
+/// [`SpectralCut::from_mask`] only. Unbalanced partition (e.g. single
+/// vertex on qemu_package) → [`CutError::Unbalanced`]. Chiplet-balanced
+/// mask under a generous bound admits. **Not** CrossCut / EmptyPart /
+/// ConductanceExceeded / cut-not-bound / cut-conductance / cut-empty-part
+/// rehash; cut-only path, no SoftNoI mixing; not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutUnbalancedReport {
+    /// Chiplet-balanced mask under a generous bound admits.
+    pub under_ok: bool,
+    /// Single-vertex left (`0b000001`) → `Unbalanced`.
+    pub unbalanced_refused: bool,
+}
+
+impl CutUnbalancedReport {
+    pub fn all_ok(&self) -> bool {
+        self.under_ok && self.unbalanced_refused
+    }
+}
+
+/// SpectralCut unbalanced partition → [`CutError::Unbalanced`].
+/// Reuses the existing constructors only; cut-only, no SoftNoI.
+pub fn run_cut_unbalanced_demo() -> CutUnbalancedReport {
+    let g = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+
+    let under_ok = SpectralCut::from_mask(CutId(1), &g, chiplet0, 400)
+        .is_ok_and(|c| c.phi_milli > 0 && c.phi_milli <= c.bound_milli);
+    let unbalanced_refused =
+        SpectralCut::from_mask(CutId(2), &g, 0b000001, 400) == Err(CutError::Unbalanced);
+
+    CutUnbalancedReport {
+        under_ok,
+        unbalanced_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -705,6 +744,14 @@ mod tests {
         assert!(r.under_ok, "chiplet cut under bound admits");
         assert!(r.zero_mask_refused, "mask 0 → EmptyPart");
         assert!(r.all_ones_refused, "all-ones → EmptyPart");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn cut_unbalanced_demo_all_ok() {
+        let r = run_cut_unbalanced_demo();
+        assert!(r.under_ok, "chiplet-balanced mask admits");
+        assert!(r.unbalanced_refused, "0b000001 → Unbalanced");
         assert!(r.all_ok());
     }
 
