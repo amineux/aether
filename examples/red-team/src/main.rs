@@ -113,7 +113,7 @@ use aether_core::space::run_silent_remote_demo;
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
-use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
+use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo};
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
@@ -150,6 +150,7 @@ const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree res
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
+const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
@@ -223,6 +224,7 @@ struct RedTeamReport {
     hodge_curl_tree: bool,
     hodge_quota: bool,
     hodge_class_unauthorized: bool,
+    opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
@@ -293,6 +295,7 @@ impl RedTeamReport {
             && self.hodge_curl_tree
             && self.hodge_quota
             && self.hodge_class_unauthorized
+            && self.opkernel_class_mismatch
             && self.firewall_ident_pa
             && self.greenctx_overcommit
             && self.greenctx_unbound
@@ -360,6 +363,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
+    let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let greenctx_over = run_greenctx_overcommit_demo();
@@ -480,6 +484,9 @@ fn run_redteam() -> RedTeamReport {
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
+        // OperatorKernel admit_as/inject_as wrong class → ClassMismatch before quota/fabric.
+        // Not CurlOnTree / HarmonicTreeReduce / ClassNotAuthorized; no new opcodes.
+        opkernel_class_mismatch: opkernel_class_mismatch.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -643,6 +650,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
+    emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
@@ -768,6 +776,10 @@ mod tests {
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
+        );
+        assert!(
+            r.opkernel_class_mismatch,
+            "admit_as/inject_as wrong class → ClassMismatch, quota + queue untouched"
         );
         assert!(
             r.firewall_ident_pa,
@@ -975,6 +987,10 @@ mod tests {
             "[redteam] attack=hodge-class-unauthorized result=refused"
         );
         assert_eq!(
+            LINE_OPKERNEL_CLASS_MISMATCH,
+            "[redteam] attack=opkernel-class-mismatch result=refused"
+        );
+        assert_eq!(
             LINE_FIREWALL_IDENT_PA,
             "[redteam] attack=firewall-ident-pa result=refused"
         );
@@ -1133,6 +1149,7 @@ mod tests {
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
             LINE_HODGE_CLASS_UNAUTHORIZED,
+            LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,

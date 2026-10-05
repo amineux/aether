@@ -116,7 +116,7 @@ pub use opinject::{
     OperatorInject, ResidentWorker, DEMO_WORDS, MAX_OP_SLOTS, OPINJECT_BASE, OPINJECT_DST,
     OPINJECT_SID, OPINJECT_SPAN, OP_CALL_SIZE, SLOT_MEMCPY, SLOT_SAXPY, SLOT_SCALE,
 };
-pub use opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, CollectiveKind, HodgeCurlTreeReport, HodgeHarmonicTreeReport, OpKernelError, OpKernelId, OperatorKernelHandle};
+pub use opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo, CollectiveKind, HodgeCurlTreeReport, HodgeHarmonicTreeReport, OpKernelClassMismatchReport, OpKernelError, OpKernelId, OperatorKernelHandle};
 pub use partition::{
     run_hbm_bw_demo, BlastRadius, HbmBwReport, PartitionId, PartitionProfile, QosBudget,
     SoftHbmBwMeter, SpatialSlice,

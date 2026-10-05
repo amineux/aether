@@ -423,6 +423,7 @@ Expected stdout (CI greps these):
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=hodge-quota result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
+[redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=greenctx-overcommit result=refused
 [redteam] attack=greenctx-unbound result=refused
