@@ -10,6 +10,7 @@ members = [
     "examples/red-team",
     "examples/accel-client",
     "examples/design-win-check",
+    "examples/aether-eval-run",
     "examples/partner-hello",
     "examples/kv-fabric",
 ]
@@ -23,6 +24,7 @@ default-members = [
     "examples/red-team",
     "examples/accel-client",
     "examples/design-win-check",
+    "examples/aether-eval-run",
     "examples/partner-hello",
     "examples/kv-fabric",
 ]

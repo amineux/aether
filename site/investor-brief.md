@@ -57,6 +57,13 @@ requires a Memory+MAP capability and a foreign tenant's pin is refused with
 bounded test evidence, not formal verification; Soft SMMU is software:
 https://github.com/amineux/aether/issues/161
 
+A design partner can run `make eval-run` on a Linux host. The JSON
+records the commit, toolchain, Cargo.lock hash, SoftGreenCtx integer
+milli bandwidth for two tenants (solo, 70/30, unpartitioned), and named
+refusal checks. That run is a software model. It is not hardware
+validation, a customer result, or a claim of performance superiority
+versus MIG. Field map: docs/business/EVAL_RUN.md.
+
 Founder-led by repository maintainer amineux: https://github.com/amineux
 Start a conversation through the maintainer's GitHub profile. Keep proprietary
 workloads and commercial information out of public issues.

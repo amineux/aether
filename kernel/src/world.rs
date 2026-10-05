@@ -380,14 +380,20 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
+    // this is not munmap of `SYS_MMAP` pages. The Result is the existing
+    // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
+    // TODO(sys_unmap): World stores only the last `sys_map` Memory+MAP cap.
+    // A second pin cannot be named. Do not add a syscall for that.
     with(|w| {
-        // Tenant-checked unmap (issue #161): present the cap that made the pin.
-        // Result still ignored (ABI: syscall 5 is accepted); same arg layout.
-        if let Some(cap) = w.mapped_cap {
-            let _ = w.npu.unmap_with_cap(&cap, PhysAddr(vaddr));
-        }
-    });
-    Ok(0)
+        let cap = w.mapped_cap.ok_or(SysError::NoCap)?;
+        w.npu
+            .unmap_with_cap(&cap, PhysAddr(vaddr))
+            .map_err(|_| SysError::Fault)?;
+        w.mapped_va = 0;
+        w.mapped_cap = None;
+        Ok(0)
+    })
 }
 
 pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysError> {

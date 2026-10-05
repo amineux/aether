@@ -246,6 +246,14 @@
 <a href="https://github.com/amineux/aether/actions/runs/37059229955">Inspect the dependency audit ↗</a>
 </div>
 </article>
+<article>
+<span class="check">↗</span>
+<div>
+<h3>Partner-runnable host report</h3>
+<p><code>make eval-run</code> writes commit, toolchain, lockfile hash, SoftGreenCtx milli bandwidth for two tenants, and named refusal checks. It does not prove hardware isolation, a customer, or an advantage over MIG.</p>
+<a href="https://github.com/amineux/aether/blob/main/docs/business/EVAL_RUN.md">Read the field map ↗</a>
+</div>
+</article>
 </div>
 <aside class="terminal">
 <div class="terminal-top">
@@ -265,6 +273,7 @@ cd aether
 cargo test --workspace --locked
 make diligence-demo
 make red-team
+make eval-run
 <span class="terminal-comment"># Capture results with environment metadata</span>
 python3 scripts/collect_evidence.py</code>
 </pre>

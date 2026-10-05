@@ -60,6 +60,7 @@ QEMU_AA_FLAGS := -machine virt,gic-version=2 -cpu cortex-a72 -m 128M \
         accel-test qemu-accel qemu-accel-run \
         smmu-bringup partner-hello partner-hello-ci \
         diligence-demo red-team kv-fabric design-win-check design-win-standin \
+        eval-run \
         mp-shim mp-shim-ci \
         test test-host target target-riscv target-aarch64 clean help
 
@@ -88,6 +89,7 @@ help:
 	@echo "  make kv-fabric    - host KV-grant clip: prefill hands decode a 32-byte capability (not a copy)"
 	@echo "  make design-win-check - admit a filled DESIGN_WIN worksheet (no QEMU; no pipes)"
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
+	@echo "  make eval-run     - host partner eval JSON (milli BW + named refusals; not a customer)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make mp-shim       - MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch; no QEMU)"
 	@echo "  make clean"
@@ -256,6 +258,25 @@ DESIGN_WIN_STANDIN := docs/design-win/iree-hal-standin.toml
 
 design-win-standin:
 	cargo run -p aether-design-win-check --quiet --bin design-win-check -- $(DESIGN_WIN_STANDIN)
+
+# Host partner evaluation. One Soft-CP / SoftGreenCtx memcpy (integer milli)
+# plus named refusals. JSON is the record. Not hardware, not a customer,
+# not a MIG comparison. Field map: docs/business/EVAL_RUN.md.
+EVAL_JSON := $(BUILD)/eval-run.json
+
+eval-run:
+	mkdir -p $(BUILD)
+	cargo run --locked --quiet -p aether-eval-run -- --json $(EVAL_JSON) \
+		> $(BUILD)/eval-run.stdout
+	cat $(BUILD)/eval-run.stdout
+	grep -F -q '"passed": true' $(EVAL_JSON)
+	grep -F -q '"name": "smmu-unmap-cross-tenant"' $(EVAL_JSON)
+	grep -F -q '"name": "smmu-wrong-stream"' $(EVAL_JSON)
+	grep -F -q '"name": "softcmdfirewall"' $(EVAL_JSON)
+	grep -F -q 'no hardware SMMU' $(EVAL_JSON)
+	grep -F -q 'no customer' $(EVAL_JSON)
+	grep -F -q 'no performance superiority versus MIG' $(EVAL_JSON)
+	@echo "eval-run: host report $(EVAL_JSON)"
 
 # Partner leave-behind: frozen IreeHalCmd on the host. No QEMU rebuild.
 # Path B stays the canonical guest demo (stock make qemu).

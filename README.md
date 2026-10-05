@@ -48,6 +48,7 @@ make red-team     # host diligence clip: named attacks refused (scripted stdout)
 make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 make design-win-standin # admit the IREE HAL research stand-in (not a partner)
+make eval-run     # host eval JSON: milli BW + named refusals (not a customer, not MIG)
 ```
 
 ## Why this exists
@@ -272,6 +273,7 @@ examples/red-team        host red-team clip (`make red-team`; named attacks refu
 examples/kv-fabric      prefill→decode KV grant (`make kv-fabric`; 32-byte record, weights stay)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not a MicroPerceptron port)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
+examples/aether-eval-run host eval report (`make eval-run`; software milli BW + refusals; not a customer)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)

@@ -150,6 +150,7 @@ These are marked so a security review does not assume them:
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
 | `SYS_MMAP` is a 64 KiB anon window | First-fit 4 KiB USER pages at `0x02C0_0000` (after virtio-blk); no file / no `MAP_SHARED` / no `munmap` | POSIX `mmap` / file-backed / `MAP_SHARED` |
+| `SYS_UNMAP` names one pin | Number 5 and `(vaddr, len)` are unchanged. The return is the existing negative `SysError` (`0`, `-NoCap`, or `-Fault`), not a silent success. World still stores only the last `sys_map` Memory+MAP cap, `len` is ignored, and `SYS_MMAP` pages are not individually unmapped | A multi-pin table would be a kernel object, not a new syscall |
 | SoftSFI tensor / heap | A kernel that used those ops would bypass the toy sandbox | Named refuse: `SfiError::Unmodeled` (`SoftOp::Tensor`, `SoftOp::Heap`). `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`) but is a sequential toy RMW, not full SFI. Heap is refused, not a modeled bump allocator. Not a GPU-AToLL port. Hardware SMMU / real SFI still need partner silicon |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
@@ -170,7 +171,13 @@ Ring-3 is live; each user *task* has its own PML4 with USER only on its
 threads share that PML4 — they are not a second isolation domain.
 CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates a
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
-unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
+unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
+`-NoCap` when World has no stored pin cap, `-Fault` when the unmap
+is refused or missing, `0` only when the last `sys_map` pin was
+dropped. `len` is ignored. It is not `munmap` of `SYS_MMAP` pages,
+and World still stores only that one cap
+(`TODO(sys_unmap)` in `kernel/src/world.rs` — do not add a syscall).
+Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel
 is linked at `0xffffffff80400000` and may run at a 16/32 MiB slide

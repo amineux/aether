@@ -49,6 +49,14 @@ class EvidenceTests(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertFalse(manifest["passed"])
 
+    def test_eval_run_command_is_collected(self):
+        names = [name for name, _command in evidence.COMMANDS]
+        self.assertIn("eval-run", names)
+        command = dict(evidence.COMMANDS)["eval-run"]
+        self.assertEqual(command[0], "cargo")
+        self.assertIn("--locked", command)
+        self.assertIn("aether-eval-run", command)
+
     def test_missing_executable_is_recorded(self):
         with patch("subprocess.run", side_effect=FileNotFoundError("missing cargo")):
             code, stdout, stderr = evidence.run(["cargo"], 10)

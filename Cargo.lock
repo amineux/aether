@@ -45,6 +45,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aether-eval-run"
+version = "0.1.0"
+dependencies = [
+ "aether-core",
+ "aether-drivers",
+]
+
+[[package]]
 name = "aether-hal"
 version = "0.1.0"
 dependencies = [

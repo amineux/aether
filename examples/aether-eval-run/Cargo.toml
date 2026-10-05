@@ -1,0 +1,18 @@
+[package]
+name = "aether-eval-run"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Host evaluation report: SoftGreenCtx milli bandwidth and named refusals (not a customer result)"
+publish = false
+
+[[bin]]
+name = "aether-eval-run"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+aether-drivers = { path = "../../drivers" }
+
+[lints]
+workspace = true

@@ -17,6 +17,7 @@ COMMANDS = [
     ("kv-fabric", ["cargo", "run", "--locked", "--quiet", "-p", "aether-kv-fabric"]),
     ("partner-hello", ["cargo", "run", "--locked", "--quiet", "-p", "aether-partner-hello"]),
     ("design-win-standin", ["cargo", "run", "--locked", "--quiet", "-p", "aether-design-win-check", "--", "docs/design-win/iree-hal-standin.toml"]),
+    ("eval-run", ["cargo", "run", "--locked", "--quiet", "-p", "aether-eval-run"]),
 ]
 
 

@@ -1,12 +1,13 @@
 # Investor evidence index
 
-As of 2026-10-02: research prototype. This index establishes no verified
+As of 2026-10-05: research prototype. This index establishes no verified
 customers, revenue, hardware validation or independent security certification.
 Replace unknowns only with dated, attributable evidence.
 
 | Claim | Evidence to attach | Current status |
 | --- | --- | --- |
 | Software model enforces named boundaries | SHA + host tests + diligence/red-team logs | Implemented; fresh run required for each shared bundle |
+| A partner can reproduce a host evaluation locally | `make eval-run` JSON (commit, toolchain, Cargo.lock hash, SoftGreenCtx milli bandwidth, named refusals) | Software model only. No customer, no hardware, no advantage versus MIG. Field map: [EVAL_RUN.md](EVAL_RUN.md) |
 | QEMU subsets boot | SHA + CI run + architecture logs | Existing CI gates; not silicon validation |
 | Buyer has urgent problem | Redacted independent interviews, incidents and cost | Unverified |
 | Customer can integrate | Agreed environment + reproduction + engineer feedback | Unverified |
