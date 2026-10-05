@@ -1,5 +1,9 @@
 # Aether
 
+**[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
+visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
+GitHub Actions to Pages (kernel `docs/` are untouched).
+
 **A capability-based isolation prototype for shared AI accelerators.**
 
 The initial buyer is a small accelerator/NPU company building a runtime that
@@ -60,6 +64,50 @@ coordinated specification/implementation update.
 
 <details>
 <summary><strong>Technical reference, research demos and historical roadmaps</strong></summary>
+
+**Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
+what you get today. Commands that exist. Ask: bring your opcode table.
+**Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
+Site: [`#sell`](https://amineux.github.io/aether/#sell) ·
+[`#roadmap`](https://amineux.github.io/aether/#roadmap).
+Next year: [`docs/YEAR_AHEAD.md`](docs/YEAR_AHEAD.md).
+
+**An accelerator-first fabric kernel** — a research prototype for how operating
+systems should look when the package is a mesh of CPU, NPU, GPU, and custom
+ASIC tiles rather than a host CPU with bolt-on devices.
+
+> Interfaces and refuse invariants for an AI-chip OS team. Isolation is
+> the product (blast radius), not FLOPs. Not production silicon, not a
+> vendor partnership. One-page leave-behind:
+> [`docs/SELL_PACK.md`](docs/SELL_PACK.md). Week 1 call:
+> [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md). Eight-minute script:
+> [`docs/PITCH.md`](docs/PITCH.md)
+> ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
+> What to show next: isolation (`make red-team`) → packet
+> (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
+> (Event in `make diligence-demo`) → admit class (fabric-class in
+> `make red-team`) → sandbox hole (`ATOMIC_ADD` + `[softsfi] heap=refused`
+> in `make red-team`). GPU-fabric leave-behind: `make kv-fabric`
+> (sequence-scoped KV grant; [`docs/pitch/KV_FABRIC.md`](docs/pitch/KV_FABRIC.md);
+> site [`#kv`](https://amineux.github.io/aether/#kv)). Not NVLink, not CUDA, not MIG.
+
+```
+make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
+make diligence-demo  # partner host clip (Path B; no QEMU; greps golden lines)
+make partner-hello # host IreeHalCmd leave-behind (no QEMU rebuild)
+make mp-shim      # MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch)
+make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
+make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
+make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
+make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
+make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
+make accel-test   # path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)
+make qemu-accel   # accel-test + path_a tests; attach -device aether-accel if QEMU_ACCEL is set
+make red-team     # host diligence clip: named attacks refused (scripted stdout)
+make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
+make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
+make design-win-standin # admit the IREE HAL research stand-in (not a partner)
+```
 
 ## Why this exists
 
