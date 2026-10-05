@@ -1,52 +1,65 @@
 # Aether
 
-**[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
-visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
-GitHub Actions to Pages (kernel `docs/` are untouched).
+**A capability-based isolation prototype for shared AI accelerators.**
 
-**Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
-what you get today. Commands that exist. Ask: bring your opcode table.
-**Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
-Site: [`#sell`](https://amineux.github.io/aether/#sell) ·
-[`#roadmap`](https://amineux.github.io/aether/#roadmap).
-Next year: [`docs/YEAR_AHEAD.md`](docs/YEAR_AHEAD.md).
+The initial buyer is a small accelerator/NPU company building a runtime that
+must contain workload faults and protect tenant memory. Aether provides
+executable software models, named refusal tests and a frozen command interface
+for evaluating those boundaries.
 
-**An accelerator-first fabric kernel** — a research prototype for how operating
-systems should look when the package is a mesh of CPU, NPU, GPU, and custom
-ASIC tiles rather than a host CPU with bolt-on devices.
+**Stage: research prototype.** The software demos are real; customer demand,
+revenue, hardware enforcement and production readiness are unverified.
 
-> Interfaces and refuse invariants for an AI-chip OS team. Isolation is
-> the product (blast radius), not FLOPs. Not production silicon, not a
-> vendor partnership. One-page leave-behind:
-> [`docs/SELL_PACK.md`](docs/SELL_PACK.md). Week 1 call:
-> [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md). Eight-minute script:
-> [`docs/PITCH.md`](docs/PITCH.md)
-> ([site `#pitch`](https://amineux.github.io/aether/#pitch)).
-> What to show next: isolation (`make red-team`) → packet
-> (`make partner-hello` / `cargo run -p aether-accel-client`) → wait
-> (Event in `make diligence-demo`) → admit class (fabric-class in
-> `make red-team`) → sandbox hole (`ATOMIC_ADD` + `[softsfi] heap=refused`
-> in `make red-team`). GPU-fabric leave-behind: `make kv-fabric`
-> (sequence-scoped KV grant; [`docs/pitch/KV_FABRIC.md`](docs/pitch/KV_FABRIC.md);
-> site [`#kv`](https://amineux.github.io/aether/#kv)). Not NVLink, not CUDA, not MIG.
+## Start here
 
+| Audience | Next step |
+| --- | --- |
+| Investor | [Five-minute pitch and demo](docs/pitch/INVESTOR_DEMO.md) |
+| Runtime team | [Evaluation scope](docs/business/EVALUATION.md) and [technical worksheet](docs/DESIGN_WIN.md) |
+| Engineer | Run the host checks below, then expand the technical reference |
+| Contributor | Keep one task per branch; inspect open PRs before changing shared APIs |
+
+## Run the investor evaluation
+
+Requires Git, Python 3, GNU Make and a Rust toolchain compatible with the
+workspace (Rust 1.83+ on x86_64 Linux). No accelerator hardware or QEMU is
+required for this host evaluation.
+
+```bash
+cargo test --workspace --locked
+make diligence-demo
+make red-team
 ```
-make test         # host unit tests (caps, fabric, arenas, scheduler, SoftNPU, L)
-make diligence-demo  # partner host clip (Path B; no QEMU; greps golden lines)
-make partner-hello # host IreeHalCmd leave-behind (no QEMU rebuild)
-make mp-shim      # MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch)
-make qemu         # boot Aether in QEMU (x86_64 ring-3 /init; embedded ramfs)
-make qemu-blk     # same + virtio-blk AETHFS01 drive (seeds /init /probe)
-make qemu-smp     # same + QEMU -smp 2 (INIT-SIPI / work-steal smoke)
-make qemu-riscv   # RISC-V virt S-mode + U-mode /init + PLIC SoftNPU IRQ
-make qemu-aarch64 # aarch64 virt EL1 + EL0 /init (svc/eret; documented subset)
-make accel-test   # path-A QEMU device model + Soft-SMMU IOVA / wrong-SID (host; no QEMU rebuild)
-make qemu-accel   # accel-test + path_a tests; attach -device aether-accel if QEMU_ACCEL is set
-make red-team     # host diligence clip: named attacks refused (scripted stdout)
-make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
-make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
-make design-win-standin # admit the IREE HAL research stand-in (not a partner)
+
+To capture the complete evaluation and a portable report from a **clean commit**:
+
+```bash
+python3 scripts/collect_evidence.py --output /tmp/aether-evaluation
+python3 scripts/investor_report.py /tmp/aether-evaluation
+# Open /tmp/aether-evaluation/investor-report.html in a browser.
 ```
+
+Choose a new output directory for each run. The report checks required commands,
+clean source provenance and log checksums. Failed or incomplete checks remain
+visible; a verified host bundle is not a production-readiness verdict.
+CI retains the report and adjacent logs in its host-evidence artifact.
+
+## What we are building toward
+
+The first offer is a bounded isolation evaluation: one customer workload,
+one environment, an agreed baseline and measurable acceptance criteria.
+The next proof is independent reproduction and a paid pilot, followed by reuse
+with a second buyer. See the [90-day evidence plan](docs/MATURITY.md) and
+[investor evidence index](docs/business/INVESTOR_EVIDENCE.md).
+
+New research demonstrations, additional architectures and speculative roadmap
+features are outside this initial evaluation unless they resolve a measured
+risk or an agreed buyer requirement. Existing research remains available below.
+The `IreeHalCmd` v1 packet stays frozen pending a real partner table and a
+coordinated specification/implementation update.
+
+<details>
+<summary><strong>Technical reference, research demos and historical roadmaps</strong></summary>
 
 ## Why this exists
 
@@ -412,3 +425,5 @@ review offline.
 ## License
 
 MIT OR Apache-2.0.
+
+</details>

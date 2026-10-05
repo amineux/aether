@@ -3,6 +3,7 @@
 import argparse
 import datetime
 import json
+import hashlib
 import pathlib
 import platform
 import subprocess
@@ -13,7 +14,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMMANDS = [
     ("host-tests", ["cargo", "test", "--workspace", "--locked"]),
     ("diligence", ["cargo", "run", "--locked", "--quiet", "-p", "aether-diligence-demo", "--bin", "diligence-demo"]),
-    ("red-team", ["cargo", "run", "--locked", "--quiet", "-p", "aether-redteam"]),
+    ("red-team", ["make", "red-team"]),
     ("kv-fabric", ["cargo", "run", "--locked", "--quiet", "-p", "aether-kv-fabric"]),
     ("partner-hello", ["cargo", "run", "--locked", "--quiet", "-p", "aether-partner-hello"]),
     ("design-win-standin", ["cargo", "run", "--locked", "--quiet", "-p", "aether-design-win-check", "--", "docs/design-win/iree-hal-standin.toml"]),
@@ -43,6 +44,7 @@ def main():
     if args.output:
         output.mkdir(parents=True, exist_ok=False)
     metadata = {
+        "schema_version": 2,
         "captured_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "platform": platform.platform(),
         "python": sys.version,
@@ -56,6 +58,7 @@ def main():
         code, stdout, stderr = run(command, args.timeout)
         metadata["metadata"][label] = dict(exit_code=code, stdout=stdout, stderr=stderr)
     (output / "Cargo.lock").write_bytes((ROOT / "Cargo.lock").read_bytes())
+    metadata["lockfile_sha256"] = hashlib.sha256((output / "Cargo.lock").read_bytes()).hexdigest()
     failed = any(item["exit_code"] != 0 for item in metadata["metadata"].values())
     # Write an initial manifest so an interrupted run cannot look complete.
     metadata["complete"] = False
@@ -75,8 +78,13 @@ def main():
         failed |= not passed
         metadata["checks"].append(dict(name=label, command=command,
                                         exit_code=code, passed=passed,
-                                        missing_expected_lines=missing))
+                                        missing_expected_lines=missing,
+                                        logs={stream: hashlib.sha256((output / f"{label}.{stream}.log").read_bytes()).hexdigest()
+                                              for stream in ("stdout", "stderr")}))
         manifest.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
+    code, stdout, stderr = run(["git", "status", "--porcelain"], args.timeout)
+    metadata["metadata"]["working_tree_end"] = dict(exit_code=code, stdout=stdout, stderr=stderr)
+    failed |= code != 0
     metadata["complete"] = True
     metadata["passed"] = not failed
     manifest.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
