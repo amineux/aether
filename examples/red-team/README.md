@@ -125,6 +125,11 @@ Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized resu
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
 HarmonicTreeReduce; not CapTable milestone).
+Opkernel-class-mismatch needle: `[redteam] attack=opkernel-class-mismatch result=refused`
+(Tree+Gradient `OperatorKernelHandle`: matched `admit_as` / `inject` admit; caller-named
+Harmonic on `admit_as` / Curl on `inject_as` → `OpKernelError::ClassMismatch` before Hodge
+quota or fabric — quota counters untouched, nothing queued; not CurlOnTree /
+HarmonicTreeReduce / ClassNotAuthorized; no new opcodes; software path only).
 Firewall-ident-pa needle: `[redteam] attack=firewall-ident-pa result=refused`
 (SoftCmdFirewall `admit_packed` identity guest PA → `HalError::Fault`;
 not mutation-during-validate — `softcmdfirewall` stays separate; not

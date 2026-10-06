@@ -332,6 +332,88 @@ pub fn run_hodge_curl_tree_demo() -> HodgeCurlTreeReport {
     }
 }
 
+/// Host red-team report for OperatorKernel class-mismatch refuse.
+///
+/// Sell line `[redteam] attack=opkernel-class-mismatch` — existing
+/// [`OperatorKernelHandle::admit_as`] / [`OperatorKernelHandle::inject_as`]
+/// only. A Tree+Gradient handle asked to admit as Harmonic or inject as Curl
+/// → [`OpKernelError::ClassMismatch`], refused **before** Hodge quota or the
+/// fabric run: quota counters untouched, nothing queued on the endpoint.
+/// Matched class admits and injects. **Not** CurlOnTree / HarmonicTreeReduce
+/// (bind-time topology refuse) / ClassNotAuthorized (FlowQuota badge) /
+/// SoftNoI fabric-class rehash; no new opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpKernelClassMismatchReport {
+    /// Matched class: `admit_as(Gradient)` + `inject` on Tree+Gradient admit.
+    pub matched_ok: bool,
+    /// `admit_as(Harmonic)` → `ClassMismatch`, quota untouched.
+    pub admit_refused: bool,
+    /// `inject_as(Curl)` → `ClassMismatch`, endpoint queue still empty.
+    pub inject_refused: bool,
+}
+
+impl OpKernelClassMismatchReport {
+    pub fn all_ok(&self) -> bool {
+        self.matched_ok && self.admit_refused && self.inject_refused
+    }
+}
+
+/// Tree+Gradient handle: matched class admits/injects; caller-named
+/// Harmonic / Curl → [`OpKernelError::ClassMismatch`] before quota or fabric.
+pub fn run_opkernel_class_mismatch_demo() -> OpKernelClassMismatchReport {
+    let tenant = TenantId(1);
+    let Ok(h) =
+        OperatorKernelHandle::bind(OpKernelId(1), CollectiveKind::Tree, FlowClass::Gradient)
+    else {
+        return OpKernelClassMismatchReport {
+            matched_ok: false,
+            admit_refused: false,
+            inject_refused: false,
+        };
+    };
+    let mut caps = CapTable::new(tenant);
+    let mut fabric = Fabric::new();
+    let (Ok(cptr), Ok(ep)) = (h.mint(&mut caps), fabric.create_endpoint(tenant)) else {
+        return OpKernelClassMismatchReport {
+            matched_ok: false,
+            admit_refused: false,
+            inject_refused: false,
+        };
+    };
+
+    // Refuse first, on a fresh quota: counters must not move.
+    let mut q = HodgeQuota::generous();
+    let grad0 = q.remain(FlowClass::Gradient);
+    let harm0 = q.remain(FlowClass::Harmonic);
+    let admit_refused = h.admit_as(&mut q, FlowClass::Harmonic)
+        == Err(OpKernelError::ClassMismatch)
+        && q.remain(FlowClass::Gradient) == grad0
+        && q.remain(FlowClass::Harmonic) == harm0;
+
+    let inject_refused = h.inject_as(
+        &caps,
+        cptr,
+        &mut fabric,
+        ep,
+        tenant,
+        b"wrong-class",
+        FlowClass::Curl,
+    ) == Err(OpKernelError::ClassMismatch)
+        && fabric.pending(ep).ok() == Some(0);
+
+    let matched_ok = h.admit_as(&mut q, FlowClass::Gradient).is_ok()
+        && h.inject(&caps, cptr, &mut fabric, ep, tenant, b"allreduce").is_ok()
+        && fabric
+            .recv(ep)
+            .is_ok_and(|m| m.payload() == b"allreduce" && m.header.flow == FlowClass::Gradient);
+
+    OpKernelClassMismatchReport {
+        matched_ok,
+        admit_refused,
+        inject_refused,
+    }
+}
+
 /// BIND is required. Without it the handle is inert (same as SpectralCut).
 pub fn require_opkernel_bind(tab: &CapTable, cptr: CPtr) -> Result<&Capability, CapError> {
     tab.require(cptr, CapKind::OperatorKernel, CapRights::BIND)
@@ -446,6 +528,15 @@ mod tests {
         h.admit(&mut q).unwrap();
         assert!(!h.inject_flags().tree_offload());
         assert_eq!(q.remain(FlowClass::Harmonic), 63);
+    }
+
+    #[test]
+    fn opkernel_class_mismatch_demo_all_ok() {
+        let r = run_opkernel_class_mismatch_demo();
+        assert!(r.matched_ok, "Tree+Gradient matched admit/inject: {r:?}");
+        assert!(r.admit_refused, "admit_as(Harmonic) → ClassMismatch, quota untouched");
+        assert!(r.inject_refused, "inject_as(Curl) → ClassMismatch, nothing queued");
+        assert!(r.all_ok());
     }
 
     #[test]
