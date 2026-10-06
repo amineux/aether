@@ -873,6 +873,112 @@ pub fn run_softsfi_demo() -> SoftSfiReport {
     }
 }
 
+/// Host red-team report for SoftSFI malformed-program refuse.
+///
+/// Sell line `[redteam] attack=softsfi-bad-insn` — existing [`verify`] /
+/// [`execute`] / [`Program::push`] / [`SidSandbox::push`] only. Register
+/// index `>= MAX_REGS` (rd / rs / rt), empty program, program past
+/// `MAX_INSNS`, and zero-bound or wrapping sandbox range →
+/// [`SfiError::BadInsn`]. Skip-verify fault injection of a bad-register
+/// store is `BadInsn` at runtime and writes nothing. **Not** `Oob`
+/// (softsfi-oob) / `Unmodeled` (tensor / heap / unknown) / `UnknownBase`;
+/// no new opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SoftSfiBadInsnReport {
+    /// Control: the in-bounds program still verifies on tenant A.
+    pub well_formed_ok: bool,
+    /// rd / rs / rt index `>= MAX_REGS` → `BadInsn` (before base proof).
+    pub bad_reg_refused: bool,
+    /// Empty program → `BadInsn` from both `verify` and `execute`.
+    pub empty_refused: bool,
+    /// Push past `MAX_INSNS` → `BadInsn`; length stays `MAX_INSNS`.
+    pub capacity_refused: bool,
+    /// Zero-bound / wrapping `SidRange` → `BadInsn`; sandbox stays empty.
+    pub bad_range_refused: bool,
+    /// Skip-verify bad-register store → `BadInsn`; target word unchanged.
+    pub inject_no_write: bool,
+}
+
+impl SoftSfiBadInsnReport {
+    pub fn all_ok(&self) -> bool {
+        self.well_formed_ok
+            && self.bad_reg_refused
+            && self.empty_refused
+            && self.capacity_refused
+            && self.bad_range_refused
+            && self.inject_no_write
+    }
+}
+
+/// Malformed SoftSFI programs and sandbox ranges → [`SfiError::BadInsn`].
+pub fn run_softsfi_bad_insn_demo() -> SoftSfiBadInsnReport {
+    let a = box_a();
+    let well_formed_ok = verify(&in_bounds_prog(SFI_BASE_A), &a).is_ok();
+
+    let bad = MAX_REGS as u8;
+    let mut bad_rd = Program::new();
+    let _ = bad_rd.push(Insn::add_imm(1, 0, SFI_BASE_A));
+    let _ = bad_rd.push(Insn::load(bad, 1, 0));
+    let mut bad_rs = Program::new();
+    let _ = bad_rs.push(Insn::load(2, bad, 0));
+    let mut bad_rt = Program::new();
+    let _ = bad_rt.push(Insn::add(1, 0, bad));
+    let bad_reg_refused = verify(&bad_rd, &a) == Err(SfiError::BadInsn)
+        && verify(&bad_rs, &a) == Err(SfiError::BadInsn)
+        && verify(&bad_rt, &a) == Err(SfiError::BadInsn);
+
+    let mut bytes = [0u8; 128];
+    bytes[0..4].copy_from_slice(&1u32.to_le_bytes());
+    let empty = Program::new();
+    let empty_verify = verify(&empty, &a) == Err(SfiError::BadInsn);
+    let empty_exec = {
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut bytes,
+        };
+        execute(&empty, &a, &mut mem) == Err(SfiError::BadInsn)
+    };
+    let empty_refused = empty_verify && empty_exec;
+
+    let mut full = Program::new();
+    let mut filled = true;
+    for _ in 0..MAX_INSNS {
+        filled &= full.push(Insn::nop()).is_ok();
+    }
+    let capacity_refused =
+        filled && full.push(Insn::nop()) == Err(SfiError::BadInsn) && full.len() == MAX_INSNS;
+
+    let mut s = SidSandbox::new(StreamId::from_raw(SFI_SID_A));
+    let bad_range_refused = s.push(SidRange::new(SFI_BASE_A, 0, true)) == Err(SfiError::BadInsn)
+        && s.push(SidRange::new(u64::MAX - 3, 8, true)) == Err(SfiError::BadInsn)
+        && s.len() == 0;
+
+    let mut store_bad = Program::new();
+    let _ = store_bad.push(Insn::add_imm(1, 0, SFI_BASE_A));
+    let _ = store_bad.push(Insn::add_imm(2, 0, 0x55));
+    let _ = store_bad.push(Insn::store(bad, 1, 0));
+    let injected = {
+        let mut mem = FlatMem {
+            base: 0,
+            bytes: &mut bytes,
+        };
+        execute_unverified(&store_bad, &a, &mut mem)
+    };
+    let word = u32::from_le_bytes(bytes[0..4].try_into().unwrap_or([0; 4]));
+    let inject_no_write = verify(&store_bad, &a) == Err(SfiError::BadInsn)
+        && injected == Err(SfiError::BadInsn)
+        && word == 1;
+
+    SoftSfiBadInsnReport {
+        well_formed_ok,
+        bad_reg_refused,
+        empty_refused,
+        capacity_refused,
+        bad_range_refused,
+        inject_no_write,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -883,6 +989,18 @@ mod tests {
         bytes[SFI_BASE_B as usize..SFI_BASE_B as usize + 4]
             .copy_from_slice(&SFI_SECRET_B.to_le_bytes());
         (bytes, box_a(), box_b())
+    }
+
+    #[test]
+    fn softsfi_bad_insn_demo_all_ok() {
+        let r = run_softsfi_bad_insn_demo();
+        assert!(r.well_formed_ok, "in-bounds control verifies: {r:?}");
+        assert!(r.bad_reg_refused, "rd/rs/rt >= MAX_REGS → BadInsn");
+        assert!(r.empty_refused, "empty program → BadInsn (verify + execute)");
+        assert!(r.capacity_refused, "push past MAX_INSNS → BadInsn");
+        assert!(r.bad_range_refused, "zero-bound / wrapping SidRange → BadInsn");
+        assert!(r.inject_no_write, "skip-verify bad-reg store → BadInsn, no write");
+        assert!(r.all_ok());
     }
 
     #[test]

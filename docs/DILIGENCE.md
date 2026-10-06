@@ -399,6 +399,7 @@ Expected stdout (CI greps these):
 [redteam] attack=wrong-sid-crosscut result=refused
 [redteam] attack=softcmdfirewall result=refused
 [redteam] attack=softsfi-oob result=refused
+[redteam] attack=softsfi-bad-insn result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
 [redteam] attack=blast-hops result=refused

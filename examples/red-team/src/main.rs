@@ -125,6 +125,7 @@ use aether_drivers::{
 const LINE_CROSSCUT: &str = "[redteam] attack=wrong-sid-crosscut result=refused";
 const LINE_FIREWALL: &str = "[redteam] attack=softcmdfirewall result=refused";
 const LINE_SFI: &str = "[redteam] attack=softsfi-oob result=refused";
+const LINE_SFI_BAD_INSN: &str = "[redteam] attack=softsfi-bad-insn result=refused";
 const LINE_NOI: &str = "[redteam] attack=softnoi-is result=refused";
 const LINE_PASID: &str = "[redteam] attack=pasid-stale result=refused";
 const LINE_BLAST_HOPS: &str = "[redteam] attack=blast-hops result=refused";
@@ -200,6 +201,7 @@ struct RedTeamReport {
     crosscut: bool,
     firewall: bool,
     sfi: bool,
+    sfi_bad_insn: bool,
     noi: bool,
     pasid: bool,
     blast_hops: bool,
@@ -272,6 +274,7 @@ impl RedTeamReport {
         self.crosscut
             && self.firewall
             && self.sfi
+            && self.sfi_bad_insn
             && self.noi
             && self.pasid
             && self.blast_hops
@@ -402,6 +405,7 @@ fn run_redteam() -> RedTeamReport {
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
+    let sfi_bad_insn = aether_core::softsfi::run_softsfi_bad_insn_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
 
@@ -414,6 +418,9 @@ fn run_redteam() -> RedTeamReport {
         firewall: firewall.hold_with && firewall.sneak_without,
         // Toy Soft-CP load of a foreign SID window is Oob.
         sfi: sfi.oob_reject && sfi.no_cross_read,
+        // Malformed program / sandbox range → BadInsn (bad reg, empty, past MAX_INSNS,
+        // zero/wrapping range); skip-verify bad-reg store writes nothing. Not Oob / Unmodeled.
+        sfi_bad_insn: sfi_bad_insn.all_ok(),
         // Heavy concurrent demand projects IS > 1.5; second tenant refused.
         noi: noi.heavy_refuse && noi.heavy_is_over,
         // Honest unmap drops the SSID TLB; skipped invalidate is a stale
@@ -632,6 +639,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.crosscut, LINE_CROSSCUT);
     emit(r.firewall, LINE_FIREWALL);
     emit(r.sfi, LINE_SFI);
+    emit(r.sfi_bad_insn, LINE_SFI_BAD_INSN);
     emit(r.noi, LINE_NOI);
     emit(r.pasid, LINE_PASID);
     emit(r.blast_hops, LINE_BLAST_HOPS);
@@ -724,6 +732,7 @@ mod tests {
         assert!(r.crosscut, "CrossCut + wrong-SID DMA");
         assert!(r.firewall, "SoftCmdFirewall mutate-during-validate");
         assert!(r.sfi, "SoftSFI OOB load");
+        assert!(r.sfi_bad_insn, "SoftSFI malformed program / range → BadInsn");
         assert!(r.noi, "SoftNoI-IS overload admit");
         assert!(r.pasid, "PASID stale translate after unmap");
         assert!(r.blast_hops, "admit_hops over max_hops → BlastRadius");
@@ -934,6 +943,7 @@ mod tests {
         assert!(LINE_CROSSCUT.contains("attack=wrong-sid-crosscut"));
         assert!(LINE_FIREWALL.contains("attack=softcmdfirewall"));
         assert!(LINE_SFI.contains("attack=softsfi-oob"));
+        assert_eq!(LINE_SFI_BAD_INSN, "[redteam] attack=softsfi-bad-insn result=refused");
         assert!(LINE_NOI.contains("attack=softnoi-is"));
         assert!(LINE_PASID.contains("attack=pasid-stale"));
         assert_eq!(LINE_BLAST_HOPS, "[redteam] attack=blast-hops result=refused");
@@ -1138,6 +1148,7 @@ mod tests {
             LINE_CROSSCUT,
             LINE_FIREWALL,
             LINE_SFI,
+            LINE_SFI_BAD_INSN,
             LINE_NOI,
             LINE_PASID,
             LINE_BLAST_HOPS,

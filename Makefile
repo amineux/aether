@@ -155,6 +155,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=wrong-sid-crosscut result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softcmdfirewall result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softsfi-oob result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softsfi-bad-insn result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softnoi-is result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=pasid-stale result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=blast-hops result=refused" $(REDTEAM_LOG)
