@@ -151,6 +151,12 @@ Smmu-overlap needle: `[redteam] attack=smmu-overlap result=refused`
 heap line stays separate).
 SoftSFI unknown needle: `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` (bad opcode / illegal width →
 `Unmodeled`; tensor/heap lines stay separate; not AddImm deepen).
+SoftSFI-bad-insn needle: `[redteam] attack=softsfi-bad-insn result=refused`
+(`verify` / `execute` / `Program::push` / `SidSandbox::push`: register index
+`>= MAX_REGS`, empty program, push past `MAX_INSNS`, zero-bound or wrapping
+`SidRange` → `SfiError::BadInsn`; skip-verify bad-register store is refused at
+runtime and writes nothing; not softsfi-oob (`Oob`) / tensor / heap / unknown
+(`Unmodeled`) / unknown-base; no new opcodes; software path only).
 Smmu-not-mapped needle: `[redteam] attack=smmu-not-mapped result=refused`
 (Soft-SMMU Bound `walk` / `resolve_result` IOVA hole → `MapError::NotMapped`; mapped admits; not WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap).
 Smmu-wrong-stream needle: `[redteam] attack=smmu-wrong-stream result=refused`
