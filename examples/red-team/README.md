@@ -26,6 +26,11 @@ Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).
+Space-not-mappable needle: `[redteam] attack=space-not-mappable result=refused`
+(`map_place` on a **local** Streaming or Scratch address → `SpaceError::NotMappable`;
+the space refuse is named before remoteness, so remote Streaming is `NotMappable`,
+not `SilentRemoteLoad`; local DeviceHbm still maps; not silent-remote / UNIFIED /
+CXL productization; software path only).
 Soft HBM BW needle: `[redteam] attack=hbm-bw result=refused`
 (`SoftHbmBwMeter::charge` → `QosExceeded` vs `QosBudget.bw_mbps` on HBM
 `TypedWindow`; software meter only).

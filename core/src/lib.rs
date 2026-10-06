@@ -142,7 +142,7 @@ pub use softsfi::{
     Program, SfiError, SfiExec, SfiMem, SidRange, SidSandbox, SoftOp, SoftSfiReport, MAX_INSNS,
     MAX_REGS, SFI_SECRET_B, SFI_SID_A, SFI_SID_B, WORD,
 };
-pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
+pub use space::{run_space_not_mappable_demo, FabricAddr, MemorySpace, Place, SpaceError, SpaceNotMappableReport};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
 pub use sva::{run_sva_demo, SvaReport, SVA_LEN, SVA_MM, SVA_PA, SVA_SID, SVA_VA};
 pub use sysnr::{
