@@ -109,7 +109,7 @@ use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_hbm_bw_demo, run_outside_slice_demo,
     run_qos_credits_demo,
 };
-use aether_core::space::run_silent_remote_demo;
+use aether_core::space::{run_silent_remote_demo, run_space_not_mappable_demo};
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
@@ -136,6 +136,7 @@ const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
+const LINE_SPACE_NOT_MAPPABLE: &str = "[redteam] attack=space-not-mappable result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
@@ -210,6 +211,7 @@ struct RedTeamReport {
     fence_not_ready: bool,
     outside_slice: bool,
     silent_remote: bool,
+    space_not_mappable: bool,
     typed_window_sid: bool,
     hbm_bw: bool,
     xqueue_sid_override: bool,
@@ -281,6 +283,7 @@ impl RedTeamReport {
             && self.fence_not_ready
             && self.outside_slice
             && self.silent_remote
+            && self.space_not_mappable
             && self.typed_window_sid
             && self.hbm_bw
             && self.xqueue_sid_override
@@ -349,6 +352,7 @@ fn run_redteam() -> RedTeamReport {
     let fence_nr = run_fence_not_ready_demo();
     let outside = run_outside_slice_demo();
     let silent = run_silent_remote_demo();
+    let space_not_mappable = run_space_not_mappable_demo();
     let typed_win = run_typed_window_sid_demo();
     let hbm = run_hbm_bw_demo();
     let xqueue_sid = run_xqueue_sid_override_demo();
@@ -442,6 +446,9 @@ fn run_redteam() -> RedTeamReport {
         // map_place / map_fabric: local OK; remote → SilentRemoteLoad.
         // MEM_FULL never implies UNIFIED. Not CXL productization / BAR0 / SoftNPU.
         silent_remote: silent.all_ok(),
+        // map_place local Streaming / Scratch → NotMappable (space before remoteness).
+        // Local HBM maps. Not SilentRemoteLoad / UNIFIED / CXL productization.
+        space_not_mappable: space_not_mappable.all_ok(),
         // TypedWindow map_window_sid: match OK; mismatch → WrongStream;
         // foreign pin → CrossTenant. Exploration stub — not CXL.mem / BAR0.
         typed_window_sid: typed_win.all_ok(),
@@ -636,6 +643,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fence_not_ready, LINE_FENCE_NOT_READY);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
+    emit(r.space_not_mappable, LINE_SPACE_NOT_MAPPABLE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
     emit(r.hbm_bw, LINE_HBM_BW);
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
@@ -727,6 +735,7 @@ mod tests {
         assert!(r.fence_not_ready, "Timeline::wait before retire → FenceNotReady");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
+        assert!(r.space_not_mappable, "map_place local Streaming/Scratch → NotMappable");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
         assert!(r.hbm_bw, "SoftHbmBwMeter over bw_mbps → QosExceeded");
         assert!(
@@ -936,6 +945,7 @@ mod tests {
         assert_eq!(LINE_FENCE_NOT_READY, "[redteam] attack=fence-not-ready result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
+        assert_eq!(LINE_SPACE_NOT_MAPPABLE, "[redteam] attack=space-not-mappable result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
         assert_eq!(LINE_HBM_BW, "[redteam] attack=hbm-bw result=refused");
         assert_eq!(
@@ -1139,6 +1149,7 @@ mod tests {
             LINE_FENCE_NOT_READY,
             LINE_OUTSIDE_SLICE,
             LINE_SILENT_REMOTE,
+            LINE_SPACE_NOT_MAPPABLE,
             LINE_TYPED_WINDOW_SID,
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,

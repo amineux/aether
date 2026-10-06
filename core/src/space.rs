@@ -200,6 +200,64 @@ pub fn run_silent_remote_demo() -> SilentRemoteReport {
     }
 }
 
+/// Host red-team report for the Streaming / Scratch map refuse.
+///
+/// Sell line `[redteam] attack=space-not-mappable` — existing [`map_place`]
+/// only. A **local** Streaming or Scratch address (same chiplet, same space,
+/// same tile, so not remote) → [`SpaceError::NotMappable`]. The space refuse
+/// is named **before** remoteness: a remote Streaming address is
+/// `NotMappable`, not `SilentRemoteLoad`. Local DeviceHbm still maps.
+/// **Not** silent-remote (`SilentRemoteLoad`) / UNIFIED grant / CXL
+/// productization / BAR0; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpaceNotMappableReport {
+    /// Local DeviceHbm `map_place` admits at the same local offset.
+    pub hbm_ok: bool,
+    /// Local Streaming (not remote) → `NotMappable`.
+    pub streaming_refused: bool,
+    /// Local Scratch (not remote) → `NotMappable`.
+    pub scratch_refused: bool,
+    /// Remote Streaming → `NotMappable` (space named first, not SilentRemoteLoad).
+    pub remote_streaming_named: bool,
+}
+
+impl SpaceNotMappableReport {
+    pub fn all_ok(&self) -> bool {
+        self.hbm_ok && self.streaming_refused && self.scratch_refused && self.remote_streaming_named
+    }
+}
+
+/// Local HBM maps; local Streaming / Scratch → [`SpaceError::NotMappable`];
+/// remote Streaming is still `NotMappable` (space before remoteness).
+pub fn run_space_not_mappable_demo() -> SpaceNotMappableReport {
+    let hbm_here = Place::new(ChipletId(0), MemorySpace::DeviceHbm);
+    let hbm_ok = matches!(
+        map_place(hbm_here, FabricAddr::new(hbm_here, 0x1000)),
+        Ok(p) if p.0 == 0x1000
+    );
+
+    let stream_here = Place::new(ChipletId(0), MemorySpace::Streaming).with_tile(0);
+    let stream_local = FabricAddr::new(stream_here, 0x40);
+    let streaming_refused = !stream_local.is_remote(stream_here)
+        && map_place(stream_here, stream_local) == Err(SpaceError::NotMappable);
+
+    let scratch_here = Place::new(ChipletId(0), MemorySpace::Scratch).with_tile(0);
+    let scratch_local = FabricAddr::new(scratch_here, 0x80);
+    let scratch_refused = !scratch_local.is_remote(scratch_here)
+        && map_place(scratch_here, scratch_local) == Err(SpaceError::NotMappable);
+
+    let remote_stream = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::Streaming), 0x2000);
+    let remote_streaming_named = remote_stream.is_remote(hbm_here)
+        && map_place(hbm_here, remote_stream) == Err(SpaceError::NotMappable);
+
+    SpaceNotMappableReport {
+        hbm_ok,
+        streaming_refused,
+        scratch_refused,
+        remote_streaming_named,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -233,6 +291,16 @@ mod tests {
         assert!(r.local_ok, "local map_place admits");
         assert!(r.remote_refuse, "remote → SilentRemoteLoad");
         assert!(r.unified_not_default, "MEM_FULL never implies UNIFIED");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn space_not_mappable_demo_all_ok() {
+        let r = run_space_not_mappable_demo();
+        assert!(r.hbm_ok, "local DeviceHbm map_place admits: {r:?}");
+        assert!(r.streaming_refused, "local Streaming → NotMappable");
+        assert!(r.scratch_refused, "local Scratch → NotMappable");
+        assert!(r.remote_streaming_named, "remote Streaming → NotMappable, not SilentRemoteLoad");
         assert!(r.all_ok());
     }
 }
