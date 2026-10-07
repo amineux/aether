@@ -336,6 +336,31 @@ impl DmaView for SliceMem<'_> {
     }
 }
 
+/// One tenant's submit queue on a shared [`SoftNpu`]. Completion sequence
+/// numbers handed to that tenant are numbered per queue (from 1), so they do
+/// not depend on any other tenant's jobs. See [`SoftNpu::execute_queued`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TenantQueue {
+    next_seq: u32,
+}
+
+impl TenantQueue {
+    pub const fn new() -> Self {
+        Self { next_seq: 1 }
+    }
+
+    /// Sequence number the next successful job on this queue will get.
+    pub const fn next_seq(&self) -> u32 {
+        self.next_seq
+    }
+}
+
+impl Default for TenantQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Reference NPU. Deterministic, side-effect free aside from DMA stores.
 #[derive(Clone, Debug, Default)]
 pub struct SoftNpu {
@@ -378,6 +403,28 @@ impl SoftNpu {
             status: 0,
             cycles,
         })
+    }
+
+    /// Execute a job submitted on one tenant's own queue.
+    ///
+    /// Same work as [`Self::execute`], but the returned `job_seq` comes from
+    /// `queue`, not from the device-wide counter. On a device shared by
+    /// several tenants the device-wide [`Self::seq`] counts every tenant's
+    /// jobs, so handing it back to a tenant tells it how many jobs the
+    /// others ran (a cross-tenant counter channel the two-world
+    /// noninterference check found). A failed job does not advance `queue`.
+    /// Device-wide [`Self::seq`] and [`Self::jobs_retired`] still advance as
+    /// before; they are device statistics, not tenant-visible.
+    pub fn execute_queued<M: DmaView>(
+        &mut self,
+        queue: &mut TenantQueue,
+        job: &AccelJobDesc,
+        mem: &mut M,
+    ) -> Result<Completion, AccelError> {
+        let mut cpl = self.execute(job, mem)?;
+        cpl.job_seq = queue.next_seq;
+        queue.next_seq = queue.next_seq.wrapping_add(1);
+        Ok(cpl)
     }
 
     fn check_shape(job: &AccelJobDesc) -> Result<(), AccelError> {
@@ -894,6 +941,71 @@ mod tests {
             out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [19, 22, 43, 50]);
+    }
+
+    /// Regression (two-world noninterference finding): a tenant's completion
+    /// sequence numbers must not reveal how many jobs another tenant ran on
+    /// the shared device. With per-queue numbering A sees 1, 2, 3 whether or
+    /// not B runs jobs in between; the device-wide counter does move.
+    #[test]
+    fn queued_job_seq_does_not_leak_other_tenants_jobs() {
+        fn run(b_jobs_between: u32) -> ([u32; 3], u32) {
+            let mut buf = [0u8; 256];
+            let mut mem = SliceMem {
+                base: PhysAddr(0x1000),
+                bytes: &mut buf,
+            };
+            let job = AccelJobDesc::matmul_i32(
+                1,
+                1,
+                1,
+                PhysAddr(0x1000),
+                PhysAddr(0x1004),
+                PhysAddr(0x1008),
+                1,
+            );
+            let mut npu = SoftNpu::new();
+            let mut qa = TenantQueue::new();
+            let mut qb = TenantQueue::new();
+            let mut seen = [0u32; 3];
+            for s in seen.iter_mut() {
+                *s = npu.execute_queued(&mut qa, &job, &mut mem).unwrap().job_seq;
+                for _ in 0..b_jobs_between {
+                    npu.execute_queued(&mut qb, &job, &mut mem).unwrap();
+                }
+            }
+            (seen, npu.seq)
+        }
+        let (quiet, dev_quiet) = run(0);
+        let (busy, dev_busy) = run(5);
+        assert_eq!(quiet, [1, 2, 3]);
+        assert_eq!(busy, quiet);
+        assert_ne!(dev_busy, dev_quiet);
+    }
+
+    #[test]
+    fn queued_failed_job_does_not_advance_queue() {
+        let mut buf = [0u8; 64];
+        let mut mem = SliceMem {
+            base: PhysAddr(0x1000),
+            bytes: &mut buf,
+        };
+        let bad = AccelJobDesc::matmul_i32(
+            0,
+            1,
+            1,
+            PhysAddr(0x1000),
+            PhysAddr(0x1004),
+            PhysAddr(0x1008),
+            1,
+        );
+        let mut npu = SoftNpu::new();
+        let mut q = TenantQueue::new();
+        assert_eq!(
+            npu.execute_queued(&mut q, &bad, &mut mem),
+            Err(AccelError::BadShape)
+        );
+        assert_eq!(q.next_seq(), 1);
     }
 
     #[test]
