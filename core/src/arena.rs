@@ -13,6 +13,10 @@ pub const MAX_ARENAS: usize = 16;
 pub const MAX_FREE: usize = 24;
 pub const MAX_BANKS: usize = 4;
 
+// Coalesced free spans are the gaps between live arenas, so the free list
+// can always hold them. Keeps `insert_free` from ever dropping a span.
+const _: () = assert!(MAX_ARENAS + MAX_BANKS < MAX_FREE);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct ArenaId(pub u32);
 
@@ -186,16 +190,23 @@ impl ArenaAllocator {
             o
         };
 
+        // Refuse before touching the free list: a full arena table is
+        // `ArenaLimit`, and no span is split or lost on that path.
+        let slot = self.alloc_slot()?;
         for pref in order.iter().flatten() {
-            if let Some(arena) = self.try_alloc_in_bank(*pref, size, align, req) {
+            if let Some(arena) = self.try_alloc_in_bank(slot, *pref, size, align, req) {
                 return Ok(arena);
             }
         }
         Err(ArenaError::NoSpace)
     }
 
+    /// Split a free span in `bank` into `slot`. The caller has already
+    /// reserved a free arena `slot`, and a span is only chosen if the free
+    /// list can hold every remainder, so this path never drops a byte.
     fn try_alloc_in_bank(
         &mut self,
+        slot: usize,
         bank: BankId,
         size: u64,
         align: u64,
@@ -207,12 +218,23 @@ impl ArenaAllocator {
             if span.bank != bank {
                 continue;
             }
-            let aligned = Self::align_up(span.base, align)?;
+            let Some(aligned) = Self::align_up(span.base, align) else {
+                continue;
+            };
             if aligned < span.base {
                 continue;
             }
             let prefix = aligned - span.base;
-            if prefix.checked_add(size)? <= span.size {
+            let Some(need) = prefix.checked_add(size) else {
+                continue;
+            };
+            if need <= span.size {
+                // Remainders (before / after) must fit the free list; taking
+                // this span frees one entry for them.
+                let remainders = (prefix > 0) as usize + (need < span.size) as usize;
+                if remainders > self.free_slots() + 1 {
+                    continue;
+                }
                 found = Some((i, aligned, prefix, span.size));
                 break;
             }
@@ -236,7 +258,7 @@ impl ArenaAllocator {
                 bank: span.bank,
             });
         }
-        let slot = self.alloc_slot().ok()?;
+        debug_assert!(self.arenas[slot].is_none());
         let arena = Arena {
             id: ArenaId(self.next_id),
             base: PhysAddr(aligned),
@@ -258,6 +280,20 @@ impl ArenaAllocator {
         Some(arena)
     }
 
+    fn free_slots(&self) -> usize {
+        self.free.iter().filter(|s| s.is_none()).count()
+    }
+
+    /// Number of free spans across all banks (host red-team / tests).
+    pub fn free_span_count(&self) -> usize {
+        MAX_FREE - self.free_slots()
+    }
+
+    /// Number of live arenas (host red-team / tests).
+    pub fn live_count(&self) -> usize {
+        self.arenas.iter().flatten().count()
+    }
+
     fn insert_free(&mut self, span: FreeSpan) {
         // coalesce with neighbours in the same bank
         let mut base = span.base;
@@ -277,6 +313,10 @@ impl ArenaAllocator {
                 }
             }
         }
+        // A full free list cannot occur here: coalesced free spans are the
+        // gaps between live arenas (at most MAX_ARENAS + MAX_BANKS, which is
+        // below MAX_FREE), and `try_alloc_in_bank` only splits a span when
+        // the remainders fit. `arena_free_list_never_drops_bytes` checks it.
         if let Some(empty) = self.free.iter_mut().find(|s| s.is_none()) {
             *empty = Some(FreeSpan {
                 base,
@@ -284,7 +324,6 @@ impl ArenaAllocator {
                 bank: span.bank,
             });
         }
-        // if no free slot, the span is leaked — prototype limit (MAX_FREE)
     }
 
     pub fn get(&self, id: ArenaId) -> Result<&Arena, ArenaError> {
@@ -347,9 +386,253 @@ impl ArenaAllocator {
     }
 }
 
+/// Host red-team report for arena ownership-handoff refuse.
+///
+/// Sell line `[redteam] attack=arena-not-owner` — existing
+/// [`ArenaAllocator::transfer_owner`] only. Handoff is an explicit ownership
+/// transfer, not a shared mapping: a tile that does not own the arena, a
+/// "kernel / unassigned" claim on an already-owned arena, and the previous
+/// owner after a handoff are all refused as [`ArenaError::NotOwner`], and the
+/// owner tile, owner tenant, and bank color stay unchanged. A handoff of a
+/// freed arena id is [`ArenaError::UnknownArena`]. `free` stays a
+/// kernel-trust primitive and is not claimed here. **Not** bank-color
+/// (`ForeignBank`) / foreign-tenant-color / uncolored-compute; no new
+/// opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArenaNotOwnerReport {
+    /// Control: kernel → tile 2 → tile 3 handoffs admit (explicit chain).
+    pub handoff_ok: bool,
+    /// Non-owner tile naming itself as `from` → `NotOwner`; state unchanged.
+    pub foreign_tile_refused: bool,
+    /// `from = None` (kernel / unassigned) on an owned arena → `NotOwner`.
+    pub reclaim_refused: bool,
+    /// Previous owner after handoff → `NotOwner`; new owner keeps the range.
+    pub stale_owner_refused: bool,
+    /// Handoff of a freed arena id → `UnknownArena`.
+    pub freed_refused: bool,
+}
+
+impl ArenaNotOwnerReport {
+    pub fn all_ok(&self) -> bool {
+        self.handoff_ok
+            && self.foreign_tile_refused
+            && self.reclaim_refused
+            && self.stale_owner_refused
+            && self.freed_refused
+    }
+}
+
+/// Non-owner / stale-owner arena handoff → [`ArenaError::NotOwner`].
+pub fn run_arena_not_owner_demo() -> ArenaNotOwnerReport {
+    const A: u32 = 1;
+    const B: u32 = 2;
+    let fail = ArenaNotOwnerReport {
+        handoff_ok: false,
+        foreign_tile_refused: false,
+        reclaim_refused: false,
+        stale_owner_refused: false,
+        freed_refused: false,
+    };
+    let Ok(mut arenas) = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * PAGE_2M)])
+    else {
+        return fail;
+    };
+    let Ok(arena) = arenas.alloc(ArenaRequest::tensor(PAGE_4K, Some(BankId(0))).for_tenant(TenantId(A)))
+    else {
+        return fail;
+    };
+    let id = arena.id;
+    let state = |al: &ArenaAllocator| {
+        al.get(id)
+            .map(|x| (x.owner_tile, x.owner_tenant, x.color.tenant))
+            .ok()
+    };
+    let owned_by = |tile: u16| Some((Some(tile), Some(A), TenantId(A)));
+
+    let to_two = arenas.transfer_owner(id, None, 2, A).is_ok() && state(&arenas) == owned_by(2);
+
+    let foreign_tile_refused = arenas.transfer_owner(id, Some(5), 5, B) == Err(ArenaError::NotOwner)
+        && arenas.transfer_owner(id, Some(3), 5, B) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(2);
+
+    let reclaim_refused = arenas.transfer_owner(id, None, 5, B) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(2);
+
+    let to_three = arenas.transfer_owner(id, Some(2), 3, A).is_ok() && state(&arenas) == owned_by(3);
+    let stale_owner_refused = arenas.transfer_owner(id, Some(2), 2, A) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(3);
+
+    let freed_refused = arenas.free(id).is_ok()
+        && arenas.transfer_owner(id, Some(3), 5, B) == Err(ArenaError::UnknownArena)
+        && arenas.get(id) == Err(ArenaError::UnknownArena);
+
+    ArenaNotOwnerReport {
+        handoff_ok: to_two && to_three,
+        foreign_tile_refused,
+        reclaim_refused,
+        stale_owner_refused,
+        freed_refused,
+    }
+}
+
+/// Host red-team report for the full-arena-table refuse.
+///
+/// Sell line `[redteam] attack=arena-limit-leak` — existing
+/// [`ArenaAllocator::alloc`] only. Before this fix, an allocation with every
+/// arena slot in use split a free span, then failed to find a slot, returned
+/// `NoSpace`, and lost the split bytes. Repeating it drained the bank. Now a
+/// full table is [`ArenaError::ArenaLimit`], checked before the free list is
+/// touched, so free bytes and free spans are unchanged. **Not** a quota, not
+/// arena-not-owner / bank-color; no new opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArenaLimitLeakReport {
+    /// Control: `MAX_ARENAS` allocations admit.
+    pub fill_ok: bool,
+    /// Every allocation past the table (repeated) → `ArenaLimit`, not `NoSpace`.
+    pub limit_refused: bool,
+    /// Free bytes and free-span count identical before and after the refusals.
+    pub no_leak: bool,
+    /// After one `free`, the next allocation admits and accounting is exact.
+    pub recover_ok: bool,
+}
+
+impl ArenaLimitLeakReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok && self.limit_refused && self.no_leak && self.recover_ok
+    }
+}
+
+/// Full arena table → [`ArenaError::ArenaLimit`] with no bytes lost.
+pub fn run_arena_limit_leak_demo() -> ArenaLimitLeakReport {
+    const TOTAL: u64 = 8 * PAGE_2M;
+    let bank = BankId(0);
+    let fail = ArenaLimitLeakReport {
+        fill_ok: false,
+        limit_refused: false,
+        no_leak: false,
+        recover_ok: false,
+    };
+    let Ok(mut arenas) = ArenaAllocator::new(&[(bank, PhysAddr(0x0100_0000), TOTAL)]) else {
+        return fail;
+    };
+    let req = ArenaRequest::tensor(PAGE_4K, Some(bank)).for_tenant(TenantId(1));
+    let mut first = None;
+    let mut fill_ok = true;
+    for _ in 0..MAX_ARENAS {
+        match arenas.alloc(req) {
+            Ok(a) => {
+                first.get_or_insert(a.id);
+            }
+            Err(_) => fill_ok = false,
+        }
+    }
+    let used = MAX_ARENAS as u64 * PAGE_4K;
+    fill_ok &= arenas.live_count() == MAX_ARENAS && arenas.free_bytes(bank) == TOTAL - used;
+
+    let bytes_before = arenas.free_bytes(bank);
+    let spans_before = arenas.free_span_count();
+    let mut limit_refused = true;
+    for _ in 0..8 {
+        limit_refused &= arenas.alloc(req) == Err(ArenaError::ArenaLimit);
+    }
+    let no_leak = arenas.free_bytes(bank) == bytes_before
+        && arenas.free_span_count() == spans_before
+        && arenas.live_count() == MAX_ARENAS;
+
+    let recover_ok = match first {
+        Some(id) => {
+            arenas.free(id).is_ok()
+                && arenas.free_bytes(bank) == TOTAL - used + PAGE_4K
+                && arenas.alloc(req).is_ok()
+                && arenas.free_bytes(bank) == TOTAL - used
+                && arenas.alloc(req) == Err(ArenaError::ArenaLimit)
+        }
+        None => false,
+    };
+
+    ArenaLimitLeakReport {
+        fill_ok,
+        limit_refused,
+        no_leak,
+        recover_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arena_limit_leak_demo_all_ok() {
+        let r = run_arena_limit_leak_demo();
+        assert!(r.fill_ok, "MAX_ARENAS allocations admit: {r:?}");
+        assert!(r.limit_refused, "full table → ArenaLimit, not NoSpace");
+        assert!(r.no_leak, "refused allocations leave free bytes / spans unchanged");
+        assert!(r.recover_ok, "free one → next alloc admits; accounting exact");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn arena_limit_is_returned_not_nospace() {
+        let mut a = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 64 * PAGE_2M)]).unwrap();
+        for _ in 0..MAX_ARENAS {
+            a.alloc(ArenaRequest::tensor(PAGE_4K, None)).unwrap();
+        }
+        let before = a.free_bytes(BankId(0));
+        assert_eq!(a.alloc(ArenaRequest::tensor(PAGE_4K, None)), Err(ArenaError::ArenaLimit));
+        // Huge / aligned request on a full table: still ArenaLimit, still no split.
+        assert_eq!(a.alloc(ArenaRequest::tensor(PAGE_2M, None)), Err(ArenaError::ArenaLimit));
+        assert_eq!(a.free_bytes(BankId(0)), before, "no bytes lost on refuse");
+    }
+
+    /// Seeded alloc/free mix (no wall clock): free + live bytes always equal
+    /// the banks' total, and the free list never exceeds live + banks spans.
+    #[test]
+    fn arena_free_list_never_drops_bytes() {
+        let banks = [
+            (BankId(0), PhysAddr(0x0100_0000), 16 * PAGE_2M),
+            (BankId(1), PhysAddr(0x0300_0000), 16 * PAGE_2M + PAGE_4K),
+        ];
+        let total: u64 = banks.iter().map(|b| b.2).sum();
+        let mut a = ArenaAllocator::new(&banks).unwrap();
+        let mut live: [Option<Arena>; MAX_ARENAS] = [None; MAX_ARENAS];
+        let mut x: u64 = 0x5AE7;
+        for _ in 0..20_000 {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            let i = (x % MAX_ARENAS as u64) as usize;
+            if let Some(arena) = live[i].take() {
+                a.free(arena.id).unwrap();
+            } else {
+                let size = PAGE_4K * (1 + (x >> 8) % 300);
+                let mut req = ArenaRequest::tensor(size, Some(BankId(((x >> 20) % 2) as u8)));
+                if (x >> 24) % 3 == 0 {
+                    req.align = PAGE_2M;
+                }
+                match a.alloc(req) {
+                    Ok(arena) => live[i] = Some(arena),
+                    Err(ArenaError::NoSpace) | Err(ArenaError::ArenaLimit) => {}
+                    Err(e) => panic!("unexpected {e:?}"),
+                }
+            }
+            let used: u64 = live.iter().flatten().map(|a| a.size).sum();
+            let free = a.free_bytes(BankId(0)) + a.free_bytes(BankId(1));
+            assert_eq!(used + free, total, "bytes conserved");
+            assert!(a.free_span_count() <= a.live_count() + banks.len());
+        }
+    }
+
+    #[test]
+    fn arena_not_owner_demo_all_ok() {
+        let r = run_arena_not_owner_demo();
+        assert!(r.handoff_ok, "kernel → tile 2 → tile 3 handoffs admit: {r:?}");
+        assert!(r.foreign_tile_refused, "non-owner tile handoff → NotOwner");
+        assert!(r.reclaim_refused, "from=None on owned arena → NotOwner");
+        assert!(r.stale_owner_refused, "previous owner after handoff → NotOwner");
+        assert!(r.freed_refused, "freed arena id → UnknownArena");
+        assert!(r.all_ok());
+    }
 
     fn mk() -> ArenaAllocator {
         ArenaAllocator::new(&[

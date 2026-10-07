@@ -8,7 +8,8 @@
 #![allow(dead_code)]
 
 use aether_core::sysnr::{
-    user_clone_pair_ok, user_mmap_ok, user_range_known, UserAccelJob, UserIpcMsg,
+    user_chunks, user_clone_pair_ok, user_mmap_ok, user_pages_ok, user_range_known, UserAccelJob,
+    UserIpcMsg,
 };
 use aether_core::CPtr;
 
@@ -69,20 +70,84 @@ pub fn copy_to_user(ptr: u64, len: u64) -> Result<(), SysError> {
     copy_from_user(ptr, len)
 }
 
+/// Visit `[ptr, ptr + len)` one 4 KiB page at a time as `(kva, off, n)`.
+/// The window check runs first, then *every* page is translated in `root`
+/// (present + USER, + writable for `write`) before `f` sees any of them,
+/// so a refused copy reads or writes nothing. Translation is per page:
+/// a straddling range never runs off the first page's frame.
+fn for_user_pages(
+    root: u64,
+    ptr: u64,
+    len: usize,
+    write: bool,
+    mut f: impl FnMut(u64, usize, usize),
+) -> Result<(), SysError> {
+    use crate::mm::paging::user_page_kva_in;
+    copy_from_user(ptr, len as u64)?;
+    user_pages_ok(ptr, len, |va| user_page_kva_in(root, va, write).is_some())
+        .map_err(|_| SysError::Fault)?;
+    for c in user_chunks(ptr, len) {
+        let kva = user_page_kva_in(root, c.va, write).ok_or(SysError::Fault)?;
+        f(kva, c.off, c.len);
+    }
+    Ok(())
+}
+
+/// Copy user bytes at `ptr` in aspace `root` (0 = live) into `out`.
+pub fn read_user_in(root: u64, ptr: u64, out: &mut [u8]) -> Result<(), SysError> {
+    let dst = out.as_mut_ptr();
+    for_user_pages(root, ptr, out.len(), false, |kva, off, n| {
+        crate::mm::paging::with_user_access(|| unsafe {
+            core::ptr::copy_nonoverlapping(kva as *const u8, dst.add(off), n);
+        });
+    })
+}
+
+/// Copy `data` to user `ptr` in aspace `root` (0 = live). All-or-nothing:
+/// a read-only or missing page anywhere in the range writes no byte.
+pub fn write_user_in(root: u64, ptr: u64, data: &[u8]) -> Result<(), SysError> {
+    for_user_pages(root, ptr, data.len(), true, |kva, off, n| {
+        crate::mm::paging::with_user_access(|| unsafe {
+            core::ptr::copy_nonoverlapping(data.as_ptr().add(off), kva as *mut u8, n);
+        });
+    })
+}
+
+// Byte offsets the copy helpers below (and `world::copy_ipc_out_in`) rely on.
+const _: () = {
+    use core::mem::{offset_of, size_of};
+    assert!(offset_of!(UserIpcMsg, flags) == 8 && offset_of!(UserIpcMsg, len) == 10);
+    assert!(offset_of!(UserIpcMsg, payload) == 12 && size_of::<UserIpcMsg>() >= 76);
+    assert!(offset_of!(UserAccelJob, a) == 16 && offset_of!(UserAccelJob, c) == 32);
+    assert!(size_of::<UserAccelJob>() == 40);
+    assert!(size_of::<aether_core::sysnr::UserCompletion>() == 12);
+};
+
 pub fn copy_user_ipc(ptr: u64) -> Result<UserIpcMsg, SysError> {
-    copy_from_user(ptr, core::mem::size_of::<UserIpcMsg>() as u64)?;
-    let kva = crate::mm::paging::user_kva(ptr).ok_or(SysError::Fault)?;
-    Ok(crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::read_volatile(kva as *const UserIpcMsg)
-    }))
+    let mut b = [0u8; core::mem::size_of::<UserIpcMsg>()];
+    read_user_in(0, ptr, &mut b)?;
+    let mut m = UserIpcMsg::empty();
+    m.badge = u64::from_ne_bytes(b[0..8].try_into().unwrap());
+    m.flags = u16::from_ne_bytes([b[8], b[9]]);
+    m.len = u16::from_ne_bytes([b[10], b[11]]);
+    m.payload.copy_from_slice(&b[12..76]);
+    Ok(m)
 }
 
 pub fn copy_user_job(ptr: u64) -> Result<UserAccelJob, SysError> {
-    copy_from_user(ptr, core::mem::size_of::<UserAccelJob>() as u64)?;
-    let kva = crate::mm::paging::user_kva(ptr).ok_or(SysError::Fault)?;
-    Ok(crate::mm::paging::with_user_access(|| unsafe {
-        core::ptr::read_volatile(kva as *const UserAccelJob)
-    }))
+    let mut b = [0u8; core::mem::size_of::<UserAccelJob>()];
+    read_user_in(0, ptr, &mut b)?;
+    let u32_at = |o: usize| u32::from_ne_bytes(b[o..o + 4].try_into().unwrap());
+    let u64_at = |o: usize| u64::from_ne_bytes(b[o..o + 8].try_into().unwrap());
+    Ok(UserAccelJob {
+        op: u32_at(0),
+        m: u32_at(4),
+        n: u32_at(8),
+        k: u32_at(12),
+        a: u64_at(16),
+        b: u64_at(24),
+        c: u64_at(32),
+    })
 }
 
 pub fn from_user_trap(frame: &mut InterruptFrame) {
@@ -108,9 +173,9 @@ pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
                 return Err(SysError::Inval);
             }
             let len = a1.min(256) as usize;
-            let kva = crate::mm::paging::user_kva(a0).ok_or(SysError::Fault)?;
-            let slice = unsafe { core::slice::from_raw_parts(kva as *const u8, len) };
-            debug_print(slice);
+            let mut buf = [0u8; 256];
+            read_user_in(0, a0, &mut buf[..len])?;
+            debug_print(&buf[..len]);
             Ok(0)
         }
         SYS_YIELD => {
@@ -135,13 +200,9 @@ fn dispatch_trap(
 ) -> Result<u64, SysError> {
     match nr {
         SYS_DEBUG_PRINT => {
-            copy_from_user(a0, a1.min(256))?;
             let len = a1.min(256) as usize;
             let mut buf = [0u8; 256];
-            let kva = crate::mm::paging::user_kva(a0).ok_or(SysError::Fault)?;
-            crate::mm::paging::with_user_access(|| unsafe {
-                core::ptr::copy_nonoverlapping(kva as *const u8, buf.as_mut_ptr(), len);
-            });
+            read_user_in(0, a0, &mut buf[..len])?;
             debug_print(&buf[..len]);
             Ok(0)
         }

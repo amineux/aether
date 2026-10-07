@@ -298,10 +298,134 @@ impl Default for Fabric {
     }
 }
 
+/// Host red-team report for fabric endpoint flood refuse.
+///
+/// Sell line `[redteam] attack=fabric-queue-full` — existing [`Fabric::send`]
+/// gate only. A sender that floods one endpoint past [`MAX_QUEUE`] is refused
+/// as [`FabricError::QueueFull`]; a send to a closed endpoint is refused as
+/// [`FabricError::Closed`]. Both gates run **before** Hodge admit, so a refused
+/// send enqueues nothing and burns no Hodge quota. The Hodge quota is
+/// per-fabric (shared), not per-tenant; this clip claims endpoint
+/// back-pressure only. **Not** hodge-quota (`QuotaExceeded`) / Hodge
+/// policy / CapTable; no new opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricQueueFullReport {
+    /// Control: `MAX_QUEUE` sends to one endpoint all admit.
+    pub fill_ok: bool,
+    /// Send `MAX_QUEUE + 1` → `QueueFull`; pending stays `MAX_QUEUE`.
+    pub flood_refused: bool,
+    /// Refused sends burn no Hodge quota (exactly `MAX_QUEUE` charged).
+    pub no_quota_burn: bool,
+    /// A neighbor endpoint still admits while the flooded one is full.
+    pub neighbor_ok: bool,
+    /// Drain one message → the next send admits again (back-pressure, not wedge).
+    pub drain_readmits: bool,
+    /// Closed endpoint → `Closed`; nothing enqueued, no quota charged.
+    pub closed_refused: bool,
+}
+
+impl FabricQueueFullReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok
+            && self.flood_refused
+            && self.no_quota_burn
+            && self.neighbor_ok
+            && self.drain_readmits
+            && self.closed_refused
+    }
+}
+
+fn flood_msg(dest: EndpointId, tenant: TenantId) -> Option<Message> {
+    Message::new(
+        dest,
+        0,
+        MsgFlags(MsgFlags::ASYNC),
+        ChipletRoute::LOCAL,
+        tenant,
+        b"flood",
+    )
+    .ok()
+}
+
+/// Endpoint flood → [`FabricError::QueueFull`]; closed endpoint →
+/// [`FabricError::Closed`]. Refused sends charge no Hodge quota.
+pub fn run_fabric_queue_full_demo() -> FabricQueueFullReport {
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let mut f = Fabric::new();
+    let (Ok(victim), Ok(neighbor), Ok(shut)) = (
+        f.create_endpoint(a),
+        f.create_endpoint(b),
+        f.create_endpoint(a),
+    ) else {
+        return FabricQueueFullReport {
+            fill_ok: false,
+            flood_refused: false,
+            no_quota_burn: false,
+            neighbor_ok: false,
+            drain_readmits: false,
+            closed_refused: false,
+        };
+    };
+    let flow = FlowClass::Gradient;
+    let start = f.hodge.remain(flow);
+
+    let mut fill_ok = true;
+    for _ in 0..MAX_QUEUE {
+        fill_ok &= flood_msg(victim, b).map(|m| f.send(m)) == Some(Ok(()));
+    }
+    fill_ok &= f.pending(victim) == Ok(MAX_QUEUE);
+    let after_fill = f.hodge.remain(flow);
+
+    let mut flood_refused = true;
+    for _ in 0..3 {
+        flood_refused &=
+            flood_msg(victim, b).map(|m| f.send(m)) == Some(Err(FabricError::QueueFull));
+    }
+    flood_refused &= f.pending(victim) == Ok(MAX_QUEUE);
+    let no_quota_burn =
+        after_fill + MAX_QUEUE as u32 == start && f.hodge.remain(flow) == after_fill;
+
+    let neighbor_ok = flood_msg(neighbor, a).map(|m| f.send(m)) == Some(Ok(()))
+        && f.pending(neighbor) == Ok(1);
+
+    let drained = f.recv(victim).is_ok();
+    let drain_readmits = drained
+        && flood_msg(victim, b).map(|m| f.send(m)) == Some(Ok(()))
+        && f.pending(victim) == Ok(MAX_QUEUE);
+
+    let before_close = f.hodge.remain(flow);
+    let closed_refused = f.close(shut).is_ok()
+        && flood_msg(shut, b).map(|m| f.send(m)) == Some(Err(FabricError::Closed))
+        && f.pending(shut) == Ok(0)
+        && f.hodge.remain(flow) == before_close;
+
+    FabricQueueFullReport {
+        fill_ok,
+        flood_refused,
+        no_quota_burn,
+        neighbor_ok,
+        drain_readmits,
+        closed_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::caps::{CapKind, CapRights};
+
+    #[test]
+    fn fabric_queue_full_demo_all_ok() {
+        let r = run_fabric_queue_full_demo();
+        assert!(r.fill_ok, "MAX_QUEUE sends admit: {r:?}");
+        assert!(r.flood_refused, "send past MAX_QUEUE → QueueFull");
+        assert!(r.no_quota_burn, "refused sends charge no Hodge quota");
+        assert!(r.neighbor_ok, "neighbor endpoint still admits");
+        assert!(r.drain_readmits, "drain one → next send admits");
+        assert!(r.closed_refused, "closed endpoint → Closed, nothing enqueued");
+        assert!(r.all_ok());
+    }
 
     #[test]
     fn send_recv_roundtrip() {

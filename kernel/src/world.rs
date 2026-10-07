@@ -249,21 +249,17 @@ fn copy_ipc_out_in(
     flags: u16,
     payload: &[u8],
 ) -> Result<(), SysError> {
-    crate::syscall::copy_to_user(dst, core::mem::size_of::<UserIpcMsg>() as u64)?;
     let mut m = UserIpcMsg::empty();
     m.badge = badge;
     m.flags = flags;
     let _ = m.set_payload(payload);
-    let kva = if root != 0 {
-        paging::user_kva_in(root, dst)
-    } else {
-        paging::user_kva(dst)
-    }
-    .ok_or(SysError::Fault)?;
-    paging::with_user_access(|| unsafe {
-        core::ptr::write_volatile(kva as *mut UserIpcMsg, m);
-    });
-    Ok(())
+    // Field-wise bytes: padding goes out as zeros, never kernel stack.
+    let mut b = [0u8; core::mem::size_of::<UserIpcMsg>()];
+    b[0..8].copy_from_slice(&m.badge.to_ne_bytes());
+    b[8..10].copy_from_slice(&m.flags.to_ne_bytes());
+    b[10..12].copy_from_slice(&m.len.to_ne_bytes());
+    b[12..76].copy_from_slice(&m.payload);
+    crate::syscall::write_user_in(root, dst, &b)
 }
 
 fn write_user_completion(dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
@@ -271,17 +267,11 @@ fn write_user_completion(dst: u64, cpl: UserCompletion) -> Result<(), SysError> 
 }
 
 fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<(), SysError> {
-    crate::syscall::copy_to_user(dst, core::mem::size_of::<UserCompletion>() as u64)?;
-    let kva = if root != 0 {
-        paging::user_kva_in(root, dst)
-    } else {
-        paging::user_kva(dst)
-    }
-    .ok_or(SysError::Fault)?;
-    paging::with_user_access(|| unsafe {
-        core::ptr::write_volatile(kva as *mut UserCompletion, cpl);
-    });
-    Ok(())
+    let mut b = [0u8; core::mem::size_of::<UserCompletion>()];
+    b[0..4].copy_from_slice(&cpl.job_seq.to_ne_bytes());
+    b[4..8].copy_from_slice(&cpl.status.to_ne_bytes());
+    b[8..12].copy_from_slice(&cpl.cycles.to_ne_bytes());
+    crate::syscall::write_user_in(root, dst, &b)
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
@@ -355,7 +345,11 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
             .filter(|a| a.id.0 == cap.object)
             .ok_or(SysError::Inval)
     })?;
-    let va = if vaddr == 0 { arena.base.0 } else { vaddr };
+    // The pinned physical address is derived only from the caller's own
+    // arena capability. A caller-supplied address other than the arena's
+    // own base is refused (would otherwise pin — and on x86 user-map —
+    // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
+    let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
     let iova = with(|w| {
         w.npu
             .map_with_cap(&cap, MapRequest::pin(PhysAddr(va), arena.size))

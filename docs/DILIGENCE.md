@@ -367,6 +367,9 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Foreign tenant Compute wave | `run_foreign_tenant_color_demo` — `admit_wave` → `ColorError::ForeignTenant` (Exchange still OK). Not ForeignBank / bank-color or Uncolored / uncolored-compute | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Wait before fence retire | `run_fence_not_ready_demo` — `Timeline::wait` → `PartitionError::FenceNotReady` (issued-but-not-retired; complete then wait OK). Not CreditExhausted / qos-credits; timeout-frees stays in qos demo | refused |
+| Full arena table | `run_arena_limit_leak_demo` — `ArenaAllocator::alloc` → `ArenaError::ArenaLimit` when every arena slot is in use, checked before any free span is split; free bytes and free spans unchanged across repeated refusals (Round 21 fix: this path used to return `NoSpace` and lose the split span, reachable from `SYS_ARENA_ALLOC`). Not arena-not-owner / bank-color; software allocator only | refused |
+| User copy past a mapped page | `run_user_copy_straddle_demo` — `sysnr::user_chunks` splits a user range at 4 KiB and `sysnr::user_pages_ok` refuses it if any page is unmapped (8 mapped + 8 unmapped bytes → refused, naming the unmapped page; wrap refused; mapped straddles pass). The kernel's `read_user_in` / `write_user_in` run this gate, then translate each page on its own (Round 21 fix: only the first page was translated, so an x86 copy ran into the next physical frame and RISC-V / aarch64 took a kernel fault on an unmapped tail). QEMU `/init` checks the same on all three arches. Not a new syscall or struct; not SMAP/PAN hardening | refused |
+| SYS_MAP caller-supplied physical address | `run_map_user_phys_demo` — `sysnr::map_pin_addr` derives the pinned physical address only from the caller's own arena capability base: `vaddr == 0` (or the arena's own base) pins the arena base; any other caller-supplied address — a kernel load address or a foreign arena — is refused with `SysError::Inval`, so a tenant cannot pin and (on x86, via `allow_user_2m`) user-map arbitrary physical memory. The kernel's `sys_map` runs the same gate; QEMU `/init` checks it on all three arches. Not a new syscall number / struct / enum variant | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 | TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
@@ -410,12 +413,17 @@ Expected stdout (CI greps these):
 [redteam] attack=qos-credits result=refused
 [redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
+[redteam] attack=arena-not-owner result=refused
+[redteam] attack=arena-limit-leak result=refused
+[redteam] attack=user-copy-straddle result=refused
+[redteam] attack=map-user-phys result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=space-not-mappable result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=set-sid-unbound result=refused
+[redteam] attack=kv-insufficient-rights result=refused
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
@@ -424,6 +432,7 @@ Expected stdout (CI greps these):
 [redteam] attack=hodge-harmonic-tree result=refused
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=hodge-quota result=refused
+[redteam] attack=fabric-queue-full result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused
@@ -473,6 +482,34 @@ Expected stdout (CI greps these):
 SoftGreenCtx (not in this clip) is not HW MIG; this clip does not claim
 MIG either. Soft SMMU is software — a real device can still DMA past it.
 No FLOPs, no fake NVIDIA, no tape-out.
+
+### Two-tenant inference isolation (host)
+
+`make two-tenant-infer` (`examples/red-team/examples/two_tenant_infer/`).
+Tenants A and B each run a tiny i32 MLP (`Wave` → `Relu` → `MatMul` →
+`Add` → `Max`; existing SoftNpu ops only) on one shared `SoftNpu`. Every
+tensor address is a Soft-SMMU IOVA resolved per job after `set_sid`, in
+an arena mapped with that tenant's own Memory+MAP cap. Between layers,
+tenant C runs 9 named attacks through existing refuse paths: checked
+cross-tenant unmap (`unmap_for` → `CrossTenant`), bind / `SET_SID` of A's
+SID (`CrossTenant`), submit on the wrong SID and DMA read / write at A's
+IOVAs (`WrongStream`), A's arena (`NotOwner`), a user copy straddling into
+an unmapped page (`user_pages_ok`), and a wrong-class opkernel admit
+(`ClassMismatch`). An attack counts as refused only if it returns that
+named error and A's and B's arena bytes, translations and owners are
+unchanged. A and B outputs must equal a plain-Rust CPU reference, be
+byte-identical across two runs, and equal an attacker-free run. The
+target runs the demo twice, compares the logs byte for byte, and greps:
+
+```text
+[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true
+```
+
+The demo uses the checked `unmap_for` and does not rely on `unmap` /
+`unmap_stream` (issue #161). A negative-control test hands C a leaked
+copy of A's cap: the unmap succeeds, A's next layer fails, and the
+summary goes red. Host software model only: not hardware isolation, not
+MIG, no performance numbers.
 
 ## Non-claims
 
@@ -553,3 +590,53 @@ IREE HAL research stand-in (not a partner):
 `make design-win-standin`.
 Partner landing page: [PARTNER.md](PARTNER.md). One-page sell pack:
 [SELL_PACK.md](SELL_PACK.md). This is still not a signed vendor.
+
+## Pre-silicon tenant-isolation conformance kit (use case B)
+
+A chip team describes its backend — command/stream format, accelerator,
+SMMU, fabric — by implementing the small `IsolationBackend` trait
+(`examples/isolation-kit`). The kit runs Aether's existing named attack
+classes against that backend and prints a per-backend matrix of **attack
+class → refused / ACCEPTED / n/a**, plus a one-line summary. The kit adds
+no isolation mechanism of its own: the reference adapter wires each class to
+the library demo that already drives the Soft\* refuse path, so the matrix
+only reports what the frozen code does.
+
+Run it with `make isolation-matrix` (or `cargo run --manifest-path
+examples/isolation-kit/Cargo.toml`). The crate is its own workspace, so it
+needs no entry in the root `Cargo.toml`.
+
+Two adapters ship:
+
+- `aether-soft` — the reference backend. It refuses every applicable class,
+  so its summary reads `result=conformant` with `accepted=0`. This is the
+  conformance baseline.
+- `weak-sample-example-only` — a deliberately weak teaching stub (not a real
+  backend and not any third party) that checks arena ownership and job
+  shapes but trusts caller-supplied addresses and streams and never bounds
+  the fabric. Its matrix shows real accepts (`result=NONCONFORMANT`), which
+  is how the kit proves it can fail rather than always passing.
+
+Expected summary lines (`make isolation-matrix` greps the first two):
+
+```
+[isolation-kit] backend=aether-soft classes=12 applicable=12 refused=12 accepted=0 n/a=0 result=conformant
+[isolation-kit] backend=weak-sample-example-only classes=12 applicable=11 refused=4 accepted=7 n/a=1 result=NONCONFORMANT
+```
+
+Scope: host software checks only. Not certification, not a partner or
+customer result, not hardware isolation, and no performance claim.
+
+**How this complements the eval harnesses.** It is deliberately separate
+from the other evaluation work so it does not duplicate it. The
+`aether-eval-run` crate (PR #189) is a single-backend, host-only evaluation
+report (SoftGreenCtx workload plus a fixed list of named refusals); this kit
+generalises the "named refusal" idea into a *multi-backend* conformance
+matrix keyed on a backend-descriptor trait, so a partner can score their own
+adapter. Codex's runtime-eval toolkit (PR #193) measures invocation latency
+on a CPU device and explicitly marks isolation "unsupported"; this kit fills
+exactly that axis. The one-line `[isolation-kit] …` summary is stable and
+grep-able on purpose: it can later be registered as one more evidence check
+(for example a `COMMANDS` entry feeding `scripts/investor_report.py` from PR
+#190) without changing the kit — wiring that is left to the owners of
+`scripts/collect_evidence.py` and `ci.yml`.

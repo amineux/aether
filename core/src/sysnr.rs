@@ -256,9 +256,246 @@ pub fn user_clone_pair_ok(entry: u64, stack: u64) -> bool {
     })
 }
 
+/// User copies are split at this size; each piece gets its own translation.
+pub const USER_PAGE: u64 = 0x1000;
+
+/// One page-bounded piece of a user copy: `[va, va + len)` sits inside a
+/// single 4 KiB page and is bytes `[off, off + len)` of the kernel buffer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UserChunk {
+    pub va: u64,
+    pub off: usize,
+    pub len: usize,
+}
+
+/// Iterator from [`user_chunks`].
+#[derive(Clone, Copy, Debug)]
+pub struct UserChunks {
+    ptr: u64,
+    len: usize,
+    off: usize,
+}
+
+/// Split `[ptr, ptr + len)` at 4 KiB boundaries. A range that wraps the
+/// address space yields nothing; [`user_pages_ok`] refuses it.
+pub fn user_chunks(ptr: u64, len: usize) -> UserChunks {
+    let len = if ptr.checked_add(len as u64).is_some() {
+        len
+    } else {
+        0
+    };
+    UserChunks { ptr, len, off: 0 }
+}
+
+impl Iterator for UserChunks {
+    type Item = UserChunk;
+
+    fn next(&mut self) -> Option<UserChunk> {
+        if self.off >= self.len {
+            return None;
+        }
+        let va = self.ptr + self.off as u64;
+        let room = (USER_PAGE - (va & (USER_PAGE - 1))) as usize;
+        let n = (self.len - self.off).min(room);
+        let c = UserChunk {
+            va,
+            off: self.off,
+            len: n,
+        };
+        self.off += n;
+        Some(c)
+    }
+}
+
+/// Pre-copy gate for a user range: `Ok` only if it does not wrap and
+/// `page_ok` accepts the page of every byte (first, middle and last).
+/// `Err` names the first refused page base (or `ptr` on wrap). The kernel
+/// runs this before moving any byte, so a refused copy moves nothing.
+pub fn user_pages_ok(
+    ptr: u64,
+    len: usize,
+    mut page_ok: impl FnMut(u64) -> bool,
+) -> Result<(), u64> {
+    if ptr.checked_add(len as u64).is_none() {
+        return Err(ptr);
+    }
+    for c in user_chunks(ptr, len) {
+        if !page_ok(c.va) {
+            return Err(c.va & !(USER_PAGE - 1));
+        }
+    }
+    Ok(())
+}
+
+/// Host clip for the kernel's page-crossing user copy: two mapped pages
+/// at the x86 `SYS_MMAP` base, the third unmapped.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UserCopyStraddleReport {
+    /// 32 B across the boundary splits into 16 + 16 at the right offsets.
+    pub straddle_splits_per_page: bool,
+    /// Sweep: every chunk stays in one page; pieces tile the buffer.
+    pub chunks_tile_and_stay_in_page: bool,
+    /// A first-page-only check would accept the hole-tail range.
+    pub first_page_check_would_pass: bool,
+    /// 8 mapped + 8 unmapped bytes: refused, naming the unmapped page.
+    pub tail_hole_refused: bool,
+    /// Range that wraps the address space: refused.
+    pub wrap_refused: bool,
+    /// In-page and two-mapped-page ranges still pass.
+    pub mapped_ranges_pass: bool,
+}
+
+impl UserCopyStraddleReport {
+    pub fn all_ok(&self) -> bool {
+        self.straddle_splits_per_page
+            && self.chunks_tile_and_stay_in_page
+            && self.first_page_check_would_pass
+            && self.tail_hole_refused
+            && self.wrap_refused
+            && self.mapped_ranges_pass
+    }
+}
+
+pub fn run_user_copy_straddle_demo() -> UserCopyStraddleReport {
+    let base = USER_MMAP_BASE;
+    let mapped = |va: u64| va >= base && va < base + 2 * USER_PAGE;
+
+    let mut it = user_chunks(base + USER_PAGE - 16, 32);
+    let straddle_splits_per_page = it.next()
+        == Some(UserChunk {
+            va: base + USER_PAGE - 16,
+            off: 0,
+            len: 16,
+        })
+        && it.next()
+            == Some(UserChunk {
+                va: base + USER_PAGE,
+                off: 16,
+                len: 16,
+            })
+        && it.next().is_none();
+
+    let mut chunks_tile_and_stay_in_page = true;
+    for start in [0u64, 1, 8, 4000, 4095, 4096, 8191] {
+        for len in [0usize, 1, 15, 16, 96, 4096, 4097, 9000] {
+            let mut next_off = 0usize;
+            for c in user_chunks(base + start, len) {
+                let last = c.va + c.len as u64 - 1;
+                chunks_tile_and_stay_in_page &= c.len > 0
+                    && c.off == next_off
+                    && c.va == base + start + c.off as u64
+                    && c.va / USER_PAGE == last / USER_PAGE;
+                next_off += c.len;
+            }
+            chunks_tile_and_stay_in_page &= next_off == len;
+        }
+    }
+
+    let hole = base + 2 * USER_PAGE - 8;
+    let first_page_check_would_pass = mapped(hole);
+    let tail_hole_refused = user_pages_ok(hole, 16, mapped) == Err(base + 2 * USER_PAGE);
+    let wrap_refused = user_pages_ok(u64::MAX - 4, 16, |_| true) == Err(u64::MAX - 4);
+    let mapped_ranges_pass = user_pages_ok(base + 8, 64, mapped).is_ok()
+        && user_pages_ok(base + USER_PAGE - 16, 32, mapped).is_ok()
+        && user_pages_ok(base, 2 * USER_PAGE as usize, mapped).is_ok()
+        && user_pages_ok(base, 0, |_| false).is_ok();
+
+    UserCopyStraddleReport {
+        straddle_splits_per_page,
+        chunks_tile_and_stay_in_page,
+        first_page_check_would_pass,
+        tail_hole_refused,
+        wrap_refused,
+        mapped_ranges_pass,
+    }
+}
+
+/// Physical pin address for `SYS_MAP`. The address a tenant's arena is
+/// pinned at is derived only from the arena capability's own `base`, never
+/// from the caller. `vaddr == 0` means "use the arena base"; a caller that
+/// names the arena's own base resolves to that same cap-derived address.
+/// Any other `vaddr` is refused (`None`): without this a tenant could name
+/// an arbitrary physical address to pin and, on x86, user-map (e.g. kernel
+/// text). The ring-3 ABI arg is unchanged — no new syscall number or struct.
+pub fn map_pin_addr(arena_base: u64, vaddr: u64) -> Option<u64> {
+    if vaddr == 0 || vaddr == arena_base {
+        Some(arena_base)
+    } else {
+        None
+    }
+}
+
+/// Host clip for the `SYS_MAP` physical-address source check: the pinned
+/// address must come from the caller's own arena capability, not a value the
+/// caller supplies. Same gate the kernel's `sys_map` runs via [`map_pin_addr`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MapUserPhysReport {
+    /// `vaddr == 0` pins the arena's own base.
+    pub default_uses_arena_base: bool,
+    /// Naming the arena's own base resolves to that same base.
+    pub same_base_accepted: bool,
+    /// A caller-supplied kernel physical address is refused.
+    pub kernel_phys_refused: bool,
+    /// A caller-supplied foreign-arena address is refused.
+    pub foreign_arena_refused: bool,
+    /// No accepted result is ever the caller's supplied address.
+    pub never_returns_caller_addr: bool,
+}
+
+impl MapUserPhysReport {
+    pub fn all_ok(&self) -> bool {
+        self.default_uses_arena_base
+            && self.same_base_accepted
+            && self.kernel_phys_refused
+            && self.foreign_arena_refused
+            && self.never_returns_caller_addr
+    }
+}
+
+/// `vaddr == 0` (or the arena's own base) pins the arena base; any other
+/// caller-supplied physical address — a kernel load address or a foreign
+/// arena — is refused. The kernel's `sys_map` calls [`map_pin_addr`] for
+/// exactly this gate before it pins or (on x86) user-maps.
+pub fn run_map_user_phys_demo() -> MapUserPhysReport {
+    let arena_base = 0x0100_0000u64;
+    // Physical addresses a tenant must never be able to name: the x86,
+    // RISC-V and aarch64 kernel load addresses, and a foreign arena.
+    let kernel_phys = [0x0040_0000u64, 0x8020_0000, 0x4008_0000];
+    let foreign_arena = arena_base + 0x20_0000;
+
+    let default_uses_arena_base = map_pin_addr(arena_base, 0) == Some(arena_base);
+    let same_base_accepted = map_pin_addr(arena_base, arena_base) == Some(arena_base);
+    let kernel_phys_refused = kernel_phys
+        .iter()
+        .all(|&pa| map_pin_addr(arena_base, pa).is_none());
+    let foreign_arena_refused = map_pin_addr(arena_base, foreign_arena).is_none();
+    let never_returns_caller_addr = kernel_phys
+        .iter()
+        .chain(core::iter::once(&foreign_arena))
+        .all(|&pa| map_pin_addr(arena_base, pa).map_or(true, |got| got == arena_base));
+
+    MapUserPhysReport {
+        default_uses_arena_base,
+        same_base_accepted,
+        kernel_phys_refused,
+        foreign_arena_refused,
+        never_returns_caller_addr,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn map_pin_addr_only_from_arena_cap() {
+        let base = 0x0100_0000u64;
+        assert_eq!(map_pin_addr(base, 0), Some(base));
+        assert_eq!(map_pin_addr(base, base), Some(base));
+        assert_eq!(map_pin_addr(base, 0x0040_0000), None);
+        assert_eq!(map_pin_addr(base, base + 0x20_0000), None);
+        assert!(run_map_user_phys_demo().all_ok());
+    }
 
     #[test]
     fn numbers_match_historical_abi() {
@@ -370,5 +607,29 @@ mod tests {
         assert!(m.set_payload(b"ping-fabric"));
         assert_eq!(m.payload(), b"ping-fabric");
         assert!(!m.set_payload(&[0u8; 65]));
+    }
+
+    #[test]
+    fn user_copy_straddle_demo_all_ok() {
+        let r = run_user_copy_straddle_demo();
+        assert!(r.all_ok(), "{r:?}");
+    }
+
+    #[test]
+    fn user_pages_ok_checks_every_page_not_just_first() {
+        let base = USER_MMAP_BASE;
+        let mut seen = [0u64; 4];
+        let mut n = 0;
+        let r = user_pages_ok(base + 100, 3 * USER_PAGE as usize, |va| {
+            seen[n] = va;
+            n += 1;
+            true
+        });
+        assert_eq!(r, Ok(()));
+        assert_eq!(n, 4);
+        assert_eq!(seen, [base + 100, base + USER_PAGE, base + 2 * USER_PAGE, base + 3 * USER_PAGE]);
+        // Hole in the middle page of three.
+        let mid = |va: u64| va / USER_PAGE != (base + USER_PAGE) / USER_PAGE;
+        assert_eq!(user_pages_ok(base + 100, 2 * USER_PAGE as usize, mid), Err(base + USER_PAGE));
     }
 }
