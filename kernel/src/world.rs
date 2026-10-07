@@ -275,9 +275,10 @@ fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Endpoint, CapRights::WRITE)
+            .require(cptr, CapKind::Endpoint, CapRights::WRITE)
             .map(|c| (c.object, c.badge))
             .map_err(|_| SysError::NoCap)
     })?;
@@ -312,9 +313,10 @@ pub fn sys_recv(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let object = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Endpoint, CapRights::READ)
+            .require(cptr, CapKind::Endpoint, CapRights::READ)
             .map(|c| c.object)
             .map_err(|_| SysError::NoCap)
     })?;
@@ -334,9 +336,10 @@ pub fn sys_recv(
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Memory, CapRights::MAP)
+            .require(cptr, CapKind::Memory, CapRights::MAP)
             .copied()
             .map_err(|_| SysError::NoCap)
     })?;
@@ -377,11 +380,9 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     if size == 0 || size > 64 * 1024 {
         return Err(SysError::Inval);
     }
-    let pref = if bank == 0 {
-        Some(BankId(0))
-    } else {
-        Some(BankId(bank as u8))
-    };
+    // Reject out-of-width values rather than silently selecting bank 0 for 256.
+    let bank = u8::try_from(bank).map_err(|_| SysError::Inval)?;
+    let pref = Some(BankId(bank));
     let arena = with(|w| {
         w.arenas
             .alloc(ArenaRequest::tensor(size, pref).for_tenant(TenantId(1)))
@@ -413,9 +414,10 @@ fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::AccelQueue, CapRights::SUBMIT)
+            .require(cptr, CapKind::AccelQueue, CapRights::SUBMIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
     })?;
@@ -478,9 +480,10 @@ pub fn sys_accel_wait(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::AccelQueue, CapRights::WAIT)
+            .require(cptr, CapKind::AccelQueue, CapRights::WAIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
     })?;

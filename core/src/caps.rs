@@ -21,6 +21,18 @@ pub const CAP_SLOTS: usize = 32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CPtr(pub u16);
 
+impl TryFrom<u64> for CPtr {
+    type Error = CapError;
+
+    /// Decode the full syscall argument before consulting a capability table.
+    /// A truncating cast would alias `(1 << 16) | slot` to `slot`.
+    fn try_from(raw: u64) -> Result<Self, Self::Error> {
+        u16::try_from(raw)
+            .map(Self)
+            .map_err(|_| CapError::InvalidCptr)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CapKind {
@@ -409,6 +421,31 @@ impl CapTable {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn syscall_cptr_rejects_high_bits_without_aliasing_live_slots() {
+        let mut table = super::CapTable::new(crate::types::TenantId(1));
+        let slot = table.mint(super::Capability::new(
+            super::CapKind::Endpoint, super::CapRights::EP_FULL, 7,
+            crate::types::TenantId(1),
+        )).unwrap();
+        assert!(table.require(slot, super::CapKind::Endpoint, super::CapRights::WRITE).is_ok());
+        for shift in 16..64 {
+            let raw = (1u64 << shift) | u64::from(slot.0);
+            assert_eq!(super::CPtr::try_from(raw), Err(super::CapError::InvalidCptr));
+        }
+        assert_eq!(super::CPtr::try_from(u64::MAX), Err(super::CapError::InvalidCptr));
+        // Rejection did not revoke, consume or mutate the genuine capability.
+        assert!(table.require(slot, super::CapKind::Endpoint, super::CapRights::WRITE).is_ok());
+    }
+
+    #[test]
+    fn syscall_cptr_preserves_width_and_table_checks() {
+        assert_eq!(super::CPtr::try_from(0), Ok(super::CPtr(0)));
+        assert_eq!(super::CPtr::try_from(u16::MAX as u64), Ok(super::CPtr(u16::MAX)));
+        let table = super::CapTable::new(crate::types::TenantId(1));
+        assert_eq!(table.lookup(super::CPtr::try_from(u16::MAX as u64).unwrap()), Err(super::CapError::InvalidCptr));
+    }
+
     use super::*;
 
     fn mem_cap(obj: u32, tenant: TenantId) -> Capability {
