@@ -46,6 +46,12 @@ not BAR0 / SoftNPU).
 SET_SID unbound needle: `[redteam] attack=set-sid-unbound result=refused`
 (Soft-CP `set_sid` / submit without Bound SID → `HalError::Fault`; SID-at-submit
 `StreamAbort` foundation; not xqueue-sid-override / PASID).
+KV-insufficient-rights needle: `[redteam] attack=kv-insufficient-rights result=refused`
+(`attend` / `pin_kv`: a same-tenant KV cap derived without READ cannot read-attend a token, and a cap
+without MAP (or a non-Memory cap naming the KV object) cannot pin the page for DMA →
+`KvError::InsufficientRights`; the refused pin installs no Soft-SMMU translation for its SID and only
+the READ|MAP control pin stays mapped; rights come from the cap, not the caller; not kv `write`
+(`WouldWrite`) / `regrant` / `weights` / `oob` / `forge` / `wrong-sid`; Soft SMMU is software; no new opcodes).
 Submit-sid needle: `[redteam] attack=submit-sid result=refused`
 (Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid`; walk still OK;
 not set-sid-unbound / SidBudget / PASID).
