@@ -675,7 +675,7 @@ those can happen there.
 | `unmap_for_cross_tenant_leaves_region` | another tenant can never unmap a region; the region and the owner's translations are unchanged | one 4 KiB region of tenant 1; attacker tenant 2 with any rights / object; unmap IOVA over all of `u64` |
 | `map_on_foreign_stream_refused` | a tenant cannot pin anything on a stream another tenant owns (`CrossTenant`, table unchanged) | stream bound by tenant 1; attacker tenant 2 with full Memory+MAP; any guest PA, `len <= 16 KiB` |
 | `arena_limit_refuses_and_conserves` | with all 16 arena slots used, the next alloc is `ArenaLimit` and no free byte or span is lost (the #199 fix) | 16 one-page arenas; probe size `[1, 4 KiB]` |
-| `arena_alloc_then_free_conserves_bytes` | alloc then free restores the bank's free bytes exactly (no leak) | empty allocator; size `[1, 4 KiB]` |
+| `arena_free_any_order_conserves_bytes` | every `free` returns exactly that arena's bytes, and after all frees the bank's free bytes equal the start and the free list re-coalesces to one span (no leak, any free order) | three live arenas (1, 2, 1 pages; tenants 1, 2, 3); all 6 free orders |
 | `arena_alloc_never_overlaps_live_arena` | a new allocation never overlaps another tenant's live arena, stays inside the bank, and leaves that arena byte-identical | one live arena of tenant 2; tenant 1 asks for `[1, 8 KiB]` |
 | `arena_op_does_not_touch_other_tenant` | an ownership handoff on one arena never changes another tenant's arena | two live arenas; tiles and tenant `< 4` |
 | `arena_free_does_not_touch_other_tenant` | freeing any other arena id leaves tenant 2's arena live and byte-identical | two live arenas; ids `< 8` |

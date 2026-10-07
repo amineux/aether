@@ -41,22 +41,42 @@ fn arena_limit_refuses_and_conserves() {
     assert!(a.live_count() == MAX_ARENAS);
 }
 
-/// Bound: empty allocator; one symbolic allocation of size in `[1, PAGE_4K]`.
+/// Bound: three live arenas (1, 2 and 1 pages, tenants 1, 2, 3) carved from
+/// one bank; they are then freed in a symbolic order (all 6 permutations).
 ///
-/// Property (no leak): if an allocation succeeds, freeing it restores the
-/// bank's free byte count exactly — alloc-then-free never loses a byte.
+/// Property (no leak, any free order): every `free` returns exactly that
+/// arena's bytes to the bank, and after all three the bank's free byte count
+/// equals the starting total and the free list has re-coalesced to a single
+/// span. Coalescing never drops or double-counts a byte whatever the order.
 #[kani::proof]
 #[kani::unwind(26)]
-fn arena_alloc_then_free_conserves_bytes() {
+fn arena_free_any_order_conserves_bytes() {
     let mut a = fresh();
     let total = a.free_bytes(BankId(0));
-    let size: u64 = kani::any();
-    kani::assume(size >= 1 && size <= PAGE_4K);
-    if let Ok(ar) = a.alloc(ArenaRequest::tensor(size, Some(BankId(0))).for_tenant(TenantId(1))) {
-        assert!(a.free_bytes(BankId(0)) <= total);
+    let x = a.alloc(one_page(1)).unwrap();
+    let y = a
+        .alloc(ArenaRequest::tensor(2 * PAGE_4K, Some(BankId(0))).for_tenant(TenantId(2)))
+        .unwrap();
+    let z = a.alloc(one_page(3)).unwrap();
+    assert!(a.free_bytes(BankId(0)) == total - 4 * PAGE_4K);
+    let order: u8 = kani::any();
+    kani::assume(order < 6);
+    let seq = match order {
+        0 => [x, y, z],
+        1 => [x, z, y],
+        2 => [y, x, z],
+        3 => [y, z, x],
+        4 => [z, x, y],
+        _ => [z, y, x],
+    };
+    for ar in seq {
+        let before = a.free_bytes(BankId(0));
         assert!(a.free(ar.id).is_ok());
-        assert!(a.free_bytes(BankId(0)) == total);
+        assert!(a.free_bytes(BankId(0)) == before + ar.size);
     }
+    assert!(a.free_bytes(BankId(0)) == total);
+    assert!(a.free_span_count() == 1);
+    assert!(a.live_count() == 0);
 }
 
 /// Bound: two live arenas (tenants 1 and 2); one symbolic `transfer_owner`
