@@ -558,7 +558,20 @@ impl World {
             2 => {
                 let iova = PhysAddr(self.pick_addr(rng));
                 if ctl == Control::UncheckedUnmap {
-                    self.iommu.unmap(iova).is_ok()
+                    // No tenant check: the kernel unmaps whatever region
+                    // the IOVA hits, on its owner's authority.
+                    match self.iommu.region_at_iova(iova).copied() {
+                        Some(r) => {
+                            let owner = Capability::new(
+                                CapKind::Memory,
+                                CapRights(CapRights::MAP),
+                                r.object,
+                                r.tenant,
+                            );
+                            self.iommu.unmap_for(&owner, iova).is_ok()
+                        }
+                        None => false,
+                    }
                 } else {
                     match self.c_cap(rng, ctl) {
                         Some(cap) => self.iommu.unmap_for(&cap, iova).is_ok(),
