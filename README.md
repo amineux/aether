@@ -395,6 +395,15 @@ Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
 
+## External runtime evaluation
+
+The [installable evaluation toolkit](tools/runtime-eval/README.md) compiles and
+runs two workloads through the real IREE CPU runtime, measures them alone and
+together, checks correctness and input rejection, and saves exact binaries and
+inputs for replay. It runs on Linux with Python 3.12+ and needs no Rust, QEMU or
+accelerator hardware. This is an external-runtime measurement adapter; it does
+not connect IREE to the Aether kernel or establish hardware isolation.
+
 ## Website
 
 The public site lives in [`site/`](site/) (HTML/CSS/JS, no build step) and

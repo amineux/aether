@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aether-runtime-eval"
+version = "0.1.0"
+readme = "README.md"
+description = "Reproducible external-runtime workload evaluation for Aether"
+requires-python = ">=3.12"
+license = {text = "MIT OR Apache-2.0"}
+dependencies = []
+
+[project.optional-dependencies]
+iree = ["iree-base-compiler==3.12.0", "iree-base-runtime==3.12.0", "numpy==2.5.3"]
+
+[project.scripts]
+aether-eval = "aether_eval.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
