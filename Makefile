@@ -845,3 +845,21 @@ clean:
 	cd $(USER_DIR) && cargo clean
 	cd $(PROBE_DIR) && cargo clean
 	cargo clean
+
+# Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
+# on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
+# IOVAs; tenant C's named attacks run between layers and must all be refused.
+# Runs twice and compares the logs byte for byte. Software model only:
+# not hardware isolation, not MIG, no performance claim.
+.PHONY: two-tenant-infer
+TTI_LOG := $(BUILD)/two-tenant-infer.log
+
+two-tenant-infer:
+	mkdir -p $(BUILD)
+	rm -f $(TTI_LOG) $(TTI_LOG).2
+	cargo run --locked -p aether-redteam --quiet --example two_tenant_infer > $(TTI_LOG)
+	cargo run --locked -p aether-redteam --quiet --example two_tenant_infer > $(TTI_LOG).2
+	cat $(TTI_LOG)
+	cmp $(TTI_LOG) $(TTI_LOG).2
+	grep -qxF "[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true" $(TTI_LOG)
+	@echo "two-tenant-infer: outputs CPU-exact, every attack refused, log byte-identical"

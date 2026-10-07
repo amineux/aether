@@ -481,6 +481,34 @@ SoftGreenCtx (not in this clip) is not HW MIG; this clip does not claim
 MIG either. Soft SMMU is software — a real device can still DMA past it.
 No FLOPs, no fake NVIDIA, no tape-out.
 
+### Two-tenant inference isolation (host)
+
+`make two-tenant-infer` (`examples/red-team/examples/two_tenant_infer/`).
+Tenants A and B each run a tiny i32 MLP (`Wave` → `Relu` → `MatMul` →
+`Add` → `Max`; existing SoftNpu ops only) on one shared `SoftNpu`. Every
+tensor address is a Soft-SMMU IOVA resolved per job after `set_sid`, in
+an arena mapped with that tenant's own Memory+MAP cap. Between layers,
+tenant C runs 9 named attacks through existing refuse paths: checked
+cross-tenant unmap (`unmap_for` → `CrossTenant`), bind / `SET_SID` of A's
+SID (`CrossTenant`), submit on the wrong SID and DMA read / write at A's
+IOVAs (`WrongStream`), A's arena (`NotOwner`), a user copy straddling into
+an unmapped page (`user_pages_ok`), and a wrong-class opkernel admit
+(`ClassMismatch`). An attack counts as refused only if it returns that
+named error and A's and B's arena bytes, translations and owners are
+unchanged. A and B outputs must equal a plain-Rust CPU reference, be
+byte-identical across two runs, and equal an attacker-free run. The
+target runs the demo twice, compares the logs byte for byte, and greps:
+
+```text
+[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true
+```
+
+The demo uses the checked `unmap_for` and does not rely on `unmap` /
+`unmap_stream` (issue #161). A negative-control test hands C a leaked
+copy of A's cap: the unmap succeeds, A's next layer fails, and the
+summary goes red. Host software model only: not hardware isolation, not
+MIG, no performance numbers.
+
 ## Non-claims
 
 We will not claim:
