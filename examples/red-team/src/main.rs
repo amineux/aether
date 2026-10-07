@@ -138,6 +138,7 @@ const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refu
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_ARENA_NOT_OWNER: &str = "[redteam] attack=arena-not-owner result=refused";
 const LINE_ARENA_LIMIT_LEAK: &str = "[redteam] attack=arena-limit-leak result=refused";
+const LINE_USER_COPY_STRADDLE: &str = "[redteam] attack=user-copy-straddle result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
 const LINE_SPACE_NOT_MAPPABLE: &str = "[redteam] attack=space-not-mappable result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
@@ -218,6 +219,7 @@ struct RedTeamReport {
     outside_slice: bool,
     arena_not_owner: bool,
     arena_limit_leak: bool,
+    user_copy_straddle: bool,
     silent_remote: bool,
     space_not_mappable: bool,
     typed_window_sid: bool,
@@ -295,6 +297,7 @@ impl RedTeamReport {
             && self.outside_slice
             && self.arena_not_owner
             && self.arena_limit_leak
+            && self.user_copy_straddle
             && self.silent_remote
             && self.space_not_mappable
             && self.typed_window_sid
@@ -368,6 +371,7 @@ fn run_redteam() -> RedTeamReport {
     let outside = run_outside_slice_demo();
     let arena_not_owner = aether_core::arena::run_arena_not_owner_demo();
     let arena_limit_leak = aether_core::arena::run_arena_limit_leak_demo();
+    let user_copy_straddle = aether_core::sysnr::run_user_copy_straddle_demo();
     let silent = run_silent_remote_demo();
     let space_not_mappable = run_space_not_mappable_demo();
     let typed_win = run_typed_window_sid_demo();
@@ -472,6 +476,10 @@ fn run_redteam() -> RedTeamReport {
         // Full arena table → ArenaLimit before any span split; free bytes / spans
         // unchanged across repeated refusals (was NoSpace + leaked split span).
         arena_limit_leak: arena_limit_leak.all_ok(),
+        // Kernel user copy splits at 4 KiB and checks every page before any
+        // byte moves; a range whose tail is unmapped is refused whole (was:
+        // only the first page translated). Same split/gate the kernel calls.
+        user_copy_straddle: user_copy_straddle.all_ok(),
         // map_place / map_fabric: local OK; remote → SilentRemoteLoad.
         // MEM_FULL never implies UNIFIED. Not CXL productization / BAR0 / SoftNPU.
         silent_remote: silent.all_ok(),
@@ -680,6 +688,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.arena_not_owner, LINE_ARENA_NOT_OWNER);
     emit(r.arena_limit_leak, LINE_ARENA_LIMIT_LEAK);
+    emit(r.user_copy_straddle, LINE_USER_COPY_STRADDLE);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
     emit(r.space_not_mappable, LINE_SPACE_NOT_MAPPABLE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
@@ -777,6 +786,7 @@ mod tests {
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.arena_not_owner, "non-owner / stale arena handoff → NotOwner");
         assert!(r.arena_limit_leak, "full arena table → ArenaLimit, no bytes lost");
+        assert!(r.user_copy_straddle, "user copy with unmapped tail page → refused whole");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
         assert!(r.space_not_mappable, "map_place local Streaming/Scratch → NotMappable");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
@@ -992,6 +1002,10 @@ mod tests {
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_ARENA_NOT_OWNER, "[redteam] attack=arena-not-owner result=refused");
         assert_eq!(LINE_ARENA_LIMIT_LEAK, "[redteam] attack=arena-limit-leak result=refused");
+        assert_eq!(
+            LINE_USER_COPY_STRADDLE,
+            "[redteam] attack=user-copy-straddle result=refused"
+        );
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
         assert_eq!(LINE_SPACE_NOT_MAPPABLE, "[redteam] attack=space-not-mappable result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
@@ -1201,6 +1215,7 @@ mod tests {
             LINE_OUTSIDE_SLICE,
             LINE_ARENA_NOT_OWNER,
             LINE_ARENA_LIMIT_LEAK,
+            LINE_USER_COPY_STRADDLE,
             LINE_SILENT_REMOTE,
             LINE_SPACE_NOT_MAPPABLE,
             LINE_TYPED_WINDOW_SID,
