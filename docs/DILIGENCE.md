@@ -658,8 +658,16 @@ line per harness:
 
 ```
 [proof] harness=<name> result=verified checks=<n> time=<s>s
-[proof] summary harnesses=18 verified=18 failed=0 kind=bounded-model-checked
+[proof] summary harnesses=<n> verified=<n> failed=<n> kind=bounded-model-checked
 ```
+
+Status at this commit (8 cores, 16 GB, Kani 0.68): 15 of the 18 harnesses
+verify, each in under 5 minutes. Three have not completed on that machine and
+are **not** claimed as verified: `arena_alloc_never_overlaps_live_arena` and
+`unmap_for_cross_tenant_leaves_region` (CBMC runs out of memory or exceeds
+30 minutes) and `arena_limit_refuses_and_conserves` (exceeds 10 minutes).
+Their properties are still exercised by the unit and red-team tests and the
+two-world check below; they need a bigger machine or tighter bounds.
 
 Kani also checks every arithmetic overflow, out-of-bounds index, `unwrap`
 and `panic!` reachable inside the bounds, so "verified" also means none of
