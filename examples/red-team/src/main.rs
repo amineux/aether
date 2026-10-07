@@ -137,6 +137,7 @@ const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_ARENA_NOT_OWNER: &str = "[redteam] attack=arena-not-owner result=refused";
+const LINE_ARENA_LIMIT_LEAK: &str = "[redteam] attack=arena-limit-leak result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
 const LINE_SPACE_NOT_MAPPABLE: &str = "[redteam] attack=space-not-mappable result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
@@ -216,6 +217,7 @@ struct RedTeamReport {
     fence_not_ready: bool,
     outside_slice: bool,
     arena_not_owner: bool,
+    arena_limit_leak: bool,
     silent_remote: bool,
     space_not_mappable: bool,
     typed_window_sid: bool,
@@ -292,6 +294,7 @@ impl RedTeamReport {
             && self.fence_not_ready
             && self.outside_slice
             && self.arena_not_owner
+            && self.arena_limit_leak
             && self.silent_remote
             && self.space_not_mappable
             && self.typed_window_sid
@@ -364,6 +367,7 @@ fn run_redteam() -> RedTeamReport {
     let fence_nr = run_fence_not_ready_demo();
     let outside = run_outside_slice_demo();
     let arena_not_owner = aether_core::arena::run_arena_not_owner_demo();
+    let arena_limit_leak = aether_core::arena::run_arena_limit_leak_demo();
     let silent = run_silent_remote_demo();
     let space_not_mappable = run_space_not_mappable_demo();
     let typed_win = run_typed_window_sid_demo();
@@ -465,6 +469,9 @@ fn run_redteam() -> RedTeamReport {
         // Arena handoff by a non-owner tile / from=None reclaim / stale previous owner → NotOwner;
         // owner + color unchanged; freed id → UnknownArena. Not bank-color / foreign-tenant-color.
         arena_not_owner: arena_not_owner.all_ok(),
+        // Full arena table → ArenaLimit before any span split; free bytes / spans
+        // unchanged across repeated refusals (was NoSpace + leaked split span).
+        arena_limit_leak: arena_limit_leak.all_ok(),
         // map_place / map_fabric: local OK; remote → SilentRemoteLoad.
         // MEM_FULL never implies UNIFIED. Not CXL productization / BAR0 / SoftNPU.
         silent_remote: silent.all_ok(),
@@ -672,6 +679,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fence_not_ready, LINE_FENCE_NOT_READY);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.arena_not_owner, LINE_ARENA_NOT_OWNER);
+    emit(r.arena_limit_leak, LINE_ARENA_LIMIT_LEAK);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
     emit(r.space_not_mappable, LINE_SPACE_NOT_MAPPABLE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
@@ -768,6 +776,7 @@ mod tests {
         assert!(r.fence_not_ready, "Timeline::wait before retire → FenceNotReady");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.arena_not_owner, "non-owner / stale arena handoff → NotOwner");
+        assert!(r.arena_limit_leak, "full arena table → ArenaLimit, no bytes lost");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
         assert!(r.space_not_mappable, "map_place local Streaming/Scratch → NotMappable");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
@@ -982,6 +991,7 @@ mod tests {
         assert_eq!(LINE_FENCE_NOT_READY, "[redteam] attack=fence-not-ready result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_ARENA_NOT_OWNER, "[redteam] attack=arena-not-owner result=refused");
+        assert_eq!(LINE_ARENA_LIMIT_LEAK, "[redteam] attack=arena-limit-leak result=refused");
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
         assert_eq!(LINE_SPACE_NOT_MAPPABLE, "[redteam] attack=space-not-mappable result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
@@ -1190,6 +1200,7 @@ mod tests {
             LINE_FENCE_NOT_READY,
             LINE_OUTSIDE_SLICE,
             LINE_ARENA_NOT_OWNER,
+            LINE_ARENA_LIMIT_LEAK,
             LINE_SILENT_REMOTE,
             LINE_SPACE_NOT_MAPPABLE,
             LINE_TYPED_WINDOW_SID,

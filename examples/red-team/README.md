@@ -29,6 +29,10 @@ a non-owner tile naming itself as `from`, a `from = None` reclaim of an owned ar
 owner after a handoff → `ArenaError::NotOwner`, owner tile / tenant / bank color unchanged; freed
 arena id → `UnknownArena`; `free` stays a kernel-trust primitive and is not claimed; not bank-color
 (`ForeignBank`) / foreign-tenant-color / uncolored-compute; no new opcodes; software path only).
+Arena-limit-leak needle: `[redteam] attack=arena-limit-leak result=refused`
+(`ArenaAllocator::alloc` with every arena slot in use → `ArenaError::ArenaLimit`, checked before any
+free span is split; free bytes / free-span count unchanged across repeated refusals; before Round 21
+this returned `NoSpace` and lost the split span; not arena-not-owner / bank-color; software only).
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).
