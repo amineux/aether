@@ -590,3 +590,53 @@ IREE HAL research stand-in (not a partner):
 `make design-win-standin`.
 Partner landing page: [PARTNER.md](PARTNER.md). One-page sell pack:
 [SELL_PACK.md](SELL_PACK.md). This is still not a signed vendor.
+
+## Pre-silicon tenant-isolation conformance kit (use case B)
+
+A chip team describes its backend — command/stream format, accelerator,
+SMMU, fabric — by implementing the small `IsolationBackend` trait
+(`examples/isolation-kit`). The kit runs Aether's existing named attack
+classes against that backend and prints a per-backend matrix of **attack
+class → refused / ACCEPTED / n/a**, plus a one-line summary. The kit adds
+no isolation mechanism of its own: the reference adapter wires each class to
+the library demo that already drives the Soft\* refuse path, so the matrix
+only reports what the frozen code does.
+
+Run it with `make isolation-matrix` (or `cargo run --manifest-path
+examples/isolation-kit/Cargo.toml`). The crate is its own workspace, so it
+needs no entry in the root `Cargo.toml`.
+
+Two adapters ship:
+
+- `aether-soft` — the reference backend. It refuses every applicable class,
+  so its summary reads `result=conformant` with `accepted=0`. This is the
+  conformance baseline.
+- `weak-sample-example-only` — a deliberately weak teaching stub (not a real
+  backend and not any third party) that checks arena ownership and job
+  shapes but trusts caller-supplied addresses and streams and never bounds
+  the fabric. Its matrix shows real accepts (`result=NONCONFORMANT`), which
+  is how the kit proves it can fail rather than always passing.
+
+Expected summary lines (`make isolation-matrix` greps the first two):
+
+```
+[isolation-kit] backend=aether-soft classes=12 applicable=12 refused=12 accepted=0 n/a=0 result=conformant
+[isolation-kit] backend=weak-sample-example-only classes=12 applicable=11 refused=4 accepted=7 n/a=1 result=NONCONFORMANT
+```
+
+Scope: host software checks only. Not certification, not a partner or
+customer result, not hardware isolation, and no performance claim.
+
+**How this complements the eval harnesses.** It is deliberately separate
+from the other evaluation work so it does not duplicate it. The
+`aether-eval-run` crate (PR #189) is a single-backend, host-only evaluation
+report (SoftGreenCtx workload plus a fixed list of named refusals); this kit
+generalises the "named refusal" idea into a *multi-backend* conformance
+matrix keyed on a backend-descriptor trait, so a partner can score their own
+adapter. Codex's runtime-eval toolkit (PR #193) measures invocation latency
+on a CPU device and explicitly marks isolation "unsupported"; this kit fills
+exactly that axis. The one-line `[isolation-kit] …` summary is stable and
+grep-able on purpose: it can later be registered as one more evidence check
+(for example a `COMMANDS` entry feeding `scripts/investor_report.py` from PR
+#190) without changing the kit — wiring that is left to the owners of
+`scripts/collect_evidence.py` and `ci.yml`.
