@@ -62,14 +62,14 @@ fn byte_identical_across_runs_and_without_attacker() {
     assert!(honest.attacks.is_empty());
 }
 
-/// Negative control: with the unchecked kernel-trust `IommuMap::unmap`
-/// (issue #161) the attacker removes A's mapping, the harness reports the
-/// attack as not refused, A's next layer fails, and the summary goes red.
+/// Negative control: if A's Memory+MAP cap leaked to C, `unmap_for`
+/// accepts, A's mapping is gone, the harness reports the attack as not
+/// refused, A's next layer fails, and the summary goes red.
 #[test]
-fn unchecked_unmap_control_goes_red() {
+fn leaked_cap_control_goes_red() {
     let s = summarize(Config {
         attacker: true,
-        unchecked_unmap: true,
+        leaked_cap: true,
     });
     assert_eq!(s.attacks, 9);
     assert!(!s.run.attacks[0].refused);

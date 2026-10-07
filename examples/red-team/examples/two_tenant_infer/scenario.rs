@@ -14,10 +14,10 @@
 //! returns the expected named error **and** both honest tenants' arena
 //! bytes, Soft-SMMU mappings and arena owners are unchanged.
 //!
-//! Cross-tenant unmap uses the checked `IommuMap::unmap_for`. The unchecked
-//! `unmap` / `unmap_stream` are kernel-trust primitives and are not claimed
-//! (issue #161; the fix is still an open PR). [`Config::unchecked_unmap`] is
-//! a negative control that shows this harness catching a successful attack.
+//! Cross-tenant unmap uses the checked `IommuMap::unmap_for`. The demo does
+//! not rely on `unmap` / `unmap_stream` (issue #161). [`Config::leaked_cap`]
+//! is a negative control: C presents A's own capability, the unmap
+//! succeeds, and the harness must report it.
 //!
 //! Not hardware isolation, not MIG, no performance numbers.
 
@@ -109,22 +109,22 @@ pub fn cpu_reference(m: &Model) -> [i32; 4] {
 pub struct Config {
     /// Run tenant C's attacks between the honest layers.
     pub attacker: bool,
-    /// Negative control: attack 1 uses the unchecked kernel-trust
-    /// `IommuMap::unmap` instead of `unmap_for` (issue #161).
-    pub unchecked_unmap: bool,
+    /// Negative control: attack 1 presents A's own Memory+MAP cap (as if
+    /// it had leaked to C), so `unmap_for` succeeds.
+    pub leaked_cap: bool,
 }
 
 impl Config {
     pub const fn with_attacker() -> Self {
         Self {
             attacker: true,
-            unchecked_unmap: false,
+            leaked_cap: false,
         }
     }
     pub const fn honest_only() -> Self {
         Self {
             attacker: false,
-            unchecked_unmap: false,
+            leaked_cap: false,
         }
     }
 }
@@ -397,12 +397,11 @@ impl World {
             1 => (
                 "cross-tenant-unmap",
                 err("MapError", MapError::CrossTenant),
-                if cfg.unchecked_unmap {
-                    ok(self.iommu.unmap(PhysAddr(a.iova)).map(|_| ()).map_err(|e| err("MapError", e)))
-                } else {
+                {
+                    let cap = if cfg.leaked_cap { a.cap } else { c.cap };
                     ok(self
                         .iommu
-                        .unmap_for(&c.cap, PhysAddr(a.iova))
+                        .unmap_for(&cap, PhysAddr(a.iova))
                         .map(|_| ())
                         .map_err(|e| err("MapError", e)))
                 },

@@ -503,11 +503,11 @@ target runs the demo twice, compares the logs byte for byte, and greps:
 [demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true
 ```
 
-The unchecked `IommuMap::unmap` / `unmap_stream` stay kernel-trust
-primitives (issue #161) and are not claimed. A test uses `unmap` as a
-negative control: A's next layer fails and the summary goes red. Host
-software model only: not hardware isolation, not MIG, no performance
-numbers.
+The demo uses the checked `unmap_for` and does not rely on `unmap` /
+`unmap_stream` (issue #161). A negative-control test hands C a leaked
+copy of A's cap: the unmap succeeds, A's next layer fails, and the
+summary goes red. Host software model only: not hardware isolation, not
+MIG, no performance numbers.
 
 ## Non-claims
 
