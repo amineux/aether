@@ -309,6 +309,51 @@ pub fn user_kva(va: u64) -> Option<u64> {
     }
 }
 
+/// Kernel load/store address for the byte at user `va`, valid only up to
+/// the end of `va`'s 4 KiB page. `None` unless that page is present and
+/// USER in `root` (and writable when `write`). `root == 0` means the live
+/// user root (x86 KPTI slot, satp, TTBR0).
+///
+/// x86 returns the HH physmap alias of *this* page's frame, so a range
+/// that crosses a page must call this once per page. RISC-V / aarch64
+/// keep reading through `va` itself, so the page is also checked in the
+/// live root the access will actually use (no kernel fault on a hole).
+pub fn user_page_kva_in(root: u64, va: u64, write: bool) -> Option<u64> {
+    fn ok(w: Option<Walk>, write: bool) -> Option<Walk> {
+        w.filter(|w| w.user && (!write || w.writable))
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        let root = if root & !0xFFF == 0 {
+            crate::arch::x86_64::kpti::user_cr3()
+        } else {
+            root
+        };
+        if root & !0xFFF == 0 {
+            return None;
+        }
+        ok(unsafe { walk_in(root, va) }, write).map(|w| phys_va(w.phys.0))
+    }
+    #[cfg(target_arch = "riscv64")]
+    {
+        let live = satp_root();
+        ok(unsafe { walk_in(live, va) }, write)?;
+        if root != 0 && root != live {
+            ok(unsafe { walk_in(root, va) }, write)?;
+        }
+        Some(va)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        let live = ttbr0_root();
+        ok(unsafe { walk_in(live, va) }, write)?;
+        if root != 0 && root != live {
+            ok(unsafe { walk_in(root, va) }, write)?;
+        }
+        Some(va)
+    }
+}
+
 #[cfg(target_arch = "x86_64")]
 fn read64(pa: u64) -> u64 {
     unsafe { core::ptr::read_volatile(phys_va(pa) as *const u64) }

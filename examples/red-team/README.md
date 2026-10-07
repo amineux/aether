@@ -33,6 +33,11 @@ Arena-limit-leak needle: `[redteam] attack=arena-limit-leak result=refused`
 (`ArenaAllocator::alloc` with every arena slot in use → `ArenaError::ArenaLimit`, checked before any
 free span is split; free bytes / free-span count unchanged across repeated refusals; before Round 21
 this returned `NoSpace` and lost the split span; not arena-not-owner / bank-color; software only).
+User-copy-straddle needle: `[redteam] attack=user-copy-straddle result=refused`
+(`sysnr::user_chunks` + `sysnr::user_pages_ok`, the split/gate the kernel's `read_user_in` /
+`write_user_in` call: a range whose tail page is unmapped is refused before any byte moves; mapped
+straddles split per page; before Round 21 the kernel translated only the first page; the QEMU `/init`
+straddle check covers the kernel side on x86_64 / RISC-V / aarch64; no new syscall or struct).
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).

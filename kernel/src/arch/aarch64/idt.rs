@@ -121,6 +121,10 @@ pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
 
 global_asm!(
     r#"
+    /* Name the section: module asm shares a codegen unit with the boot
+       trampoline, which ends in .bss; without this the vectors can land
+       there ("BSS section '.bss' cannot have fixups"). */
+    .text
     /* 32×16-byte Q regs + FPSR/FPCR. 16-byte aligned. */
     .macro SAVE_FPSIMD
     sub     sp, sp, #528
