@@ -548,9 +548,153 @@ pub fn run_kv_fabric_demo() -> KvReport {
     }
 }
 
+/// Host red-team report for KV grants missing a needed right.
+///
+/// Sell line `[redteam] attack=kv-insufficient-rights` — existing [`attend`]
+/// / [`pin_kv`] only. A same-tenant KV cap derived **without READ** cannot
+/// attend (read) a token, and a cap **without MAP** (or a non-Memory cap
+/// naming the KV object) cannot pin the page for DMA: both are
+/// [`KvError::InsufficientRights`], and the refused pin installs no Soft-SMMU
+/// translation for its SID. Rights come from the cap, never the caller.
+/// **Not** kv `write` (`WouldWrite`) / `regrant` / `weights` / `oob` /
+/// `forge` (`CrossTenant`) / `wrong-sid`; Soft SMMU is software; no new
+/// opcodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KvInsufficientRightsReport {
+    /// Control: a READ|MAP grant attends and pins (one translation).
+    pub grant_ok: bool,
+    /// WRITE-only cap (no READ) read-attend → `InsufficientRights`.
+    pub no_read_refused: bool,
+    /// READ-only cap (no MAP) `pin_kv` → `InsufficientRights`; no translation.
+    pub no_map_refused: bool,
+    /// Non-Memory cap naming the KV object `pin_kv` → `InsufficientRights`.
+    pub wrong_kind_refused: bool,
+    /// After the refusals the Soft-SMMU still holds only the control pin.
+    pub no_stray_mapping: bool,
+}
+
+impl KvInsufficientRightsReport {
+    pub fn all_ok(&self) -> bool {
+        self.grant_ok
+            && self.no_read_refused
+            && self.no_map_refused
+            && self.wrong_kind_refused
+            && self.no_stray_mapping
+    }
+}
+
+/// KV grant missing READ / MAP (or wrong kind) → [`KvError::InsufficientRights`].
+pub fn run_kv_insufficient_rights_demo() -> KvInsufficientRightsReport {
+    let fail = KvInsufficientRightsReport {
+        grant_ok: false,
+        no_read_refused: false,
+        no_map_refused: false,
+        wrong_kind_refused: false,
+        no_stray_mapping: false,
+    };
+    let tenant = TenantId(1);
+    let seq = 1u32;
+    let Ok(mut arenas) =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x8000_0000), 32 * 1024 * 1024)])
+    else {
+        return fail;
+    };
+    let Ok(kv) = arenas.alloc(
+        ArenaRequest::tensor(DEMO_KV_BYTES, Some(BankId(0)))
+            .in_space(MemorySpace::DeviceHbm)
+            .for_tenant(tenant),
+    ) else {
+        return fail;
+    };
+    let mut ledger = KvLedger::new();
+    if ledger
+        .insert(KvObject {
+            id: kv.id.0,
+            seq,
+            base: kv.base,
+            bytes: kv.size,
+            kind: KvKind::Kv,
+            window: KvWindow::demo(),
+            tenant,
+        })
+        .is_err()
+    {
+        return fail;
+    }
+
+    let mut prefill = CapTable::new(tenant);
+    let Ok(root) = prefill.mint(Capability::new(
+        CapKind::Memory,
+        CapRights::MEM_FULL,
+        kv.id.0,
+        tenant,
+    )) else {
+        return fail;
+    };
+    let (Ok(rm), Ok(wo), Ok(ro)) = (
+        prefill.derive(root, CapRights(CapRights::READ | CapRights::MAP)),
+        prefill.derive(root, CapRights(CapRights::WRITE)),
+        prefill.derive(root, CapRights(CapRights::READ)),
+    ) else {
+        return fail;
+    };
+    let read = AttendReq {
+        seq,
+        layer: 1,
+        token: 16,
+        write: false,
+    };
+    let sid_ok = StreamId::from_raw(SID_DECODE);
+    let sid_ro = StreamId::from_raw(SID_PREFILL);
+    let sid_kind = StreamId::from_raw(SID_NEIGHBOR);
+
+    let mut iommu = IommuMap::new();
+    let grant_ok = attend(&prefill, rm, &ledger, read).is_ok()
+        && prefill
+            .lookup(rm)
+            .map(|cap| pin_kv(&mut iommu, cap, &ledger, sid_ok).is_ok())
+            == Ok(true)
+        && iommu.len() == 1;
+
+    let no_read_refused = attend(&prefill, wo, &ledger, read) == Err(KvError::InsufficientRights);
+
+    let no_map_refused = attend(&prefill, ro, &ledger, read).is_ok()
+        && prefill
+            .lookup(ro)
+            .map(|cap| pin_kv(&mut iommu, cap, &ledger, sid_ro).err())
+            == Ok(Some(KvError::InsufficientRights))
+        && !iommu.covers_stream(sid_ro.raw(), kv.base, kv.size);
+
+    let wrong_kind = Capability::new(CapKind::OperatorKernel, CapRights::MEM_FULL, kv.id.0, tenant);
+    let wrong_kind_refused = pin_kv(&mut iommu, &wrong_kind, &ledger, sid_kind).err()
+        == Some(KvError::InsufficientRights)
+        && !iommu.covers_stream(sid_kind.raw(), kv.base, kv.size);
+
+    let no_stray_mapping = iommu.len() == 1 && iommu.covers_stream(sid_ok.raw(), kv.base, kv.size);
+
+    KvInsufficientRightsReport {
+        grant_ok,
+        no_read_refused,
+        no_map_refused,
+        wrong_kind_refused,
+        no_stray_mapping,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kv_insufficient_rights_demo_all_ok() {
+        let r = run_kv_insufficient_rights_demo();
+        assert!(r.grant_ok, "READ|MAP grant attends + pins: {r:?}");
+        assert!(r.no_read_refused, "WRITE-only cap read-attend → InsufficientRights");
+        assert!(r.no_map_refused, "READ-only cap pin_kv → InsufficientRights, no translation");
+        assert!(r.wrong_kind_refused, "non-Memory cap pin_kv → InsufficientRights");
+        assert!(r.no_stray_mapping, "only the control pin is mapped");
+        assert!(r.all_ok());
+    }
 
     #[test]
     fn kv_fabric_grant_is_the_only_thing_that_moves() {

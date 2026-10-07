@@ -142,6 +142,7 @@ const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=re
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
 const LINE_SET_SID_UNBOUND: &str = "[redteam] attack=set-sid-unbound result=refused";
+const LINE_KV_INSUFFICIENT_RIGHTS: &str = "[redteam] attack=kv-insufficient-rights result=refused";
 const LINE_SUBMIT_SID: &str = "[redteam] attack=submit-sid result=refused";
 const LINE_SID_BUDGET: &str = "[redteam] attack=sid-budget result=refused";
 const LINE_STAGE2_FAULT: &str = "[redteam] attack=stage2-fault result=refused";
@@ -218,6 +219,7 @@ struct RedTeamReport {
     hbm_bw: bool,
     xqueue_sid_override: bool,
     set_sid_unbound: bool,
+    kv_insufficient_rights: bool,
     submit_sid: bool,
     sid_budget: bool,
     stage2_fault: bool,
@@ -291,6 +293,7 @@ impl RedTeamReport {
             && self.hbm_bw
             && self.xqueue_sid_override
             && self.set_sid_unbound
+            && self.kv_insufficient_rights
             && self.submit_sid
             && self.sid_budget
             && self.stage2_fault
@@ -360,6 +363,7 @@ fn run_redteam() -> RedTeamReport {
     let hbm = run_hbm_bw_demo();
     let xqueue_sid = run_xqueue_sid_override_demo();
     let set_sid_unbound = run_set_sid_unbound_demo();
+    let kv_insufficient_rights = aether_core::kvfabric::run_kv_insufficient_rights_demo();
     let submit_sid = run_submit_sid_demo();
     let sid_budget = run_sid_budget_demo();
     let stage2_fault = run_stage2_fault_demo();
@@ -468,6 +472,9 @@ fn run_redteam() -> RedTeamReport {
         // Soft-CP set_sid / submit without Bound → Fault (StreamAbort foundation).
         // SID-at-submit path — not xqueue-sid-override / PASID / BAR0.
         set_sid_unbound: set_sid_unbound.all_ok(),
+        // KV cap without READ (attend) / without MAP or non-Memory (pin_kv) → InsufficientRights;
+        // refused pin installs no translation. Not kv write / regrant / weights / oob / forge.
+        kv_insufficient_rights: kv_insufficient_rights.all_ok(),
         // Soft-SMMU resolve_submit without SET_SID → SubmitSid; walk still OK.
         // Not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget.
         submit_sid: submit_sid.all_ok(),
@@ -656,6 +663,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hbm_bw, LINE_HBM_BW);
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
     emit(r.set_sid_unbound, LINE_SET_SID_UNBOUND);
+    emit(r.kv_insufficient_rights, LINE_KV_INSUFFICIENT_RIGHTS);
     emit(r.submit_sid, LINE_SUBMIT_SID);
     emit(r.sid_budget, LINE_SID_BUDGET);
     emit(r.stage2_fault, LINE_STAGE2_FAULT);
@@ -755,6 +763,7 @@ mod tests {
             r.set_sid_unbound,
             "set_sid / submit unbound → HalError::Fault"
         );
+        assert!(r.kv_insufficient_rights, "KV grant missing READ / MAP → InsufficientRights, no stray pin");
         assert!(
             r.submit_sid,
             "resolve_submit without SET_SID → SubmitSid"
@@ -966,6 +975,7 @@ mod tests {
             LINE_SET_SID_UNBOUND,
             "[redteam] attack=set-sid-unbound result=refused"
         );
+        assert_eq!(LINE_KV_INSUFFICIENT_RIGHTS, "[redteam] attack=kv-insufficient-rights result=refused");
         assert_eq!(
             LINE_SUBMIT_SID,
             "[redteam] attack=submit-sid result=refused"
@@ -1165,6 +1175,7 @@ mod tests {
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,
             LINE_SET_SID_UNBOUND,
+            LINE_KV_INSUFFICIENT_RIGHTS,
             LINE_SOFTNOI_UNBOUND,
             LINE_SOFTNOI_RING_EXHAUSTED,
             LINE_HODGE_HARMONIC_TREE,

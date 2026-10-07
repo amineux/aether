@@ -416,6 +416,7 @@ Expected stdout (CI greps these):
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=set-sid-unbound result=refused
+[redteam] attack=kv-insufficient-rights result=refused
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
