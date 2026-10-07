@@ -163,6 +163,7 @@
             <li><strong>548 host tests</strong> pass under <code>cargo test --workspace</code>.</li>
             <li><strong>CI on three targets</strong> for every pull request: x86_64 (<code>cargo test + make qemu</code>), <code>make qemu-aarch64-ci</code> and <code>make qemu-riscv-ci</code>. Pull requests #159, #160, #162 and #163 merged with all three green.</li>
             <li><strong>No third-party crates:</strong> the root <code>Cargo.lock</code> lists 11 packages, all in this workspace, none from a registry. Licence: MIT OR Apache-2.0.</li>
+            <li><strong>Since that snapshot, Rounds 18–20 (6–7 Oct 2026):</strong> each round adds a test plus a named line for a refuse path that already exists in the tree. Round 18: #188 (<code>opkernel-class-mismatch</code> → <code>OpKernelError::ClassMismatch</code>). Round 19: #191 (<code>space-not-mappable</code> → <code>SpaceError::NotMappable</code>) and #192 (<code>softsfi-bad-insn</code> → <code>SfiError::BadInsn</code>). Round 20: #194 (<code>fabric-queue-full</code> → <code>FabricError::QueueFull</code> / <code>Closed</code>; a refused send charges no Hodge quota; the Hodge quota is per-fabric, not per-tenant), #195 (<code>arena-not-owner</code> → <code>ArenaError::NotOwner</code>; arena handoff is an explicit ownership transfer) and #196 (<code>kv-insufficient-rights</code> → <code>KvError::InsufficientRights</code>; a KV grant without READ or MAP cannot attend or pin, and a refused pin installs no Soft-SMMU translation). Round 20 also fixed <code>make qemu-riscv-ci</code> on rustc 1.99 runners (#197: the riscv trap vector now sits in <code>.text</code>, not <code>.bss</code>). After these, <code>make red-team</code> greps 62 named <code>[redteam] attack=… result=refused</code> lines and <code>cargo test --workspace</code> runs 564 host tests. All of this is software. No new opcodes, and no FLOPs or tape-out claims.</li>
           </ul>
           <p class="inv-note">The newest signal, a bounded, seeded hostile-tenant fuzz run inside <code>make red-team</code>:</p>
           <div class="term">
@@ -758,6 +759,12 @@
 [redteam] attack=cut-empty-part result=refused
 [redteam] attack=cut-unbalanced result=refused
 [redteam] attack=cut-too-large result=refused
+[redteam] attack=opkernel-class-mismatch result=refused
+[redteam] attack=space-not-mappable result=refused
+[redteam] attack=softsfi-bad-insn result=refused
+[redteam] attack=fabric-queue-full result=refused
+[redteam] attack=arena-not-owner result=refused
+[redteam] attack=kv-insufficient-rights result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
@@ -969,6 +976,12 @@
 [redteam] attack=cut-empty-part result=refused
 [redteam] attack=cut-unbalanced result=refused
 [redteam] attack=cut-too-large result=refused
+[redteam] attack=opkernel-class-mismatch result=refused
+[redteam] attack=space-not-mappable result=refused
+[redteam] attack=softsfi-bad-insn result=refused
+[redteam] attack=fabric-queue-full result=refused
+[redteam] attack=arena-not-owner result=refused
+[redteam] attack=kv-insufficient-rights result=refused
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
 [softsfi] heap=refused
@@ -1524,6 +1537,12 @@ CI: cargo test + accel-test + qemu-ci + qemu-smp-ci + qemu-riscv-ci + qemu-aarch
 <span class="ok">[redteam] attack=cut-empty-part result=refused</span>
 <span class="ok">[redteam] attack=cut-unbalanced result=refused</span>
 <span class="ok">[redteam] attack=cut-too-large result=refused</span>
+<span class="ok">[redteam] attack=opkernel-class-mismatch result=refused</span>
+<span class="ok">[redteam] attack=space-not-mappable result=refused</span>
+<span class="ok">[redteam] attack=softsfi-bad-insn result=refused</span>
+<span class="ok">[redteam] attack=fabric-queue-full result=refused</span>
+<span class="ok">[redteam] attack=arena-not-owner result=refused</span>
+<span class="ok">[redteam] attack=kv-insufficient-rights result=refused</span>
 <span class="ok">[diligence] host Path B sealed</span>
 <span class="ok">[redteam] sealed</span></pre>
           </div>

@@ -119,8 +119,13 @@ pub extern "C" fn trap_dispatch(frame: &mut InterruptFrame) {
     }
 }
 
+// Pin the trap vector to .text explicitly: global_asm blocks share the
+// assembler's section state, and the boot trampoline ends in `.bss`.
+// Without this, rustc 1.99's rust-lld rejects code landing in `.bss`
+// ("BSS section '.bss' cannot have non-zero bytes").
 global_asm!(
     r#"
+    .section .text.trap, "ax"
     .align 2
     .globl trap_vector
     trap_vector:

@@ -23,6 +23,21 @@ Fence-not-ready needle: `[redteam] attack=fence-not-ready result=refused`
 timeout-frees-credit stays inside the qos demo).
 Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 (`admit_chiplet` → `OutsideSlice`; not hops / qos / CrossCut / bank-color).
+Arena-not-owner needle: `[redteam] attack=arena-not-owner result=refused`
+(`ArenaAllocator::transfer_owner`: handoff is an explicit ownership transfer, not a shared mapping;
+a non-owner tile naming itself as `from`, a `from = None` reclaim of an owned arena, and the previous
+owner after a handoff → `ArenaError::NotOwner`, owner tile / tenant / bank color unchanged; freed
+arena id → `UnknownArena`; `free` stays a kernel-trust primitive and is not claimed; not bank-color
+(`ForeignBank`) / foreign-tenant-color / uncolored-compute; no new opcodes; software path only).
+Arena-limit-leak needle: `[redteam] attack=arena-limit-leak result=refused`
+(`ArenaAllocator::alloc` with every arena slot in use → `ArenaError::ArenaLimit`, checked before any
+free span is split; free bytes / free-span count unchanged across repeated refusals; before Round 21
+this returned `NoSpace` and lost the split span; not arena-not-owner / bank-color; software only).
+User-copy-straddle needle: `[redteam] attack=user-copy-straddle result=refused`
+(`sysnr::user_chunks` + `sysnr::user_pages_ok`, the split/gate the kernel's `read_user_in` /
+`write_user_in` call: a range whose tail page is unmapped is refused before any byte moves; mapped
+straddles split per page; before Round 21 the kernel translated only the first page; the QEMU `/init`
+straddle check covers the kernel side on x86_64 / RISC-V / aarch64; no new syscall or struct).
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).
@@ -40,6 +55,12 @@ not BAR0 / SoftNPU).
 SET_SID unbound needle: `[redteam] attack=set-sid-unbound result=refused`
 (Soft-CP `set_sid` / submit without Bound SID → `HalError::Fault`; SID-at-submit
 `StreamAbort` foundation; not xqueue-sid-override / PASID).
+KV-insufficient-rights needle: `[redteam] attack=kv-insufficient-rights result=refused`
+(`attend` / `pin_kv`: a same-tenant KV cap derived without READ cannot read-attend a token, and a cap
+without MAP (or a non-Memory cap naming the KV object) cannot pin the page for DMA →
+`KvError::InsufficientRights`; the refused pin installs no Soft-SMMU translation for its SID and only
+the READ|MAP control pin stays mapped; rights come from the cap, not the caller; not kv `write`
+(`WouldWrite`) / `regrant` / `weights` / `oob` / `forge` / `wrong-sid`; Soft SMMU is software; no new opcodes).
 Submit-sid needle: `[redteam] attack=submit-sid result=refused`
 (Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid`; walk still OK;
 not set-sid-unbound / SidBudget / PASID).
@@ -126,6 +147,12 @@ HarmonicTreeReduce; not SoftNoI fabric-class Curl ring).
 Hodge-quota needle: `[redteam] attack=hodge-quota result=refused`
 (`HodgeQuota::empty().admit(...)` → `HodgeError::QuotaExceeded`; generous admit succeeds;
 not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable).
+Fabric-queue-full needle: `[redteam] attack=fabric-queue-full result=refused`
+(`Fabric::send` on the only IPC: flooding one endpoint past `MAX_QUEUE` → `FabricError::QueueFull`,
+pending stays `MAX_QUEUE`; send to a closed endpoint → `FabricError::Closed`; both gates run before
+Hodge admit, so a refused send enqueues nothing and charges no Hodge quota; a neighbor endpoint still
+admits and draining one message re-admits. Hodge quota is per-fabric, not per-tenant; endpoint
+back-pressure only; not hodge-quota (`QuotaExceeded`) / CapTable; no new opcodes; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /

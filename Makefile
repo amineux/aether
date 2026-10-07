@@ -166,16 +166,22 @@ red-team:
 	grep -q "\\[redteam\\] attack=qos-credits result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fence-not-ready result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=outside-slice result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-not-owner result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-limit-leak result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=user-copy-straddle result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=map-user-phys result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=typed-window-sid result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=silent-remote result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=space-not-mappable result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hbm-bw result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=kv-insufficient-rights result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softnoi-unbound result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-harmonic-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-curl-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-quota result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-queue-full result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
@@ -470,6 +476,9 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[boot\\] APIC SoftNPU doorbell = self-IPI vec 49" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[apic\\] claim vec=49 SoftNPU used-ring" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/qemu-serial.log \
@@ -747,6 +756,9 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/riscv-serial.log \
 	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: U-mode /init + PLIC SoftNPU + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -818,6 +830,9 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[boot\\] GIC SoftNPU doorbell = SPI 40" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[gic\\] claim irq=40 SoftNPU used-ring" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/aarch64-serial.log \
@@ -834,3 +849,41 @@ clean:
 	cd $(USER_DIR) && cargo clean
 	cd $(PROBE_DIR) && cargo clean
 	cargo clean
+
+# Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
+# on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
+# IOVAs; tenant C's named attacks run between layers and must all be refused.
+# Runs twice and compares the logs byte for byte. Software model only:
+# not hardware isolation, not MIG, no performance claim.
+.PHONY: two-tenant-infer
+TTI_LOG := $(BUILD)/two-tenant-infer.log
+
+two-tenant-infer:
+	mkdir -p $(BUILD)
+	rm -f $(TTI_LOG) $(TTI_LOG).2
+	cargo run --locked -p aether-redteam --quiet --example two_tenant_infer > $(TTI_LOG)
+	cargo run --locked -p aether-redteam --quiet --example two_tenant_infer > $(TTI_LOG).2
+	cat $(TTI_LOG)
+	cmp $(TTI_LOG) $(TTI_LOG).2
+	grep -qxF "[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true" $(TTI_LOG)
+	@echo "two-tenant-infer: outputs CPU-exact, every attack refused, log byte-identical"
+
+# Pre-silicon tenant-isolation conformance kit (use case B). A backend
+# implements the IsolationBackend trait; the kit runs the existing named attack
+# classes and prints a per-backend matrix (refused / ACCEPTED / n/a) plus a
+# one-line summary. Host-only; not certification, not a partner result, no
+# hardware or performance claims. The crate is its own workspace (own
+# Cargo.lock), so it needs no entry in the root Cargo.toml; run it by manifest
+# path. Not wired into collect_evidence.py / ci.yml here (Codex owns those);
+# see the DILIGENCE subsection for how the summary line would feed a report.
+ISOLATION_KIT := examples/isolation-kit/Cargo.toml
+ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
+
+isolation-matrix:
+	mkdir -p $(BUILD)
+	rm -f $(ISOLATION_MATRIX_LOG)
+	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet > $(ISOLATION_MATRIX_LOG) 2>&1
+	cat $(ISOLATION_MATRIX_LOG)
+	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
+	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
+	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"

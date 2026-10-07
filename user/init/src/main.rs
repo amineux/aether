@@ -66,6 +66,35 @@ fn yield_now() {
     let _ = sys(SYS_YIELD, 0, 0, 0);
 }
 
+/// Physical load address of this arch's kernel image — memory a ring-3
+/// tenant must never be able to pin or map.
+#[cfg(target_arch = "x86_64")]
+const FOREIGN_PHYS: u64 = 0x0040_0000;
+#[cfg(target_arch = "riscv64")]
+const FOREIGN_PHYS: u64 = 0x8020_0000;
+#[cfg(target_arch = "aarch64")]
+const FOREIGN_PHYS: u64 = 0x4008_0000;
+
+/// Regression for the SYS_MAP physical-address source check. SYS_MAP must
+/// derive the pinned physical address from the caller's own arena
+/// capability; a caller-supplied address (here the arch's kernel load
+/// address) must be refused. We only observe accept vs refuse — we never
+/// read or write the named memory.
+fn map_user_phys_probe() -> bool {
+    let cap = sys(SYS_ARENA_ALLOC, 256, 0, 0);
+    if cap < 0 {
+        debug_print(b"[init] map-user-phys arena FAIL\r\n");
+        return false;
+    }
+    let rc = sys(SYS_MAP, cap as u64, FOREIGN_PHYS, 0);
+    if rc >= 0 {
+        debug_print(b"[init] map-user-phys FAIL (caller phys accepted)\r\n");
+        return false;
+    }
+    debug_print(b"[init] attack=map-user-phys refused (phys from arena cap only)\r\n");
+    true
+}
+
 fn exit(code: u64) -> ! {
     let _ = sys(SYS_EXIT, code, 0, 0);
     loop {
@@ -109,11 +138,39 @@ fn spawn_user_thread() -> bool {
     true
 }
 
-fn grow_mmap() -> bool {
+/// Page-crossing user copies in the SYS_MMAP window. `va` and `va + 4096`
+/// are mapped (separate frames); `va + 8192` is not. The kernel must copy
+/// each 4 KiB page through its own translation and refuse a range whose
+/// tail runs onto an unmapped page.
+fn straddle_probe(va: u64) -> bool {
+    unsafe {
+        for i in 0..16u64 {
+            core::ptr::write_volatile((va + 4096 - 16 + i) as *mut u8, b'A');
+            core::ptr::write_volatile((va + 4096 + i) as *mut u8, b'B');
+        }
+        for i in 0..8u64 {
+            core::ptr::write_volatile((va + 8192 - 8 + i) as *mut u8, b'C');
+        }
+    }
+    // Golden grep checks the bytes between < > (16 A then 16 B).
+    debug_print(b"[init] straddle read: <");
+    let r1 = sys(SYS_DEBUG_PRINT, va + 4096 - 16, 32, 0);
+    debug_print(b">\r\n");
+    // 8 mapped bytes + 8 on the unmapped page: must be refused whole.
+    let r2 = sys(SYS_DEBUG_PRINT, va + 8192 - 8, 16, 0);
+    if r1 != 0 || r2 >= 0 {
+        debug_print(b"[init] straddle FAIL\r\n");
+        return false;
+    }
+    true
+}
+
+/// Returns the base of the two grown pages.
+fn grow_mmap() -> Option<u64> {
     let va = sys(SYS_MMAP, 0, 4096, 0);
     if va < 0 {
         debug_print(b"[init] mmap FAIL\r\n");
-        return false;
+        return None;
     }
     let p = va as *mut u64;
     unsafe {
@@ -122,15 +179,15 @@ fn grow_mmap() -> bool {
     let got = unsafe { core::ptr::read_volatile(p) };
     if got != MMAP_GROW_WORD {
         debug_print(b"[init] mmap write FAIL\r\n");
-        return false;
+        return None;
     }
     let va2 = sys(SYS_MMAP, 0, 4096, 0);
     if va2 != va + 4096 {
         debug_print(b"[init] mmap grow FAIL\r\n");
-        return false;
+        return None;
     }
     debug_print(b"[init] mmap grow ok (anon pages)\r\n");
-    true
+    Some(va as u64)
 }
 
 #[link_section = ".text.boot"]
@@ -176,23 +233,31 @@ pub extern "C" fn _start() -> ! {
         debug_print(b"[init] cow write ok (private page)\r\n");
     }
 
-    if !grow_mmap() {
+    let mm = match grow_mmap() {
+        Some(va) => va,
+        None => exit(1),
+    };
+    if !straddle_probe(mm) {
         exit(1);
     }
 
-    // Recv: empty inbox → block until kthread-B sends ping-fabric.
+    // Recv: empty inbox → block until kthread-B sends ping-fabric. The
+    // buffer straddles the two mmap pages (payload starts 4 bytes before
+    // the boundary), so the wake-side copy-out is per-page too.
     debug_print(b"[init] recv inbox (blocks until kthread-B send)\r\n");
-    let mut msg = UserIpcMsg::empty();
-    let rc = sys(
-        SYS_RECV,
-        INIT_EP_CPTR as u64,
-        core::ptr::addr_of_mut!(msg) as u64,
-        0,
-    );
+    let rbuf = (mm + 4096 - 16) as *mut UserIpcMsg;
+    unsafe { core::ptr::write_volatile(rbuf, UserIpcMsg::empty()) };
+    let rc = sys(SYS_RECV, INIT_EP_CPTR as u64, rbuf as u64, 0);
     if rc < 0 {
         debug_print(b"[init] recv FAIL\r\n");
         exit(1);
     }
+    let mut msg = unsafe { core::ptr::read_volatile(rbuf) };
+    if msg.payload() != b"ping-fabric" {
+        debug_print(b"[init] straddle FAIL (recv payload)\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] user copy straddle ok (per-page; unmapped tail refused)\r\n");
     debug_print(b"[init] fabric recv: ");
     debug_print(msg.payload());
     debug_print(b"\r\n");
@@ -232,6 +297,9 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] arena_alloc + map ok\r\n");
+    if !map_user_phys_probe() {
+        exit(1);
+    }
 
     let mut tensors = [0u8; 256];
     let ident = [
