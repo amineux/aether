@@ -399,6 +399,7 @@ Expected stdout (CI greps these):
 [redteam] attack=wrong-sid-crosscut result=refused
 [redteam] attack=softcmdfirewall result=refused
 [redteam] attack=softsfi-oob result=refused
+[redteam] attack=softsfi-bad-insn result=refused
 [redteam] attack=softnoi-is result=refused
 [redteam] attack=pasid-stale result=refused
 [redteam] attack=blast-hops result=refused
@@ -410,6 +411,7 @@ Expected stdout (CI greps these):
 [redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=silent-remote result=refused
+[redteam] attack=space-not-mappable result=refused
 [redteam] attack=typed-window-sid result=refused
 [redteam] attack=hbm-bw result=refused
 [redteam] attack=xqueue-sid-override result=refused
@@ -423,6 +425,7 @@ Expected stdout (CI greps these):
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=hodge-quota result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
+[redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=greenctx-overcommit result=refused
 [redteam] attack=greenctx-unbound result=refused

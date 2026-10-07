@@ -1,5 +1,8 @@
 """Do not present partial, stale or altered evidence as a verified demo."""
 import hashlib
+import contextlib
+import io
+from unittest.mock import patch
 import json
 import pathlib
 import tempfile
@@ -14,11 +17,14 @@ class ReportTests(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.bundle = pathlib.Path(self.tmp.name)
         (self.bundle / 'Cargo.lock').write_bytes(b'lock')
-        self.data = dict(schema_version=2, complete=True, passed=True,
+        self.data = dict(schema_version=3, complete=True, passed=True,
                          lockfile_sha256=hashlib.sha256(b'lock').hexdigest(),
                          metadata={key: dict(exit_code=0, stdout='', stderr='') for key in
-                                   ('commit', 'working_tree', 'working_tree_end', 'cargo', 'rustc')}, checks=[])
+                                   ('commit', 'commit_end', 'working_tree', 'working_tree_end', 'cargo', 'rustc')}, checks=[])
         self.data['metadata']['commit']['stdout'] = 'a' * 40
+        self.data['metadata']['commit_end']['stdout'] = 'a' * 40
+        self.data['metadata']['rustc']['stdout'] = 'rustc test-version'
+        self.data['metadata']['cargo']['stdout'] = 'cargo test-version'
         for name, command in report.COMMANDS:
             check = dict(name=name, command=command, exit_code=0, passed=True,
                          missing_expected_lines=[], logs={})
@@ -82,6 +88,57 @@ class ReportTests(unittest.TestCase):
         self.assertNotIn('<script>', rendered)
         self.assertIn('&lt;script&gt;', rendered)
         self.assertIn('&lt;img src=x&gt;', rendered)
+
+    def run_cli(self):
+        with patch('sys.argv', ['investor_report', str(self.bundle)]), contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):
+            return report.main()
+
+    def test_bad_refresh_replaces_old_verified_report(self):
+        self.validate()
+        self.assertEqual(0, self.run_cli())
+        path = self.bundle / 'investor-report.html'
+        self.assertIn('HOST EVIDENCE VERIFIED', path.read_text())
+        (self.bundle / 'manifest.json').write_text('{broken')
+        self.assertEqual(2, self.run_cli())
+        self.assertNotIn('HOST EVIDENCE VERIFIED', path.read_text())
+        self.assertIn('NEEDS ATTENTION', path.read_text())
+
+    def test_missing_manifest_invalidates_previous_report(self):
+        (self.bundle / 'investor-report.html').write_text('HOST EVIDENCE VERIFIED')
+        self.assertEqual(2, self.run_cli())
+        self.assertNotIn('HOST EVIDENCE VERIFIED', (self.bundle / 'investor-report.html').read_text())
+
+    def test_malformed_types_fail_closed(self):
+        samples = [[], None, {'schema_version': 3, 'metadata': []},
+                   {'schema_version': 3, 'checks': [None]},
+                   {'schema_version': 3, 'checks': 'not a list'},
+                   {'schema_version': 3, 'metadata': {'commit': None}}]
+        for sample in samples:
+            with self.subTest(sample=sample):
+                (self.bundle / 'manifest.json').write_text(json.dumps(sample))
+                self.assertEqual(2, self.run_cli())
+                self.assertNotIn('HOST EVIDENCE VERIFIED', (self.bundle / 'investor-report.html').read_text())
+
+    def test_false_is_not_exit_code_zero(self):
+        self.data['checks'][0]['exit_code'] = False
+        with self.assertRaises(ValueError):
+            self.validate()
+
+    def test_duplicate_fields_are_rejected(self):
+        (self.bundle / 'manifest.json').write_text('{"passed":false,"passed":true}')
+        self.assertEqual(2, self.run_cli())
+
+    def test_clean_commit_change_is_not_verified(self):
+        self.data['metadata']['commit_end']['stdout'] = 'b' * 40
+        self.assertTrue(self.validate())
+
+    def test_old_schema_requires_recapture(self):
+        self.data['schema_version'] = 2
+        self.assertTrue(self.validate())
+
+    def test_missing_toolchain_version_is_not_verified(self):
+        self.data['metadata']['rustc']['stdout'] = ''
+        self.assertTrue(self.validate())
 
 
 if __name__ == '__main__':

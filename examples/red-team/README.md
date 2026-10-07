@@ -26,6 +26,11 @@ Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).
+Space-not-mappable needle: `[redteam] attack=space-not-mappable result=refused`
+(`map_place` on a **local** Streaming or Scratch address → `SpaceError::NotMappable`;
+the space refuse is named before remoteness, so remote Streaming is `NotMappable`,
+not `SilentRemoteLoad`; local DeviceHbm still maps; not silent-remote / UNIFIED /
+CXL productization; software path only).
 Soft HBM BW needle: `[redteam] attack=hbm-bw result=refused`
 (`SoftHbmBwMeter::charge` → `QosExceeded` vs `QosBudget.bw_mbps` on HBM
 `TypedWindow`; software meter only).
@@ -125,6 +130,11 @@ Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized resu
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
 HarmonicTreeReduce; not CapTable milestone).
+Opkernel-class-mismatch needle: `[redteam] attack=opkernel-class-mismatch result=refused`
+(Tree+Gradient `OperatorKernelHandle`: matched `admit_as` / `inject` admit; caller-named
+Harmonic on `admit_as` / Curl on `inject_as` → `OpKernelError::ClassMismatch` before Hodge
+quota or fabric — quota counters untouched, nothing queued; not CurlOnTree /
+HarmonicTreeReduce / ClassNotAuthorized; no new opcodes; software path only).
 Firewall-ident-pa needle: `[redteam] attack=firewall-ident-pa result=refused`
 (SoftCmdFirewall `admit_packed` identity guest PA → `HalError::Fault`;
 not mutation-during-validate — `softcmdfirewall` stays separate; not
@@ -146,6 +156,12 @@ Smmu-overlap needle: `[redteam] attack=smmu-overlap result=refused`
 heap line stays separate).
 SoftSFI unknown needle: `[softsfi] unknown=refused` / `[softsfi] unknown-base=refused` (bad opcode / illegal width →
 `Unmodeled`; tensor/heap lines stay separate; not AddImm deepen).
+SoftSFI-bad-insn needle: `[redteam] attack=softsfi-bad-insn result=refused`
+(`verify` / `execute` / `Program::push` / `SidSandbox::push`: register index
+`>= MAX_REGS`, empty program, push past `MAX_INSNS`, zero-bound or wrapping
+`SidRange` → `SfiError::BadInsn`; skip-verify bad-register store is refused at
+runtime and writes nothing; not softsfi-oob (`Oob`) / tensor / heap / unknown
+(`Unmodeled`) / unknown-base; no new opcodes; software path only).
 Smmu-not-mapped needle: `[redteam] attack=smmu-not-mapped result=refused`
 (Soft-SMMU Bound `walk` / `resolve_result` IOVA hole → `MapError::NotMapped`; mapped admits; not WrongStream / Stage2Fault / StreamAbort / SubmitSid / Overlap).
 Smmu-wrong-stream needle: `[redteam] attack=smmu-wrong-stream result=refused`

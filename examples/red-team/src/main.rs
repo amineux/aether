@@ -109,11 +109,11 @@ use aether_core::partition::{
     run_blast_hops_demo, run_blast_nodes_demo, run_hbm_bw_demo, run_outside_slice_demo,
     run_qos_credits_demo,
 };
-use aether_core::space::run_silent_remote_demo;
+use aether_core::space::{run_silent_remote_demo, run_space_not_mappable_demo};
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
-use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo};
+use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo};
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
@@ -125,6 +125,7 @@ use aether_drivers::{
 const LINE_CROSSCUT: &str = "[redteam] attack=wrong-sid-crosscut result=refused";
 const LINE_FIREWALL: &str = "[redteam] attack=softcmdfirewall result=refused";
 const LINE_SFI: &str = "[redteam] attack=softsfi-oob result=refused";
+const LINE_SFI_BAD_INSN: &str = "[redteam] attack=softsfi-bad-insn result=refused";
 const LINE_NOI: &str = "[redteam] attack=softnoi-is result=refused";
 const LINE_PASID: &str = "[redteam] attack=pasid-stale result=refused";
 const LINE_BLAST_HOPS: &str = "[redteam] attack=blast-hops result=refused";
@@ -136,6 +137,7 @@ const LINE_QOS_CREDITS: &str = "[redteam] attack=qos-credits result=refused";
 const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refused";
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
+const LINE_SPACE_NOT_MAPPABLE: &str = "[redteam] attack=space-not-mappable result=refused";
 const LINE_TYPED_WINDOW_SID: &str = "[redteam] attack=typed-window-sid result=refused";
 const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
@@ -150,6 +152,7 @@ const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree res
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
+const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
@@ -198,6 +201,7 @@ struct RedTeamReport {
     crosscut: bool,
     firewall: bool,
     sfi: bool,
+    sfi_bad_insn: bool,
     noi: bool,
     pasid: bool,
     blast_hops: bool,
@@ -209,6 +213,7 @@ struct RedTeamReport {
     fence_not_ready: bool,
     outside_slice: bool,
     silent_remote: bool,
+    space_not_mappable: bool,
     typed_window_sid: bool,
     hbm_bw: bool,
     xqueue_sid_override: bool,
@@ -223,6 +228,7 @@ struct RedTeamReport {
     hodge_curl_tree: bool,
     hodge_quota: bool,
     hodge_class_unauthorized: bool,
+    opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
@@ -268,6 +274,7 @@ impl RedTeamReport {
         self.crosscut
             && self.firewall
             && self.sfi
+            && self.sfi_bad_insn
             && self.noi
             && self.pasid
             && self.blast_hops
@@ -279,6 +286,7 @@ impl RedTeamReport {
             && self.fence_not_ready
             && self.outside_slice
             && self.silent_remote
+            && self.space_not_mappable
             && self.typed_window_sid
             && self.hbm_bw
             && self.xqueue_sid_override
@@ -293,6 +301,7 @@ impl RedTeamReport {
             && self.hodge_curl_tree
             && self.hodge_quota
             && self.hodge_class_unauthorized
+            && self.opkernel_class_mismatch
             && self.firewall_ident_pa
             && self.greenctx_overcommit
             && self.greenctx_unbound
@@ -346,6 +355,7 @@ fn run_redteam() -> RedTeamReport {
     let fence_nr = run_fence_not_ready_demo();
     let outside = run_outside_slice_demo();
     let silent = run_silent_remote_demo();
+    let space_not_mappable = run_space_not_mappable_demo();
     let typed_win = run_typed_window_sid_demo();
     let hbm = run_hbm_bw_demo();
     let xqueue_sid = run_xqueue_sid_override_demo();
@@ -360,6 +370,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
+    let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let greenctx_over = run_greenctx_overcommit_demo();
@@ -394,6 +405,7 @@ fn run_redteam() -> RedTeamReport {
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
+    let sfi_bad_insn = aether_core::softsfi::run_softsfi_bad_insn_demo();
     let noi = run_softnoi_demo();
     let sva = run_sva_demo();
 
@@ -406,6 +418,9 @@ fn run_redteam() -> RedTeamReport {
         firewall: firewall.hold_with && firewall.sneak_without,
         // Toy Soft-CP load of a foreign SID window is Oob.
         sfi: sfi.oob_reject && sfi.no_cross_read,
+        // Malformed program / sandbox range → BadInsn (bad reg, empty, past MAX_INSNS,
+        // zero/wrapping range); skip-verify bad-reg store writes nothing. Not Oob / Unmodeled.
+        sfi_bad_insn: sfi_bad_insn.all_ok(),
         // Heavy concurrent demand projects IS > 1.5; second tenant refused.
         noi: noi.heavy_refuse && noi.heavy_is_over,
         // Honest unmap drops the SSID TLB; skipped invalidate is a stale
@@ -438,6 +453,9 @@ fn run_redteam() -> RedTeamReport {
         // map_place / map_fabric: local OK; remote → SilentRemoteLoad.
         // MEM_FULL never implies UNIFIED. Not CXL productization / BAR0 / SoftNPU.
         silent_remote: silent.all_ok(),
+        // map_place local Streaming / Scratch → NotMappable (space before remoteness).
+        // Local HBM maps. Not SilentRemoteLoad / UNIFIED / CXL productization.
+        space_not_mappable: space_not_mappable.all_ok(),
         // TypedWindow map_window_sid: match OK; mismatch → WrongStream;
         // foreign pin → CrossTenant. Exploration stub — not CXL.mem / BAR0.
         typed_window_sid: typed_win.all_ok(),
@@ -480,6 +498,9 @@ fn run_redteam() -> RedTeamReport {
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
+        // OperatorKernel admit_as/inject_as wrong class → ClassMismatch before quota/fabric.
+        // Not CurlOnTree / HarmonicTreeReduce / ClassNotAuthorized; no new opcodes.
+        opkernel_class_mismatch: opkernel_class_mismatch.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -618,6 +639,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.crosscut, LINE_CROSSCUT);
     emit(r.firewall, LINE_FIREWALL);
     emit(r.sfi, LINE_SFI);
+    emit(r.sfi_bad_insn, LINE_SFI_BAD_INSN);
     emit(r.noi, LINE_NOI);
     emit(r.pasid, LINE_PASID);
     emit(r.blast_hops, LINE_BLAST_HOPS);
@@ -629,6 +651,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fence_not_ready, LINE_FENCE_NOT_READY);
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
+    emit(r.space_not_mappable, LINE_SPACE_NOT_MAPPABLE);
     emit(r.typed_window_sid, LINE_TYPED_WINDOW_SID);
     emit(r.hbm_bw, LINE_HBM_BW);
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
@@ -643,6 +666,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
+    emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
@@ -708,6 +732,7 @@ mod tests {
         assert!(r.crosscut, "CrossCut + wrong-SID DMA");
         assert!(r.firewall, "SoftCmdFirewall mutate-during-validate");
         assert!(r.sfi, "SoftSFI OOB load");
+        assert!(r.sfi_bad_insn, "SoftSFI malformed program / range → BadInsn");
         assert!(r.noi, "SoftNoI-IS overload admit");
         assert!(r.pasid, "PASID stale translate after unmap");
         assert!(r.blast_hops, "admit_hops over max_hops → BlastRadius");
@@ -719,6 +744,7 @@ mod tests {
         assert!(r.fence_not_ready, "Timeline::wait before retire → FenceNotReady");
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
+        assert!(r.space_not_mappable, "map_place local Streaming/Scratch → NotMappable");
         assert!(r.typed_window_sid, "map_window_sid mismatch → WrongStream");
         assert!(r.hbm_bw, "SoftHbmBwMeter over bw_mbps → QosExceeded");
         assert!(
@@ -768,6 +794,10 @@ mod tests {
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
+        );
+        assert!(
+            r.opkernel_class_mismatch,
+            "admit_as/inject_as wrong class → ClassMismatch, quota + queue untouched"
         );
         assert!(
             r.firewall_ident_pa,
@@ -913,6 +943,7 @@ mod tests {
         assert!(LINE_CROSSCUT.contains("attack=wrong-sid-crosscut"));
         assert!(LINE_FIREWALL.contains("attack=softcmdfirewall"));
         assert!(LINE_SFI.contains("attack=softsfi-oob"));
+        assert_eq!(LINE_SFI_BAD_INSN, "[redteam] attack=softsfi-bad-insn result=refused");
         assert!(LINE_NOI.contains("attack=softnoi-is"));
         assert!(LINE_PASID.contains("attack=pasid-stale"));
         assert_eq!(LINE_BLAST_HOPS, "[redteam] attack=blast-hops result=refused");
@@ -924,6 +955,7 @@ mod tests {
         assert_eq!(LINE_FENCE_NOT_READY, "[redteam] attack=fence-not-ready result=refused");
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_SILENT_REMOTE, "[redteam] attack=silent-remote result=refused");
+        assert_eq!(LINE_SPACE_NOT_MAPPABLE, "[redteam] attack=space-not-mappable result=refused");
         assert_eq!(LINE_TYPED_WINDOW_SID, "[redteam] attack=typed-window-sid result=refused");
         assert_eq!(LINE_HBM_BW, "[redteam] attack=hbm-bw result=refused");
         assert_eq!(
@@ -973,6 +1005,10 @@ mod tests {
         assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
+        );
+        assert_eq!(
+            LINE_OPKERNEL_CLASS_MISMATCH,
+            "[redteam] attack=opkernel-class-mismatch result=refused"
         );
         assert_eq!(
             LINE_FIREWALL_IDENT_PA,
@@ -1112,6 +1148,7 @@ mod tests {
             LINE_CROSSCUT,
             LINE_FIREWALL,
             LINE_SFI,
+            LINE_SFI_BAD_INSN,
             LINE_NOI,
             LINE_PASID,
             LINE_BLAST_HOPS,
@@ -1123,6 +1160,7 @@ mod tests {
             LINE_FENCE_NOT_READY,
             LINE_OUTSIDE_SLICE,
             LINE_SILENT_REMOTE,
+            LINE_SPACE_NOT_MAPPABLE,
             LINE_TYPED_WINDOW_SID,
             LINE_HBM_BW,
             LINE_XQUEUE_SID_OVERRIDE,
@@ -1133,6 +1171,7 @@ mod tests {
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
             LINE_HODGE_CLASS_UNAUTHORIZED,
+            LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,

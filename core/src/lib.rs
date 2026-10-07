@@ -116,7 +116,7 @@ pub use opinject::{
     OperatorInject, ResidentWorker, DEMO_WORDS, MAX_OP_SLOTS, OPINJECT_BASE, OPINJECT_DST,
     OPINJECT_SID, OPINJECT_SPAN, OP_CALL_SIZE, SLOT_MEMCPY, SLOT_SAXPY, SLOT_SCALE,
 };
-pub use opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, CollectiveKind, HodgeCurlTreeReport, HodgeHarmonicTreeReport, OpKernelError, OpKernelId, OperatorKernelHandle};
+pub use opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo, CollectiveKind, HodgeCurlTreeReport, HodgeHarmonicTreeReport, OpKernelClassMismatchReport, OpKernelError, OpKernelId, OperatorKernelHandle};
 pub use partition::{
     run_hbm_bw_demo, BlastRadius, HbmBwReport, PartitionId, PartitionProfile, QosBudget,
     SoftHbmBwMeter, SpatialSlice,
@@ -137,12 +137,12 @@ pub use smmu_bringup::{
 pub use softfloat::{add_f16, add_f32, f16_to_f32, f32_to_f16, mul_f16, mul_f32};
 pub use softsfi::{
     execute, execute_unverified, heap_alloc_prog, illegal_width_prog, in_bounds_atomic_prog,
-    in_bounds_prog, oob_atomic_prog, oob_load_prog, run, run_softsfi_demo, tensor_prog,
+    in_bounds_prog, oob_atomic_prog, oob_load_prog, run, run_softsfi_bad_insn_demo, run_softsfi_demo, tensor_prog,
     unknown_base_load_prog, unknown_base_store_prog, unknown_opcode_prog, verify, FlatMem, Insn,
-    Program, SfiError, SfiExec, SfiMem, SidRange, SidSandbox, SoftOp, SoftSfiReport, MAX_INSNS,
+    Program, SfiError, SfiExec, SfiMem, SidRange, SidSandbox, SoftOp, SoftSfiBadInsnReport, SoftSfiReport, MAX_INSNS,
     MAX_REGS, SFI_SECRET_B, SFI_SID_A, SFI_SID_B, WORD,
 };
-pub use space::{FabricAddr, MemorySpace, Place, SpaceError};
+pub use space::{run_space_not_mappable_demo, FabricAddr, MemorySpace, Place, SpaceError, SpaceNotMappableReport};
 pub use sparsify::{decide_header, SparsifiedCollective, SparsifyAction, DEFAULT_THRESHOLD_MILLI};
 pub use sva::{run_sva_demo, SvaReport, SVA_LEN, SVA_MM, SVA_PA, SVA_SID, SVA_VA};
 pub use sysnr::{

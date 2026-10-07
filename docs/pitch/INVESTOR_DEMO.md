@@ -82,3 +82,23 @@ warning. Inspect the matching GitHub checks and security discussion. Share a
 passing report as host evidence, alongside the remaining customer and hardware
 gates. Checksums detect accidental file edits; they do not provide cryptographic
 attestation that the author executed the commands.
+
+## Evidence reliability (schema 3)
+
+Recapture older bundles before generating a verified report. Schema 3 records
+both the starting and ending commit so a checkout change during collection
+cannot be labeled as evidence for one revision. The collector publishes each
+manifest update atomically; an interrupted update retains the last complete
+JSON document with `complete: false` until collection finishes.
+
+Each command has a timeout (`--timeout`, seconds). On the documented Linux
+host, a timeout stops the command's process group, including make/cargo children,
+preserves stdout/stderr, and records exit code 124. A failing command never
+becomes a passing check merely because it emitted some expected lines.
+
+The report refresh first invalidates any older result. Invalid JSON, missing
+files or malformed field types produce a non-verified report and nonzero exit.
+Renderer exit codes: 0 = consistent host evidence, 1 = failed verification,
+2 = unreadable/malformed evidence or output failure. If output cannot be
+replaced (for example, directory permissions), the CLI warns not to use an
+existing report. Checksums remain consistency checks, not attestation.
