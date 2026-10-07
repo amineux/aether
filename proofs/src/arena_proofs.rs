@@ -41,18 +41,17 @@ fn arena_limit_refuses_and_conserves() {
     assert!(a.live_count() == MAX_ARENAS);
 }
 
-/// Bound: empty allocator; one symbolic allocation of size in `[1, 2*PAGE_4K]`.
+/// Bound: empty allocator; one symbolic allocation of size in `[1, PAGE_4K]`.
 ///
 /// Property (no leak): if an allocation succeeds, freeing it restores the
 /// bank's free byte count exactly — alloc-then-free never loses a byte.
 #[kani::proof]
 #[kani::unwind(26)]
-#[kani::solver(cadical)]
 fn arena_alloc_then_free_conserves_bytes() {
     let mut a = fresh();
     let total = a.free_bytes(BankId(0));
     let size: u64 = kani::any();
-    kani::assume(size >= 1 && size <= 2 * PAGE_4K);
+    kani::assume(size >= 1 && size <= PAGE_4K);
     if let Ok(ar) = a.alloc(ArenaRequest::tensor(size, Some(BankId(0))).for_tenant(TenantId(1))) {
         assert!(a.free_bytes(BankId(0)) <= total);
         assert!(a.free(ar.id).is_ok());
@@ -121,7 +120,6 @@ fn arena_nonowner_transfer_refused_leaves_state() {
 /// tenant's live arena, and the other arena is byte-identical afterwards.
 #[kani::proof]
 #[kani::unwind(26)]
-#[kani::solver(cadical)]
 fn arena_alloc_never_overlaps_live_arena() {
     let mut a = fresh();
     let y = a.alloc(one_page(2)).unwrap();

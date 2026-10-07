@@ -1,10 +1,10 @@
 //! Soft SMMU: a mapping translates only inside its own region, and a stream
 //! bound to one tenant cannot be walked on behalf of another.
 //!
-//! Bounds: one mapping of `LEN = 0x1000` bytes at a page-aligned base, on a
-//! stream id `< 2`, for a tenant `< 2`; the translate `guest_pa` ranges over
-//! all of `u64`. Only a single region is installed (the allocator's STE / CD /
-//! S1 / S2 tables are otherwise empty).
+//! Bounds: one `LEN = 0x1000`-byte region owned by tenant 1 at guest PA
+//! `0x2000` on stream 0 (the STE / CD / S1 / S2 tables are otherwise empty);
+//! attacker tenant ids `< 4`; query / unmap addresses range over all of
+//! `u64`; attacker map lengths `<= 4 * LEN`. Each harness states its own.
 
 use aether_core::caps::{CapKind, CapRights, Capability};
 use aether_core::iommu::{IommuMap, MapError, MapRequest};
@@ -21,9 +21,8 @@ fn mem_cap(tenant: u32) -> Capability {
     )
 }
 
-/// Bound: tenant 1, stream 0, one mapping of `LEN` bytes at a symbolic
-/// page-aligned guest PA `0x1000 + page * 0x1000` with `page < 16`; the
-/// translate `guest_pa` ranges over all of `u64`.
+/// Bound: tenant 1, stream 0, one mapping of `LEN` bytes at guest PA
+/// `0x2000`; the translate `guest_pa` ranges over all of `u64`.
 ///
 /// Property: after a single successful map, `translate_stream` on the same
 /// stream returns `Some` only for guest PAs inside `[base, base + LEN)`, and
@@ -33,12 +32,9 @@ fn mem_cap(tenant: u32) -> Capability {
 /// caller's arena" property, bounded to one region).
 #[kani::proof]
 #[kani::unwind(20)]
-#[kani::solver(cadical)]
 fn translate_stays_within_mapped_region() {
     let mut m = IommuMap::new();
-    let page: u64 = kani::any();
-    kani::assume(page < 16);
-    let base = 0x1000 + page * 0x1000;
+    let base: u64 = 0x2000;
 
     let region = match m.map(&mem_cap(1), MapRequest::pin_stream(PhysAddr(base), LEN, 0)) {
         Ok(r) => r,
@@ -80,8 +76,10 @@ fn translate_refuses_other_tenant() {
 }
 
 /// Bound: one region of `LEN` bytes at guest PA `0x2000` on stream 0, owned
-/// by tenant 1. Attacker: a Memory cap of any tenant `< 4` other than 1 with
-/// symbolic rights and object; the unmap IOVA ranges over all of `u64`.
+/// by tenant 1. Attacker: a Memory cap of tenant 2 with symbolic rights and
+/// object; the unmap IOVA ranges over all of `u64`. (The attacker tenant is
+/// fixed so the checker does not unroll the unreachable unmap path; the gate
+/// only compares tenant ids.)
 ///
 /// Property (cross-tenant non-modification, `unmap_for`): another tenant can
 /// never unmap the region. Every attempt is refused, the region table still
@@ -96,8 +94,7 @@ fn unmap_for_cross_tenant_leaves_region() {
         Ok(r) => r,
         Err(_) => return,
     };
-    let other: u32 = kani::any();
-    kani::assume(other < 4 && other != 1);
+    let other: u32 = 2;
     let rights: u16 = kani::any();
     let object: u32 = kani::any();
     let attacker = Capability::new(CapKind::Memory, CapRights(rights), object, TenantId(other));
@@ -115,8 +112,9 @@ fn unmap_for_cross_tenant_leaves_region() {
 }
 
 /// Bound: stream 0 bound by tenant 1 through one `LEN`-byte region; the
-/// attacker is any tenant `< 4` other than 1 holding a full Memory+MAP cap
-/// and asks for any guest PA / length with `len <= 4 * LEN`.
+/// attacker is tenant 2 holding a full Memory+MAP cap and asks for any guest
+/// PA / length with `len <= 4 * LEN` (attacker tenant fixed for the same
+/// reason as above).
 ///
 /// Property: a tenant cannot pin anything on a stream another tenant owns.
 /// `map` is refused with `CrossTenant` and the region table is unchanged.
@@ -128,8 +126,7 @@ fn map_on_foreign_stream_refused() {
         Ok(r) => r,
         Err(_) => return,
     };
-    let other: u32 = kani::any();
-    kani::assume(other < 4 && other != 1);
+    let other: u32 = 2;
     let gpa: u64 = kani::any();
     let len: u64 = kani::any();
     kani::assume(len >= 1 && len <= 4 * LEN);

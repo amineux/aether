@@ -640,3 +640,117 @@ grep-able on purpose: it can later be registered as one more evidence check
 (for example a `COMMANDS` entry feeding `scripts/investor_report.py` from PR
 #190) without changing the kit — wiring that is left to the owners of
 `scripts/collect_evidence.py` and `ci.yml`.
+
+## Bounded model-checked tenant noninterference (Kani + two-world check)
+
+Two complementary checks of the same claim: nothing one tenant does changes
+what another tenant sees.
+
+**1. Kani harnesses over the pure core** (`proofs/`, `make kani`). Each
+harness is a small Rust function behind `#[cfg(kani)]` that Kani 0.68 / CBMC
+checks for **every** input inside the harness's stated bounds, not for a
+sample of inputs. This is **bounded model checking**: the result holds inside
+the bounds below and says nothing outside them. It is not a whole-system
+proof, not a proof about the kernel binary, and not a hardware guarantee.
+The `proofs/` crate is its own workspace, so normal builds and
+`cargo test --workspace` are unchanged. `scripts/run_kani.sh` prints one
+line per harness:
+
+```
+[proof] harness=<name> result=verified checks=<n> time=<s>s
+[proof] summary harnesses=18 verified=18 failed=0 kind=bounded-model-checked
+```
+
+Kani also checks every arithmetic overflow, out-of-bounds index, `unwrap`
+and `panic!` reachable inside the bounds, so "verified" also means none of
+those can happen there.
+
+| Harness | Property | Bounds |
+|---|---|---|
+| `cap_mint_rejects_cross_tenant` | `mint` stores a cap only for the table owner, never `Empty` | tenants `< 4`; all 10 kinds; all rights and object ids |
+| `cap_require_matches_kind_rights_tenant` | `require` returns a cap only with the asked kind, every asked right, and the owner's tenant | tenant `< 4`; kinds 1..=9; all rights |
+| `cap_transfer_never_escalates` | `transfer` needs `GRANT`; the minted cap belongs to the destination owner with a subset of the rights; a refusal leaves every destination slot empty | tenants `< 4`; kinds 1..=9; all rights; move and copy |
+| `translate_stays_within_mapped_region` | after a map, `translate_stream` returns `Some` only inside `[base, base+len)`, at the same offset in the region's own IOVA window | one 4 KiB region, tenant 1, stream 0; query PA over all of `u64` |
+| `translate_refuses_other_tenant` | a walk tagged with another tenant is `CrossTenant`; the owner walks | one 4 KiB region; attacker tenants `< 4`; every in-range offset |
+| `unmap_for_cross_tenant_leaves_region` | another tenant can never unmap a region; the region and the owner's translations are unchanged | one 4 KiB region of tenant 1; attacker tenant 2 with any rights / object; unmap IOVA over all of `u64` |
+| `map_on_foreign_stream_refused` | a tenant cannot pin anything on a stream another tenant owns (`CrossTenant`, table unchanged) | stream bound by tenant 1; attacker tenant 2 with full Memory+MAP; any guest PA, `len <= 16 KiB` |
+| `arena_limit_refuses_and_conserves` | with all 16 arena slots used, the next alloc is `ArenaLimit` and no free byte or span is lost (the #199 fix) | 16 one-page arenas; probe size `[1, 4 KiB]` |
+| `arena_alloc_then_free_conserves_bytes` | alloc then free restores the bank's free bytes exactly (no leak) | empty allocator; size `[1, 4 KiB]` |
+| `arena_alloc_never_overlaps_live_arena` | a new allocation never overlaps another tenant's live arena, stays inside the bank, and leaves that arena byte-identical | one live arena of tenant 2; tenant 1 asks for `[1, 8 KiB]` |
+| `arena_op_does_not_touch_other_tenant` | an ownership handoff on one arena never changes another tenant's arena | two live arenas; tiles and tenant `< 4` |
+| `arena_free_does_not_touch_other_tenant` | freeing any other arena id leaves tenant 2's arena live and byte-identical | two live arenas; ids `< 8` |
+| `arena_nonowner_transfer_refused_leaves_state` | a handoff claimed by a non-owner is `NotOwner`, arena unchanged | kernel-owned arena; tiles and tenant `< 8` |
+| `arena_reclaim_by_non_owner_refused` | after kernel → tile 2, only tile 2 can hand it on; kernel-style reclaim and every other tile are `NotOwner` | any `from` other than `Some(2)`; `to`, tenant `< 8` |
+| `kv_attend_never_crosses_tenant` | `attend` succeeds only for the owner's KV page (not weights), matching sequence, and the right READ / WRITE | tenants, ids, seq `< 3`; any rights and request |
+| `kv_regrant_requires_grant` | decode-side regrant needs `GRANT`, else `WouldRegrant` and the destination stays empty | tenants `< 3`; any rights |
+| `kv_pin_cross_tenant_installs_nothing` | `pin_kv` on another tenant's KV object fails and installs nothing in the SMMU | object of tenant 1, cap of tenant 2, any rights |
+| `map_pin_addr_only_from_arena_cap` | `SYS_MAP`'s pinned address comes only from the arena cap: `Some(base)` iff `vaddr` is `0` or `base` (the #203 fix) | `arena_base` and `vaddr` over all of `u64` |
+
+Where a harness fixes one tenant pair (for example attacker tenant 2 against
+owner tenant 1), it does so to stop the checker unrolling a path the tenant
+gate makes unreachable. The gates compare tenant ids for equality, so any
+other distinct pair takes the same path, but the checked statement is only
+for the pair named.
+
+Assumptions: Rust's semantics as Kani models them; the `aether-core` source
+at the checked commit; the fixed table sizes in the code (`MAX_ARENAS = 16`,
+`MAX_FREE = 24`, `MAX_MAPS = 16`, `MAX_STES = 8`, `CAP_SLOTS = 32`). Loop
+bounds are set per harness with `#[kani::unwind]`, and Kani's unwinding
+assertions fail the harness if a bound is too small.
+
+**2. Two-world noninterference check** (`make noninterference`,
+`examples/red-team/examples/noninterference`, tests in
+`examples/red-team/tests/noninterference.rs`). The same honest workload runs
+in two worlds. Tenants A and B run the two-tenant MLP (5 accelerator jobs
+each, through their own Soft-SMMU stream and SoftNpu queue) and attend their
+own KV pages. In world 0 tenant C is idle. In world 1, between every honest
+step, C issues a seeded pseudo-random burst of syscalls and accelerator ops:
+arena alloc, `SYS_MAP` with guessed addresses, `SYS_UNMAP` of any IOVA,
+accelerator jobs with random shapes, dtypes, addresses and forged tenant
+tags (plus jobs aimed at its own fresh mappings), stream bind, SET_SID,
+arena handoff, cap derive and revoke, and KV attend and KV pin. After every
+honest step the check records everything A and B can observe: every job
+result including its completion sequence number, every attend result, all
+4096 bytes of each arena, the Soft-SMMU resolve and translate result for
+every 256-byte offset, and the arena metadata. The two worlds must be
+byte-identical for every seed:
+
+```
+[noninterference] worlds=2 seeds=512 ops=172032 divergences=0
+```
+
+C's syscalls go through the same `aether_core` functions the kernel calls,
+with the kernel's gates. `SYS_MAP` takes the address from the caller's arena
+cap through `map_pin_addr`, and an arena handoff names the caller's own
+tile. `SYS_UNMAP` is modelled as the capability-checked `unmap_for`. That is
+the fix PRs #183 / #189 propose for issue #161: **current `main`'s kernel
+`sys_unmap` still calls the unchecked `unmap`**, and the `unchecked-unmap`
+control below shows that this breaks noninterference.
+
+Four negative controls each re-open one known hole and must produce
+divergences, so the check is shown to be able to fail:
+
+| Control | Hole re-opened | Result |
+|---|---|---|
+| `unchecked-unmap` | `SYS_UNMAP` without the tenant check (issue #161) | diverges |
+| `raw-map-addr` | `SYS_MAP` pins the caller's address (before #203) | diverges |
+| `leaked-cap` | C holds a copy of A's Memory+MAP cap | diverges |
+| `global-job-seq` | completions numbered from the device-wide counter (before #208) | diverges |
+
+**Bug this found.** On its first run the two-world check found a real
+cross-tenant information flow. The completion `job_seq` that SoftNpu
+returned to a tenant came from the device-wide counter, so tenant A could
+count how many jobs tenant C ran between two of A's jobs. PR #208 fixed it
+with per-tenant queue numbering (`TenantQueue`, `SoftNpu::execute_queued`)
+and added a regression test. With `job_seq` excluded, every other
+observation already matched byte for byte. Kani found no counterexample in
+the harnesses above.
+
+**Out of scope.** Hardware isolation and real silicon. Timing, cache, power
+and other microarchitectural side channels (both worlds are compared on
+values, not time). The kernel binary, assembly, boot and the x86 / RISC-V /
+AArch64 page tables, which QEMU tests cover separately. Concurrency and SMP
+interleavings. Anything outside the stated bounds and table sizes. The
+two-world check is randomized testing over many seeds, not exhaustive. We
+describe this work as **bounded model-checked**, never as "formally
+verified" or "zero-trust".
