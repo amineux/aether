@@ -1,0 +1,23 @@
+[package]
+name = "aether-isolation-kit"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Pre-silicon tenant-isolation conformance kit (host-only, no hardware claims)"
+publish = false
+
+[lib]
+name = "aether_isolation_kit"
+path = "src/lib.rs"
+
+[[bin]]
+name = "aether-isolation-kit"
+path = "src/main.rs"
+
+[dependencies]
+aether-core = { path = "../../core" }
+
+# Own workspace root: the kit stays out of the repo's virtual workspace so it
+# needs no edit to the root Cargo.toml (which #189 also touches). Build it with
+# `cargo run --manifest-path examples/isolation-kit/Cargo.toml` or `make isolation-matrix`.
+[workspace]

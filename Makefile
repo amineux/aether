@@ -867,3 +867,23 @@ two-tenant-infer:
 	cmp $(TTI_LOG) $(TTI_LOG).2
 	grep -qxF "[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true" $(TTI_LOG)
 	@echo "two-tenant-infer: outputs CPU-exact, every attack refused, log byte-identical"
+
+# Pre-silicon tenant-isolation conformance kit (use case B). A backend
+# implements the IsolationBackend trait; the kit runs the existing named attack
+# classes and prints a per-backend matrix (refused / ACCEPTED / n/a) plus a
+# one-line summary. Host-only; not certification, not a partner result, no
+# hardware or performance claims. The crate is its own workspace (own
+# Cargo.lock), so it needs no entry in the root Cargo.toml; run it by manifest
+# path. Not wired into collect_evidence.py / ci.yml here (Codex owns those);
+# see the DILIGENCE subsection for how the summary line would feed a report.
+ISOLATION_KIT := examples/isolation-kit/Cargo.toml
+ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
+
+isolation-matrix:
+	mkdir -p $(BUILD)
+	rm -f $(ISOLATION_MATRIX_LOG)
+	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet > $(ISOLATION_MATRIX_LOG) 2>&1
+	cat $(ISOLATION_MATRIX_LOG)
+	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
+	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
+	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"
