@@ -66,6 +66,35 @@ fn yield_now() {
     let _ = sys(SYS_YIELD, 0, 0, 0);
 }
 
+/// Physical load address of this arch's kernel image — memory a ring-3
+/// tenant must never be able to pin or map.
+#[cfg(target_arch = "x86_64")]
+const FOREIGN_PHYS: u64 = 0x0040_0000;
+#[cfg(target_arch = "riscv64")]
+const FOREIGN_PHYS: u64 = 0x8020_0000;
+#[cfg(target_arch = "aarch64")]
+const FOREIGN_PHYS: u64 = 0x4008_0000;
+
+/// Regression for the SYS_MAP physical-address source check. SYS_MAP must
+/// derive the pinned physical address from the caller's own arena
+/// capability; a caller-supplied address (here the arch's kernel load
+/// address) must be refused. We only observe accept vs refuse — we never
+/// read or write the named memory.
+fn map_user_phys_probe() -> bool {
+    let cap = sys(SYS_ARENA_ALLOC, 256, 0, 0);
+    if cap < 0 {
+        debug_print(b"[init] map-user-phys arena FAIL\r\n");
+        return false;
+    }
+    let rc = sys(SYS_MAP, cap as u64, FOREIGN_PHYS, 0);
+    if rc >= 0 {
+        debug_print(b"[init] map-user-phys FAIL (caller phys accepted)\r\n");
+        return false;
+    }
+    debug_print(b"[init] attack=map-user-phys refused (phys from arena cap only)\r\n");
+    true
+}
+
 fn exit(code: u64) -> ! {
     let _ = sys(SYS_EXIT, code, 0, 0);
     loop {
@@ -268,6 +297,9 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] arena_alloc + map ok\r\n");
+    if !map_user_phys_probe() {
+        exit(1);
+    }
 
     let mut tensors = [0u8; 256];
     let ident = [

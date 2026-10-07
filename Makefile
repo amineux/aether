@@ -169,6 +169,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=arena-not-owner result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=arena-limit-leak result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=user-copy-straddle result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=map-user-phys result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=typed-window-sid result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=silent-remote result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=space-not-mappable result=refused" $(REDTEAM_LOG)
@@ -477,6 +478,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[boot\\] APIC SoftNPU doorbell = self-IPI vec 49" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[apic\\] claim vec=49 SoftNPU used-ring" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/qemu-serial.log \
@@ -756,6 +758,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/riscv-serial.log \
 	   && grep -q "U-MODE /init VIA ECALL/SRET" $(BUILD)/riscv-serial.log; then \
 		echo "qemu-riscv-ci: U-mode /init + PLIC SoftNPU + clone + demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -829,6 +832,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[boot\\] GIC SoftNPU doorbell = SPI 40" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[gic\\] claim irq=40 SoftNPU used-ring" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/aarch64-serial.log \

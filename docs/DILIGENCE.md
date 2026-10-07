@@ -369,6 +369,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Wait before fence retire | `run_fence_not_ready_demo` — `Timeline::wait` → `PartitionError::FenceNotReady` (issued-but-not-retired; complete then wait OK). Not CreditExhausted / qos-credits; timeout-frees stays in qos demo | refused |
 | Full arena table | `run_arena_limit_leak_demo` — `ArenaAllocator::alloc` → `ArenaError::ArenaLimit` when every arena slot is in use, checked before any free span is split; free bytes and free spans unchanged across repeated refusals (Round 21 fix: this path used to return `NoSpace` and lose the split span, reachable from `SYS_ARENA_ALLOC`). Not arena-not-owner / bank-color; software allocator only | refused |
 | User copy past a mapped page | `run_user_copy_straddle_demo` — `sysnr::user_chunks` splits a user range at 4 KiB and `sysnr::user_pages_ok` refuses it if any page is unmapped (8 mapped + 8 unmapped bytes → refused, naming the unmapped page; wrap refused; mapped straddles pass). The kernel's `read_user_in` / `write_user_in` run this gate, then translate each page on its own (Round 21 fix: only the first page was translated, so an x86 copy ran into the next physical frame and RISC-V / aarch64 took a kernel fault on an unmapped tail). QEMU `/init` checks the same on all three arches. Not a new syscall or struct; not SMAP/PAN hardening | refused |
+| SYS_MAP caller-supplied physical address | `run_map_user_phys_demo` — `sysnr::map_pin_addr` derives the pinned physical address only from the caller's own arena capability base: `vaddr == 0` (or the arena's own base) pins the arena base; any other caller-supplied address — a kernel load address or a foreign arena — is refused with `SysError::Inval`, so a tenant cannot pin and (on x86, via `allow_user_2m`) user-map arbitrary physical memory. The kernel's `sys_map` runs the same gate; QEMU `/init` checks it on all three arches. Not a new syscall number / struct / enum variant | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 | TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
@@ -415,6 +416,7 @@ Expected stdout (CI greps these):
 [redteam] attack=arena-not-owner result=refused
 [redteam] attack=arena-limit-leak result=refused
 [redteam] attack=user-copy-straddle result=refused
+[redteam] attack=map-user-phys result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=space-not-mappable result=refused
 [redteam] attack=typed-window-sid result=refused

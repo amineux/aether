@@ -345,7 +345,11 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
             .filter(|a| a.id.0 == cap.object)
             .ok_or(SysError::Inval)
     })?;
-    let va = if vaddr == 0 { arena.base.0 } else { vaddr };
+    // The pinned physical address is derived only from the caller's own
+    // arena capability. A caller-supplied address other than the arena's
+    // own base is refused (would otherwise pin — and on x86 user-map —
+    // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
+    let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
     let iova = with(|w| {
         w.npu
             .map_with_cap(&cap, MapRequest::pin(PhysAddr(va), arena.size))

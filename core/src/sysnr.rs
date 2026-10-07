@@ -410,9 +410,92 @@ pub fn run_user_copy_straddle_demo() -> UserCopyStraddleReport {
     }
 }
 
+/// Physical pin address for `SYS_MAP`. The address a tenant's arena is
+/// pinned at is derived only from the arena capability's own `base`, never
+/// from the caller. `vaddr == 0` means "use the arena base"; a caller that
+/// names the arena's own base resolves to that same cap-derived address.
+/// Any other `vaddr` is refused (`None`): without this a tenant could name
+/// an arbitrary physical address to pin and, on x86, user-map (e.g. kernel
+/// text). The ring-3 ABI arg is unchanged — no new syscall number or struct.
+pub fn map_pin_addr(arena_base: u64, vaddr: u64) -> Option<u64> {
+    if vaddr == 0 || vaddr == arena_base {
+        Some(arena_base)
+    } else {
+        None
+    }
+}
+
+/// Host clip for the `SYS_MAP` physical-address source check: the pinned
+/// address must come from the caller's own arena capability, not a value the
+/// caller supplies. Same gate the kernel's `sys_map` runs via [`map_pin_addr`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MapUserPhysReport {
+    /// `vaddr == 0` pins the arena's own base.
+    pub default_uses_arena_base: bool,
+    /// Naming the arena's own base resolves to that same base.
+    pub same_base_accepted: bool,
+    /// A caller-supplied kernel physical address is refused.
+    pub kernel_phys_refused: bool,
+    /// A caller-supplied foreign-arena address is refused.
+    pub foreign_arena_refused: bool,
+    /// No accepted result is ever the caller's supplied address.
+    pub never_returns_caller_addr: bool,
+}
+
+impl MapUserPhysReport {
+    pub fn all_ok(&self) -> bool {
+        self.default_uses_arena_base
+            && self.same_base_accepted
+            && self.kernel_phys_refused
+            && self.foreign_arena_refused
+            && self.never_returns_caller_addr
+    }
+}
+
+/// `vaddr == 0` (or the arena's own base) pins the arena base; any other
+/// caller-supplied physical address — a kernel load address or a foreign
+/// arena — is refused. The kernel's `sys_map` calls [`map_pin_addr`] for
+/// exactly this gate before it pins or (on x86) user-maps.
+pub fn run_map_user_phys_demo() -> MapUserPhysReport {
+    let arena_base = 0x0100_0000u64;
+    // Physical addresses a tenant must never be able to name: the x86,
+    // RISC-V and aarch64 kernel load addresses, and a foreign arena.
+    let kernel_phys = [0x0040_0000u64, 0x8020_0000, 0x4008_0000];
+    let foreign_arena = arena_base + 0x20_0000;
+
+    let default_uses_arena_base = map_pin_addr(arena_base, 0) == Some(arena_base);
+    let same_base_accepted = map_pin_addr(arena_base, arena_base) == Some(arena_base);
+    let kernel_phys_refused = kernel_phys
+        .iter()
+        .all(|&pa| map_pin_addr(arena_base, pa).is_none());
+    let foreign_arena_refused = map_pin_addr(arena_base, foreign_arena).is_none();
+    let never_returns_caller_addr = kernel_phys
+        .iter()
+        .chain(core::iter::once(&foreign_arena))
+        .all(|&pa| map_pin_addr(arena_base, pa).map_or(true, |got| got == arena_base));
+
+    MapUserPhysReport {
+        default_uses_arena_base,
+        same_base_accepted,
+        kernel_phys_refused,
+        foreign_arena_refused,
+        never_returns_caller_addr,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn map_pin_addr_only_from_arena_cap() {
+        let base = 0x0100_0000u64;
+        assert_eq!(map_pin_addr(base, 0), Some(base));
+        assert_eq!(map_pin_addr(base, base), Some(base));
+        assert_eq!(map_pin_addr(base, 0x0040_0000), None);
+        assert_eq!(map_pin_addr(base, base + 0x20_0000), None);
+        assert!(run_map_user_phys_demo().all_ok());
+    }
 
     #[test]
     fn numbers_match_historical_abi() {
