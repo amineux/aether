@@ -5,6 +5,7 @@
 //! cache coherence: a transfer from CPU tile to NPU tile is an ownership
 //! handoff, not a shared mapping.
 
+use crate::caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
 use crate::color::BankColor;
 use crate::space::MemorySpace;
 use crate::types::{BankId, TenantId, PAGE_2M, PAGE_4K, PhysAddr};
@@ -29,6 +30,13 @@ pub enum ArenaError {
     UnknownArena,
     NotOwner,
     ArenaLimit,
+}
+
+/// Creating the arena and its Memory capability is one operation.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ArenaAdmissionFailure {
+    Arena(ArenaError),
+    Capability(CapError),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -113,15 +121,28 @@ pub struct ArenaAllocator {
 }
 
 impl ArenaAllocator {
-    /// `banks` is a list of (bank, base, size) physical windows.
+    /// One nonempty, nonoverlapping physical window per distinct bank ID.
+    /// Windows are half-open; adjacent windows are permitted. Reject wrapping
+    /// ranges before any allocator state is created.
     pub fn new(banks: &[(BankId, PhysAddr, u64)]) -> Result<Self, ArenaError> {
         if banks.is_empty() || banks.len() > MAX_BANKS {
             return Err(ArenaError::UnknownBank);
         }
         let mut free = [None; MAX_FREE];
         for (i, &(bank, base, size)) in banks.iter().enumerate() {
+            let end = base.0.checked_add(size).ok_or(ArenaError::BadSize)?;
             if size == 0 {
                 return Err(ArenaError::BadSize);
+            }
+            for &(other_bank, other_base, other_size) in &banks[..i] {
+                if bank == other_bank {
+                    return Err(ArenaError::UnknownBank);
+                }
+                // Earlier windows have already passed checked_add.
+                let other_end = other_base.0 + other_size;
+                if base.0 < other_end && other_base.0 < end {
+                    return Err(ArenaError::BadSize);
+                }
             }
             free[i] = Some(FreeSpan {
                 base: base.0,
@@ -139,6 +160,42 @@ impl ArenaAllocator {
 
     pub fn bank_count(&self) -> u8 {
         self.banks
+    }
+
+    /// Kernel/trusted-host creation boundary. The caller must have authority
+    /// over this allocator. Paint an uncolored request with the cap-table
+    /// owner; reject a request explicitly naming a foreign tenant.
+    ///
+    /// Stage only the allocator, then mint the capability. `mint` has no side
+    /// effects on failure. Publish the allocator after mint succeeds, so a
+    /// refusal preserves free spans, live arenas and object IDs as well as
+    /// the capability table. Both structures require exclusive borrows.
+    pub fn alloc_with_cap(
+        &mut self,
+        caps: &mut CapTable,
+        mut request: ArenaRequest,
+    ) -> Result<(Arena, CPtr), ArenaAdmissionFailure> {
+        let owner = caps.owner();
+        if request.color.is_some_and(|color| color.tenant != owner) {
+            return Err(ArenaAdmissionFailure::Capability(CapError::CrossTenant));
+        }
+        if request.color.is_none() {
+            request = request.for_tenant(owner);
+        }
+        let mut staged = self.clone();
+        let arena = staged
+            .alloc(request)
+            .map_err(ArenaAdmissionFailure::Arena)?;
+        let cptr = caps
+            .mint(Capability::new(
+                CapKind::Memory,
+                CapRights::MEM_FULL,
+                arena.id.0,
+                owner,
+            ))
+            .map_err(ArenaAdmissionFailure::Capability)?;
+        *self = staged;
+        Ok((arena, cptr))
     }
 
     fn align_up(addr: u64, align: u64) -> Option<u64> {

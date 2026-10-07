@@ -1,7 +1,7 @@
 //! Kernel objects the syscall gate touches: caps, fabric, arenas, SoftNPU.
 
 use aether_core::accel::{AccelJobDesc, AccelOp};
-use aether_core::arena::{Arena, ArenaAllocator, ArenaRequest};
+use aether_core::arena::{Arena, ArenaAllocator, ArenaId, ArenaRequest};
 use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
 use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
@@ -344,10 +344,14 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
             .map_err(|_| SysError::NoCap)
     })?;
     let arena = with(|w| {
-        w.last_arena
-            .filter(|a| a.id.0 == cap.object)
-            .ok_or(SysError::Inval)
+        w.arenas
+            .get(ArenaId(cap.object))
+            .copied()
+            .map_err(|_| SysError::Inval)
     })?;
+    if arena.owner_tenant != Some(cap.tenant.0) {
+        return Err(SysError::NoCap);
+    }
     // The pinned physical address is derived only from the caller's own
     // arena capability. A caller-supplied address other than the arena's
     // own base is refused (would otherwise pin — and on x86 user-map —
@@ -383,21 +387,12 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     // Reject out-of-width values rather than silently selecting bank 0 for 256.
     let bank = u8::try_from(bank).map_err(|_| SysError::Inval)?;
     let pref = Some(BankId(bank));
-    let arena = with(|w| {
-        w.arenas
-            .alloc(ArenaRequest::tensor(size, pref).for_tenant(TenantId(1)))
-            .map_err(|_| SysError::Inval)
-    })?;
-    let cptr = with(|w| {
+    let (arena, cptr) = with(|w| {
+        let (arena, cptr) = w.arenas
+            .alloc_with_cap(&mut w.caps, ArenaRequest::tensor(size, pref))
+            .map_err(|_| SysError::Inval)?;
         w.last_arena = Some(arena);
-        w.caps
-            .mint(Capability::new(
-                CapKind::Memory,
-                CapRights::MEM_FULL,
-                arena.id.0,
-                TenantId(1),
-            ))
-            .map_err(|_| SysError::Inval)
+        Ok::<_, SysError>((arena, cptr))
     })?;
     write_str("[mm] arena_alloc cptr=");
     write_u64(cptr.0 as u64);

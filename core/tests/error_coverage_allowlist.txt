@@ -13,8 +13,6 @@ SpaceError::SpaceMismatch | never constructed anywhere in the tree; candidate fo
 
 # --- Constructed, refuse path exists, no test names it yet (needle candidates) ---
 AccelError::BadOp | SoftNPU unknown opcode refuse; constructed in accel.rs, no test asserts it by name (SoftNPU ops beyond Max stay killed; this is the refuse only)
-ArenaError::BadAlign | non-power-of-two alignment refuse in ArenaAllocator::alloc; no test names it
-ArenaError::UnknownBank | ArenaAllocator::new with zero or more than MAX_BANKS banks; no test names it
 CutError::NoCut | SpectralCut construction finds no admissible cut; no test names it
 CutError::UnknownVertex | SpectralCut/affinity lookup of a vertex outside the graph; no test names it
 FabricError::EndpointLimit | endpoint table full on create; no test names it
