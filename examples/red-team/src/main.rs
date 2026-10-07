@@ -151,6 +151,7 @@ const LINE_SOFTNOI_RING_EXHAUSTED: &str = "[redteam] attack=softnoi-ring-exhaust
 const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree result=refused";
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
+const LINE_FABRIC_QUEUE_FULL: &str = "[redteam] attack=fabric-queue-full result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -227,6 +228,7 @@ struct RedTeamReport {
     hodge_harmonic_tree: bool,
     hodge_curl_tree: bool,
     hodge_quota: bool,
+    fabric_queue_full: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
@@ -300,6 +302,7 @@ impl RedTeamReport {
             && self.hodge_harmonic_tree
             && self.hodge_curl_tree
             && self.hodge_quota
+            && self.fabric_queue_full
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
             && self.firewall_ident_pa
@@ -369,6 +372,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_ht = run_hodge_harmonic_tree_demo();
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
+    let fabric_queue_full = aether_core::fabric::run_fabric_queue_full_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
@@ -495,6 +499,9 @@ fn run_redteam() -> RedTeamReport {
         // HodgeQuota::empty().admit → QuotaExceeded; generous admits.
         // Not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable.
         hodge_quota: hodge_quota.all_ok(),
+        // Endpoint flood past MAX_QUEUE → QueueFull; closed endpoint → Closed. Both gates run
+        // before Hodge admit: nothing enqueued, no quota charged. Not hodge-quota (QuotaExceeded).
+        fabric_queue_full: fabric_queue_full.all_ok(),
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
@@ -665,6 +672,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_harmonic_tree, LINE_HODGE_HARMONIC_TREE);
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
+    emit(r.fabric_queue_full, LINE_FABRIC_QUEUE_FULL);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -791,6 +799,7 @@ mod tests {
             r.hodge_quota,
             "HodgeQuota::empty().admit → QuotaExceeded"
         );
+        assert!(r.fabric_queue_full, "fabric endpoint flood → QueueFull / Closed, no quota burn");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -1002,6 +1011,7 @@ mod tests {
             LINE_HODGE_QUOTA,
             "[redteam] attack=hodge-quota result=refused"
         );
+        assert_eq!(LINE_FABRIC_QUEUE_FULL, "[redteam] attack=fabric-queue-full result=refused");
         assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
@@ -1170,6 +1180,7 @@ mod tests {
             LINE_HODGE_HARMONIC_TREE,
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
+            LINE_FABRIC_QUEUE_FULL,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,

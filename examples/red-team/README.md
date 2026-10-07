@@ -126,6 +126,12 @@ HarmonicTreeReduce; not SoftNoI fabric-class Curl ring).
 Hodge-quota needle: `[redteam] attack=hodge-quota result=refused`
 (`HodgeQuota::empty().admit(...)` → `HodgeError::QuotaExceeded`; generous admit succeeds;
 not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable).
+Fabric-queue-full needle: `[redteam] attack=fabric-queue-full result=refused`
+(`Fabric::send` on the only IPC: flooding one endpoint past `MAX_QUEUE` → `FabricError::QueueFull`,
+pending stays `MAX_QUEUE`; send to a closed endpoint → `FabricError::Closed`; both gates run before
+Hodge admit, so a refused send enqueues nothing and charges no Hodge quota; a neighbor endpoint still
+admits and draining one message re-admits. Hodge quota is per-fabric, not per-tenant; endpoint
+back-pressure only; not hodge-quota (`QuotaExceeded`) / CapTable; no new opcodes; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
