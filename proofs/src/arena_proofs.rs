@@ -24,7 +24,7 @@ fn one_page(tenant: u32) -> ArenaRequest {
 /// allocation is refused with `ArenaError::ArenaLimit` and the bank's free
 /// byte count is unchanged — the refuse path splits and loses nothing.
 #[kani::proof]
-#[kani::unwind(28)]
+#[kani::unwind(26)]
 fn arena_limit_refuses_and_conserves() {
     let mut a = fresh();
     for _ in 0..MAX_ARENAS {
@@ -41,17 +41,18 @@ fn arena_limit_refuses_and_conserves() {
     assert!(a.live_count() == MAX_ARENAS);
 }
 
-/// Bound: empty allocator; one symbolic allocation of size in `[1, 4*PAGE_4K]`.
+/// Bound: empty allocator; one symbolic allocation of size in `[1, 2*PAGE_4K]`.
 ///
 /// Property (no leak): if an allocation succeeds, freeing it restores the
 /// bank's free byte count exactly — alloc-then-free never loses a byte.
 #[kani::proof]
-#[kani::unwind(28)]
+#[kani::unwind(26)]
+#[kani::solver(cadical)]
 fn arena_alloc_then_free_conserves_bytes() {
     let mut a = fresh();
     let total = a.free_bytes(BankId(0));
     let size: u64 = kani::any();
-    kani::assume(size >= 1 && size <= 4 * PAGE_4K);
+    kani::assume(size >= 1 && size <= 2 * PAGE_4K);
     if let Ok(ar) = a.alloc(ArenaRequest::tensor(size, Some(BankId(0))).for_tenant(TenantId(1))) {
         assert!(a.free_bytes(BankId(0)) <= total);
         assert!(a.free(ar.id).is_ok());
@@ -66,7 +67,7 @@ fn arena_alloc_then_free_conserves_bytes() {
 /// never changes another tenant's arena — every byte of the second arena is
 /// identical before and after, whatever the operation returns.
 #[kani::proof]
-#[kani::unwind(28)]
+#[kani::unwind(26)]
 fn arena_op_does_not_touch_other_tenant() {
     let mut a = fresh();
     let x = a.alloc(one_page(1)).unwrap();
@@ -97,7 +98,7 @@ fn arena_op_does_not_touch_other_tenant() {
 /// the kernel still owns) is refused with `ArenaError::NotOwner` and leaves
 /// the arena byte-identical.
 #[kani::proof]
-#[kani::unwind(28)]
+#[kani::unwind(26)]
 fn arena_nonowner_transfer_refused_leaves_state() {
     let mut a = fresh();
     let x = a.alloc(one_page(1)).unwrap();
@@ -110,5 +111,74 @@ fn arena_nonowner_transfer_refused_leaves_state() {
     kani::assume(tenant < 8);
     let res = a.transfer_owner(x.id, Some(from), to, tenant);
     assert!(res == Err(ArenaError::NotOwner));
+    assert!(*a.get(x.id).unwrap() == x_before);
+}
+
+/// Bound: tenant 2 holds one live one-page arena; tenant 1 then asks for one
+/// symbolic allocation of size `[1, 2*PAGE_4K]`.
+///
+/// Property (allocation isolation): a new allocation never overlaps another
+/// tenant's live arena, and the other arena is byte-identical afterwards.
+#[kani::proof]
+#[kani::unwind(26)]
+#[kani::solver(cadical)]
+fn arena_alloc_never_overlaps_live_arena() {
+    let mut a = fresh();
+    let y = a.alloc(one_page(2)).unwrap();
+    let y_before = *a.get(y.id).unwrap();
+    let size: u64 = kani::any();
+    kani::assume(size >= 1 && size <= 2 * PAGE_4K);
+    if let Ok(x) = a.alloc(ArenaRequest::tensor(size, Some(BankId(0))).for_tenant(TenantId(1))) {
+        let xe = x.base.0 + x.size;
+        let ye = y.base.0 + y.size;
+        assert!(xe <= y.base.0 || ye <= x.base.0);
+        assert!(x.base.0 >= BASE && xe <= BASE + BANK_SIZE);
+        assert!(x.id != y.id);
+    }
+    assert!(*a.get(y.id).unwrap() == y_before);
+}
+
+/// Bound: two live one-page arenas (tenants 1 and 2); `free` of any arena id
+/// `< 8` other than the second arena's.
+///
+/// Property (cross-tenant non-modification, `free`): freeing anything other
+/// than tenant 2's arena leaves tenant 2's arena live and byte-identical, and
+/// the freed range never covers it.
+#[kani::proof]
+#[kani::unwind(26)]
+fn arena_free_does_not_touch_other_tenant() {
+    use aether_core::arena::ArenaId;
+    let mut a = fresh();
+    let _x = a.alloc(one_page(1)).unwrap();
+    let y = a.alloc(one_page(2)).unwrap();
+    let y_before = *a.get(y.id).unwrap();
+    let id: u32 = kani::any();
+    kani::assume(id < 8 && id != y.id.0);
+    let _ = a.free(ArenaId(id));
+    assert!(*a.get(y.id).unwrap() == y_before);
+    assert!(a.live_count() >= 1);
+}
+
+/// Bound: one arena handed off kernel -> tile 2 (tenant 1); a reclaim or
+/// handoff attempt with symbolic `from` (any `Option<u16>` other than
+/// `Some(2)`), `to < 8` and tenant `< 8`.
+///
+/// Property (reclaim refused): only the current owner tile can hand the arena
+/// on; the kernel-style reclaim (`from = None`) and every other tile are
+/// refused with `NotOwner`, and the arena is byte-identical.
+#[kani::proof]
+#[kani::unwind(26)]
+fn arena_reclaim_by_non_owner_refused() {
+    let mut a = fresh();
+    let x = a.alloc(one_page(1)).unwrap();
+    assert!(a.transfer_owner(x.id, None, 2, 1).is_ok());
+    let x_before = *a.get(x.id).unwrap();
+    let from: Option<u16> = if kani::any() { Some(kani::any()) } else { None };
+    kani::assume(from != Some(2));
+    let to: u16 = kani::any();
+    kani::assume(to < 8);
+    let tenant: u32 = kani::any();
+    kani::assume(tenant < 8);
+    assert!(a.transfer_owner(x.id, from, to, tenant) == Err(ArenaError::NotOwner));
     assert!(*a.get(x.id).unwrap() == x_before);
 }

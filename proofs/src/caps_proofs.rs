@@ -68,3 +68,46 @@ fn cap_require_matches_kind_rights_tenant() {
         assert!(cap.tenant == TenantId(owner));
     }
 }
+
+/// Bound: two tables owned by tenants `< 4`; one source cap with symbolic
+/// kind (1..=9), rights and object; symbolic requested rights and move flag.
+///
+/// Property (no escalation across tenants): a successful `transfer` mints a
+/// cap in the destination that belongs to the destination's owner and whose
+/// rights are a subset of the source's rights; it requires `GRANT` on the
+/// source. A refused transfer leaves every destination slot empty.
+#[kani::proof]
+#[kani::unwind(34)]
+fn cap_transfer_never_escalates() {
+    use aether_core::caps::{CPtr, CAP_SLOTS};
+    let a: u32 = kani::any();
+    let b: u32 = kani::any();
+    kani::assume(a < 4 && b < 4);
+    let mut src = CapTable::new(TenantId(a));
+    let mut dst = CapTable::new(TenantId(b));
+    let kind = any_kind_nonempty();
+    let rights: u16 = kani::any();
+    let object: u32 = kani::any();
+    let s = src
+        .mint(Capability::new(kind, CapRights(rights), object, TenantId(a)))
+        .unwrap();
+    let want: u16 = kani::any();
+    let mv: bool = kani::any();
+    match src.transfer(s, &mut dst, CapRights(want), mv) {
+        Ok(d) => {
+            assert!(CapRights(rights).contains(CapRights::GRANT));
+            assert!(CapRights(rights).can_derive(CapRights(want)));
+            let got = dst.lookup(d).unwrap();
+            assert!(got.tenant == TenantId(b));
+            assert!(got.rights.0 == want);
+            assert!(got.object == object);
+        }
+        Err(_) => {
+            let mut i = 0;
+            while i < CAP_SLOTS {
+                assert!(dst.lookup(CPtr(i as u16)).is_err());
+                i += 1;
+            }
+        }
+    }
+}
