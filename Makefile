@@ -868,6 +868,33 @@ two-tenant-infer:
 	grep -qxF "[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true" $(TTI_LOG)
 	@echo "two-tenant-infer: outputs CPU-exact, every attack refused, log byte-identical"
 
+# Two-world tenant noninterference (host) plus Kani bounded model checking.
+# World 0: tenants A and B run the MLP + KV attends with tenant C idle.
+# World 1: same, with C issuing seeded pseudo-random syscalls and accelerator
+# ops between every honest step. A's and B's results, traces, arena bytes,
+# Soft-SMMU translations and arena metadata must be byte-identical for every
+# seed. Four negative controls re-open known holes and must diverge. The
+# Kani harnesses (proofs/, `make kani`) take tens of minutes, so they run
+# here only with PROOFS=1. "Bounded model-checked", not formally verified.
+# Software model only: not hardware, no timing / cache / power side channels.
+.PHONY: noninterference kani
+NONINTERFERENCE_LOG := $(BUILD)/noninterference.log
+NI_SEEDS ?= 512
+NI_OPS_PER_GAP ?= 16
+
+noninterference:
+	mkdir -p $(BUILD)
+	rm -f $(NONINTERFERENCE_LOG)
+	cargo run --locked --release -p aether-redteam --quiet --example noninterference -- $(NI_SEEDS) $(NI_OPS_PER_GAP) > $(NONINTERFERENCE_LOG)
+	cat $(NONINTERFERENCE_LOG)
+	grep -Eq "^\[noninterference\] worlds=2 seeds=$(NI_SEEDS) ops=[0-9]+ divergences=0$$" $(NONINTERFERENCE_LOG)
+	test "$$(grep -c "^\[noninterference\] control=.* caught=true$$" $(NONINTERFERENCE_LOG))" = 4
+	@if [ "$(PROOFS)" = "1" ]; then bash scripts/run_kani.sh; else echo "[proof] kani=skipped (PROOFS=1 or make kani runs the bounded model-checked harnesses)"; fi
+	@echo "noninterference: 0 divergences across seeds; every negative control caught"
+
+kani:
+	bash scripts/run_kani.sh
+
 # Pre-silicon tenant-isolation conformance kit (use case B). A backend
 # implements the IsolationBackend trait; the kit runs the existing named attack
 # classes and prints a per-backend matrix (refused / ACCEPTED / n/a) plus a
