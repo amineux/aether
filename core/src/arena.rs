@@ -347,9 +347,109 @@ impl ArenaAllocator {
     }
 }
 
+/// Host red-team report for arena ownership-handoff refuse.
+///
+/// Sell line `[redteam] attack=arena-not-owner` — existing
+/// [`ArenaAllocator::transfer_owner`] only. Handoff is an explicit ownership
+/// transfer, not a shared mapping: a tile that does not own the arena, a
+/// "kernel / unassigned" claim on an already-owned arena, and the previous
+/// owner after a handoff are all refused as [`ArenaError::NotOwner`], and the
+/// owner tile, owner tenant, and bank color stay unchanged. A handoff of a
+/// freed arena id is [`ArenaError::UnknownArena`]. `free` stays a
+/// kernel-trust primitive and is not claimed here. **Not** bank-color
+/// (`ForeignBank`) / foreign-tenant-color / uncolored-compute; no new
+/// opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArenaNotOwnerReport {
+    /// Control: kernel → tile 2 → tile 3 handoffs admit (explicit chain).
+    pub handoff_ok: bool,
+    /// Non-owner tile naming itself as `from` → `NotOwner`; state unchanged.
+    pub foreign_tile_refused: bool,
+    /// `from = None` (kernel / unassigned) on an owned arena → `NotOwner`.
+    pub reclaim_refused: bool,
+    /// Previous owner after handoff → `NotOwner`; new owner keeps the range.
+    pub stale_owner_refused: bool,
+    /// Handoff of a freed arena id → `UnknownArena`.
+    pub freed_refused: bool,
+}
+
+impl ArenaNotOwnerReport {
+    pub fn all_ok(&self) -> bool {
+        self.handoff_ok
+            && self.foreign_tile_refused
+            && self.reclaim_refused
+            && self.stale_owner_refused
+            && self.freed_refused
+    }
+}
+
+/// Non-owner / stale-owner arena handoff → [`ArenaError::NotOwner`].
+pub fn run_arena_not_owner_demo() -> ArenaNotOwnerReport {
+    const A: u32 = 1;
+    const B: u32 = 2;
+    let fail = ArenaNotOwnerReport {
+        handoff_ok: false,
+        foreign_tile_refused: false,
+        reclaim_refused: false,
+        stale_owner_refused: false,
+        freed_refused: false,
+    };
+    let Ok(mut arenas) = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * PAGE_2M)])
+    else {
+        return fail;
+    };
+    let Ok(arena) = arenas.alloc(ArenaRequest::tensor(PAGE_4K, Some(BankId(0))).for_tenant(TenantId(A)))
+    else {
+        return fail;
+    };
+    let id = arena.id;
+    let state = |al: &ArenaAllocator| {
+        al.get(id)
+            .map(|x| (x.owner_tile, x.owner_tenant, x.color.tenant))
+            .ok()
+    };
+    let owned_by = |tile: u16| Some((Some(tile), Some(A), TenantId(A)));
+
+    let to_two = arenas.transfer_owner(id, None, 2, A).is_ok() && state(&arenas) == owned_by(2);
+
+    let foreign_tile_refused = arenas.transfer_owner(id, Some(5), 5, B) == Err(ArenaError::NotOwner)
+        && arenas.transfer_owner(id, Some(3), 5, B) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(2);
+
+    let reclaim_refused = arenas.transfer_owner(id, None, 5, B) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(2);
+
+    let to_three = arenas.transfer_owner(id, Some(2), 3, A).is_ok() && state(&arenas) == owned_by(3);
+    let stale_owner_refused = arenas.transfer_owner(id, Some(2), 2, A) == Err(ArenaError::NotOwner)
+        && state(&arenas) == owned_by(3);
+
+    let freed_refused = arenas.free(id).is_ok()
+        && arenas.transfer_owner(id, Some(3), 5, B) == Err(ArenaError::UnknownArena)
+        && arenas.get(id) == Err(ArenaError::UnknownArena);
+
+    ArenaNotOwnerReport {
+        handoff_ok: to_two && to_three,
+        foreign_tile_refused,
+        reclaim_refused,
+        stale_owner_refused,
+        freed_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn arena_not_owner_demo_all_ok() {
+        let r = run_arena_not_owner_demo();
+        assert!(r.handoff_ok, "kernel → tile 2 → tile 3 handoffs admit: {r:?}");
+        assert!(r.foreign_tile_refused, "non-owner tile handoff → NotOwner");
+        assert!(r.reclaim_refused, "from=None on owned arena → NotOwner");
+        assert!(r.stale_owner_refused, "previous owner after handoff → NotOwner");
+        assert!(r.freed_refused, "freed arena id → UnknownArena");
+        assert!(r.all_ok());
+    }
 
     fn mk() -> ArenaAllocator {
         ArenaAllocator::new(&[
