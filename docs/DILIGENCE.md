@@ -410,6 +410,7 @@ Expected stdout (CI greps these):
 [redteam] attack=qos-credits result=refused
 [redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
+[redteam] attack=arena-not-owner result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=space-not-mappable result=refused
 [redteam] attack=typed-window-sid result=refused

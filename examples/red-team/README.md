@@ -23,6 +23,12 @@ Fence-not-ready needle: `[redteam] attack=fence-not-ready result=refused`
 timeout-frees-credit stays inside the qos demo).
 Outside-slice needle: `[redteam] attack=outside-slice result=refused`
 (`admit_chiplet` → `OutsideSlice`; not hops / qos / CrossCut / bank-color).
+Arena-not-owner needle: `[redteam] attack=arena-not-owner result=refused`
+(`ArenaAllocator::transfer_owner`: handoff is an explicit ownership transfer, not a shared mapping;
+a non-owner tile naming itself as `from`, a `from = None` reclaim of an owned arena, and the previous
+owner after a handoff → `ArenaError::NotOwner`, owner tile / tenant / bank color unchanged; freed
+arena id → `UnknownArena`; `free` stays a kernel-trust primitive and is not claimed; not bank-color
+(`ForeignBank`) / foreign-tenant-color / uncolored-compute; no new opcodes; software path only).
 Silent-remote needle: `[redteam] attack=silent-remote result=refused`
 (`map_place` / `map_fabric` → `SilentRemoteLoad`; `MEM_FULL` never implies
 `UNIFIED`; not CXL productization / BAR0 / SoftNPU).
