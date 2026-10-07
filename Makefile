@@ -167,6 +167,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=fence-not-ready result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=outside-slice result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=arena-not-owner result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-limit-leak result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=typed-window-sid result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=silent-remote result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=space-not-mappable result=refused" $(REDTEAM_LOG)

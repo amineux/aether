@@ -367,6 +367,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Foreign tenant Compute wave | `run_foreign_tenant_color_demo` — `admit_wave` → `ColorError::ForeignTenant` (Exchange still OK). Not ForeignBank / bank-color or Uncolored / uncolored-compute | refused |
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Wait before fence retire | `run_fence_not_ready_demo` — `Timeline::wait` → `PartitionError::FenceNotReady` (issued-but-not-retired; complete then wait OK). Not CreditExhausted / qos-credits; timeout-frees stays in qos demo | refused |
+| Full arena table | `run_arena_limit_leak_demo` — `ArenaAllocator::alloc` → `ArenaError::ArenaLimit` when every arena slot is in use, checked before any free span is split; free bytes and free spans unchanged across repeated refusals (Round 21 fix: this path used to return `NoSpace` and lose the split span, reachable from `SYS_ARENA_ALLOC`). Not arena-not-owner / bank-color; software allocator only | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
 | Silent remote load | `run_silent_remote_demo` — `map_place` / `map_fabric` → `SpaceError::SilentRemoteLoad` (local admits; `MEM_FULL` never implies `UNIFIED`). Not CXL productization / BAR0 / SoftNPU | refused |
 | TypedWindow wrong SID pin | `run_typed_window_sid_demo` — `map_window_sid` → `MapError::WrongStream` (match admits; foreign pin `CrossTenant`). Exploration TypedWindow stub — **not** CXL.mem silicon / BAR0 | refused |
@@ -411,6 +412,7 @@ Expected stdout (CI greps these):
 [redteam] attack=fence-not-ready result=refused
 [redteam] attack=outside-slice result=refused
 [redteam] attack=arena-not-owner result=refused
+[redteam] attack=arena-limit-leak result=refused
 [redteam] attack=silent-remote result=refused
 [redteam] attack=space-not-mappable result=refused
 [redteam] attack=typed-window-sid result=refused
