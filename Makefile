@@ -178,6 +178,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=hodge-harmonic-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-curl-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-quota result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-queue-full result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
