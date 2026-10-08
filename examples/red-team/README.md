@@ -159,6 +159,14 @@ pending stays `MAX_QUEUE`; send to a closed endpoint → `FabricError::Closed`; 
 Hodge admit, so a refused send enqueues nothing and charges no Hodge quota; a neighbor endpoint still
 admits and draining one message re-admits. Hodge quota is per-fabric, not per-tenant; endpoint
 back-pressure only; not hodge-quota (`QuotaExceeded`) / CapTable; no new opcodes; software path only).
+Fabric-payload-too-large needle: `[redteam] attack=fabric-payload-too-large result=refused`
+(`Message::new` with a payload of `MAX_MSG_BYTES + 1` or 4 KiB → `FabricError::PayloadTooLarge`, never
+truncated; exactly `MAX_MSG_BYTES` builds and round-trips intact; not fabric-queue-full (`QueueFull`) /
+hodge-quota / CapTable; no ABI or wire change; software path only).
+Fabric-too-many-caps needle: `[redteam] attack=fabric-too-many-caps result=refused`
+(`Message::attach_cap` past `MAX_MSG_CAPS` → `FabricError::TooManyCaps`; `n_caps` and the already-attached
+caps are unchanged and the refused cap is not stored; a message with exactly `MAX_MSG_CAPS` caps sends and
+receives intact; not CapTable / CapError; no ABI or wire change; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
