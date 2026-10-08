@@ -18,7 +18,6 @@ ArenaError::UnknownBank | ArenaAllocator::new with zero or more than MAX_BANKS b
 CutError::NoCut | SpectralCut construction finds no admissible cut; no test names it
 CutError::UnknownVertex | SpectralCut/affinity lookup of a vertex outside the graph; no test names it
 FabricError::EndpointLimit | endpoint table full on create; no test names it
-FabricError::TooManyCaps | message carries more than MAX_MSG_CAPS caps; no test names it (Round 21 fabric candidate)
 KvError::BadGrant | malformed KV grant record; constructed in kvfabric.rs, no test names it
 KvError::SeqMismatch | decode on a grant for another sequence; constructed in kvfabric.rs, no test names it (Round 21 KV candidate)
 KvError::WrongStream | KV pin on a Soft-SMMU stream that does not match the grant; no test names it
