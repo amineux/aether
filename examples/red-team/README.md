@@ -61,6 +61,12 @@ without MAP (or a non-Memory cap naming the KV object) cannot pin the page for D
 `KvError::InsufficientRights`; the refused pin installs no Soft-SMMU translation for its SID and only
 the READ|MAP control pin stays mapped; rights come from the cap, not the caller; not kv `write`
 (`WouldWrite`) / `regrant` / `weights` / `oob` / `forge` / `wrong-sid`; Soft SMMU is software; no new opcodes).
+KV-seq-mismatch needle: `[redteam] attack=kv-seq-mismatch result=refused`
+(`attend`: a decode grant for sequence 1's KV page naming a token of sequence 2 (same tenant, same bank) →
+`KvError::SeqMismatch`; the sequence gate runs before the rights checks, so a wrong-sequence write probe is
+also `SeqMismatch`; after `revoke` the same cap is `KvError::Revoked` for every sequence, and sequence 2's
+own grant keeps attending; not kv `insufficient-rights` / `write` / `oob` / `forge`; Soft SMMU is software;
+no new opcodes).
 Submit-sid needle: `[redteam] attack=submit-sid result=refused`
 (Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid`; walk still OK;
 not set-sid-unbound / SidBudget / PASID).
