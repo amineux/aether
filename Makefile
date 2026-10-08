@@ -177,6 +177,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-insufficient-rights result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=kv-seq-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softnoi-unbound result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-harmonic-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-curl-tree result=refused" $(REDTEAM_LOG)

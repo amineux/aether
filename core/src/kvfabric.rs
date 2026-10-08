@@ -681,9 +681,145 @@ pub fn run_kv_insufficient_rights_demo() -> KvInsufficientRightsReport {
     }
 }
 
+/// Host red-team report for a KV grant used against another sequence.
+///
+/// Sell line `[redteam] attack=kv-seq-mismatch` — existing [`attend`] only.
+/// A decode cap granted for one sequence's KV page cannot attend a token of
+/// a different sequence (same tenant, same bank): [`KvError::SeqMismatch`].
+/// The sequence gate runs before the rights checks, so a wrong-sequence
+/// write probe is also `SeqMismatch` (it learns nothing about WRITE). After
+/// `revoke`, the same cap is [`KvError::Revoked`] for every sequence, and
+/// the other sequence's own grant keeps working. **Not** kv
+/// `insufficient-rights` / `write` (`WouldWrite`) / `oob` (`WindowOob`) /
+/// `forge` (`CrossTenant`) / CapTable; Soft SMMU is software; no new opcodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KvSeqMismatchReport {
+    /// Control: seq-1 grant attends a seq-1 token.
+    pub own_seq_ok: bool,
+    /// Seq-1 grant naming seq 2 (read, write, `u32::MAX`) → `SeqMismatch`.
+    pub other_seq_refused: bool,
+    /// Seq-2 grant still attends seq 2; decode never holds the seq-2 page.
+    pub other_seq_untouched: bool,
+    /// After revoke: seq-1 cap → `Revoked` for seq 1 and seq 2 alike.
+    pub revoked_refused: bool,
+    /// Revoking the seq-1 grant leaves the seq-2 grant working.
+    pub revoke_scoped: bool,
+}
+
+impl KvSeqMismatchReport {
+    pub fn all_ok(&self) -> bool {
+        self.own_seq_ok
+            && self.other_seq_refused
+            && self.other_seq_untouched
+            && self.revoked_refused
+            && self.revoke_scoped
+    }
+}
+
+/// KV grant for sequence 1 attending sequence 2 → [`KvError::SeqMismatch`];
+/// after revoke → [`KvError::Revoked`].
+pub fn run_kv_seq_mismatch_demo() -> KvSeqMismatchReport {
+    let fail = KvSeqMismatchReport {
+        own_seq_ok: false,
+        other_seq_refused: false,
+        other_seq_untouched: false,
+        revoked_refused: false,
+        revoke_scoped: false,
+    };
+    let tenant = TenantId(1);
+    let (seq_1, seq_2) = (1u32, 2u32);
+    let Ok(mut arenas) =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x8000_0000), 32 * 1024 * 1024)])
+    else {
+        return fail;
+    };
+    let req = ArenaRequest::tensor(DEMO_KV_BYTES, Some(BankId(0)))
+        .in_space(MemorySpace::DeviceHbm)
+        .for_tenant(tenant);
+    let (Ok(kv_1), Ok(kv_2)) = (arenas.alloc(req), arenas.alloc(req)) else {
+        return fail;
+    };
+    let mut ledger = KvLedger::new();
+    for (a, seq) in [(&kv_1, seq_1), (&kv_2, seq_2)] {
+        if ledger
+            .insert(KvObject {
+                id: a.id.0,
+                seq,
+                base: a.base,
+                bytes: a.size,
+                kind: KvKind::Kv,
+                window: KvWindow::demo(),
+                tenant,
+            })
+            .is_err()
+        {
+            return fail;
+        }
+    }
+
+    let mut prefill = CapTable::new(tenant);
+    let mut decode = CapTable::new(tenant);
+    let mut decode_2 = CapTable::new(tenant);
+    let (Ok(root_1), Ok(root_2)) = (
+        prefill.mint(Capability::new(CapKind::Memory, CapRights::MEM_FULL, kv_1.id.0, tenant)),
+        prefill.mint(Capability::new(CapKind::Memory, CapRights::MEM_FULL, kv_2.id.0, tenant)),
+    ) else {
+        return fail;
+    };
+    let rights = CapRights(CapRights::READ | CapRights::MAP);
+    let (Ok(dec), Ok(dec_2)) = (
+        prefill.transfer(root_1, &mut decode, rights, false),
+        prefill.transfer(root_2, &mut decode_2, rights, false),
+    ) else {
+        return fail;
+    };
+    let at = |seq: u32, write: bool| AttendReq {
+        seq,
+        layer: 1,
+        token: 16,
+        write,
+    };
+
+    let own_seq_ok = attend(&decode, dec, &ledger, at(seq_1, false)).is_ok();
+    let other_seq_refused = attend(&decode, dec, &ledger, at(seq_2, false))
+        == Err(KvError::SeqMismatch)
+        && attend(&decode, dec, &ledger, at(seq_2, true)) == Err(KvError::SeqMismatch)
+        && attend(&decode, dec, &ledger, at(u32::MAX, false)) == Err(KvError::SeqMismatch);
+    let other_seq_untouched = attend(&decode_2, dec_2, &ledger, at(seq_2, false)).is_ok()
+        && !decode.holds(CapKind::Memory, kv_2.id.0);
+
+    if prefill.revoke_in(root_1, &mut [&mut decode]).is_err() {
+        return fail;
+    }
+    let revoked_refused = attend(&decode, dec, &ledger, at(seq_1, false)) == Err(KvError::Revoked)
+        && attend(&decode, dec, &ledger, at(seq_2, false)) == Err(KvError::Revoked)
+        && !decode.holds(CapKind::Memory, kv_1.id.0);
+    let revoke_scoped = attend(&decode_2, dec_2, &ledger, at(seq_2, false)).is_ok()
+        && decode_2.holds(CapKind::Memory, kv_2.id.0);
+
+    KvSeqMismatchReport {
+        own_seq_ok,
+        other_seq_refused,
+        other_seq_untouched,
+        revoked_refused,
+        revoke_scoped,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kv_seq_mismatch_demo_all_ok() {
+        let r = run_kv_seq_mismatch_demo();
+        assert!(r.own_seq_ok, "seq-1 grant attends seq 1: {r:?}");
+        assert!(r.other_seq_refused, "seq-1 grant naming seq 2 → SeqMismatch");
+        assert!(r.other_seq_untouched, "seq-2 grant still attends; decode lacks seq-2 page");
+        assert!(r.revoked_refused, "revoked grant → Revoked for every seq");
+        assert!(r.revoke_scoped, "revoking seq 1 leaves seq 2 working");
+        assert!(r.all_ok());
+    }
 
     #[test]
     fn kv_insufficient_rights_demo_all_ok() {
