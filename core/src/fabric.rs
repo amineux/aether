@@ -410,10 +410,152 @@ pub fn run_fabric_queue_full_demo() -> FabricQueueFullReport {
     }
 }
 
+/// Host red-team report for oversized fabric message refuse.
+///
+/// Sell lines `[redteam] attack=fabric-payload-too-large` and
+/// `[redteam] attack=fabric-too-many-caps` — existing [`Message::new`] /
+/// [`Message::attach_cap`] gates only. A payload longer than
+/// [`MAX_MSG_BYTES`] is refused as [`FabricError::PayloadTooLarge`] (never
+/// truncated); a cap past [`MAX_MSG_CAPS`] is refused as
+/// [`FabricError::TooManyCaps`] with the message's existing caps untouched.
+/// A maximal message (exactly `MAX_MSG_BYTES` bytes, `MAX_MSG_CAPS` caps)
+/// still admits and round-trips intact. **Not** fabric-queue-full
+/// (`QueueFull`) / hodge-quota / CapTable; no new opcodes; no ABI or wire
+/// change; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricOversizedMsgReport {
+    /// Control: a payload of exactly `MAX_MSG_BYTES` builds.
+    pub max_payload_ok: bool,
+    /// `MAX_MSG_BYTES + 1` and a 4 KiB payload → `PayloadTooLarge`.
+    pub payload_refused: bool,
+    /// Control: `MAX_MSG_CAPS` caps attach.
+    pub max_caps_ok: bool,
+    /// Cap `MAX_MSG_CAPS + 1` → `TooManyCaps`; `n_caps` and stored caps unchanged.
+    pub caps_refused: bool,
+    /// The maximal message sends and receives with payload and caps intact.
+    pub roundtrip_ok: bool,
+}
+
+impl FabricOversizedMsgReport {
+    pub fn payload_too_large_ok(&self) -> bool {
+        self.max_payload_ok && self.payload_refused && self.roundtrip_ok
+    }
+
+    pub fn too_many_caps_ok(&self) -> bool {
+        self.max_caps_ok && self.caps_refused && self.roundtrip_ok
+    }
+
+    pub fn all_ok(&self) -> bool {
+        self.payload_too_large_ok() && self.too_many_caps_ok()
+    }
+}
+
+/// Oversized payload → [`FabricError::PayloadTooLarge`]; cap past
+/// [`MAX_MSG_CAPS`] → [`FabricError::TooManyCaps`]. A maximal message admits.
+pub fn run_fabric_oversized_msg_demo() -> FabricOversizedMsgReport {
+    use crate::caps::{CapKind, CapRights};
+
+    let t = TenantId(1);
+    let mk = |dest: EndpointId, data: &[u8]| {
+        Message::new(
+            dest,
+            0,
+            MsgFlags(MsgFlags::ASYNC | MsgFlags::GRANT),
+            ChipletRoute::LOCAL,
+            t,
+            data,
+        )
+    };
+    let mut f = Fabric::new();
+    let Ok(ep) = f.create_endpoint(t) else {
+        return FabricOversizedMsgReport {
+            max_payload_ok: false,
+            payload_refused: false,
+            max_caps_ok: false,
+            caps_refused: false,
+            roundtrip_ok: false,
+        };
+    };
+
+    let mut full = [0u8; MAX_MSG_BYTES];
+    for (i, b) in full.iter_mut().enumerate() {
+        *b = i as u8 ^ 0x5A;
+    }
+    let max_msg = mk(ep, &full);
+    let max_payload_ok = matches!(&max_msg, Ok(m) if m.payload() == &full[..]);
+
+    let over = [0xA5u8; MAX_MSG_BYTES + 1];
+    let huge = [0xA5u8; 4096];
+    let payload_refused = mk(ep, &over).err() == Some(FabricError::PayloadTooLarge)
+        && mk(ep, &huge).err() == Some(FabricError::PayloadTooLarge);
+
+    let cap = |obj: u32| Capability::new(CapKind::Memory, CapRights(CapRights::READ), obj, t);
+    let (mut max_caps_ok, mut caps_refused, mut roundtrip_ok) = (false, false, false);
+    if let Ok(mut m) = max_msg {
+        max_caps_ok = (0..MAX_MSG_CAPS as u32).all(|i| m.attach_cap(cap(100 + i)).is_ok())
+            && m.header.n_caps as usize == MAX_MSG_CAPS;
+        let before = m.caps;
+        caps_refused = m.attach_cap(cap(999)) == Err(FabricError::TooManyCaps)
+            && m.attach_cap(cap(998)) == Err(FabricError::TooManyCaps)
+            && m.header.n_caps as usize == MAX_MSG_CAPS
+            && m.caps == before
+            && !m.caps.iter().flatten().any(|c| c.object >= 998);
+        roundtrip_ok = f.pending(ep) == Ok(0)
+            && f.send(m).is_ok()
+            && match f.recv(ep) {
+                Ok(r) => {
+                    r.payload() == &full[..]
+                        && r.header.n_caps as usize == MAX_MSG_CAPS
+                        && r.caps == before
+                }
+                Err(_) => false,
+            };
+    }
+
+    FabricOversizedMsgReport {
+        max_payload_ok,
+        payload_refused,
+        max_caps_ok,
+        caps_refused,
+        roundtrip_ok,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::caps::{CapKind, CapRights};
+
+    #[test]
+    fn fabric_oversized_msg_demo_names_both_refusals() {
+        let r = run_fabric_oversized_msg_demo();
+        assert!(r.max_payload_ok, "MAX_MSG_BYTES payload builds: {r:?}");
+        assert!(r.payload_refused, "payload past MAX_MSG_BYTES → PayloadTooLarge");
+        assert!(r.max_caps_ok, "MAX_MSG_CAPS caps attach");
+        assert!(r.caps_refused, "cap past MAX_MSG_CAPS → TooManyCaps, caps unchanged");
+        assert!(r.roundtrip_ok, "maximal message round-trips intact");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn attach_cap_past_limit_is_too_many_caps() {
+        let t = TenantId(1);
+        let mut m = Message::new(
+            EndpointId(1),
+            0,
+            MsgFlags(MsgFlags::GRANT),
+            ChipletRoute::LOCAL,
+            t,
+            b"g",
+        )
+        .unwrap();
+        let c = Capability::new(CapKind::Memory, CapRights(CapRights::READ), 7, t);
+        for _ in 0..MAX_MSG_CAPS {
+            m.attach_cap(c).unwrap();
+        }
+        assert_eq!(m.attach_cap(c).unwrap_err(), FabricError::TooManyCaps);
+        assert_eq!(m.header.n_caps as usize, MAX_MSG_CAPS);
+    }
 
     #[test]
     fn fabric_queue_full_demo_all_ok() {
