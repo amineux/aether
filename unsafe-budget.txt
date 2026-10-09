@@ -1,0 +1,40 @@
+# Unsafe ratchet budget: `unsafe` keyword count per .rs file.
+# Checked by core/tests/unsafe_budget.rs (runs under `cargo test --workspace`).
+# Comments and string literals are not counted. Any change in a count,
+# or a new file with `unsafe`, must come with an edit to this file.
+# Regenerate: AETHER_UNSAFE_BUDGET_WRITE=1 cargo test -p aether-core --test unsafe_budget
+# files=34 total=247
+   2 drivers/src/mmio.rs
+   4 drivers/src/softnpu.rs
+   1 kernel/src/arch/aarch64/idt.rs
+   3 kernel/src/arch/aarch64/mod.rs
+   2 kernel/src/arch/aarch64/serial.rs
+   3 kernel/src/arch/aarch64/softnpu_irq.rs
+   7 kernel/src/arch/aarch64/timer.rs
+   9 kernel/src/arch/irq.rs
+   1 kernel/src/arch/riscv64/idt.rs
+   2 kernel/src/arch/riscv64/mod.rs
+   6 kernel/src/arch/riscv64/plic.rs
+   2 kernel/src/arch/riscv64/serial.rs
+   3 kernel/src/arch/riscv64/timer.rs
+   2 kernel/src/arch/x86_64/apic.rs
+   2 kernel/src/arch/x86_64/cpu.rs
+   4 kernel/src/arch/x86_64/gdt.rs
+   5 kernel/src/arch/x86_64/idt.rs
+   8 kernel/src/arch/x86_64/io.rs
+  13 kernel/src/arch/x86_64/kpti.rs
+   1 kernel/src/arch/x86_64/mod.rs
+   6 kernel/src/arch/x86_64/smp.rs
+   1 kernel/src/arch/x86_64/syscall.rs
+   2 kernel/src/elfload.rs
+   1 kernel/src/init.rs
+   1 kernel/src/main.rs
+   2 kernel/src/mm/heap.rs
+   5 kernel/src/mm/mod.rs
+ 110 kernel/src/mm/paging.rs
+   4 kernel/src/sync.rs
+   4 kernel/src/syscall.rs
+   7 kernel/src/task.rs
+   9 kernel/src/virtio_blk.rs
+  11 user/init/src/main.rs
+   4 user/probe/src/main.rs

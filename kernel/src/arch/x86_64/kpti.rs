@@ -116,16 +116,20 @@ pub fn set_rsp0(rsp0: u64) {
 /// Copy `frame` onto the trampoline stack and `iretq` into ring-3
 /// after switching to the user CR3. Caller must be on kernel CR3.
 pub unsafe fn enter_user(frame: &InterruptFrame) -> ! {
-    let dst = (KPTI_TRAMP_STACK_TOP - FRAME_SIZE) as *mut InterruptFrame;
-    core::ptr::write(dst, *frame);
-    let iret = tramp_pa(kpti_iret_user);
-    core::arch::asm!(
-        "mov rsp, {dst}",
-        "jmp {iret}",
-        dst = in(reg) dst as u64,
-        iret = in(reg) iret,
-        options(noreturn)
-    );
+    // SAFETY: caller is on the kernel CR3 (fn contract), so the trampoline stack
+    // below KPTI_TRAMP_STACK_TOP is mapped and writable; the asm never returns.
+    unsafe {
+        let dst = (KPTI_TRAMP_STACK_TOP - FRAME_SIZE) as *mut InterruptFrame;
+        core::ptr::write(dst, *frame);
+        let iret = tramp_pa(kpti_iret_user);
+        core::arch::asm!(
+            "mov rsp, {dst}",
+            "jmp {iret}",
+            dst = in(reg) dst as u64,
+            iret = in(reg) iret,
+            options(noreturn)
+        );
+    }
 }
 
 #[repr(C, packed)]
