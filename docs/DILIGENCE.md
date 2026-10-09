@@ -425,6 +425,8 @@ Expected stdout (CI greps these):
 [redteam] attack=set-sid-unbound result=refused
 [redteam] attack=kv-insufficient-rights result=refused
 [redteam] attack=kv-seq-mismatch result=refused
+[redteam] attack=kv-wrong-stream result=refused
+[redteam] attack=kv-bad-grant result=refused
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
@@ -436,6 +438,7 @@ Expected stdout (CI greps these):
 [redteam] attack=fabric-queue-full result=refused
 [redteam] attack=fabric-payload-too-large result=refused
 [redteam] attack=fabric-too-many-caps result=refused
+[redteam] attack=fabric-endpoint-limit result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused

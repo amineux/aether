@@ -521,10 +521,114 @@ pub fn run_fabric_oversized_msg_demo() -> FabricOversizedMsgReport {
     }
 }
 
+/// Host red-team report for fabric endpoint-table exhaustion.
+///
+/// Sell line `[redteam] attack=fabric-endpoint-limit`. It uses only the
+/// existing [`Fabric::create_endpoint`] gate. Once all [`MAX_ENDPOINTS`]
+/// slots are taken, another create is refused as
+/// [`FabricError::EndpointLimit`]. The refusal adds no partial endpoint, and
+/// every existing endpoint keeps its owner and still round-trips a message.
+///
+/// Honesty: the endpoint table is **global** (per [`Fabric`], not per
+/// tenant), and `close` does not free a slot. So a full table refuses
+/// every tenant. That makes this a resource bound, **not** per-tenant
+/// isolation. The report checks both facts, so a later per-tenant quota or
+/// slot reclaim has to update this clip. **Not** fabric-queue-full
+/// (`QueueFull`) / payload-too-large / hodge-quota / CapTable; no new
+/// opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricEndpointLimitReport {
+    /// Control: `MAX_ENDPOINTS` creates admit, with distinct ids.
+    pub fill_ok: bool,
+    /// Create past `MAX_ENDPOINTS` → `EndpointLimit` (repeated).
+    pub limit_refused: bool,
+    /// After the refusals every endpoint keeps its owner and round-trips.
+    pub existing_intact: bool,
+    /// Honesty check: another tenant's create is also `EndpointLimit`
+    /// (the table is shared).
+    pub table_is_global: bool,
+    /// Honesty check: closing an endpoint does not free its slot.
+    pub close_keeps_slot: bool,
+}
+
+impl FabricEndpointLimitReport {
+    pub fn all_ok(&self) -> bool {
+        self.fill_ok
+            && self.limit_refused
+            && self.existing_intact
+            && self.table_is_global
+            && self.close_keeps_slot
+    }
+}
+
+/// Endpoint table full → [`FabricError::EndpointLimit`]; existing endpoints
+/// keep working. The table is global, so this is a bound, not isolation.
+pub fn run_fabric_endpoint_limit_demo() -> FabricEndpointLimitReport {
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let mut f = Fabric::new();
+    let mut eps = [EndpointId(0); MAX_ENDPOINTS];
+    let mut fill_ok = true;
+    for slot in eps.iter_mut() {
+        match f.create_endpoint(a) {
+            Ok(id) => *slot = id,
+            Err(_) => fill_ok = false,
+        }
+    }
+    fill_ok &= eps
+        .iter()
+        .enumerate()
+        .all(|(i, x)| x.0 != 0 && eps[..i].iter().all(|y| y != x));
+
+    let limit_refused = (0..3).all(|_| f.create_endpoint(a) == Err(FabricError::EndpointLimit));
+
+    let existing_intact = fill_ok
+        && eps.iter().all(|&ep| {
+            f.owner(ep) == Ok(a)
+                && flood_msg(ep, a).map(|m| f.send(m)) == Some(Ok(()))
+                && f.recv(ep).map(|m| m.payload() == b"flood") == Ok(true)
+                && f.pending(ep) == Ok(0)
+        });
+
+    let table_is_global = f.create_endpoint(b) == Err(FabricError::EndpointLimit);
+
+    let close_keeps_slot = f.close(eps[0]).is_ok()
+        && f.create_endpoint(b) == Err(FabricError::EndpointLimit)
+        && f.owner(eps[0]) == Ok(a);
+
+    FabricEndpointLimitReport {
+        fill_ok,
+        limit_refused,
+        existing_intact,
+        table_is_global,
+        close_keeps_slot,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::caps::{CapKind, CapRights};
+
+    #[test]
+    fn fabric_endpoint_limit_demo_all_ok() {
+        let r = run_fabric_endpoint_limit_demo();
+        assert!(r.fill_ok, "MAX_ENDPOINTS creates admit: {r:?}");
+        assert!(r.limit_refused, "create past MAX_ENDPOINTS → EndpointLimit");
+        assert!(r.existing_intact, "existing endpoints keep owner and round-trip");
+        assert!(r.table_is_global, "table is shared: other tenant also EndpointLimit");
+        assert!(r.close_keeps_slot, "close does not free a slot");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn create_endpoint_past_limit_is_endpoint_limit() {
+        let mut f = Fabric::new();
+        for _ in 0..MAX_ENDPOINTS {
+            f.create_endpoint(TenantId(1)).unwrap();
+        }
+        assert_eq!(f.create_endpoint(TenantId(1)), Err(FabricError::EndpointLimit));
+    }
 
     #[test]
     fn fabric_oversized_msg_demo_names_both_refusals() {

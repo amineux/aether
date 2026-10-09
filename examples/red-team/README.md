@@ -67,6 +67,19 @@ KV-seq-mismatch needle: `[redteam] attack=kv-seq-mismatch result=refused`
 also `SeqMismatch`; after `revoke` the same cap is `KvError::Revoked` for every sequence, and sequence 2's
 own grant keeps attending; not kv `insufficient-rights` / `write` / `oob` / `forge`; Soft SMMU is software;
 no new opcodes).
+KV-wrong-stream needle: `[redteam] attack=kv-wrong-stream result=refused`
+(`pin_kv`: a valid READ|MAP decode grant pinned on a Soft-SMMU substream past the context-descriptor
+range (SSID `>= MAX_CDS`, e.g. 8 or 0xFF) → the Soft SMMU aborts the stream (`MapError::StreamAbort`) and
+`pin_kv` reports it as `KvError::WrongStream` (the KV layer folds `WrongStream` and `StreamAbort` into one
+variant); no STE and no translation is added, and the grant's SSID-0 pin still walks to the KV page; not kv
+`wrong-sid` (resolve on a neighbor SID) / `smmu-ssid-abort` (raw `MapError`, no KV grant); Soft SMMU is
+software; no new opcodes).
+KV-bad-grant needle: `[redteam] attack=kv-bad-grant result=refused`
+(a Memory cap naming a real same-tenant arena that is not a registered KV object → `KvError::BadGrant` on
+`attend` and on `pin_kv` (no translation); an operator-kernel cap naming the KV object id → `BadGrant` on
+`attend`; registering a KV object in a full `KvLedger` → `BadGrant` with the existing objects intact; the real
+grant keeps attending; not kv `insufficient-rights` (non-Memory `pin_kv`) / `forge` / `seq-mismatch`; no new
+opcodes).
 Submit-sid needle: `[redteam] attack=submit-sid result=refused`
 (Soft-SMMU `resolve_submit` without SET_SID → `MapError::SubmitSid`; walk still OK;
 not set-sid-unbound / SidBudget / PASID).
@@ -167,6 +180,13 @@ Fabric-too-many-caps needle: `[redteam] attack=fabric-too-many-caps result=refus
 (`Message::attach_cap` past `MAX_MSG_CAPS` → `FabricError::TooManyCaps`; `n_caps` and the already-attached
 caps are unchanged and the refused cap is not stored; a message with exactly `MAX_MSG_CAPS` caps sends and
 receives intact; not CapTable / CapError; no ABI or wire change; software path only).
+Fabric-endpoint-limit needle: `[redteam] attack=fabric-endpoint-limit result=refused`
+(`Fabric::create_endpoint` past `MAX_ENDPOINTS` (16) → `FabricError::EndpointLimit`, repeated; the refusal
+adds no partial endpoint and all 16 existing endpoints keep their owner and still round-trip a message.
+Honesty: the endpoint table is global, not per tenant, and `close` does not free a slot, so a full table
+refuses every tenant; the clip checks both facts. This is a resource bound, **not** per-tenant isolation;
+a per-tenant endpoint quota is open work. Not fabric-queue-full / payload-too-large / hodge-quota /
+CapTable; no new opcodes; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
