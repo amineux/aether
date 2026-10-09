@@ -17,9 +17,6 @@ ArenaError::BadAlign | non-power-of-two alignment refuse in ArenaAllocator::allo
 ArenaError::UnknownBank | ArenaAllocator::new with zero or more than MAX_BANKS banks; no test names it
 CutError::NoCut | SpectralCut construction finds no admissible cut; no test names it
 CutError::UnknownVertex | SpectralCut/affinity lookup of a vertex outside the graph; no test names it
-FabricError::EndpointLimit | endpoint table full on create; no test names it
-KvError::BadGrant | malformed KV grant record; constructed in kvfabric.rs, no test names it
-KvError::WrongStream | KV pin on a Soft-SMMU stream that does not match the grant; no test names it
 OpKernelError::Cap | wrapper for a CapError from the operator-kernel cap lookup; inner CapError variants are named elsewhere
 OpKernelError::Fabric | wrapper for a FabricError from operator-kernel inject; inner FabricError variants are named elsewhere
 HalError::NotFound | AccelDevice probe found no device; no test names it

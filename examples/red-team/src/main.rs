@@ -148,6 +148,8 @@ const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override res
 const LINE_SET_SID_UNBOUND: &str = "[redteam] attack=set-sid-unbound result=refused";
 const LINE_KV_INSUFFICIENT_RIGHTS: &str = "[redteam] attack=kv-insufficient-rights result=refused";
 const LINE_KV_SEQ_MISMATCH: &str = "[redteam] attack=kv-seq-mismatch result=refused";
+const LINE_KV_WRONG_STREAM: &str = "[redteam] attack=kv-wrong-stream result=refused";
+const LINE_KV_BAD_GRANT: &str = "[redteam] attack=kv-bad-grant result=refused";
 const LINE_SUBMIT_SID: &str = "[redteam] attack=submit-sid result=refused";
 const LINE_SID_BUDGET: &str = "[redteam] attack=sid-budget result=refused";
 const LINE_STAGE2_FAULT: &str = "[redteam] attack=stage2-fault result=refused";
@@ -160,6 +162,7 @@ const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
 const LINE_FABRIC_QUEUE_FULL: &str = "[redteam] attack=fabric-queue-full result=refused";
 const LINE_FABRIC_PAYLOAD_TOO_LARGE: &str = "[redteam] attack=fabric-payload-too-large result=refused";
 const LINE_FABRIC_TOO_MANY_CAPS: &str = "[redteam] attack=fabric-too-many-caps result=refused";
+const LINE_FABRIC_ENDPOINT_LIMIT: &str = "[redteam] attack=fabric-endpoint-limit result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -233,6 +236,8 @@ struct RedTeamReport {
     set_sid_unbound: bool,
     kv_insufficient_rights: bool,
     kv_seq_mismatch: bool,
+    kv_wrong_stream: bool,
+    kv_bad_grant: bool,
     submit_sid: bool,
     sid_budget: bool,
     stage2_fault: bool,
@@ -245,6 +250,7 @@ struct RedTeamReport {
     fabric_queue_full: bool,
     fabric_payload_too_large: bool,
     fabric_too_many_caps: bool,
+    fabric_endpoint_limit: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
@@ -315,6 +321,8 @@ impl RedTeamReport {
             && self.set_sid_unbound
             && self.kv_insufficient_rights
             && self.kv_seq_mismatch
+            && self.kv_wrong_stream
+            && self.kv_bad_grant
             && self.submit_sid
             && self.sid_budget
             && self.stage2_fault
@@ -327,6 +335,7 @@ impl RedTeamReport {
             && self.fabric_queue_full
             && self.fabric_payload_too_large
             && self.fabric_too_many_caps
+            && self.fabric_endpoint_limit
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
             && self.firewall_ident_pa
@@ -393,6 +402,8 @@ fn run_redteam() -> RedTeamReport {
     let set_sid_unbound = run_set_sid_unbound_demo();
     let kv_insufficient_rights = aether_core::kvfabric::run_kv_insufficient_rights_demo();
     let kv_seq_mismatch = aether_core::kvfabric::run_kv_seq_mismatch_demo();
+    let kv_wrong_stream = aether_core::kvfabric::run_kv_wrong_stream_demo();
+    let kv_bad_grant = aether_core::kvfabric::run_kv_bad_grant_demo();
     let submit_sid = run_submit_sid_demo();
     let sid_budget = run_sid_budget_demo();
     let stage2_fault = run_stage2_fault_demo();
@@ -404,6 +415,7 @@ fn run_redteam() -> RedTeamReport {
     let hodge_quota = run_hodge_quota_demo();
     let fabric_queue_full = aether_core::fabric::run_fabric_queue_full_demo();
     let fabric_oversized = aether_core::fabric::run_fabric_oversized_msg_demo();
+    let fabric_endpoint_limit = aether_core::fabric::run_fabric_endpoint_limit_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
@@ -523,6 +535,12 @@ fn run_redteam() -> RedTeamReport {
         // KV grant for seq 1 attending seq 2 (read or write) → SeqMismatch; after revoke → Revoked
         // for every seq; seq-2 grant keeps working. Not kv insufficient-rights / write / oob / forge.
         kv_seq_mismatch: kv_seq_mismatch.all_ok(),
+        // Valid KV grant pinned on SSID >= MAX_CDS → Soft-SMMU StreamAbort, reported by pin_kv as
+        // WrongStream; no STE / translation added; SSID-0 pin intact. Not kv wrong-sid / smmu-ssid-abort.
+        kv_wrong_stream: kv_wrong_stream.all_ok(),
+        // Cap on an unregistered arena / non-Memory cap / full ledger → BadGrant; real grant keeps
+        // attending. Not kv insufficient-rights / forge / seq-mismatch.
+        kv_bad_grant: kv_bad_grant.all_ok(),
         // Soft-SMMU resolve_submit without SET_SID → SubmitSid; walk still OK.
         // Not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget.
         submit_sid: submit_sid.all_ok(),
@@ -558,6 +576,9 @@ fn run_redteam() -> RedTeamReport {
         // attach_cap past MAX_MSG_CAPS → TooManyCaps, existing caps untouched; maximal msg round-trips.
         // Not fabric-queue-full (QueueFull) / hodge-quota / CapTable.
         fabric_too_many_caps: fabric_oversized.too_many_caps_ok(),
+        // create_endpoint past MAX_ENDPOINTS → EndpointLimit; existing endpoints intact. The table is
+        // global and close keeps the slot (both checked): a resource bound, not per-tenant isolation.
+        fabric_endpoint_limit: fabric_endpoint_limit.all_ok(),
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
@@ -725,6 +746,8 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.set_sid_unbound, LINE_SET_SID_UNBOUND);
     emit(r.kv_insufficient_rights, LINE_KV_INSUFFICIENT_RIGHTS);
     emit(r.kv_seq_mismatch, LINE_KV_SEQ_MISMATCH);
+    emit(r.kv_wrong_stream, LINE_KV_WRONG_STREAM);
+    emit(r.kv_bad_grant, LINE_KV_BAD_GRANT);
     emit(r.submit_sid, LINE_SUBMIT_SID);
     emit(r.sid_budget, LINE_SID_BUDGET);
     emit(r.stage2_fault, LINE_STAGE2_FAULT);
@@ -737,6 +760,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fabric_queue_full, LINE_FABRIC_QUEUE_FULL);
     emit(r.fabric_payload_too_large, LINE_FABRIC_PAYLOAD_TOO_LARGE);
     emit(r.fabric_too_many_caps, LINE_FABRIC_TOO_MANY_CAPS);
+    emit(r.fabric_endpoint_limit, LINE_FABRIC_ENDPOINT_LIMIT);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -833,6 +857,8 @@ mod tests {
         );
         assert!(r.kv_insufficient_rights, "KV grant missing READ / MAP → InsufficientRights, no stray pin");
         assert!(r.kv_seq_mismatch, "KV grant for another sequence → SeqMismatch; revoked → Revoked");
+        assert!(r.kv_wrong_stream, "KV pin on SSID >= MAX_CDS → WrongStream, no stray STE");
+        assert!(r.kv_bad_grant, "unregistered / non-Memory / full-ledger KV grant → BadGrant");
         assert!(
             r.submit_sid,
             "resolve_submit without SET_SID → SubmitSid"
@@ -872,6 +898,7 @@ mod tests {
         assert!(r.fabric_queue_full, "fabric endpoint flood → QueueFull / Closed, no quota burn");
         assert!(r.fabric_payload_too_large, "payload past MAX_MSG_BYTES → PayloadTooLarge");
         assert!(r.fabric_too_many_caps, "cap past MAX_MSG_CAPS → TooManyCaps, caps unchanged");
+        assert!(r.fabric_endpoint_limit, "create past MAX_ENDPOINTS → EndpointLimit, existing intact");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -1059,6 +1086,8 @@ mod tests {
         );
         assert_eq!(LINE_KV_INSUFFICIENT_RIGHTS, "[redteam] attack=kv-insufficient-rights result=refused");
         assert_eq!(LINE_KV_SEQ_MISMATCH, "[redteam] attack=kv-seq-mismatch result=refused");
+        assert_eq!(LINE_KV_WRONG_STREAM, "[redteam] attack=kv-wrong-stream result=refused");
+        assert_eq!(LINE_KV_BAD_GRANT, "[redteam] attack=kv-bad-grant result=refused");
         assert_eq!(
             LINE_SUBMIT_SID,
             "[redteam] attack=submit-sid result=refused"
@@ -1103,6 +1132,10 @@ mod tests {
         assert_eq!(
             LINE_FABRIC_TOO_MANY_CAPS,
             "[redteam] attack=fabric-too-many-caps result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_ENDPOINT_LIMIT,
+            "[redteam] attack=fabric-endpoint-limit result=refused"
         );
         assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
@@ -1272,6 +1305,8 @@ mod tests {
             LINE_SET_SID_UNBOUND,
             LINE_KV_INSUFFICIENT_RIGHTS,
             LINE_KV_SEQ_MISMATCH,
+            LINE_KV_WRONG_STREAM,
+            LINE_KV_BAD_GRANT,
             LINE_SOFTNOI_UNBOUND,
             LINE_SOFTNOI_RING_EXHAUSTED,
             LINE_HODGE_HARMONIC_TREE,
@@ -1280,6 +1315,7 @@ mod tests {
             LINE_FABRIC_QUEUE_FULL,
             LINE_FABRIC_PAYLOAD_TOO_LARGE,
             LINE_FABRIC_TOO_MANY_CAPS,
+            LINE_FABRIC_ENDPOINT_LIMIT,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,
