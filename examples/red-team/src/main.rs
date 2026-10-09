@@ -165,6 +165,9 @@ const LINE_FABRIC_TOO_MANY_CAPS: &str = "[redteam] attack=fabric-too-many-caps r
 const LINE_FABRIC_ENDPOINT_LIMIT: &str = "[redteam] attack=fabric-endpoint-limit result=refused";
 const LINE_FABRIC_SLOT_EXHAUST: &str = "[redteam] attack=fabric-slot-exhaust result=refused";
 const LINE_FABRIC_STALE_ENDPOINT: &str = "[redteam] attack=fabric-stale-endpoint result=refused";
+const LINE_FABRIC_RECV_FOREIGN: &str = "[redteam] attack=fabric-recv-foreign result=refused";
+const LINE_FABRIC_SEND_NO_CAP: &str = "[redteam] attack=fabric-send-no-cap result=refused";
+const LINE_FABRIC_QUOTA_DRAIN: &str = "[redteam] attack=fabric-quota-drain result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -255,6 +258,9 @@ struct RedTeamReport {
     fabric_endpoint_limit: bool,
     fabric_slot_exhaust: bool,
     fabric_stale_endpoint: bool,
+    fabric_recv_foreign: bool,
+    fabric_send_no_cap: bool,
+    fabric_quota_drain: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
@@ -342,6 +348,9 @@ impl RedTeamReport {
             && self.fabric_endpoint_limit
             && self.fabric_slot_exhaust
             && self.fabric_stale_endpoint
+            && self.fabric_recv_foreign
+            && self.fabric_send_no_cap
+            && self.fabric_quota_drain
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
             && self.firewall_ident_pa
@@ -424,6 +433,9 @@ fn run_redteam() -> RedTeamReport {
     let fabric_endpoint_limit = aether_core::fabric::run_fabric_endpoint_limit_demo();
     let fabric_slot_exhaust = aether_core::fabric::run_fabric_slot_exhaust_demo();
     let fabric_stale_endpoint = aether_core::fabric::run_fabric_stale_endpoint_demo();
+    let fabric_recv_foreign = aether_core::fabric::run_fabric_recv_foreign_demo();
+    let fabric_send_no_cap = aether_core::fabric::run_fabric_send_no_cap_demo();
+    let fabric_quota_drain = aether_core::fabric::run_fabric_quota_drain_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
@@ -593,6 +605,12 @@ fn run_redteam() -> RedTeamReport {
         // Stale EndpointId after its slot is reused by another tenant → NoSuchEndpoint on
         // send/recv/pending/owner/close; new owner untouched; no Hodge quota charged.
         fabric_stale_endpoint: fabric_stale_endpoint.all_ok(),
+        // recv_as / pending_as by a non-owner → NoSuchEndpoint, same as a missing id; owner's message intact.
+        fabric_recv_foreign: fabric_recv_foreign.all_ok(),
+        // send_as without owner or Endpoint+WRITE cap, or with a forged sender tag → NoSuchEndpoint; no side effect.
+        fabric_send_no_cap: fabric_send_no_cap.all_ok(),
+        // One sender spends its own Hodge budget → Hodge(QuotaExceeded); other tenants keep full budgets.
+        fabric_quota_drain: fabric_quota_drain.all_ok(),
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
@@ -777,6 +795,9 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fabric_endpoint_limit, LINE_FABRIC_ENDPOINT_LIMIT);
     emit(r.fabric_slot_exhaust, LINE_FABRIC_SLOT_EXHAUST);
     emit(r.fabric_stale_endpoint, LINE_FABRIC_STALE_ENDPOINT);
+    emit(r.fabric_recv_foreign, LINE_FABRIC_RECV_FOREIGN);
+    emit(r.fabric_send_no_cap, LINE_FABRIC_SEND_NO_CAP);
+    emit(r.fabric_quota_drain, LINE_FABRIC_QUOTA_DRAIN);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -917,6 +938,9 @@ mod tests {
         assert!(r.fabric_endpoint_limit, "full table → EndpointLimit, existing intact, close frees slot");
         assert!(r.fabric_slot_exhaust, "one tenant past its endpoint quota → EndpointLimit");
         assert!(r.fabric_stale_endpoint, "stale endpoint id after slot reuse → NoSuchEndpoint");
+        assert!(r.fabric_recv_foreign, "non-owner recv / pending → NoSuchEndpoint");
+        assert!(r.fabric_send_no_cap, "send without Endpoint+WRITE → NoSuchEndpoint");
+        assert!(r.fabric_quota_drain, "sender past its own Hodge budget → QuotaExceeded, others unaffected");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -1163,6 +1187,9 @@ mod tests {
             LINE_FABRIC_STALE_ENDPOINT,
             "[redteam] attack=fabric-stale-endpoint result=refused"
         );
+        assert_eq!(LINE_FABRIC_RECV_FOREIGN, "[redteam] attack=fabric-recv-foreign result=refused");
+        assert_eq!(LINE_FABRIC_SEND_NO_CAP, "[redteam] attack=fabric-send-no-cap result=refused");
+        assert_eq!(LINE_FABRIC_QUOTA_DRAIN, "[redteam] attack=fabric-quota-drain result=refused");
         assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
@@ -1344,6 +1371,9 @@ mod tests {
             LINE_FABRIC_ENDPOINT_LIMIT,
             LINE_FABRIC_SLOT_EXHAUST,
             LINE_FABRIC_STALE_ENDPOINT,
+            LINE_FABRIC_RECV_FOREIGN,
+            LINE_FABRIC_SEND_NO_CAP,
+            LINE_FABRIC_QUOTA_DRAIN,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,

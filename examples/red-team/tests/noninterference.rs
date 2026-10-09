@@ -49,6 +49,8 @@ fn negative_controls_are_caught() {
         Control::LeakedCap,
         Control::GlobalSeq,
         Control::UncheckedClose,
+        Control::UncheckedRecv,
+        Control::ForgedSenderQuota,
     ] {
         let s = check(64, 16, ctl);
         assert!(s.divergences > 0, "control {} not caught", ctl.name());

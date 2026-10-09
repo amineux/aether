@@ -9,9 +9,10 @@
 //!   (arena alloc, map, unmap, accelerator submit with random shapes /
 //!   addresses / forged tenant tags, stream bind, SET_SID, arena handoff, cap
 //!   derive / revoke, KV attend and KV pin), plus, from a separate seeded
-//!   stream, one fabric endpoint op per syscall (create up to and past its
-//!   per-tenant quota, tenant-checked close of its own / A's / B's / junk
-//!   ids, send / recv / probe on its own closed or slot-reused stale ids).
+//!   stream, one fabric op per syscall (create up to and past its endpoint
+//!   quota; tenant-checked close, checked send bursts with C's or a forged
+//!   A sender tag, checked recv and pending probes, aimed at C's own live /
+//!   closed / stale ids, A's and B's endpoints, or junk ids).
 //!
 //! Everything A and B can observe is recorded per step: every job result
 //! (including the completion sequence number), every KV attend result, the
@@ -29,12 +30,12 @@
 //! Negative controls ([`Control`]) re-open known holes and must produce
 //! divergences, so the check is shown to be able to fail.
 //!
-//! Fabric scope: C never sends to a live endpoint. Any tenant that knows an
-//! endpoint id can send to it (the fabric has no send capability), and the
-//! Hodge quota is per fabric, not per tenant, so a C that sends can change
-//! A's queue or quota by design; that is outside this check. A and B create
-//! their endpoints before C acts, so the shared id counter does not show up
-//! in their ids here.
+//! Fabric scope: since Round 25 sends need the endpoint's owner or an
+//! Endpoint+WRITE cap (C holds none for A's or B's endpoints), recv and
+//! pending are owner-only, and the Hodge quota is per sender tenant, so C
+//! sends freely to its own endpoints here. A and B observe their own
+//! remaining quota. A and B create their endpoints before C acts, so the
+//! shared endpoint-id counter does not show up in their ids here.
 //!
 //! Not hardware isolation, no timing / cache / power side channels, no
 //! performance claim.
@@ -46,7 +47,8 @@ use aether_core::accel::{
 };
 use aether_core::arena::{Arena, ArenaAllocator, ArenaId, ArenaRequest};
 use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
-use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, Message, MsgFlags};
+use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, Message, MsgFlags, MAX_QUEUE};
+use aether_core::hodge::FlowClass;
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
 use aether_core::kvfabric::{attend, pin_kv, AttendReq, KvKind, KvLedger, KvObject, KvWindow};
 use aether_core::sysnr::map_pin_addr;
@@ -109,6 +111,12 @@ pub enum Control {
     /// C closes endpoints without the owner check (`Fabric::close`, not
     /// `close_for`), so it can close A's or B's endpoint.
     UncheckedClose,
+    /// C receives with the unchecked `Fabric::recv_unchecked`, so it can
+    /// dequeue A's or B's messages.
+    UncheckedRecv,
+    /// C sends with `send_unchecked` and A's sender tag, so its traffic is
+    /// charged to A's Hodge quota (the shared-quota / forged-sender shape).
+    ForgedSenderQuota,
 }
 
 impl Control {
@@ -120,6 +128,8 @@ impl Control {
             Self::LeakedCap => "leaked-cap",
             Self::GlobalSeq => "global-job-seq",
             Self::UncheckedClose => "unchecked-endpoint-close",
+            Self::UncheckedRecv => "unchecked-endpoint-recv",
+            Self::ForgedSenderQuota => "forged-sender-quota",
         }
     }
 }
@@ -426,11 +436,13 @@ impl World {
         let fab = |t: usize| {
             let ep = self.eps[t];
             format!(
-                "{:?}|{:?}|{:?}|{}",
+                "{:?}|{:?}|{:?}|{}|{:?}",
                 ep,
                 self.fabric.owner(ep),
-                self.fabric.pending(ep),
-                self.fabric.live_count(self.t[t].id)
+                self.fabric.pending_as(self.t[t].id, ep),
+                self.fabric.live_count(self.t[t].id),
+                [FlowClass::Gradient, FlowClass::Curl, FlowClass::Harmonic]
+                    .map(|f| self.fabric.remain_for(self.t[t].id, f)),
             )
         };
         Observation {
@@ -542,27 +554,37 @@ impl World {
             ten.id,
             &[t as u8, layer as u8, 0xA5],
         )
-        .and_then(|m| self.fabric.send(m));
+        .and_then(|m| self.fabric.send_as(&self.tables[t], m));
         format!("{r:?}")
     }
 
     /// Honest fabric recv on tenant `t`'s own endpoint.
     fn honest_recv(&mut self, t: usize) -> String {
-        match self.fabric.recv(self.eps[t]) {
+        match self.fabric.recv_as(self.t[t].id, self.eps[t]) {
             Ok(m) => format!("Ok(badge={} from={:?} {:?})", m.header.badge, m.header.sender_tenant, m.payload()),
             Err(e) => format!("Err({e:?})"),
         }
     }
 
-    /// One fabric endpoint op by tenant C (create / close / stale send, recv,
-    /// probe). C never sends to a live endpoint (see module docs).
+    /// One fabric op by tenant C: create / close / send / recv / probe, on its
+    /// own live, closed or stale endpoints and on A's and B's. Every send and
+    /// recv goes through the checked paths unless a control re-opens a hole.
     fn c_fabric_op(&mut self, rng: &mut Rng, ctl: Control, stats: &mut CStats) {
         let c = self.t[C].id;
         stats.fabric_ops += 1;
         let stale = |w: &Self, rng: &mut Rng| -> Option<EndpointId> {
             (!w.c_closed.is_empty()).then(|| w.c_closed[rng.below(w.c_closed.len() as u64) as usize])
         };
-        let ok = match rng.below(6) {
+        // Any id C might name: its own live / closed ids, A's, B's, or junk.
+        let any_id = |w: &Self, rng: &mut Rng| -> EndpointId {
+            match rng.below(4) {
+                0 if !w.c_eps.is_empty() => w.c_eps[rng.below(w.c_eps.len() as u64) as usize],
+                1 => w.eps[rng.below(2) as usize],
+                2 => stale(w, rng).unwrap_or(EndpointId(rng.below(64) as u32)),
+                _ => EndpointId(rng.below(64) as u32),
+            }
+        };
+        let ok = match rng.below(8) {
             0 | 1 => match self.fabric.create_endpoint(c) {
                 Ok(id) => {
                     self.c_eps.push(id);
@@ -571,14 +593,7 @@ impl World {
                 Err(_) => false,
             },
             2 => {
-                let id = match rng.below(5) {
-                    0 | 1 if !self.c_eps.is_empty() => {
-                        self.c_eps[rng.below(self.c_eps.len() as u64) as usize]
-                    }
-                    2 => self.eps[rng.below(2) as usize],
-                    3 => stale(self, rng).unwrap_or(EndpointId(rng.below(64) as u32)),
-                    _ => EndpointId(rng.below(64) as u32),
-                };
+                let id = any_id(self, rng);
                 let r = if ctl == Control::UncheckedClose {
                     self.fabric.close(id)
                 } else {
@@ -592,19 +607,52 @@ impl World {
                 }
                 r.is_ok()
             }
-            3 => match stale(self, rng) {
-                Some(id) => Message::new(id, rng.next(), MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, c, b"stale")
-                    .and_then(|m| self.fabric.send(m))
-                    .is_ok(),
-                None => false,
-            },
-            4 => match stale(self, rng) {
-                Some(id) => self.fabric.recv(id).is_ok(),
-                None => false,
-            },
+            // Send burst: to any id, sender tag C or (forged) A, flow class
+            // random. Checked: only C's own live endpoints admit, charged to
+            // C's own quota.
+            3 | 4 => {
+                let dest = if ctl == Control::ForgedSenderQuota && !self.c_eps.is_empty() {
+                    self.c_eps[rng.below(self.c_eps.len() as u64) as usize]
+                } else {
+                    any_id(self, rng)
+                };
+                let tag = if ctl == Control::ForgedSenderQuota || rng.below(4) == 0 {
+                    self.t[A].id
+                } else {
+                    c
+                };
+                let flow = [FlowClass::Gradient, FlowClass::Curl, FlowClass::Harmonic][rng.below(3) as usize];
+                let mut any = false;
+                for _ in 0..1 + rng.below(4) {
+                    let r = Message::new(dest, rng.next(), MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, tag, b"c")
+                        .map(|m| m.with_flow(flow))
+                        .and_then(|m| {
+                            if ctl == Control::ForgedSenderQuota {
+                                self.fabric.send_unchecked(m)
+                            } else {
+                                self.fabric.send_as(&self.tables[C], m)
+                            }
+                        });
+                    any |= r.is_ok();
+                    // Drain C's own queue so the burst keeps charging quota.
+                    if r.is_ok() && self.fabric.pending_as(c, dest) == Ok(MAX_QUEUE) {
+                        let _ = self.fabric.recv_as(c, dest);
+                    }
+                }
+                any
+            }
+            5 | 6 => {
+                let id = any_id(self, rng);
+                let r = if ctl == Control::UncheckedRecv {
+                    self.fabric.recv_unchecked(id)
+                } else {
+                    self.fabric.recv_as(c, id)
+                };
+                r.is_ok()
+            }
             _ => {
-                let id = EndpointId(rng.below(64) as u32);
-                self.fabric.pending(id).is_ok() && self.fabric.owner(id).is_ok()
+                let id = any_id(self, rng);
+                self.fabric.pending_as(c, id).is_ok()
             }
         };
         if ok {
@@ -899,4 +947,4 @@ pub fn check(seeds: u64, per_gap: u32, ctl: Control) -> Summary {
     s
 }
 
-pub const SCOPE_LINE: &str = "[noninterference] scope: host software model (core caps + arenas + Soft SMMU + SoftNpu + KV grants + fabric endpoint churn, syscall gates as the kernel applies them); not hardware, no timing/cache/power side channels";
+pub const SCOPE_LINE: &str = "[noninterference] scope: host software model (core caps + arenas + Soft SMMU + SoftNpu + KV grants + fabric endpoint churn + checked send/recv + per-tenant Hodge quota, syscall gates as the kernel applies them); not hardware, no timing/cache/power side channels";

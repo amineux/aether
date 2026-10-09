@@ -33,6 +33,8 @@ fn main() {
         Control::LeakedCap,
         Control::GlobalSeq,
         Control::UncheckedClose,
+        Control::UncheckedRecv,
+        Control::ForgedSenderQuota,
     ] {
         let c = check(seeds.min(64), per_gap, ctl);
         let caught = c.divergences > 0;

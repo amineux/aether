@@ -454,12 +454,13 @@ impl Default for Fabric {
 
 /// Host red-team report for fabric endpoint flood refuse.
 ///
-/// Sell line `[redteam] attack=fabric-queue-full` — existing [`Fabric::send`]
-/// gate only. A sender that floods one endpoint past [`MAX_QUEUE`] is refused
+/// Sell line `[redteam] attack=fabric-queue-full` — existing
+/// [`Fabric::send_as`] gates only (B holds an Endpoint+WRITE cap on A's
+/// endpoints). A sender that floods one endpoint past [`MAX_QUEUE`] is refused
 /// as [`FabricError::QueueFull`]; a send to a closed endpoint is refused as
 /// [`FabricError::Closed`]. Both gates run **before** Hodge admit, so a refused
-/// send enqueues nothing and burns no Hodge quota. The Hodge quota is
-/// per-fabric (shared), not per-tenant; this clip claims endpoint
+/// send enqueues nothing and burns no Hodge quota (the sender's own
+/// per-tenant budget since Round 25); this clip claims endpoint
 /// back-pressure only. **Not** hodge-quota (`QuotaExceeded`) / Hodge
 /// policy / CapTable; no new opcodes; software path only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -968,10 +969,284 @@ pub fn run_fabric_stale_endpoint_demo() -> FabricStaleEndpointReport {
     }
 }
 
+/// Host red-team report for receiving from another tenant's endpoint.
+///
+/// Sell line `[redteam] attack=fabric-recv-foreign`. Tenant B names tenant
+/// A's endpoint id on [`Fabric::recv_as`] and [`Fabric::pending_as`]: both
+/// are refused as the existing [`FabricError::NoSuchEndpoint`], the same
+/// answer an id that does not exist gets, so B learns neither the message nor
+/// whether the endpoint exists. A's queued message stays queued and A
+/// receives it intact. Before Round 25 `recv` / `pending` had no caller
+/// check. **Not** fabric-send-no-cap / fabric-stale-endpoint / CapTable; no
+/// new opcodes, errors or ABI; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricRecvForeignReport {
+    /// B's recv / pending on A's endpoint → `NoSuchEndpoint` (repeated).
+    pub foreign_refused: bool,
+    /// The refusal is identical to the one for an id that does not exist.
+    pub indistinguishable: bool,
+    /// A still has its message queued and receives it intact.
+    pub owner_intact: bool,
+}
+
+impl FabricRecvForeignReport {
+    pub fn all_ok(&self) -> bool {
+        self.foreign_refused && self.indistinguishable && self.owner_intact
+    }
+}
+
+/// B's recv / pending on A's endpoint → [`FabricError::NoSuchEndpoint`].
+pub fn run_fabric_recv_foreign_demo() -> FabricRecvForeignReport {
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let mut f = Fabric::new();
+    let (Ok(ep_a), Ok(_ep_b)) = (f.create_endpoint(a), f.create_endpoint(b)) else {
+        return FabricRecvForeignReport { foreign_refused: false, indistinguishable: false, owner_intact: false };
+    };
+    let tab_a = CapTable::new(a);
+    let queued = Message::new(ep_a, 0xA1, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, a, b"a-private")
+        .map(|m| f.send_as(&tab_a, m))
+        == Ok(Ok(()));
+    let nse = Err(FabricError::NoSuchEndpoint);
+    let foreign_refused = queued
+        && (0..3).all(|_| f.recv_as(b, ep_a).map(|_| ()) == nse)
+        && f.pending_as(b, ep_a).map(|_| ()) == nse;
+    let missing = EndpointId(0xDEAD);
+    let indistinguishable = f.recv_as(b, missing).map(|_| ()) == f.recv_as(b, ep_a).map(|_| ())
+        && f.pending_as(b, missing) == f.pending_as(b, ep_a);
+    let owner_intact = f.pending_as(a, ep_a) == Ok(1)
+        && f.recv_as(a, ep_a).map(|m| m.payload() == b"a-private" && m.header.sender_tenant == a) == Ok(true)
+        && f.pending_as(a, ep_a) == Ok(0);
+    FabricRecvForeignReport { foreign_refused, indistinguishable, owner_intact }
+}
+
+/// Host red-team report for sending without the right to send.
+///
+/// Sell line `[redteam] attack=fabric-send-no-cap`. Tenant B sends to tenant
+/// A's endpoint through [`Fabric::send_as`] with: no cap, an `Endpoint` cap
+/// on another endpoint, an `Endpoint` cap without `WRITE`, and a forged
+/// sender tag (A's). Each is refused as the existing
+/// [`FabricError::NoSuchEndpoint`] (same answer as a missing id), nothing is
+/// queued and neither tenant's Hodge quota moves. With an `Endpoint` +
+/// `WRITE` cap on A's endpoint the send admits and is charged to B. Before
+/// Round 25 any tenant that knew an id could send. **Not** fabric-recv-foreign
+/// / fabric-queue-full / CapTable; no new opcodes, errors or ABI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricSendNoCapReport {
+    /// No cap / wrong object / no WRITE / forged tag → `NoSuchEndpoint`.
+    pub unauthorized_refused: bool,
+    /// Nothing queued; A's and B's quotas unchanged.
+    pub no_side_effect: bool,
+    /// Control: with Endpoint+WRITE on A's endpoint, B's send admits,
+    /// charged to B's quota only.
+    pub granted_ok: bool,
+}
+
+impl FabricSendNoCapReport {
+    pub fn all_ok(&self) -> bool {
+        self.unauthorized_refused && self.no_side_effect && self.granted_ok
+    }
+}
+
+/// Send to another tenant's endpoint without an Endpoint+WRITE cap →
+/// [`FabricError::NoSuchEndpoint`].
+pub fn run_fabric_send_no_cap_demo() -> FabricSendNoCapReport {
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let flow = FlowClass::Gradient;
+    let mut f = Fabric::new();
+    let (Ok(ep_a), Ok(ep_b)) = (f.create_endpoint(a), f.create_endpoint(b)) else {
+        return FabricSendNoCapReport { unauthorized_refused: false, no_side_effect: false, granted_ok: false };
+    };
+    let empty = CapTable::new(b);
+    let wrong_obj = send_tab(b, &[ep_b]);
+    let mut read_only = CapTable::new(b);
+    let _ = read_only.mint(Capability::new(CapKind::Endpoint, CapRights(CapRights::READ), ep_a.0, b));
+    let granted = send_tab(b, &[ep_a]);
+    let (qa, qb) = (f.remain_for(a, flow), f.remain_for(b, flow));
+    let nse = Some(Err(FabricError::NoSuchEndpoint));
+    let unauthorized_refused = flood_msg(ep_a, b).map(|m| f.send_as(&empty, m)) == nse
+        && flood_msg(ep_a, b).map(|m| f.send_as(&wrong_obj, m)) == nse
+        && flood_msg(ep_a, b).map(|m| f.send_as(&read_only, m)) == nse
+        // Forged sender tag (A's) with a table B owns, even one holding WRITE.
+        && flood_msg(ep_a, a).map(|m| f.send_as(&granted, m)) == nse
+        && flood_msg(EndpointId(0xDEAD), b).map(|m| f.send_as(&empty, m)) == nse;
+    let no_side_effect = f.pending_as(a, ep_a) == Ok(0)
+        && f.remain_for(a, flow) == qa
+        && f.remain_for(b, flow) == qb;
+    let granted_ok = flood_msg(ep_a, b).map(|m| f.send_as(&granted, m)) == Some(Ok(()))
+        && f.pending_as(a, ep_a) == Ok(1)
+        && f.remain_for(b, flow) + 1 == qb
+        && f.remain_for(a, flow) == qa
+        && f.recv_as(a, ep_a).map(|m| m.header.sender_tenant == b) == Ok(true);
+    FabricSendNoCapReport { unauthorized_refused, no_side_effect, granted_ok }
+}
+
+/// Host red-team report for one sender draining the fabric's Hodge quota.
+///
+/// Sell line `[redteam] attack=fabric-quota-drain`. Before Round 25 the
+/// fabric had one Hodge quota (64 messages per class) shared by every
+/// sender, so one tenant could use it up and every other tenant's sends were
+/// refused. Now each sender tenant has its own budget per class
+/// ([`Fabric::tenant_budget`]): tenant C sends to its own endpoint until its
+/// Gradient budget is spent, its next sends are refused as the existing
+/// `FabricError::Hodge(HodgeError::QuotaExceeded)`, and tenants A and B still
+/// have their full budgets and still send. C's other classes are untouched
+/// (per tenant and class). The ledger tracks [`MAX_QUOTA_TENANTS`] distinct
+/// senders; past that a new sender is refused as `QuotaExceeded` (a bound,
+/// not a reservation). Budgets do not refill. **Not** hodge-quota (empty
+/// quota) / fabric-queue-full; no new opcodes, errors or ABI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricQuotaDrainReport {
+    /// Control: C's first `tenant_budget` Gradient sends admit.
+    pub budget_ok: bool,
+    /// Further C Gradient sends → `Hodge(QuotaExceeded)`, nothing queued.
+    pub drain_refused: bool,
+    /// A and B keep their full budgets and still send.
+    pub others_unaffected: bool,
+    /// C's Curl budget is separate and still admits.
+    pub per_class: bool,
+}
+
+impl FabricQuotaDrainReport {
+    pub fn all_ok(&self) -> bool {
+        self.budget_ok && self.drain_refused && self.others_unaffected && self.per_class
+    }
+}
+
+/// One sender drains its own Hodge budget → `Hodge(QuotaExceeded)`; other
+/// tenants keep theirs.
+pub fn run_fabric_quota_drain_demo() -> FabricQuotaDrainReport {
+    let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
+    let flow = FlowClass::Gradient;
+    let mut f = Fabric::new();
+    let (Ok(ep_a), Ok(ep_b), Ok(ep_c)) = (f.create_endpoint(a), f.create_endpoint(b), f.create_endpoint(c)) else {
+        return FabricQuotaDrainReport { budget_ok: false, drain_refused: false, others_unaffected: false, per_class: false };
+    };
+    let (tab_a, tab_b, tab_c) = (CapTable::new(a), CapTable::new(b), CapTable::new(c));
+    let budget = f.tenant_budget.remain(flow);
+    let full_a = f.remain_for(a, flow);
+    let mut budget_ok = budget > 0;
+    for _ in 0..budget {
+        budget_ok &= flood_msg(ep_c, c).map(|m| f.send_as(&tab_c, m)) == Some(Ok(()));
+        let _ = f.recv_as(c, ep_c);
+    }
+    budget_ok &= f.remain_for(c, flow) == 0;
+    let refused = Some(Err(FabricError::Hodge(HodgeError::QuotaExceeded)));
+    let drain_refused = (0..MAX_QUEUE + 3).all(|_| flood_msg(ep_c, c).map(|m| f.send_as(&tab_c, m)) == refused)
+        && f.pending_as(c, ep_c) == Ok(0);
+    let others_unaffected = f.remain_for(a, flow) == full_a
+        && f.remain_for(b, flow) == full_a
+        && flood_msg(ep_a, a).map(|m| f.send_as(&tab_a, m)) == Some(Ok(()))
+        && flood_msg(ep_b, b).map(|m| f.send_as(&tab_b, m)) == Some(Ok(()))
+        && f.remain_for(a, flow) + 1 == full_a;
+    let per_class = flood_msg(ep_c, c)
+        .map(|m| f.send_as(&tab_c, m.with_flow(FlowClass::Curl)))
+        == Some(Ok(()));
+    FabricQuotaDrainReport { budget_ok, drain_refused, others_unaffected, per_class }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::caps::{CapKind, CapRights};
+    use crate::caps::CPtr;
+
+    #[test]
+    fn fabric_recv_foreign_demo_all_ok() {
+        let r = run_fabric_recv_foreign_demo();
+        assert!(r.foreign_refused, "{r:?}");
+        assert!(r.indistinguishable, "{r:?}");
+        assert!(r.owner_intact, "{r:?}");
+    }
+
+    #[test]
+    fn fabric_send_no_cap_demo_all_ok() {
+        let r = run_fabric_send_no_cap_demo();
+        assert!(r.unauthorized_refused, "{r:?}");
+        assert!(r.no_side_effect, "{r:?}");
+        assert!(r.granted_ok, "{r:?}");
+    }
+
+    #[test]
+    fn fabric_quota_drain_demo_all_ok() {
+        let r = run_fabric_quota_drain_demo();
+        assert!(r.budget_ok, "{r:?}");
+        assert!(r.drain_refused, "{r:?}");
+        assert!(r.others_unaffected, "{r:?}");
+        assert!(r.per_class, "{r:?}");
+    }
+
+    /// Regression: `recv` used to dequeue for any caller naming the id.
+    #[test]
+    fn recv_as_refuses_non_owner() {
+        let mut f = Fabric::new();
+        let ep = f.create_endpoint(TenantId(1)).unwrap();
+        let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(1), b"x").unwrap();
+        f.send_as(&CapTable::new(TenantId(1)), m).unwrap();
+        assert_eq!(f.recv_as(TenantId(2), ep).unwrap_err(), FabricError::NoSuchEndpoint);
+        assert_eq!(f.pending_as(TenantId(2), ep), Err(FabricError::NoSuchEndpoint));
+        assert_eq!(f.pending_as(TenantId(1), ep), Ok(1));
+    }
+
+    /// Regression: `send` used to admit from anyone naming the id.
+    #[test]
+    fn send_as_requires_owner_or_write_cap() {
+        let mut f = Fabric::new();
+        let ep = f.create_endpoint(TenantId(1)).unwrap();
+        let mk = |t| Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, t, b"x").unwrap();
+        assert_eq!(f.send_as(&CapTable::new(TenantId(2)), mk(TenantId(2))), Err(FabricError::NoSuchEndpoint));
+        let mut tab = CapTable::new(TenantId(2));
+        tab.mint(Capability::new(CapKind::Endpoint, CapRights(CapRights::WRITE), ep.0, TenantId(2))).unwrap();
+        assert_eq!(f.send_as(&tab, mk(TenantId(1))), Err(FabricError::NoSuchEndpoint), "forged sender tag");
+        assert_eq!(f.send_as(&tab, mk(TenantId(2))), Ok(()));
+        let cptr = CPtr(0);
+        tab.revoke(cptr).unwrap();
+        assert_eq!(f.send_as(&tab, mk(TenantId(2))), Err(FabricError::NoSuchEndpoint), "revoked cap");
+    }
+
+    /// Regression: one sender used to drain the single shared Hodge quota.
+    #[test]
+    fn hodge_quota_is_per_sender_tenant() {
+        let mut f = Fabric::new();
+        f.tenant_budget = HodgeQuota { remain: [2, 2, 2] };
+        let ep = f.create_endpoint(TenantId(3)).unwrap();
+        let mine = f.create_endpoint(TenantId(1)).unwrap();
+        let tab3 = CapTable::new(TenantId(3));
+        for _ in 0..2 {
+            let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(3), b"").unwrap();
+            f.send_as(&tab3, m).unwrap();
+        }
+        let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(3), b"").unwrap();
+        assert_eq!(f.send_as(&tab3, m), Err(FabricError::Hodge(HodgeError::QuotaExceeded)));
+        let m = Message::new(mine, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(1), b"").unwrap();
+        assert_eq!(f.send_as(&CapTable::new(TenantId(1)), m), Ok(()));
+        assert_eq!(f.remain_for(TenantId(1), FlowClass::Gradient), 1);
+    }
+
+    /// The ledger tracks MAX_QUOTA_TENANTS senders; a refused send or a
+    /// policy refusal creates no entry.
+    #[test]
+    fn quota_ledger_bound_and_no_entry_on_refusal() {
+        let mut f = Fabric::new();
+        let ep = f.create_endpoint(TenantId(1)).unwrap();
+        for t in 0..MAX_QUOTA_TENANTS as u32 {
+            let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(100 + t), b"").unwrap();
+            f.send_unchecked(m).unwrap();
+            f.recv_unchecked(ep).unwrap();
+        }
+        let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(999), b"").unwrap();
+        assert_eq!(f.send_unchecked(m), Err(FabricError::Hodge(HodgeError::QuotaExceeded)));
+        let harm = Message::new(ep, 0, MsgFlags(MsgFlags::TREE_OFFLOAD), ChipletRoute::LOCAL, TenantId(999), b"")
+            .unwrap()
+            .with_flow(FlowClass::Harmonic);
+        assert_eq!(f.send_unchecked(harm), Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce)));
+        let mut g = Fabric::new();
+        g.tenant_budget = HodgeQuota::empty();
+        let ep = g.create_endpoint(TenantId(1)).unwrap();
+        let m = Message::new(ep, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, TenantId(1), b"").unwrap();
+        assert!(g.send_unchecked(m).is_err());
+        assert!(g.quotas.iter().all(|e| e.is_none()));
+    }
 
     #[test]
     fn fabric_endpoint_limit_demo_all_ok() {

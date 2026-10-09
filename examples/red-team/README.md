@@ -167,11 +167,11 @@ Hodge-quota needle: `[redteam] attack=hodge-quota result=refused`
 (`HodgeQuota::empty().admit(...)` → `HodgeError::QuotaExceeded`; generous admit succeeds;
 not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized / CapTable).
 Fabric-queue-full needle: `[redteam] attack=fabric-queue-full result=refused`
-(`Fabric::send` on the only IPC: flooding one endpoint past `MAX_QUEUE` → `FabricError::QueueFull`,
+(`Fabric::send_as` on the only IPC, sender holding Endpoint+WRITE: flooding one endpoint past `MAX_QUEUE` → `FabricError::QueueFull`,
 pending stays `MAX_QUEUE`; send to a closed endpoint → `FabricError::Closed`; both gates run before
 Hodge admit, so a refused send enqueues nothing and charges no Hodge quota; a neighbor endpoint still
-admits and draining one message re-admits. Hodge quota is per-fabric, not per-tenant; endpoint
-back-pressure only; not hodge-quota (`QuotaExceeded`) / CapTable; no new opcodes; software path only).
+admits and draining one message re-admits. The Hodge quota charged is the sender's own (per tenant
+since Round 25); endpoint back-pressure only; not hodge-quota (`QuotaExceeded`) / CapTable; no new opcodes; software path only).
 Fabric-payload-too-large needle: `[redteam] attack=fabric-payload-too-large result=refused`
 (`Message::new` with a payload of `MAX_MSG_BYTES + 1` or 4 KiB → `FabricError::PayloadTooLarge`, never
 truncated; exactly `MAX_MSG_BYTES` builds and round-trips intact; not fabric-queue-full (`QueueFull`) /
@@ -201,6 +201,24 @@ Fabric-stale-endpoint needle: `[redteam] attack=fabric-stale-endpoint result=ref
 touch V's queued message; refused sends charge no Hodge quota; before reuse the closed endpoint answers
 `Closed`. Endpoint ids come from a counter that refuses (`EndpointLimit`) instead of wrapping, so an id is
 never reissued. Not fabric-queue-full / fabric-slot-exhaust / CapTable; software path only).
+Fabric-recv-foreign needle: `[redteam] attack=fabric-recv-foreign result=refused`
+(tenant B calls `Fabric::recv_as` / `pending_as` on tenant A's endpoint → `FabricError::NoSuchEndpoint`,
+repeated, the same answer a nonexistent id gets; A's queued message stays queued and A receives it intact.
+Before Round 25 `recv` / `pending` had no caller check; the unchecked forms are now `recv_unchecked` /
+`pending_unchecked`, for tests and host observers only. Not fabric-send-no-cap / fabric-stale-endpoint /
+CapTable; no new opcodes, errors or ABI; software path only).
+Fabric-send-no-cap needle: `[redteam] attack=fabric-send-no-cap result=refused`
+(`Fabric::send_as` to tenant A's endpoint by tenant B with no cap, an Endpoint cap on another endpoint,
+an Endpoint cap without `WRITE`, or a forged sender tag → `FabricError::NoSuchEndpoint` (same answer as a
+missing id); nothing queued, neither tenant's Hodge quota moves; with Endpoint+WRITE on A's endpoint B's send
+admits and is charged to B. The kernel's `SYS_SEND` / `SYS_RECV` use `send_as` / `recv_as`. Before Round 25 any
+tenant that knew an id could send. Not fabric-recv-foreign / fabric-queue-full; software path only).
+Fabric-quota-drain needle: `[redteam] attack=fabric-quota-drain result=refused`
+(tenant C sends to its own endpoint until its Gradient budget (64) is spent; further sends →
+`FabricError::Hodge(HodgeError::QuotaExceeded)`, nothing queued; tenants A and B keep full budgets and still
+send; C's Curl budget is separate. Before Round 25 the fabric had one Hodge quota shared by every sender. The
+ledger tracks 16 distinct senders (a bound, not a reservation) and budgets do not refill. Not hodge-quota
+(empty quota) / fabric-queue-full; no new opcodes, errors or ABI; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /

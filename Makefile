@@ -190,6 +190,9 @@ red-team:
 	grep -q "\\[redteam\\] attack=fabric-endpoint-limit result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-slot-exhaust result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-stale-endpoint result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-recv-foreign result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-send-no-cap result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-quota-drain result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
@@ -883,7 +886,7 @@ two-tenant-infer:
 # Soft-SMMU translations and arena metadata must be byte-identical for every
 # seed. C also churns fabric endpoints (create past quota, tenant-checked
 # close, stale-id send/recv); A's and B's endpoint views must not change.
-# Five negative controls re-open known holes and must diverge. The
+# Seven negative controls re-open known holes and must diverge. The
 # Kani harnesses (proofs/, `make kani`) take tens of minutes, so they run
 # here only with PROOFS=1. "Bounded model-checked", not formally verified.
 # Software model only: not hardware, no timing / cache / power side channels.
@@ -898,7 +901,7 @@ noninterference:
 	cargo run --locked --release -p aether-redteam --quiet --example noninterference -- $(NI_SEEDS) $(NI_OPS_PER_GAP) > $(NONINTERFERENCE_LOG)
 	cat $(NONINTERFERENCE_LOG)
 	grep -Eq "^\[noninterference\] worlds=2 seeds=$(NI_SEEDS) ops=[0-9]+ divergences=0$$" $(NONINTERFERENCE_LOG)
-	test "$$(grep -c "^\[noninterference\] control=.* caught=true$$" $(NONINTERFERENCE_LOG))" = 5
+	test "$$(grep -c "^\[noninterference\] control=.* caught=true$$" $(NONINTERFERENCE_LOG))" = 7
 	@if [ "$(PROOFS)" = "1" ]; then bash scripts/run_kani.sh; else echo "[proof] kani=skipped (PROOFS=1 or make kani runs the bounded model-checked harnesses)"; fi
 	@echo "noninterference: 0 divergences across seeds; every negative control caught"
 
