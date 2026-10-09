@@ -133,9 +133,12 @@ pub struct Walk {
 
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn cr3() -> u64 {
-    let v: u64;
-    core::arch::asm!("mov {}, cr3", out(reg) v, options(nomem, nostack, preserves_flags));
-    v
+    // SAFETY: reading CR3 at CPL0 has no memory side effects (nomem, nostack).
+    unsafe {
+        let v: u64;
+        core::arch::asm!("mov {}, cr3", out(reg) v, options(nomem, nostack, preserves_flags));
+        v
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -370,70 +373,78 @@ fn write64(pa: u64, v: u64) {
 /// every level of the walk.
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
-    let pml4 = phys_va(root & !0xFFF) as *const u64;
-    let i4 = ((va >> 39) & 0x1FF) as usize;
-    let i3 = ((va >> 30) & 0x1FF) as usize;
-    let i2 = ((va >> 21) & 0x1FF) as usize;
-    let pml4e = core::ptr::read_volatile(pml4.add(i4));
-    if pml4e & P == 0 {
-        return None;
-    }
-    let pdpt = phys_va(pml4e & 0x000F_FFFF_FFFF_F000) as *const u64;
-    let pdpte = core::ptr::read_volatile(pdpt.add(i3));
-    if pdpte & P == 0 {
-        return None;
-    }
-    if pdpte & PS != 0 {
-        let phys = (pdpte & 0x000F_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
-        return Some(Walk {
-            pml4e,
-            pdpte,
-            pde: 0,
-            phys: PhysAddr(phys),
-            huge_2m: false,
-            user: pml4e & US != 0 && pdpte & US != 0,
-            writable: pml4e & RW != 0 && pdpte & RW != 0,
-        });
-    }
-    let pd = phys_va(pdpte & 0x000F_FFFF_FFFF_F000) as *const u64;
-    let pde = core::ptr::read_volatile(pd.add(i2));
-    if pde & P == 0 {
-        return None;
-    }
-    if pde & PS != 0 {
-        let phys = (pde & 0x000F_FFFF_FFE0_0000) | (va & 0x1F_FFFF);
-        return Some(Walk {
+    // SAFETY: caller passes a live PML4 root (fn contract); every table pointer is
+    // derived from a present entry and indexed by a 9-bit field (< 512), so
+    // each read_volatile stays inside one 4 KiB table reached via phys_va.
+    unsafe {
+        let pml4 = phys_va(root & !0xFFF) as *const u64;
+        let i4 = ((va >> 39) & 0x1FF) as usize;
+        let i3 = ((va >> 30) & 0x1FF) as usize;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let pml4e = core::ptr::read_volatile(pml4.add(i4));
+        if pml4e & P == 0 {
+            return None;
+        }
+        let pdpt = phys_va(pml4e & 0x000F_FFFF_FFFF_F000) as *const u64;
+        let pdpte = core::ptr::read_volatile(pdpt.add(i3));
+        if pdpte & P == 0 {
+            return None;
+        }
+        if pdpte & PS != 0 {
+            let phys = (pdpte & 0x000F_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
+            return Some(Walk {
+                pml4e,
+                pdpte,
+                pde: 0,
+                phys: PhysAddr(phys),
+                huge_2m: false,
+                user: pml4e & US != 0 && pdpte & US != 0,
+                writable: pml4e & RW != 0 && pdpte & RW != 0,
+            });
+        }
+        let pd = phys_va(pdpte & 0x000F_FFFF_FFFF_F000) as *const u64;
+        let pde = core::ptr::read_volatile(pd.add(i2));
+        if pde & P == 0 {
+            return None;
+        }
+        if pde & PS != 0 {
+            let phys = (pde & 0x000F_FFFF_FFE0_0000) | (va & 0x1F_FFFF);
+            return Some(Walk {
+                pml4e,
+                pdpte,
+                pde,
+                phys: PhysAddr(phys),
+                huge_2m: true,
+                user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0,
+                writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0,
+            });
+        }
+        let i1 = ((va >> 12) & 0x1FF) as usize;
+        let pt = phys_va(pde & 0x000F_FFFF_FFFF_F000) as *const u64;
+        let pte = core::ptr::read_volatile(pt.add(i1));
+        if pte & P == 0 {
+            return None;
+        }
+        let phys = (pte & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF);
+        Some(Walk {
             pml4e,
             pdpte,
             pde,
             phys: PhysAddr(phys),
-            huge_2m: true,
-            user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0,
-            writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0,
-        });
+            huge_2m: false,
+            user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0 && pte & US != 0,
+            writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0 && pte & RW != 0,
+        })
     }
-    let i1 = ((va >> 12) & 0x1FF) as usize;
-    let pt = phys_va(pde & 0x000F_FFFF_FFFF_F000) as *const u64;
-    let pte = core::ptr::read_volatile(pt.add(i1));
-    if pte & P == 0 {
-        return None;
-    }
-    let phys = (pte & 0x000F_FFFF_FFFF_F000) | (va & 0xFFF);
-    Some(Walk {
-        pml4e,
-        pdpte,
-        pde,
-        phys: PhysAddr(phys),
-        huge_2m: false,
-        user: pml4e & US != 0 && pdpte & US != 0 && pde & US != 0 && pte & US != 0,
-        writable: pml4e & RW != 0 && pdpte & RW != 0 && pde & RW != 0 && pte & RW != 0,
-    })
 }
 
 /// Walk `va` in the current address space (tables via [`phys_va`]).
 #[cfg(target_arch = "x86_64")]
 pub unsafe fn walk(va: u64) -> Option<Walk> {
-    walk_in(cr3(), va)
+    // SAFETY: CR3 holds the live root, which satisfies walk_in's contract.
+    unsafe {
+        walk_in(cr3(), va)
+    }
 }
 
 #[cfg(target_arch = "x86_64")]
@@ -1273,9 +1284,12 @@ static SUM_ARMED: AtomicBool = AtomicBool::new(true);
 
 #[cfg(target_arch = "riscv64")]
 pub unsafe fn satp() -> u64 {
-    let v: u64;
-    core::arch::asm!("csrr {v}, satp", v = out(reg) v, options(nomem, nostack));
-    v
+    // SAFETY: reading satp in S-mode has no memory side effects (nomem, nostack).
+    unsafe {
+        let v: u64;
+        core::arch::asm!("csrr {v}, satp", v = out(reg) v, options(nomem, nostack));
+        v
+    }
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -1374,72 +1388,81 @@ fn meg_pte(phys: u64, user: bool) -> u64 {
 /// Walk `va` in `root` (identity-mapped Sv39 tables).
 #[cfg(target_arch = "riscv64")]
 pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
-    let l2 = (root & !0xFFF) as *const u64;
-    let i2 = ((va >> 30) & 0x1FF) as usize;
-    let pte2 = core::ptr::read_volatile(l2.add(i2));
-    if pte2 & PTE_V == 0 {
-        return None;
-    }
-    if pte2 & PTE_LEAF != 0 {
-        let ppn = (pte2 >> 10) & 0x0FFF_FFFF_FFFF;
-        let phys = (ppn << 12) | (va & 0x3FFF_FFFF);
-        return Some(Walk {
-            pml4e: pte2,
-            pdpte: 0,
-            pde: 0,
-            phys: PhysAddr(phys),
-            huge_2m: true,
-            user: pte2 & PTE_U != 0,
-            writable: pte2 & PTE_W != 0,
-        });
-    }
-    let l1 = ((pte2 >> 10) << 12) as *const u64;
-    let i1 = ((va >> 21) & 0x1FF) as usize;
-    let pte1 = core::ptr::read_volatile(l1.add(i1));
-    if pte1 & PTE_V == 0 {
-        return None;
-    }
-    if pte1 & PTE_LEAF != 0 {
-        let ppn = (pte1 >> 10) & 0x0FFF_FFFF_FFFF;
-        let phys = (ppn << 12) | (va & 0x1F_FFFF);
-        return Some(Walk {
+    // SAFETY: caller passes a live identity-mapped Sv39 root (fn contract); each
+    // table pointer comes from a valid PTE and is indexed by a 9-bit field
+    // (< 512), so each read_volatile stays inside one 4 KiB table.
+    unsafe {
+        let l2 = (root & !0xFFF) as *const u64;
+        let i2 = ((va >> 30) & 0x1FF) as usize;
+        let pte2 = core::ptr::read_volatile(l2.add(i2));
+        if pte2 & PTE_V == 0 {
+            return None;
+        }
+        if pte2 & PTE_LEAF != 0 {
+            let ppn = (pte2 >> 10) & 0x0FFF_FFFF_FFFF;
+            let phys = (ppn << 12) | (va & 0x3FFF_FFFF);
+            return Some(Walk {
+                pml4e: pte2,
+                pdpte: 0,
+                pde: 0,
+                phys: PhysAddr(phys),
+                huge_2m: true,
+                user: pte2 & PTE_U != 0,
+                writable: pte2 & PTE_W != 0,
+            });
+        }
+        let l1 = ((pte2 >> 10) << 12) as *const u64;
+        let i1 = ((va >> 21) & 0x1FF) as usize;
+        let pte1 = core::ptr::read_volatile(l1.add(i1));
+        if pte1 & PTE_V == 0 {
+            return None;
+        }
+        if pte1 & PTE_LEAF != 0 {
+            let ppn = (pte1 >> 10) & 0x0FFF_FFFF_FFFF;
+            let phys = (ppn << 12) | (va & 0x1F_FFFF);
+            return Some(Walk {
+                pml4e: pte2,
+                pdpte: pte1,
+                pde: 0,
+                phys: PhysAddr(phys),
+                huge_2m: true,
+                user: pte1 & PTE_U != 0,
+                writable: pte1 & PTE_W != 0,
+            });
+        }
+        let l0 = ((pte1 >> 10) << 12) as *const u64;
+        let i0 = ((va >> 12) & 0x1FF) as usize;
+        let pte0 = core::ptr::read_volatile(l0.add(i0));
+        if pte0 & PTE_V == 0 {
+            return None;
+        }
+        let ppn = (pte0 >> 10) & 0x0FFF_FFFF_FFFF;
+        let phys = (ppn << 12) | (va & 0xFFF);
+        Some(Walk {
             pml4e: pte2,
             pdpte: pte1,
-            pde: 0,
+            pde: pte0,
             phys: PhysAddr(phys),
-            huge_2m: true,
-            user: pte1 & PTE_U != 0,
-            writable: pte1 & PTE_W != 0,
-        });
+            huge_2m: false,
+            user: pte0 & PTE_U != 0,
+            writable: pte0 & PTE_W != 0,
+        })
     }
-    let l0 = ((pte1 >> 10) << 12) as *const u64;
-    let i0 = ((va >> 12) & 0x1FF) as usize;
-    let pte0 = core::ptr::read_volatile(l0.add(i0));
-    if pte0 & PTE_V == 0 {
-        return None;
-    }
-    let ppn = (pte0 >> 10) & 0x0FFF_FFFF_FFFF;
-    let phys = (ppn << 12) | (va & 0xFFF);
-    Some(Walk {
-        pml4e: pte2,
-        pdpte: pte1,
-        pde: pte0,
-        phys: PhysAddr(phys),
-        huge_2m: false,
-        user: pte0 & PTE_U != 0,
-        writable: pte0 & PTE_W != 0,
-    })
 }
 
 /// Sv39 walk of the current satp. A 1 GiB or 2 MiB identity leaf is
 /// `huge_2m = true`.
 #[cfg(target_arch = "riscv64")]
 pub unsafe fn walk(va: u64) -> Option<Walk> {
-    let satp = satp();
-    if satp >> 60 != 8 {
-        return None;
+    // SAFETY: satp holds the live root (mode checked below), which satisfies
+    // walk_in's contract.
+    unsafe {
+        let satp = satp();
+        if satp >> 60 != 8 {
+            return None;
+        }
+        walk_in((satp & 0x0000_0FFF_FFFF_FFFF) << 12, va)
     }
-    walk_in((satp & 0x0000_0FFF_FFFF_FFFF) << 12, va)
 }
 
 #[cfg(target_arch = "riscv64")]
@@ -1638,9 +1661,12 @@ static TTBR_SWITCH_LOGS: AtomicU32 = AtomicU32::new(0);
 
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn ttbr0() -> u64 {
-    let v: u64;
-    core::arch::asm!("mrs {v}, ttbr0_el1", v = out(reg) v, options(nomem, nostack));
-    v
+    // SAFETY: reading TTBR0_EL1 at EL1 has no memory side effects (nomem, nostack).
+    unsafe {
+        let v: u64;
+        core::arch::asm!("mrs {v}, ttbr0_el1", v = out(reg) v, options(nomem, nostack));
+        v
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
@@ -1748,65 +1774,73 @@ fn meg_block(phys: u64, user: bool) -> u64 {
 /// Walk `va` in `root` (identity-mapped TTBR0 tables).
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn walk_in(root: u64, va: u64) -> Option<Walk> {
-    let l1 = (root & 0x0000_FFFF_FFFF_F000) as *const u64;
-    let i1 = ((va >> 30) & 0x1FF) as usize;
-    let pte1 = core::ptr::read_volatile(l1.add(i1));
-    if pte1 & PTE_VALID == 0 {
-        return None;
-    }
-    if pte1 & PTE_TABLE == 0 {
-        let phys = (pte1 & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
-        return Some(Walk {
-            pml4e: pte1,
-            pdpte: 0,
-            pde: 0,
-            phys: PhysAddr(phys),
-            huge_2m: true,
-            user: is_el0(pte1),
-            writable: pte1 & (1 << 7) == 0,
-        });
-    }
-    let l2 = (pte1 & 0x0000_FFFF_FFFF_F000) as *const u64;
-    let i2 = ((va >> 21) & 0x1FF) as usize;
-    let pte2 = core::ptr::read_volatile(l2.add(i2));
-    if pte2 & PTE_VALID == 0 {
-        return None;
-    }
-    if pte2 & PTE_TABLE == 0 {
-        let phys = (pte2 & 0x0000_FFFF_FFE0_0000) | (va & 0x1F_FFFF);
-        return Some(Walk {
+    // SAFETY: caller passes a live identity-mapped TTBR0 root (fn contract); each
+    // table pointer comes from a valid descriptor and is indexed by a 9-bit
+    // field (< 512), so each read_volatile stays inside one 4 KiB table.
+    unsafe {
+        let l1 = (root & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let i1 = ((va >> 30) & 0x1FF) as usize;
+        let pte1 = core::ptr::read_volatile(l1.add(i1));
+        if pte1 & PTE_VALID == 0 {
+            return None;
+        }
+        if pte1 & PTE_TABLE == 0 {
+            let phys = (pte1 & 0x0000_FFFF_C000_0000) | (va & 0x3FFF_FFFF);
+            return Some(Walk {
+                pml4e: pte1,
+                pdpte: 0,
+                pde: 0,
+                phys: PhysAddr(phys),
+                huge_2m: true,
+                user: is_el0(pte1),
+                writable: pte1 & (1 << 7) == 0,
+            });
+        }
+        let l2 = (pte1 & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let i2 = ((va >> 21) & 0x1FF) as usize;
+        let pte2 = core::ptr::read_volatile(l2.add(i2));
+        if pte2 & PTE_VALID == 0 {
+            return None;
+        }
+        if pte2 & PTE_TABLE == 0 {
+            let phys = (pte2 & 0x0000_FFFF_FFE0_0000) | (va & 0x1F_FFFF);
+            return Some(Walk {
+                pml4e: pte1,
+                pdpte: pte2,
+                pde: 0,
+                phys: PhysAddr(phys),
+                huge_2m: true,
+                user: is_el0(pte2),
+                writable: pte2 & (1 << 7) == 0,
+            });
+        }
+        let l3 = (pte2 & 0x0000_FFFF_FFFF_F000) as *const u64;
+        let i3 = ((va >> 12) & 0x1FF) as usize;
+        let pte3 = core::ptr::read_volatile(l3.add(i3));
+        if pte3 & PTE_VALID == 0 {
+            return None;
+        }
+        let phys = (pte3 & 0x0000_FFFF_FFFF_F000) | (va & 0xFFF);
+        Some(Walk {
             pml4e: pte1,
             pdpte: pte2,
-            pde: 0,
+            pde: pte3,
             phys: PhysAddr(phys),
-            huge_2m: true,
-            user: is_el0(pte2),
-            writable: pte2 & (1 << 7) == 0,
-        });
+            huge_2m: false,
+            user: is_el0(pte3),
+            writable: pte3 & (1 << 7) == 0,
+        })
     }
-    let l3 = (pte2 & 0x0000_FFFF_FFFF_F000) as *const u64;
-    let i3 = ((va >> 12) & 0x1FF) as usize;
-    let pte3 = core::ptr::read_volatile(l3.add(i3));
-    if pte3 & PTE_VALID == 0 {
-        return None;
-    }
-    let phys = (pte3 & 0x0000_FFFF_FFFF_F000) | (va & 0xFFF);
-    Some(Walk {
-        pml4e: pte1,
-        pdpte: pte2,
-        pde: pte3,
-        phys: PhysAddr(phys),
-        huge_2m: false,
-        user: is_el0(pte3),
-        writable: pte3 & (1 << 7) == 0,
-    })
 }
 
 /// 4K / T0SZ=25 walk. A 1 GiB L1 or 2 MiB L2 identity block is
 /// `huge_2m = true`.
 #[cfg(target_arch = "aarch64")]
 pub unsafe fn walk(va: u64) -> Option<Walk> {
-    walk_in(ttbr0_root(), va)
+    // SAFETY: ttbr0_root() is the live TTBR0 root, which satisfies walk_in's contract.
+    unsafe {
+        walk_in(ttbr0_root(), va)
+    }
 }
 
 #[cfg(target_arch = "aarch64")]
