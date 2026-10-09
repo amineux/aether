@@ -156,7 +156,8 @@ pub fn kernel_send_ping() -> bool {
         Ok(m) => m,
         Err(_) => return false,
     };
-    let ok = with(|w| w.fabric.send(msg).is_ok());
+    // Kernel ping on tenant 1's own endpoint, through the checked path.
+    let ok = with(|w| w.fabric.send_as(&w.caps, msg).is_ok());
     if ok {
         if let Some(tid) = task::blocked_recv_thread(ep.0) {
             let buf = task::take_user_buf(tid);
@@ -283,16 +284,20 @@ pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     })?;
     let m = crate::syscall::copy_user_ipc(msg_ptr)?;
     let dest = EndpointId(cap.0);
+    // Sender tag is the calling table's owner, never caller-chosen.
+    let caller = with(|w| w.caps.owner());
     let msg = Message::new(
         dest,
         if m.badge != 0 { m.badge } else { cap.1 },
         MsgFlags(m.flags),
         ChipletRoute::LOCAL,
-        TenantId(1),
+        caller,
         m.payload(),
     )
     .map_err(|_| SysError::Inval)?;
-    with(|w| w.fabric.send(msg)).map_err(|e| match e {
+    // Checked send: caller owns `dest` or holds Endpoint+WRITE on it;
+    // Hodge quota is charged to the caller's own per-tenant budget.
+    with(|w| w.fabric.send_as(&w.caps, msg)).map_err(|e| match e {
         FabricError::QueueFull => SysError::Again,
         _ => SysError::Inval,
     })?;
@@ -319,7 +324,8 @@ pub fn sys_recv(
             .map_err(|_| SysError::NoCap)
     })?;
     crate::syscall::copy_to_user(out_ptr, core::mem::size_of::<UserIpcMsg>() as u64)?;
-    match with(|w| w.fabric.recv(EndpointId(object))) {
+    // Checked recv: only the endpoint's owner dequeues.
+    match with(|w| w.fabric.recv_as(w.caps.owner(), EndpointId(object))) {
         Ok(got) => {
             copy_ipc_out(out_ptr, got.header.badge, got.header.flags.0, got.payload())?;
             Ok(0)

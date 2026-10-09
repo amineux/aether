@@ -8,7 +8,7 @@
 //!   - a chiplet route tag so a future mesh / EMIB / UALink hop can steer
 //!     without parsing the payload
 
-use crate::caps::Capability;
+use crate::caps::{CapKind, CapRights, CapTable, Capability};
 use crate::hodge::{FlowClass, HodgeError, HodgeQuota};
 use crate::phase::Phase;
 use crate::types::{TenantId, TileId};
@@ -18,6 +18,10 @@ pub const MAX_ENDPOINTS: usize = 16;
 /// table, so no single tenant can take every slot. This is a bound, not a
 /// reservation: enough distinct tenants can still fill the table together.
 pub const MAX_ENDPOINTS_PER_TENANT: usize = 4;
+/// Distinct sender tenants the per-tenant Hodge ledger tracks. A sender past
+/// this many distinct tenants is refused as `Hodge(QuotaExceeded)`; entries
+/// are never freed. This is a bound, not a reservation.
+pub const MAX_QUOTA_TENANTS: usize = 16;
 pub const MAX_QUEUE: usize = 8;
 pub const MAX_MSG_BYTES: usize = 64;
 pub const MAX_MSG_CAPS: usize = 4;
@@ -216,11 +220,24 @@ impl Endpoint {
 }
 
 /// Global fabric: endpoint object table + send/recv.
+///
+/// Tenant-facing paths are [`Self::send_as`], [`Self::recv_as`],
+/// [`Self::pending_as`] and [`Self::close_for`]. The `*_unchecked` entry
+/// points skip every caller check and exist only for kernel-originated
+/// messages, tests and host observers.
+///
+/// Endpoint ids come from one counter shared by all tenants, so the id a
+/// create returns reveals how many endpoints were created before it. The
+/// kernel ABI names endpoints by cptr only and never returns the id to user
+/// code; host callers of [`Self::create_endpoint`] do see it.
 #[derive(Clone, Debug)]
 pub struct Fabric {
     eps: [Option<Endpoint>; MAX_ENDPOINTS],
     next_id: u32,
-    pub hodge: HodgeQuota,
+    /// Hodge budget each sender tenant starts with (per tenant, per class).
+    pub tenant_budget: HodgeQuota,
+    /// Per-sender-tenant remaining Hodge quota; created on first admitted send.
+    quotas: [Option<(TenantId, HodgeQuota)>; MAX_QUOTA_TENANTS],
 }
 
 impl Fabric {
@@ -228,7 +245,44 @@ impl Fabric {
         Self {
             eps: [None; MAX_ENDPOINTS],
             next_id: 1,
-            hodge: HodgeQuota::generous(),
+            tenant_budget: HodgeQuota::generous(),
+            quotas: [None; MAX_QUOTA_TENANTS],
+        }
+    }
+
+    /// Remaining Hodge quota of sender `tenant` for `flow`.
+    pub fn remain_for(&self, tenant: TenantId, flow: FlowClass) -> u32 {
+        self.quotas
+            .iter()
+            .flatten()
+            .find(|(t, _)| *t == tenant)
+            .map_or(self.tenant_budget.remain(flow), |(_, q)| q.remain(flow))
+    }
+
+    /// Charge one message of `flow` to `sender`'s own quota. A refusal
+    /// changes nothing (no ledger entry is created on refusal).
+    fn admit_for(&mut self, sender: TenantId, flow: FlowClass, tree: bool) -> Result<(), FabricError> {
+        let slot = match self.quotas.iter().position(|e| matches!(e, Some((t, _)) if *t == sender)) {
+            Some(i) => i,
+            None => match self.quotas.iter().position(|e| e.is_none()) {
+                Some(i) => {
+                    // Policy first, so a refused send creates no entry.
+                    let mut q = self.tenant_budget;
+                    q.admit(flow, tree).map_err(FabricError::Hodge)?;
+                    self.quotas[i] = Some((sender, q));
+                    return Ok(());
+                }
+                None => {
+                    // Still apply policy errors (tree offload) before quota.
+                    let mut probe = HodgeQuota::generous();
+                    probe.admit(flow, tree).map_err(FabricError::Hodge)?;
+                    return Err(FabricError::Hodge(HodgeError::QuotaExceeded));
+                }
+            },
+        };
+        match &mut self.quotas[slot] {
+            Some((_, q)) => q.admit(flow, tree).map_err(FabricError::Hodge),
+            None => Err(FabricError::Hodge(HodgeError::QuotaExceeded)),
         }
     }
 
@@ -292,12 +346,16 @@ impl Fabric {
             .ok_or(FabricError::NoSuchEndpoint)
     }
 
+    /// Unchecked diagnostic: owner of `id`. Reveals whether `id` exists, so
+    /// it is not a tenant-facing path (kernel / tests / host observers).
     pub fn owner(&self, id: EndpointId) -> Result<TenantId, FabricError> {
         Ok(self.ep(id)?.owner)
     }
 
-    /// Admit Hodge policy/quota on the virtual link, then enqueue.
-    pub fn send(&mut self, msg: Message) -> Result<(), FabricError> {
+    /// **Unchecked** send: no caller check; the Hodge quota is charged to
+    /// `msg.header.sender_tenant` as given. Kernel-originated messages and
+    /// tests only. Tenant-facing code uses [`Self::send_as`].
+    pub fn send_unchecked(&mut self, msg: Message) -> Result<(), FabricError> {
         let dest = msg.header.dest;
         let flow = msg.header.flow;
         let tree = msg.header.flags.tree_offload();
@@ -310,16 +368,59 @@ impl Fabric {
                 return Err(FabricError::QueueFull);
             }
         }
-        self.hodge.admit(flow, tree).map_err(FabricError::Hodge)?;
+        self.admit_for(msg.header.sender_tenant, flow, tree)?;
         self.ep_mut(dest)?.push(msg)
     }
 
-    pub fn recv(&mut self, id: EndpointId) -> Result<Message, FabricError> {
+    /// Checked send on behalf of `tab`'s owner.
+    ///
+    /// The message's `sender_tenant` must be the caller, and the caller must
+    /// either own the destination endpoint or hold an `Endpoint` cap with
+    /// `WRITE` naming it in `tab`. Any failure (forged sender tag, no right,
+    /// unknown or stale id) is [`FabricError::NoSuchEndpoint`], so a probe
+    /// cannot tell a real endpoint it may not use from a missing one. Then
+    /// `Closed` / `QueueFull`, then Hodge admit charged to the caller's own
+    /// per-tenant quota.
+    pub fn send_as(&mut self, tab: &CapTable, msg: Message) -> Result<(), FabricError> {
+        let caller = tab.owner();
+        let dest = msg.header.dest;
+        if msg.header.sender_tenant != caller {
+            return Err(FabricError::NoSuchEndpoint);
+        }
+        let owner = self.ep(dest)?.owner;
+        if owner != caller && !tab.holds_rights(CapKind::Endpoint, dest.0, CapRights::WRITE) {
+            return Err(FabricError::NoSuchEndpoint);
+        }
+        self.send_unchecked(msg)
+    }
+
+    /// **Unchecked** recv: anyone naming `id` dequeues. Tests / host only.
+    pub fn recv_unchecked(&mut self, id: EndpointId) -> Result<Message, FabricError> {
         self.ep_mut(id)?.pop().ok_or(FabricError::WouldBlock)
     }
 
-    pub fn pending(&self, id: EndpointId) -> Result<usize, FabricError> {
+    /// Checked recv: only the endpoint's owner may dequeue. Another tenant's
+    /// id, an unknown id and a stale id are all [`FabricError::NoSuchEndpoint`].
+    pub fn recv_as(&mut self, caller: TenantId, id: EndpointId) -> Result<Message, FabricError> {
+        let ep = self.ep_mut(id)?;
+        if ep.owner != caller {
+            return Err(FabricError::NoSuchEndpoint);
+        }
+        ep.pop().ok_or(FabricError::WouldBlock)
+    }
+
+    /// **Unchecked** queue depth. Tests / host observers only.
+    pub fn pending_unchecked(&self, id: EndpointId) -> Result<usize, FabricError> {
         Ok(self.ep(id)?.qlen)
+    }
+
+    /// Checked queue depth: owner only, else [`FabricError::NoSuchEndpoint`].
+    pub fn pending_as(&self, caller: TenantId, id: EndpointId) -> Result<usize, FabricError> {
+        let ep = self.ep(id)?;
+        if ep.owner != caller {
+            return Err(FabricError::NoSuchEndpoint);
+        }
+        Ok(ep.qlen)
     }
 
     /// Close `id`. The endpoint stops admitting sends (`Closed`) and its slot
@@ -388,6 +489,16 @@ impl FabricQueueFullReport {
     }
 }
 
+/// Caller cap table holding `Endpoint` + `WRITE` caps on `eps` (what the
+/// kernel would mint when an endpoint owner grants send rights).
+fn send_tab(t: TenantId, eps: &[EndpointId]) -> CapTable {
+    let mut tab = CapTable::new(t);
+    for ep in eps {
+        let _ = tab.mint(Capability::new(CapKind::Endpoint, CapRights(CapRights::WRITE), ep.0, t));
+    }
+    tab
+}
+
 fn flood_msg(dest: EndpointId, tenant: TenantId) -> Option<Message> {
     Message::new(
         dest,
@@ -421,37 +532,38 @@ pub fn run_fabric_queue_full_demo() -> FabricQueueFullReport {
         };
     };
     let flow = FlowClass::Gradient;
-    let start = f.hodge.remain(flow);
+    let (tab_a, tab_b) = (send_tab(a, &[neighbor]), send_tab(b, &[victim, shut]));
+    let start = f.remain_for(b, flow);
 
     let mut fill_ok = true;
     for _ in 0..MAX_QUEUE {
-        fill_ok &= flood_msg(victim, b).map(|m| f.send(m)) == Some(Ok(()));
+        fill_ok &= flood_msg(victim, b).map(|m| f.send_as(&tab_b, m)) == Some(Ok(()));
     }
-    fill_ok &= f.pending(victim) == Ok(MAX_QUEUE);
-    let after_fill = f.hodge.remain(flow);
+    fill_ok &= f.pending_as(a, victim) == Ok(MAX_QUEUE);
+    let after_fill = f.remain_for(b, flow);
 
     let mut flood_refused = true;
     for _ in 0..3 {
         flood_refused &=
-            flood_msg(victim, b).map(|m| f.send(m)) == Some(Err(FabricError::QueueFull));
+            flood_msg(victim, b).map(|m| f.send_as(&tab_b, m)) == Some(Err(FabricError::QueueFull));
     }
-    flood_refused &= f.pending(victim) == Ok(MAX_QUEUE);
+    flood_refused &= f.pending_as(a, victim) == Ok(MAX_QUEUE);
     let no_quota_burn =
-        after_fill + MAX_QUEUE as u32 == start && f.hodge.remain(flow) == after_fill;
+        after_fill + MAX_QUEUE as u32 == start && f.remain_for(b, flow) == after_fill;
 
-    let neighbor_ok = flood_msg(neighbor, a).map(|m| f.send(m)) == Some(Ok(()))
-        && f.pending(neighbor) == Ok(1);
+    let neighbor_ok = flood_msg(neighbor, a).map(|m| f.send_as(&tab_a, m)) == Some(Ok(()))
+        && f.pending_as(b, neighbor) == Ok(1);
 
-    let drained = f.recv(victim).is_ok();
+    let drained = f.recv_as(a, victim).is_ok();
     let drain_readmits = drained
-        && flood_msg(victim, b).map(|m| f.send(m)) == Some(Ok(()))
-        && f.pending(victim) == Ok(MAX_QUEUE);
+        && flood_msg(victim, b).map(|m| f.send_as(&tab_b, m)) == Some(Ok(()))
+        && f.pending_as(a, victim) == Ok(MAX_QUEUE);
 
-    let before_close = f.hodge.remain(flow);
-    let closed_refused = f.close(shut).is_ok()
-        && flood_msg(shut, b).map(|m| f.send(m)) == Some(Err(FabricError::Closed))
-        && f.pending(shut) == Ok(0)
-        && f.hodge.remain(flow) == before_close;
+    let before_close = f.remain_for(b, flow);
+    let closed_refused = f.close_for(a, shut).is_ok()
+        && flood_msg(shut, b).map(|m| f.send_as(&tab_b, m)) == Some(Err(FabricError::Closed))
+        && f.pending_as(a, shut) == Ok(0)
+        && f.remain_for(b, flow) == before_close;
 
     FabricQueueFullReport {
         fill_ok,
@@ -553,9 +665,10 @@ pub fn run_fabric_oversized_msg_demo() -> FabricOversizedMsgReport {
             && m.header.n_caps as usize == MAX_MSG_CAPS
             && m.caps == before
             && !m.caps.iter().flatten().any(|c| c.object >= 998);
-        roundtrip_ok = f.pending(ep) == Ok(0)
-            && f.send(m).is_ok()
-            && match f.recv(ep) {
+        let tab = CapTable::new(t);
+        roundtrip_ok = f.pending_as(t, ep) == Ok(0)
+            && f.send_as(&tab, m).is_ok()
+            && match f.recv_as(t, ep) {
                 Ok(r) => {
                     r.payload() == &full[..]
                         && r.header.n_caps as usize == MAX_MSG_CAPS
@@ -641,9 +754,9 @@ pub fn run_fabric_endpoint_limit_demo() -> FabricEndpointLimitReport {
     let existing_intact = fill_ok
         && eps.iter().enumerate().all(|(i, &ep)| {
             f.owner(ep) == Ok(owners(i))
-                && flood_msg(ep, owners(i)).map(|m| f.send(m)) == Some(Ok(()))
-                && f.recv(ep).map(|m| m.payload() == b"flood") == Ok(true)
-                && f.pending(ep) == Ok(0)
+                && flood_msg(ep, owners(i)).map(|m| f.send_as(&CapTable::new(owners(i)), m)) == Some(Ok(()))
+                && f.recv_as(owners(i), ep).map(|m| m.payload() == b"flood") == Ok(true)
+                && f.pending_as(owners(i), ep) == Ok(0)
         });
 
     let table_is_global = f.create_endpoint(TenantId(100)) == Err(FabricError::EndpointLimit);
@@ -746,8 +859,8 @@ pub fn run_fabric_slot_exhaust_demo() -> FabricSlotExhaustReport {
     let foreign_close_refused = match eb {
         Ok(y) => {
             f.close_for(atk, y) == Err(FabricError::NoSuchEndpoint)
-                && flood_msg(y, b).map(|m| f.send(m)) == Some(Ok(()))
-                && f.pending(y) == Ok(1)
+                && flood_msg(y, b).map(|m| f.send_as(&CapTable::new(b), m)) == Some(Ok(()))
+                && f.pending_as(b, y) == Ok(1)
         }
         Err(_) => false,
     };
@@ -820,30 +933,31 @@ pub fn run_fabric_stale_endpoint_demo() -> FabricStaleEndpointReport {
     let old_slot = f.slot_of(old);
     let flow = FlowClass::Gradient;
 
+    let (tab_a, tab_v) = (CapTable::new(a), CapTable::new(v));
     let closed_before_reuse = f.close_for(a, old).is_ok()
-        && flood_msg(old, a).map(|m| f.send(m)) == Some(Err(FabricError::Closed));
+        && flood_msg(old, a).map(|m| f.send_as(&tab_a, m)) == Some(Err(FabricError::Closed));
 
     let Ok(fresh) = f.create_endpoint(v) else { return fail };
     let slot_reused = old_slot.is_some() && f.slot_of(fresh) == old_slot && fresh != old;
 
     let secret = Message::new(fresh, 0x5EC, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, v, b"v-secret");
-    let queued = secret.map(|m| f.send(m)) == Ok(Ok(()));
-    let before = f.hodge.remain(flow);
+    let queued = secret.map(|m| f.send_as(&tab_v, m)) == Ok(Ok(()));
+    let before = f.remain_for(a, flow);
 
     let nse = Err(FabricError::NoSuchEndpoint);
-    let stale_refused = (0..3).all(|_| flood_msg(old, a).map(|m| f.send(m)) == Some(nse))
-        && f.recv(old).map(|_| ()) == nse
-        && f.pending(old).map(|_| ()) == nse
+    let stale_refused = (0..3).all(|_| flood_msg(old, a).map(|m| f.send_as(&tab_a, m)) == Some(nse))
+        && f.recv_as(a, old).map(|_| ()) == nse
+        && f.pending_as(a, old).map(|_| ()) == nse
         && f.owner(old).map(|_| ()) == nse
         && f.close_for(a, old) == nse
         && f.close(old) == nse;
-    let no_quota_burn = f.hodge.remain(flow) == before;
+    let no_quota_burn = f.remain_for(a, flow) == before;
 
     let new_owner_intact = queued
         && f.owner(fresh) == Ok(v)
-        && f.pending(fresh) == Ok(1)
-        && f.recv(fresh).map(|m| m.payload() == b"v-secret" && m.header.badge == 0x5EC) == Ok(true)
-        && flood_msg(fresh, v).map(|m| f.send(m)) == Some(Ok(()));
+        && f.pending_as(v, fresh) == Ok(1)
+        && f.recv_as(v, fresh).map(|m| m.payload() == b"v-secret" && m.header.badge == 0x5EC) == Ok(true)
+        && flood_msg(fresh, v).map(|m| f.send_as(&tab_v, m)) == Some(Ok(()));
 
     FabricStaleEndpointReport {
         closed_before_reuse,
@@ -952,10 +1066,10 @@ mod tests {
         assert_eq!(f.slot_of(fresh), Some(0));
         assert_ne!(fresh, old);
         let m = Message::new(old, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, a, b"x").unwrap();
-        assert_eq!(f.send(m), Err(FabricError::NoSuchEndpoint));
-        assert_eq!(f.recv(old).unwrap_err(), FabricError::NoSuchEndpoint);
+        assert_eq!(f.send_unchecked(m), Err(FabricError::NoSuchEndpoint));
+        assert_eq!(f.recv_unchecked(old).unwrap_err(), FabricError::NoSuchEndpoint);
         assert_eq!(f.close_for(a, old), Err(FabricError::NoSuchEndpoint));
-        assert_eq!(f.pending(fresh), Ok(0));
+        assert_eq!(f.pending_unchecked(fresh), Ok(0));
         assert_eq!(f.owner(fresh), Ok(v));
     }
 
@@ -1038,8 +1152,8 @@ mod tests {
             b"hello",
         )
         .unwrap();
-        f.send(msg).unwrap();
-        let got = f.recv(ep).unwrap();
+        f.send_unchecked(msg).unwrap();
+        let got = f.recv_unchecked(ep).unwrap();
         assert_eq!(got.payload(), b"hello");
         assert_eq!(got.header.badge, 0xA3);
         assert_eq!(got.header.route, ChipletRoute::LOCAL);
@@ -1058,8 +1172,8 @@ mod tests {
             &[],
         )
         .unwrap();
-        f.send(msg).unwrap();
-        let got = f.recv(ep).unwrap();
+        f.send_unchecked(msg).unwrap();
+        let got = f.recv_unchecked(ep).unwrap();
         assert!(got.header.flags.is_sync());
         assert_eq!(got.header.route.tile, 3);
     }
@@ -1082,8 +1196,8 @@ mod tests {
                 .with_generation(1),
         )
         .unwrap();
-        f.send(msg).unwrap();
-        let got = f.recv(ep).unwrap();
+        f.send_unchecked(msg).unwrap();
+        let got = f.recv_unchecked(ep).unwrap();
         assert_eq!(got.header.n_caps, 1);
         assert_eq!(got.caps[0].unwrap().object, 7);
     }
@@ -1093,7 +1207,7 @@ mod tests {
         let mut f = Fabric::new();
         let ep = f.create_endpoint(TenantId(1)).unwrap();
         for _ in 0..MAX_QUEUE {
-            f.send(
+            f.send_unchecked(
                 Message::new(
                     ep,
                     0,
@@ -1107,7 +1221,7 @@ mod tests {
             .unwrap();
         }
         assert_eq!(
-            f.send(
+            f.send_unchecked(
                 Message::new(
                     ep,
                     0,
@@ -1122,9 +1236,9 @@ mod tests {
             FabricError::QueueFull
         );
         for _ in 0..MAX_QUEUE {
-            f.recv(ep).unwrap();
+            f.recv_unchecked(ep).unwrap();
         }
-        assert_eq!(f.recv(ep).unwrap_err(), FabricError::WouldBlock);
+        assert_eq!(f.recv_unchecked(ep).unwrap_err(), FabricError::WouldBlock);
     }
 
     #[test]
@@ -1159,10 +1273,10 @@ mod tests {
         .unwrap()
         .with_flow(crate::hodge::FlowClass::Harmonic);
         assert_eq!(
-            f.send(msg).unwrap_err(),
+            f.send_unchecked(msg).unwrap_err(),
             FabricError::Hodge(crate::hodge::HodgeError::HarmonicTreeReduce)
         );
-        assert_eq!(f.pending(ep).unwrap(), 0);
+        assert_eq!(f.pending_unchecked(ep).unwrap(), 0);
     }
 
     #[test]
@@ -1177,6 +1291,6 @@ mod tests {
             &[],
         )
         .unwrap();
-        assert_eq!(f.send(msg).unwrap_err(), FabricError::NoSuchEndpoint);
+        assert_eq!(f.send_unchecked(msg).unwrap_err(), FabricError::NoSuchEndpoint);
     }
 }
