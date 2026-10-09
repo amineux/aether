@@ -163,6 +163,8 @@ const LINE_FABRIC_QUEUE_FULL: &str = "[redteam] attack=fabric-queue-full result=
 const LINE_FABRIC_PAYLOAD_TOO_LARGE: &str = "[redteam] attack=fabric-payload-too-large result=refused";
 const LINE_FABRIC_TOO_MANY_CAPS: &str = "[redteam] attack=fabric-too-many-caps result=refused";
 const LINE_FABRIC_ENDPOINT_LIMIT: &str = "[redteam] attack=fabric-endpoint-limit result=refused";
+const LINE_FABRIC_SLOT_EXHAUST: &str = "[redteam] attack=fabric-slot-exhaust result=refused";
+const LINE_FABRIC_STALE_ENDPOINT: &str = "[redteam] attack=fabric-stale-endpoint result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -251,6 +253,8 @@ struct RedTeamReport {
     fabric_payload_too_large: bool,
     fabric_too_many_caps: bool,
     fabric_endpoint_limit: bool,
+    fabric_slot_exhaust: bool,
+    fabric_stale_endpoint: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
@@ -336,6 +340,8 @@ impl RedTeamReport {
             && self.fabric_payload_too_large
             && self.fabric_too_many_caps
             && self.fabric_endpoint_limit
+            && self.fabric_slot_exhaust
+            && self.fabric_stale_endpoint
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
             && self.firewall_ident_pa
@@ -416,6 +422,8 @@ fn run_redteam() -> RedTeamReport {
     let fabric_queue_full = aether_core::fabric::run_fabric_queue_full_demo();
     let fabric_oversized = aether_core::fabric::run_fabric_oversized_msg_demo();
     let fabric_endpoint_limit = aether_core::fabric::run_fabric_endpoint_limit_demo();
+    let fabric_slot_exhaust = aether_core::fabric::run_fabric_slot_exhaust_demo();
+    let fabric_stale_endpoint = aether_core::fabric::run_fabric_stale_endpoint_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
@@ -576,9 +584,15 @@ fn run_redteam() -> RedTeamReport {
         // attach_cap past MAX_MSG_CAPS → TooManyCaps, existing caps untouched; maximal msg round-trips.
         // Not fabric-queue-full (QueueFull) / hodge-quota / CapTable.
         fabric_too_many_caps: fabric_oversized.too_many_caps_ok(),
-        // create_endpoint past MAX_ENDPOINTS → EndpointLimit; existing endpoints intact. The table is
-        // global and close keeps the slot (both checked): a resource bound, not per-tenant isolation.
+        // create_endpoint on a full table → EndpointLimit; existing endpoints intact; close frees a
+        // slot. The table is global (checked): a resource bound, not a per-tenant reservation.
         fabric_endpoint_limit: fabric_endpoint_limit.all_ok(),
+        // One tenant past MAX_ENDPOINTS_PER_TENANT → EndpointLimit, no slot consumed; others admit;
+        // create/close churn leaks no slot; close_for on a foreign endpoint → NoSuchEndpoint.
+        fabric_slot_exhaust: fabric_slot_exhaust.all_ok(),
+        // Stale EndpointId after its slot is reused by another tenant → NoSuchEndpoint on
+        // send/recv/pending/owner/close; new owner untouched; no Hodge quota charged.
+        fabric_stale_endpoint: fabric_stale_endpoint.all_ok(),
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
@@ -761,6 +775,8 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fabric_payload_too_large, LINE_FABRIC_PAYLOAD_TOO_LARGE);
     emit(r.fabric_too_many_caps, LINE_FABRIC_TOO_MANY_CAPS);
     emit(r.fabric_endpoint_limit, LINE_FABRIC_ENDPOINT_LIMIT);
+    emit(r.fabric_slot_exhaust, LINE_FABRIC_SLOT_EXHAUST);
+    emit(r.fabric_stale_endpoint, LINE_FABRIC_STALE_ENDPOINT);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -898,7 +914,9 @@ mod tests {
         assert!(r.fabric_queue_full, "fabric endpoint flood → QueueFull / Closed, no quota burn");
         assert!(r.fabric_payload_too_large, "payload past MAX_MSG_BYTES → PayloadTooLarge");
         assert!(r.fabric_too_many_caps, "cap past MAX_MSG_CAPS → TooManyCaps, caps unchanged");
-        assert!(r.fabric_endpoint_limit, "create past MAX_ENDPOINTS → EndpointLimit, existing intact");
+        assert!(r.fabric_endpoint_limit, "full table → EndpointLimit, existing intact, close frees slot");
+        assert!(r.fabric_slot_exhaust, "one tenant past its endpoint quota → EndpointLimit");
+        assert!(r.fabric_stale_endpoint, "stale endpoint id after slot reuse → NoSuchEndpoint");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -1138,6 +1156,14 @@ mod tests {
             "[redteam] attack=fabric-endpoint-limit result=refused"
         );
         assert_eq!(
+            LINE_FABRIC_SLOT_EXHAUST,
+            "[redteam] attack=fabric-slot-exhaust result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_STALE_ENDPOINT,
+            "[redteam] attack=fabric-stale-endpoint result=refused"
+        );
+        assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
         );
@@ -1316,6 +1342,8 @@ mod tests {
             LINE_FABRIC_PAYLOAD_TOO_LARGE,
             LINE_FABRIC_TOO_MANY_CAPS,
             LINE_FABRIC_ENDPOINT_LIMIT,
+            LINE_FABRIC_SLOT_EXHAUST,
+            LINE_FABRIC_STALE_ENDPOINT,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,

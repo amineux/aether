@@ -8,12 +8,16 @@
 //!   issues a burst of seeded pseudo-random syscalls and accelerator ops
 //!   (arena alloc, map, unmap, accelerator submit with random shapes /
 //!   addresses / forged tenant tags, stream bind, SET_SID, arena handoff, cap
-//!   derive / revoke, KV attend and KV pin).
+//!   derive / revoke, KV attend and KV pin), plus, from a separate seeded
+//!   stream, one fabric endpoint op per syscall (create up to and past its
+//!   per-tenant quota, tenant-checked close of its own / A's / B's / junk
+//!   ids, send / recv / probe on its own closed or slot-reused stale ids).
 //!
 //! Everything A and B can observe is recorded per step: every job result
 //! (including the completion sequence number), every KV attend result, the
-//! full bytes of their arenas, their Soft-SMMU translations and their arena
-//! metadata. The check passes only if the two worlds' observations are
+//! full bytes of their arenas, their Soft-SMMU translations, their arena
+//! metadata, and their fabric endpoints (owner, pending count, live count,
+//! and the result and payload of each honest send / recv). The check passes only if the two worlds' observations are
 //! **byte-identical** for every seed: nothing C does changes what A or B see.
 //!
 //! C's syscalls are modelled on the same `aether_core` functions the kernel
@@ -25,6 +29,13 @@
 //! Negative controls ([`Control`]) re-open known holes and must produce
 //! divergences, so the check is shown to be able to fail.
 //!
+//! Fabric scope: C never sends to a live endpoint. Any tenant that knows an
+//! endpoint id can send to it (the fabric has no send capability), and the
+//! Hodge quota is per fabric, not per tenant, so a C that sends can change
+//! A's queue or quota by design; that is outside this check. A and B create
+//! their endpoints before C acts, so the shared id counter does not show up
+//! in their ids here.
+//!
 //! Not hardware isolation, no timing / cache / power side channels, no
 //! performance claim.
 
@@ -35,6 +46,7 @@ use aether_core::accel::{
 };
 use aether_core::arena::{Arena, ArenaAllocator, ArenaId, ArenaRequest};
 use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
+use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, Message, MsgFlags};
 use aether_core::iommu::{IommuMap, MapError, MapRequest, StreamId};
 use aether_core::kvfabric::{attend, pin_kv, AttendReq, KvKind, KvLedger, KvObject, KvWindow};
 use aether_core::sysnr::map_pin_addr;
@@ -94,6 +106,9 @@ pub enum Control {
     LeakedCap,
     /// Completions numbered from the device-wide counter (pre-#208 shape).
     GlobalSeq,
+    /// C closes endpoints without the owner check (`Fabric::close`, not
+    /// `close_for`), so it can close A's or B's endpoint.
+    UncheckedClose,
 }
 
 impl Control {
@@ -104,6 +119,7 @@ impl Control {
             Self::RawMapAddr => "raw-map-addr",
             Self::LeakedCap => "leaked-cap",
             Self::GlobalSeq => "global-job-seq",
+            Self::UncheckedClose => "unchecked-endpoint-close",
         }
     }
 }
@@ -200,6 +216,13 @@ struct World {
     /// Device-wide counter handed back instead of the tenant queue's
     /// (control only: the pre-fix completion numbering).
     global_seq: bool,
+    /// Shared fabric (one endpoint table for all tenants).
+    fabric: Fabric,
+    /// A's and B's own endpoints, created before C acts.
+    eps: [EndpointId; 2],
+    /// C's live endpoints and the ids C has closed (stale once reused).
+    c_eps: Vec<EndpointId>,
+    c_closed: Vec<EndpointId>,
 }
 
 /// What A and B can observe after one honest step.
@@ -209,6 +232,7 @@ pub struct Observation {
     pub arena_bytes: [Vec<u8>; 2],
     pub smmu_view: [Vec<String>; 2],
     pub arena_meta: [String; 2],
+    pub fabric_view: [String; 2],
 }
 
 /// C's own tally (not compared; shows C did real work).
@@ -218,6 +242,9 @@ pub struct CStats {
     pub accepted: u64,
     pub refused: u64,
     pub jobs_ok: u64,
+    /// Fabric endpoint ops (separate stream; not in `ops`).
+    pub fabric_ops: u64,
+    pub fabric_accepted: u64,
 }
 
 impl World {
@@ -281,6 +308,11 @@ impl World {
         let b = mk(B, 2, 2);
         let c = mk(C, 3, 3);
         let c_arena = *arenas.get(c.arena).expect("c arena");
+        let mut fabric = Fabric::new();
+        let eps = [
+            fabric.create_endpoint(a.id).expect("A endpoint"),
+            fabric.create_endpoint(b.id).expect("B endpoint"),
+        ];
         Self {
             ram: vec![0u8; RAM_LEN],
             arenas,
@@ -293,6 +325,10 @@ impl World {
             c_arenas: vec![c_arena],
             c_iovas: vec![c.iova],
             global_seq: false,
+            fabric,
+            eps,
+            c_eps: Vec::new(),
+            c_closed: Vec::new(),
         }
     }
 
@@ -387,11 +423,22 @@ impl World {
                 .collect::<Vec<_>>()
         };
         let meta = |t: usize| format!("{:?}", self.arenas.get(self.t[t].arena));
+        let fab = |t: usize| {
+            let ep = self.eps[t];
+            format!(
+                "{:?}|{:?}|{:?}|{}",
+                ep,
+                self.fabric.owner(ep),
+                self.fabric.pending(ep),
+                self.fabric.live_count(self.t[t].id)
+            )
+        };
         Observation {
             event,
             arena_bytes: [bytes(A), bytes(B)],
             smmu_view: [view(A), view(B)],
             arena_meta: [meta(A), meta(B)],
+            fabric_view: [fab(A), fab(B)],
         }
     }
 
@@ -481,6 +528,87 @@ impl World {
             0 => AccelJobDesc::relu_i32(m, n, src, PhysAddr(dst), c.id.0),
             1 => AccelJobDesc::add_i32(m, n, src, src, PhysAddr(dst), c.id.0),
             _ => AccelJobDesc::max_i32(m, n, src, src, PhysAddr(dst), c.id.0),
+        }
+    }
+
+    /// Honest fabric send: tenant `t` posts one message to its own endpoint.
+    fn honest_send(&mut self, t: usize, layer: u32) -> String {
+        let ten = self.t[t];
+        let r = Message::new(
+            self.eps[t],
+            u64::from(layer),
+            MsgFlags(MsgFlags::ASYNC),
+            ChipletRoute::LOCAL,
+            ten.id,
+            &[t as u8, layer as u8, 0xA5],
+        )
+        .and_then(|m| self.fabric.send(m));
+        format!("{r:?}")
+    }
+
+    /// Honest fabric recv on tenant `t`'s own endpoint.
+    fn honest_recv(&mut self, t: usize) -> String {
+        match self.fabric.recv(self.eps[t]) {
+            Ok(m) => format!("Ok(badge={} from={:?} {:?})", m.header.badge, m.header.sender_tenant, m.payload()),
+            Err(e) => format!("Err({e:?})"),
+        }
+    }
+
+    /// One fabric endpoint op by tenant C (create / close / stale send, recv,
+    /// probe). C never sends to a live endpoint (see module docs).
+    fn c_fabric_op(&mut self, rng: &mut Rng, ctl: Control, stats: &mut CStats) {
+        let c = self.t[C].id;
+        stats.fabric_ops += 1;
+        let stale = |w: &Self, rng: &mut Rng| -> Option<EndpointId> {
+            (!w.c_closed.is_empty()).then(|| w.c_closed[rng.below(w.c_closed.len() as u64) as usize])
+        };
+        let ok = match rng.below(6) {
+            0 | 1 => match self.fabric.create_endpoint(c) {
+                Ok(id) => {
+                    self.c_eps.push(id);
+                    true
+                }
+                Err(_) => false,
+            },
+            2 => {
+                let id = match rng.below(5) {
+                    0 | 1 if !self.c_eps.is_empty() => {
+                        self.c_eps[rng.below(self.c_eps.len() as u64) as usize]
+                    }
+                    2 => self.eps[rng.below(2) as usize],
+                    3 => stale(self, rng).unwrap_or(EndpointId(rng.below(64) as u32)),
+                    _ => EndpointId(rng.below(64) as u32),
+                };
+                let r = if ctl == Control::UncheckedClose {
+                    self.fabric.close(id)
+                } else {
+                    self.fabric.close_for(c, id)
+                };
+                if r.is_ok() {
+                    if let Some(i) = self.c_eps.iter().position(|&e| e == id) {
+                        self.c_eps.swap_remove(i);
+                        self.c_closed.push(id);
+                    }
+                }
+                r.is_ok()
+            }
+            3 => match stale(self, rng) {
+                Some(id) => Message::new(id, rng.next(), MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, c, b"stale")
+                    .and_then(|m| self.fabric.send(m))
+                    .is_ok(),
+                None => false,
+            },
+            4 => match stale(self, rng) {
+                Some(id) => self.fabric.recv(id).is_ok(),
+                None => false,
+            },
+            _ => {
+                let id = EndpointId(rng.below(64) as u32);
+                self.fabric.pending(id).is_ok() && self.fabric.owner(id).is_ok()
+            }
+        };
+        if ok {
+            stats.fabric_accepted += 1;
         }
     }
 
@@ -678,10 +806,13 @@ fn run_world_with(attacker: Option<(u64, u32, Control)>, global_seq: bool) -> (V
     let mut obs = vec![w.observe("setup".into())];
     let mut stats = CStats::default();
     let mut rng = attacker.map(|(seed, _, _)| Rng::new(seed));
+    // Separate stream so C's existing syscall sequence per seed is unchanged.
+    let mut frng = attacker.map(|(seed, _, _)| Rng::new(seed ^ 0xFAB0_0E9D_5107_0000));
     let mut gap = |w: &mut World, stats: &mut CStats| {
-        if let (Some((_, per_gap, ctl)), Some(rng)) = (attacker, rng.as_mut()) {
+        if let (Some((_, per_gap, ctl)), Some(rng), Some(frng)) = (attacker, rng.as_mut(), frng.as_mut()) {
             for _ in 0..per_gap {
                 w.c_op(rng, ctl, stats);
+                w.c_fabric_op(frng, ctl, stats);
             }
         }
     };
@@ -691,7 +822,8 @@ fn run_world_with(attacker: Option<(u64, u32, Control)>, global_seq: bool) -> (V
             let ten = w.t[t];
             let job = w.layer_job(t, layer);
             let r = w.submit(t, ten.id, &ten.cap, ten.sid, &job);
-            let o = w.observe(format!("tenant={t} layer={layer} op={:?} result={r:?}", job.op));
+            let fs = w.honest_send(t, layer);
+            let o = w.observe(format!("tenant={t} layer={layer} op={:?} result={r:?} fabric_send={fs}", job.op));
             obs.push(o);
             gap(&mut w, &mut stats);
 
@@ -704,7 +836,8 @@ fn run_world_with(attacker: Option<(u64, u32, Control)>, global_seq: bool) -> (V
                 write: layer % 2 == 0,
             };
             let r = attend(&w.tables[t], kv, &w.ledger, req);
-            let o = w.observe(format!("tenant={t} layer={layer} attend result={r:?}"));
+            let fr = w.honest_recv(t);
+            let o = w.observe(format!("tenant={t} layer={layer} attend result={r:?} fabric_recv={fr}"));
             obs.push(o);
             gap(&mut w, &mut stats);
         }
@@ -753,6 +886,8 @@ pub fn check(seeds: u64, per_gap: u32, ctl: Control) -> Summary {
         s.c.accepted += st.accepted;
         s.c.refused += st.refused;
         s.c.jobs_ok += st.jobs_ok;
+        s.c.fabric_ops += st.fabric_ops;
+        s.c.fabric_accepted += st.fabric_accepted;
         if let Some(i) = first_divergence(&base, &obs) {
             s.divergences += 1;
             if s.first.is_none() {
@@ -764,4 +899,4 @@ pub fn check(seeds: u64, per_gap: u32, ctl: Control) -> Summary {
     s
 }
 
-pub const SCOPE_LINE: &str = "[noninterference] scope: host software model (core caps + arenas + Soft SMMU + SoftNpu + KV grants, syscall gates as the kernel applies them); not hardware, no timing/cache/power side channels";
+pub const SCOPE_LINE: &str = "[noninterference] scope: host software model (core caps + arenas + Soft SMMU + SoftNpu + KV grants + fabric endpoint churn, syscall gates as the kernel applies them); not hardware, no timing/cache/power side channels";

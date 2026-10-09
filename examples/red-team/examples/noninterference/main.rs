@@ -18,6 +18,10 @@ fn main() {
         "[noninterference] tenant=C ops={} accepted={} refused={} own_jobs_ok={}",
         s.c.ops, s.c.accepted, s.c.refused, s.c.jobs_ok
     );
+    println!(
+        "[noninterference] tenant=C fabric_ops={} fabric_accepted={}",
+        s.c.fabric_ops, s.c.fabric_accepted
+    );
     if let Some((seed, step, w0, w1)) = &s.first {
         println!("[noninterference] first-divergence seed={seed} step={step} world0=\"{w0}\" world1=\"{w1}\"");
     }
@@ -28,6 +32,7 @@ fn main() {
         Control::RawMapAddr,
         Control::LeakedCap,
         Control::GlobalSeq,
+        Control::UncheckedClose,
     ] {
         let c = check(seeds.min(64), per_gap, ctl);
         let caught = c.divergences > 0;

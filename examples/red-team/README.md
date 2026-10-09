@@ -181,12 +181,26 @@ Fabric-too-many-caps needle: `[redteam] attack=fabric-too-many-caps result=refus
 caps are unchanged and the refused cap is not stored; a message with exactly `MAX_MSG_CAPS` caps sends and
 receives intact; not CapTable / CapError; no ABI or wire change; software path only).
 Fabric-endpoint-limit needle: `[redteam] attack=fabric-endpoint-limit result=refused`
-(`Fabric::create_endpoint` past `MAX_ENDPOINTS` (16) → `FabricError::EndpointLimit`, repeated; the refusal
-adds no partial endpoint and all 16 existing endpoints keep their owner and still round-trip a message.
-Honesty: the endpoint table is global, not per tenant, and `close` does not free a slot, so a full table
-refuses every tenant; the clip checks both facts. This is a resource bound, **not** per-tenant isolation;
-a per-tenant endpoint quota is open work. Not fabric-queue-full / payload-too-large / hodge-quota /
-CapTable; no new opcodes; software path only).
+(`Fabric::create_endpoint` on a full table (`MAX_ENDPOINTS` = 16, filled by four tenants at their quota)
+→ `FabricError::EndpointLimit`, repeated; the refusal adds no partial endpoint and all 16 existing endpoints
+keep their owner and still round-trip a message; closing one endpoint frees its slot for the refused tenant.
+Honesty: the endpoint table is still global. Since Round 24 each tenant is capped at
+`MAX_ENDPOINTS_PER_TENANT` (4) live endpoints and `close` frees the slot, so one tenant can no longer take
+every slot, but enough distinct tenants together can still fill the table. This is a resource bound,
+**not** a per-tenant reservation. Not fabric-queue-full / payload-too-large / hodge-quota / CapTable; no new
+opcodes; software path only).
+Fabric-slot-exhaust needle: `[redteam] attack=fabric-slot-exhaust result=refused`
+(one tenant creating past `MAX_ENDPOINTS_PER_TENANT` live endpoints → `FabricError::EndpointLimit`,
+repeated, with no slot consumed; other tenants still create; 1000 create/close cycles leak no slot and
+never lift the quota; `Fabric::close_for` on another tenant's endpoint → `FabricError::NoSuchEndpoint`.
+Before Round 24 one tenant could hold all 16 slots, and create/close churn drained the table because
+`close` kept the slot. Existing error variants only; no new opcodes, errors or ABI; software path only).
+Fabric-stale-endpoint needle: `[redteam] attack=fabric-stale-endpoint result=refused`
+(tenant A closes an endpoint, tenant V's next create reuses that slot; A's old `EndpointId` →
+`FabricError::NoSuchEndpoint` on send, recv, pending, owner, `close` and `close_for`, so it cannot read or
+touch V's queued message; refused sends charge no Hodge quota; before reuse the closed endpoint answers
+`Closed`. Endpoint ids come from a counter that refuses (`EndpointLimit`) instead of wrapping, so an id is
+never reissued. Not fabric-queue-full / fabric-slot-exhaust / CapTable; software path only).
 Hodge-class-unauthorized needle: `[redteam] attack=hodge-class-unauthorized result=refused`
 (`authorize` FlowQuota badge Gradient|Curl: Gradient+Curl OK; Harmonic / wrong kind /
 no WRITE → `HodgeError::ClassNotAuthorized`; not QuotaExceeded / CurlOnTree /
