@@ -103,10 +103,15 @@ pub fn run_boot_demo() -> DemoReport {
                 .with_badge(0xB7),
         )
         .unwrap();
+    // B's owner grants A send rights on ep_b (kernel mints into A's table).
+    caps_a
+        .mint(Capability::new(CapKind::Endpoint, CapRights(CapRights::WRITE), ep_b.0, tenant_a))
+        .unwrap();
     events.emit(EventKind::CapMint, ep_a.0 as u64, ep_b.0 as u64);
 
     fabric
-        .send(
+        .send_as(
+            &caps_a,
             Message::new(
                 ep_b,
                 0xA3,
@@ -119,7 +124,7 @@ pub fn run_boot_demo() -> DemoReport {
         )
         .unwrap();
     events.emit(EventKind::IpcSend, ep_b.0 as u64, 0xA3);
-    let got = fabric.recv(ep_b).unwrap();
+    let got = fabric.recv_as(tenant_b, ep_b).unwrap();
     events.emit(
         EventKind::IpcRecv,
         got.header.badge,
@@ -524,9 +529,9 @@ pub fn run_boot_demo() -> DemoReport {
     .unwrap()
     .with_flow(FlowClass::Gradient)
     .with_phase(Phase::Exchange);
-    let grad_ok = fabric.send(grad_msg).is_ok();
+    let grad_ok = fabric.send_as(&caps_a, grad_msg).is_ok();
     events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 1);
-    let _ = fabric.recv(ep_a);
+    let _ = fabric.recv_as(tenant_a, ep_a);
 
     let curl_msg = Message::new(
         ep_a,
@@ -538,9 +543,9 @@ pub fn run_boot_demo() -> DemoReport {
     )
     .unwrap()
     .with_flow(FlowClass::Curl);
-    let curl_ok = fabric.send(curl_msg).is_ok()
+    let curl_ok = fabric.send_as(&caps_a, curl_msg).is_ok()
         && authorize(caps_a.lookup(hodge_cap).unwrap(), FlowClass::Curl).is_ok();
-    let _ = fabric.recv(ep_a);
+    let _ = fabric.recv_as(tenant_a, ep_a);
 
     let harm_tree = Message::new(
         ep_a,
@@ -553,7 +558,7 @@ pub fn run_boot_demo() -> DemoReport {
     .unwrap()
     .with_flow(FlowClass::Harmonic);
     let harm_refused =
-        fabric.send(harm_tree) == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
+        fabric.send_as(&caps_a, harm_tree) == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
     events.emit(EventKind::HodgeRefuse, FlowClass::Harmonic as u64, 1);
     let hodge_ok = hodge_grad
         && grad_ok
@@ -576,7 +581,7 @@ pub fn run_boot_demo() -> DemoReport {
     let tree_inject = tree
         .inject(&caps_a, tree_cap, &mut fabric, ep_a, tenant_a, b"ok-tree")
         .is_ok();
-    let tree_got = fabric.recv(ep_a).unwrap();
+    let tree_got = fabric.recv_as(tenant_a, ep_a).unwrap();
     events.emit(EventKind::HodgeAdmit, FlowClass::Gradient as u64, 2);
     let harm_bind_refused =
         OperatorKernelHandle::bind(OpKernelId(2), CollectiveKind::Tree, FlowClass::Harmonic)
@@ -597,7 +602,7 @@ pub fn run_boot_demo() -> DemoReport {
     let torus_inject = torus
         .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"ok-torus")
         .is_ok();
-    let torus_got = fabric.recv(ep_a).unwrap();
+    let torus_got = fabric.recv_as(tenant_a, ep_a).unwrap();
     let opkernel_ok = tree_inject
         && tree_got.header.flags.tree_offload()
         && tree_got.header.flow == FlowClass::Gradient
@@ -615,18 +620,18 @@ pub fn run_boot_demo() -> DemoReport {
             .sparsify(100, 500)
             .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"tiny")
             == Ok(SparsifyAction::Drop)
-            && fabric.pending(ep_a).unwrap() == 0;
+            && fabric.pending_as(tenant_a, ep_a).unwrap() == 0;
     let kept =
         torus
             .sparsify(500, 500)
             .inject(&caps_a, torus_cap, &mut fabric, ep_a, tenant_a, b"kept")
             == Ok(SparsifyAction::Keep);
-    let keep_got = fabric.recv(ep_a).unwrap();
+    let keep_got = fabric.recv_as(tenant_a, ep_a).unwrap();
     let grad_pass =
         tree.sparsify(0, 9999)
             .inject(&caps_a, tree_cap, &mut fabric, ep_a, tenant_a, b"grad")
             == Ok(SparsifyAction::Keep);
-    let grad_got = fabric.recv(ep_a).unwrap();
+    let grad_got = fabric.recv_as(tenant_a, ep_a).unwrap();
     let harm_tree_still = decide_header(CollectiveKind::Tree, FlowClass::Harmonic, 1, 500)
         == Err(HodgeError::HarmonicTreeReduce);
     let header_drop = SparsifiedCollective::from_header(
@@ -650,7 +655,8 @@ pub fn run_boot_demo() -> DemoReport {
         && header_drop;
 
     fabric
-        .send(
+        .send_as(
+            &caps_a,
             Message::new(
                 ep_a,
                 cpl.job_seq as u64,
@@ -663,7 +669,7 @@ pub fn run_boot_demo() -> DemoReport {
         )
         .ok();
 
-    let done = fabric.recv(ep_a).unwrap();
+    let done = fabric.recv_as(tenant_a, ep_a).unwrap();
     let c00 = i32::from_le_bytes(backing[128..132].try_into().unwrap());
     let c11 = i32::from_le_bytes(backing[128 + 20..128 + 24].try_into().unwrap());
     let accel_ok = cpl.status == 0

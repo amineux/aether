@@ -398,6 +398,14 @@ impl CapTable {
         self.mint(child)
     }
 
+    /// Does this table hold a cap of `kind` on `object` with at least `need`
+    /// rights, minted for this table's owner? Used by checked fabric send.
+    pub fn holds_rights(&self, kind: CapKind, object: u32, need: u16) -> bool {
+        self.slots.iter().flatten().any(|c| {
+            c.kind == kind && c.object == object && c.rights.contains(need) && c.tenant == self.owner
+        })
+    }
+
     /// Isolation helper: does this table hold any cap to `object` of `kind`?
     pub fn holds(&self, kind: CapKind, object: u32) -> bool {
         self.slots

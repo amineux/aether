@@ -397,6 +397,9 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | SoftCCT CCT slot exhausted | `run_softcct_credit_exhausted_demo` — SoftCCT `ChipletCoherenceTable::record` → `PartitionError::CreditExhausted` past `MAX_CCT_ENTRIES` (in-budget fills + existing-label update admit). **Not** Timeline qos-credits / softcct-incorrect-elision / UCIe | refused |
 | Fabric endpoint slot exhaustion | `run_fabric_slot_exhaust_demo` — `Fabric::create_endpoint` past `MAX_ENDPOINTS_PER_TENANT` (4) live endpoints → `FabricError::EndpointLimit` with no slot consumed; other tenants still create; 1000 create/close cycles leak no slot; `close_for` on a foreign endpoint → `NoSuchEndpoint`. Per-tenant cap, **not** a reservation: enough tenants together can still fill the 16-slot table. **Not** fabric-endpoint-limit (table full) / hodge-quota | refused |
 | Fabric stale endpoint after slot reuse | `run_fabric_stale_endpoint_demo` — a closed endpoint's slot is reused by another tenant; the old `EndpointId` → `FabricError::NoSuchEndpoint` on send / recv / pending / owner / close (ids never reissued); new owner's queued message untouched; no Hodge quota charged. **Not** fabric-queue-full / CapTable | refused |
+| Fabric recv from a foreign endpoint | `run_fabric_recv_foreign_demo` — `Fabric::recv_as` / `pending_as` by a non-owner → `FabricError::NoSuchEndpoint`, identical to a missing id; owner's queued message intact. Kernel `SYS_RECV` uses `recv_as`. **Not** fabric-send-no-cap / fabric-stale-endpoint | refused |
+| Fabric send without the right to send | `run_fabric_send_no_cap_demo` — `Fabric::send_as` with no cap, wrong-object cap, no-`WRITE` cap, or forged sender tag → `FabricError::NoSuchEndpoint`; nothing queued, no quota moved; Endpoint+WRITE admits and charges the sender. Kernel `SYS_SEND` uses `send_as`. **Not** fabric-recv-foreign / fabric-queue-full | refused |
+| Fabric Hodge quota drain | `run_fabric_quota_drain_demo` — Hodge quota is per sender tenant and class (64 each); a sender past its own budget → `Hodge(QuotaExceeded)`; other tenants keep full budgets. Ledger bound: 16 distinct senders, no refill. **Not** hodge-quota (empty quota) / fabric-queue-full | refused |
 
 Expected stdout (CI greps these):
 
@@ -443,6 +446,9 @@ Expected stdout (CI greps these):
 [redteam] attack=fabric-endpoint-limit result=refused
 [redteam] attack=fabric-slot-exhaust result=refused
 [redteam] attack=fabric-stale-endpoint result=refused
+[redteam] attack=fabric-recv-foreign result=refused
+[redteam] attack=fabric-send-no-cap result=refused
+[redteam] attack=fabric-quota-drain result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused
@@ -630,8 +636,8 @@ Two adapters ship:
 Expected summary lines (`make isolation-matrix` greps the first two):
 
 ```
-[isolation-kit] backend=aether-soft classes=12 applicable=12 refused=12 accepted=0 n/a=0 result=conformant
-[isolation-kit] backend=weak-sample-example-only classes=12 applicable=11 refused=4 accepted=7 n/a=1 result=NONCONFORMANT
+[isolation-kit] backend=aether-soft classes=15 applicable=15 refused=15 accepted=0 n/a=0 result=conformant
+[isolation-kit] backend=weak-sample-example-only classes=15 applicable=14 refused=4 accepted=10 n/a=1 result=NONCONFORMANT
 ```
 
 Scope: host software checks only. Not certification, not a partner or
@@ -730,14 +736,19 @@ arena handoff, cap derive and revoke, and KV attend and KV pin. Since
 Round 24, each of those syscalls is paired with one fabric endpoint op from
 a separate seeded stream: create (up to and past C's per-tenant endpoint
 quota), tenant-checked `close_for` on its own, A's, B's or junk ids, and
-send / recv / probe on its own closed or slot-reused stale ids. A and B each
+send / recv / probe on its own closed or slot-reused stale ids. Since
+Round 25 C's sends are checked bursts (`send_as`, random flow class, C's or
+a forged A sender tag) at its own live, closed or stale ids, A's and B's
+endpoints or junk ids, and its recv / pending probes go through `recv_as` /
+`pending_as` on the same targets. A and B each
 send one message per job step to their own endpoint and receive it at the
 next attend step. After every honest step the check records everything A
 and B can observe: every job result including its completion sequence
 number, every attend result, every honest fabric send and recv result with
 its payload, all 4096 bytes of each arena, the Soft-SMMU resolve and
 translate result for every 256-byte offset, the arena metadata, and each
-endpoint's id, owner, pending count and the tenant's live endpoint count. The two worlds must be
+endpoint's id, owner, pending count, the tenant's live endpoint count, and
+its remaining Hodge quota per class. The two worlds must be
 byte-identical for every seed:
 
 ```
@@ -752,7 +763,7 @@ the fix PRs #183 / #189 propose for issue #161: **current `main`'s kernel
 `sys_unmap` still calls the unchecked `unmap`**, and the `unchecked-unmap`
 control below shows that this breaks noninterference.
 
-Five negative controls each re-open one known hole and must produce
+Seven negative controls each re-open one known hole and must produce
 divergences, so the check is shown to be able to fail:
 
 | Control | Hole re-opened | Result |
@@ -762,6 +773,8 @@ divergences, so the check is shown to be able to fail:
 | `leaked-cap` | C holds a copy of A's Memory+MAP cap | diverges |
 | `global-job-seq` | completions numbered from the device-wide counter (before #208) | diverges |
 | `unchecked-endpoint-close` | C closes endpoints with the unchecked `Fabric::close` instead of `close_for` | diverges |
+| `unchecked-endpoint-recv` | C receives with `recv_unchecked`, so it can dequeue A's or B's messages (before Round 25) | diverges |
+| `forged-sender-quota` | C sends with `send_unchecked` and A's sender tag, so its traffic is charged to A's Hodge quota (the shared-quota shape before Round 25) | diverges |
 
 **Bug this found.** On its first run the two-world check found a real
 cross-tenant information flow. The completion `job_seq` that SoftNpu
@@ -776,12 +789,10 @@ the harnesses above.
 and other microarchitectural side channels (both worlds are compared on
 values, not time). The kernel binary, assembly, boot and the x86 / RISC-V /
 AArch64 page tables, which QEMU tests cover separately. Concurrency and SMP
-interleavings. Fabric sends by C to live endpoints: the fabric has no send
-capability and the Hodge quota (64 messages per flow class) is shared per
-fabric, so a sender that knows an endpoint id can fill its queue or drain
-that quota by design. A and B create their endpoints before C acts, so the
-shared endpoint-id counter, which a later create could observe, is not
-exercised. Anything outside the stated bounds and table sizes. The
+interleavings. A and B create their endpoints before C acts, so the shared
+endpoint-id counter, which a later create could observe, is not exercised
+(in the kernel, user code names endpoints by cptr and is never handed the
+id; host callers of `create_endpoint` do see it). Anything outside the stated bounds and table sizes. The
 two-world check is randomized testing over many seeds, not exhaustive. We
 describe this work as **bounded model-checked**, never as "formally
 verified" or "zero-trust".
