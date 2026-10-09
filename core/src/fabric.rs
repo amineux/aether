@@ -14,6 +14,10 @@ use crate::phase::Phase;
 use crate::types::{TenantId, TileId};
 
 pub const MAX_ENDPOINTS: usize = 16;
+/// Per-tenant cap on live (not closed) endpoints. A quarter of the shared
+/// table, so no single tenant can take every slot. This is a bound, not a
+/// reservation: enough distinct tenants can still fill the table together.
+pub const MAX_ENDPOINTS_PER_TENANT: usize = 4;
 pub const MAX_QUEUE: usize = 8;
 pub const MAX_MSG_BYTES: usize = 64;
 pub const MAX_MSG_CAPS: usize = 4;
@@ -228,16 +232,48 @@ impl Fabric {
         }
     }
 
+    /// Create an endpoint owned by `owner`.
+    ///
+    /// Refused as [`FabricError::EndpointLimit`] when `owner` already holds
+    /// [`MAX_ENDPOINTS_PER_TENANT`] live endpoints, when no slot is free, or
+    /// when the endpoint-id space is used up. A slot is free when it is empty
+    /// or holds a closed endpoint; a closed endpoint keeps answering
+    /// [`FabricError::Closed`] until its slot is reused.
+    ///
+    /// Stale handles: every create issues a fresh [`EndpointId`] from a
+    /// counter that never wraps (it refuses instead), and lookups match the
+    /// full id. So an id whose slot was reused finds nothing
+    /// ([`FabricError::NoSuchEndpoint`]); it can never reach the new owner.
     pub fn create_endpoint(&mut self, owner: TenantId) -> Result<EndpointId, FabricError> {
+        if self.live_count(owner) >= MAX_ENDPOINTS_PER_TENANT {
+            return Err(FabricError::EndpointLimit);
+        }
         let slot = self
             .eps
             .iter()
             .position(|e| e.is_none())
+            .or_else(|| self.eps.iter().position(|e| matches!(e, Some(ep) if ep.closed)))
             .ok_or(FabricError::EndpointLimit)?;
         let id = EndpointId(self.next_id);
-        self.next_id += 1;
+        self.next_id = self.next_id.checked_add(1).ok_or(FabricError::EndpointLimit)?;
         self.eps[slot] = Some(Endpoint::new(id, owner));
         Ok(id)
+    }
+
+    /// Live (not closed) endpoints owned by `owner`.
+    pub fn live_count(&self, owner: TenantId) -> usize {
+        self.eps
+            .iter()
+            .flatten()
+            .filter(|e| e.owner == owner && !e.closed)
+            .count()
+    }
+
+    /// Table slot currently holding `id`, if any (host diagnostics / tests).
+    pub fn slot_of(&self, id: EndpointId) -> Option<usize> {
+        self.eps
+            .iter()
+            .position(|e| matches!(e, Some(ep) if ep.id == id))
     }
 
     fn ep_mut(&mut self, id: EndpointId) -> Result<&mut Endpoint, FabricError> {
@@ -286,8 +322,25 @@ impl Fabric {
         Ok(self.ep(id)?.qlen)
     }
 
+    /// Close `id`. The endpoint stops admitting sends (`Closed`) and its slot
+    /// becomes reusable by the next [`Self::create_endpoint`]. No tenant
+    /// check: kernel-trust primitive; tenant-facing paths use
+    /// [`Self::close_for`].
     pub fn close(&mut self, id: EndpointId) -> Result<(), FabricError> {
         self.ep_mut(id)?.closed = true;
+        Ok(())
+    }
+
+    /// Tenant-checked close: only the owner may close. Another tenant's id,
+    /// an unknown id and a stale id (slot reused) are all refused as
+    /// [`FabricError::NoSuchEndpoint`], so the refusal does not reveal whether
+    /// the id exists.
+    pub fn close_for(&mut self, caller: TenantId, id: EndpointId) -> Result<(), FabricError> {
+        let ep = self.ep_mut(id)?;
+        if ep.owner != caller {
+            return Err(FabricError::NoSuchEndpoint);
+        }
+        ep.closed = true;
         Ok(())
     }
 }
@@ -524,31 +577,31 @@ pub fn run_fabric_oversized_msg_demo() -> FabricOversizedMsgReport {
 /// Host red-team report for fabric endpoint-table exhaustion.
 ///
 /// Sell line `[redteam] attack=fabric-endpoint-limit`. It uses only the
-/// existing [`Fabric::create_endpoint`] gate. Once all [`MAX_ENDPOINTS`]
-/// slots are taken, another create is refused as
+/// [`Fabric::create_endpoint`] gate. Four tenants each take their
+/// [`MAX_ENDPOINTS_PER_TENANT`] endpoints, filling all [`MAX_ENDPOINTS`]
+/// slots; a fifth tenant's create is then refused as
 /// [`FabricError::EndpointLimit`]. The refusal adds no partial endpoint, and
 /// every existing endpoint keeps its owner and still round-trips a message.
 ///
-/// Honesty: the endpoint table is **global** (per [`Fabric`], not per
-/// tenant), and `close` does not free a slot. So a full table refuses
-/// every tenant. That makes this a resource bound, **not** per-tenant
-/// isolation. The report checks both facts, so a later per-tenant quota or
-/// slot reclaim has to update this clip. **Not** fabric-queue-full
-/// (`QueueFull`) / payload-too-large / hodge-quota / CapTable; no new
-/// opcodes; software path only.
+/// Honesty: the table is still **global** (per [`Fabric`]). The per-tenant
+/// quota stops one tenant from taking every slot, but enough distinct tenants
+/// together can still fill it; that is a resource bound, **not** a per-tenant
+/// reservation. Closing an endpoint frees its slot (checked here). **Not**
+/// fabric-queue-full (`QueueFull`) / payload-too-large / hodge-quota /
+/// CapTable; no new opcodes; software path only.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct FabricEndpointLimitReport {
-    /// Control: `MAX_ENDPOINTS` creates admit, with distinct ids.
+    /// Control: `MAX_ENDPOINTS` creates across four tenants admit, distinct ids.
     pub fill_ok: bool,
-    /// Create past `MAX_ENDPOINTS` → `EndpointLimit` (repeated).
+    /// Create on a full table → `EndpointLimit` (repeated), nothing added.
     pub limit_refused: bool,
     /// After the refusals every endpoint keeps its owner and round-trips.
     pub existing_intact: bool,
-    /// Honesty check: another tenant's create is also `EndpointLimit`
-    /// (the table is shared).
+    /// Honesty check: the table is shared, so a full table also refuses a
+    /// tenant that holds no endpoint at all.
     pub table_is_global: bool,
-    /// Honesty check: closing an endpoint does not free its slot.
-    pub close_keeps_slot: bool,
+    /// Closing one endpoint frees its slot: the refused tenant now admits.
+    pub close_frees_slot: bool,
 }
 
 impl FabricEndpointLimitReport {
@@ -557,20 +610,21 @@ impl FabricEndpointLimitReport {
             && self.limit_refused
             && self.existing_intact
             && self.table_is_global
-            && self.close_keeps_slot
+            && self.close_frees_slot
     }
 }
 
 /// Endpoint table full → [`FabricError::EndpointLimit`]; existing endpoints
-/// keep working. The table is global, so this is a bound, not isolation.
+/// keep working; close frees a slot. The table is global, so this is a
+/// bound, not isolation.
 pub fn run_fabric_endpoint_limit_demo() -> FabricEndpointLimitReport {
-    let a = TenantId(1);
-    let b = TenantId(2);
+    let owners = |i: usize| TenantId(1 + (i / MAX_ENDPOINTS_PER_TENANT) as u32);
+    let late = TenantId(99);
     let mut f = Fabric::new();
     let mut eps = [EndpointId(0); MAX_ENDPOINTS];
     let mut fill_ok = true;
-    for slot in eps.iter_mut() {
-        match f.create_endpoint(a) {
+    for (i, slot) in eps.iter_mut().enumerate() {
+        match f.create_endpoint(owners(i)) {
             Ok(id) => *slot = id,
             Err(_) => fill_ok = false,
         }
@@ -580,28 +634,223 @@ pub fn run_fabric_endpoint_limit_demo() -> FabricEndpointLimitReport {
         .enumerate()
         .all(|(i, x)| x.0 != 0 && eps[..i].iter().all(|y| y != x));
 
-    let limit_refused = (0..3).all(|_| f.create_endpoint(a) == Err(FabricError::EndpointLimit));
+    // Owner 1 is at quota; a fresh tenant hits the full table.
+    let limit_refused = (0..3).all(|_| f.create_endpoint(late) == Err(FabricError::EndpointLimit))
+        && f.live_count(late) == 0;
 
     let existing_intact = fill_ok
-        && eps.iter().all(|&ep| {
-            f.owner(ep) == Ok(a)
-                && flood_msg(ep, a).map(|m| f.send(m)) == Some(Ok(()))
+        && eps.iter().enumerate().all(|(i, &ep)| {
+            f.owner(ep) == Ok(owners(i))
+                && flood_msg(ep, owners(i)).map(|m| f.send(m)) == Some(Ok(()))
                 && f.recv(ep).map(|m| m.payload() == b"flood") == Ok(true)
                 && f.pending(ep) == Ok(0)
         });
 
-    let table_is_global = f.create_endpoint(b) == Err(FabricError::EndpointLimit);
+    let table_is_global = f.create_endpoint(TenantId(100)) == Err(FabricError::EndpointLimit);
 
-    let close_keeps_slot = f.close(eps[0]).is_ok()
-        && f.create_endpoint(b) == Err(FabricError::EndpointLimit)
-        && f.owner(eps[0]) == Ok(a);
+    let close_frees_slot = f.close_for(owners(0), eps[0]).is_ok()
+        && matches!(f.create_endpoint(late), Ok(n) if f.slot_of(n) == Some(0) && f.owner(n) == Ok(late))
+        && f.owner(eps[0]) == Err(FabricError::NoSuchEndpoint);
 
     FabricEndpointLimitReport {
         fill_ok,
         limit_refused,
         existing_intact,
         table_is_global,
-        close_keeps_slot,
+        close_frees_slot,
+    }
+}
+
+/// Host red-team report for one tenant exhausting the endpoint table.
+///
+/// Sell line `[redteam] attack=fabric-slot-exhaust`. Before this fix the
+/// table was shared with no per-tenant bound and `close` never freed a slot,
+/// so one tenant could take all [`MAX_ENDPOINTS`] slots (or churn
+/// create/close until none were left) and lock every other tenant out. Now a
+/// tenant past [`MAX_ENDPOINTS_PER_TENANT`] live endpoints is refused as the
+/// existing [`FabricError::EndpointLimit`], a refusal consumes no slot, and
+/// closed endpoints free their slots. **Not** a reservation (many tenants
+/// together can still fill the table) / fabric-endpoint-limit (table full) /
+/// hodge-quota; no new opcodes, errors or ABI; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricSlotExhaustReport {
+    /// Control: the attacker's first `MAX_ENDPOINTS_PER_TENANT` creates admit.
+    pub quota_fill_ok: bool,
+    /// Further creates → `EndpointLimit` (repeated); no slot consumed.
+    pub over_quota_refused: bool,
+    /// Other tenants still create endpoints after the attacker is refused.
+    pub others_admit: bool,
+    /// 1000 create/close cycles never leak a slot or lift the quota.
+    pub churn_no_leak: bool,
+    /// The attacker cannot close another tenant's endpoint (`NoSuchEndpoint`).
+    pub foreign_close_refused: bool,
+}
+
+impl FabricSlotExhaustReport {
+    pub fn all_ok(&self) -> bool {
+        self.quota_fill_ok
+            && self.over_quota_refused
+            && self.others_admit
+            && self.churn_no_leak
+            && self.foreign_close_refused
+    }
+}
+
+fn free_slots(f: &Fabric) -> usize {
+    f.eps.iter().filter(|e| e.as_ref().map_or(true, |ep| ep.closed)).count()
+}
+
+/// One tenant tries to take every endpoint slot → [`FabricError::EndpointLimit`]
+/// at its quota; other tenants keep admitting.
+pub fn run_fabric_slot_exhaust_demo() -> FabricSlotExhaustReport {
+    let atk = TenantId(3);
+    let a = TenantId(1);
+    let b = TenantId(2);
+    let mut f = Fabric::new();
+    let mut held = [EndpointId(0); MAX_ENDPOINTS_PER_TENANT];
+    let mut quota_fill_ok = true;
+    for h in held.iter_mut() {
+        match f.create_endpoint(atk) {
+            Ok(id) => *h = id,
+            Err(_) => quota_fill_ok = false,
+        }
+    }
+    quota_fill_ok &= f.live_count(atk) == MAX_ENDPOINTS_PER_TENANT;
+
+    let free_before = free_slots(&f);
+    let over_quota_refused = (0..MAX_ENDPOINTS)
+        .all(|_| f.create_endpoint(atk) == Err(FabricError::EndpointLimit))
+        && f.live_count(atk) == MAX_ENDPOINTS_PER_TENANT
+        && free_slots(&f) == free_before
+        && free_before == MAX_ENDPOINTS - MAX_ENDPOINTS_PER_TENANT;
+
+    let (ea, eb) = (f.create_endpoint(a), f.create_endpoint(b));
+    let others_admit = matches!((ea, eb), (Ok(x), Ok(y)) if f.owner(x) == Ok(a) && f.owner(y) == Ok(b));
+
+    // Churn: close one, create one, 1000 times. Quota and free count hold.
+    let mut churn_no_leak = quota_fill_ok;
+    let free_mid = free_slots(&f);
+    for i in 0..1000usize {
+        let k = i % MAX_ENDPOINTS_PER_TENANT;
+        churn_no_leak &= f.close_for(atk, held[k]).is_ok();
+        match f.create_endpoint(atk) {
+            Ok(id) => held[k] = id,
+            Err(_) => churn_no_leak = false,
+        }
+        churn_no_leak &= f.create_endpoint(atk) == Err(FabricError::EndpointLimit)
+            && f.live_count(atk) == MAX_ENDPOINTS_PER_TENANT;
+    }
+    churn_no_leak &= free_slots(&f) == free_mid
+        && matches!(f.create_endpoint(a), Ok(x) if f.owner(x) == Ok(a));
+
+    let foreign_close_refused = match eb {
+        Ok(y) => {
+            f.close_for(atk, y) == Err(FabricError::NoSuchEndpoint)
+                && flood_msg(y, b).map(|m| f.send(m)) == Some(Ok(()))
+                && f.pending(y) == Ok(1)
+        }
+        Err(_) => false,
+    };
+
+    FabricSlotExhaustReport {
+        quota_fill_ok,
+        over_quota_refused,
+        others_admit,
+        churn_no_leak,
+        foreign_close_refused,
+    }
+}
+
+/// Host red-team report for a stale endpoint handle after slot reuse.
+///
+/// Sell line `[redteam] attack=fabric-stale-endpoint`. Tenant A closes an
+/// endpoint; its slot is reused by tenant V. A's old [`EndpointId`] is then
+/// refused as the existing [`FabricError::NoSuchEndpoint`] on send, recv,
+/// pending, owner and close: ids are never reissued (the counter refuses
+/// rather than wraps), and lookups match the full id, so the stale handle
+/// cannot reach V's endpoint or read its queued message. Refused sends charge
+/// no Hodge quota. Before reuse, the closed endpoint answers `Closed`.
+/// **Not** fabric-queue-full / fabric-slot-exhaust / CapTable; no new
+/// opcodes, errors or ABI; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FabricStaleEndpointReport {
+    /// Before reuse, a send to the closed endpoint → `Closed`.
+    pub closed_before_reuse: bool,
+    /// V's new endpoint lands in A's old slot, with a different id.
+    pub slot_reused: bool,
+    /// A's stale id → `NoSuchEndpoint` on send/recv/pending/owner/close.
+    pub stale_refused: bool,
+    /// V's endpoint is untouched: owner, pending, payload, still open.
+    pub new_owner_intact: bool,
+    /// Refused stale sends charged no Hodge quota.
+    pub no_quota_burn: bool,
+}
+
+impl FabricStaleEndpointReport {
+    pub fn all_ok(&self) -> bool {
+        self.closed_before_reuse
+            && self.slot_reused
+            && self.stale_refused
+            && self.new_owner_intact
+            && self.no_quota_burn
+    }
+}
+
+/// Stale endpoint id after its slot is reused → [`FabricError::NoSuchEndpoint`];
+/// the new owner's endpoint is unreachable through it.
+pub fn run_fabric_stale_endpoint_demo() -> FabricStaleEndpointReport {
+    let a = TenantId(1);
+    let v = TenantId(5);
+    let mut f = Fabric::new();
+    let fail = FabricStaleEndpointReport {
+        closed_before_reuse: false,
+        slot_reused: false,
+        stale_refused: false,
+        new_owner_intact: false,
+        no_quota_burn: false,
+    };
+    let Ok(old) = f.create_endpoint(a) else { return fail };
+    // Fill the rest of the table so reuse must take A's old slot.
+    for i in 1..MAX_ENDPOINTS {
+        let owner = TenantId(1 + (i / MAX_ENDPOINTS_PER_TENANT) as u32);
+        if f.create_endpoint(owner).is_err() {
+            return fail;
+        }
+    }
+    let old_slot = f.slot_of(old);
+    let flow = FlowClass::Gradient;
+
+    let closed_before_reuse = f.close_for(a, old).is_ok()
+        && flood_msg(old, a).map(|m| f.send(m)) == Some(Err(FabricError::Closed));
+
+    let Ok(fresh) = f.create_endpoint(v) else { return fail };
+    let slot_reused = old_slot.is_some() && f.slot_of(fresh) == old_slot && fresh != old;
+
+    let secret = Message::new(fresh, 0x5EC, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, v, b"v-secret");
+    let queued = secret.map(|m| f.send(m)) == Ok(Ok(()));
+    let before = f.hodge.remain(flow);
+
+    let nse = Err(FabricError::NoSuchEndpoint);
+    let stale_refused = (0..3).all(|_| flood_msg(old, a).map(|m| f.send(m)) == Some(nse))
+        && f.recv(old).map(|_| ()) == nse
+        && f.pending(old).map(|_| ()) == nse
+        && f.owner(old).map(|_| ()) == nse
+        && f.close_for(a, old) == nse
+        && f.close(old) == nse;
+    let no_quota_burn = f.hodge.remain(flow) == before;
+
+    let new_owner_intact = queued
+        && f.owner(fresh) == Ok(v)
+        && f.pending(fresh) == Ok(1)
+        && f.recv(fresh).map(|m| m.payload() == b"v-secret" && m.header.badge == 0x5EC) == Ok(true)
+        && flood_msg(fresh, v).map(|m| f.send(m)) == Some(Ok(()));
+
+    FabricStaleEndpointReport {
+        closed_before_reuse,
+        slot_reused,
+        stale_refused,
+        new_owner_intact,
+        no_quota_burn,
     }
 }
 
@@ -617,17 +866,120 @@ mod tests {
         assert!(r.limit_refused, "create past MAX_ENDPOINTS → EndpointLimit");
         assert!(r.existing_intact, "existing endpoints keep owner and round-trip");
         assert!(r.table_is_global, "table is shared: other tenant also EndpointLimit");
-        assert!(r.close_keeps_slot, "close does not free a slot");
+        assert!(r.close_frees_slot, "close frees a slot for another tenant");
         assert!(r.all_ok());
     }
 
     #[test]
     fn create_endpoint_past_limit_is_endpoint_limit() {
         let mut f = Fabric::new();
-        for _ in 0..MAX_ENDPOINTS {
-            f.create_endpoint(TenantId(1)).unwrap();
+        for i in 0..MAX_ENDPOINTS {
+            f.create_endpoint(TenantId(1 + (i / MAX_ENDPOINTS_PER_TENANT) as u32)).unwrap();
         }
+        assert_eq!(f.create_endpoint(TenantId(77)), Err(FabricError::EndpointLimit));
+    }
+
+    #[test]
+    fn fabric_slot_exhaust_demo_all_ok() {
+        let r = run_fabric_slot_exhaust_demo();
+        assert!(r.quota_fill_ok, "quota creates admit: {r:?}");
+        assert!(r.over_quota_refused, "past quota → EndpointLimit, no slot consumed");
+        assert!(r.others_admit, "other tenants still create");
+        assert!(r.churn_no_leak, "create/close churn leaks no slot");
+        assert!(r.foreign_close_refused, "close_for on a foreign endpoint → NoSuchEndpoint");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn fabric_stale_endpoint_demo_all_ok() {
+        let r = run_fabric_stale_endpoint_demo();
+        assert!(r.closed_before_reuse, "closed endpoint → Closed before reuse: {r:?}");
+        assert!(r.slot_reused, "new endpoint reuses the closed slot, new id");
+        assert!(r.stale_refused, "stale id → NoSuchEndpoint everywhere");
+        assert!(r.new_owner_intact, "new owner's endpoint untouched");
+        assert!(r.no_quota_burn, "stale sends charge no Hodge quota");
+        assert!(r.all_ok());
+    }
+
+    /// Regression: one tenant used to be able to take all 16 slots.
+    #[test]
+    fn one_tenant_cannot_take_every_slot() {
+        let mut f = Fabric::new();
+        let atk = TenantId(9);
+        let mut ok = 0;
+        for _ in 0..MAX_ENDPOINTS {
+            if f.create_endpoint(atk).is_ok() {
+                ok += 1;
+            }
+        }
+        assert_eq!(ok, MAX_ENDPOINTS_PER_TENANT);
+        assert_eq!(f.create_endpoint(atk), Err(FabricError::EndpointLimit));
+        for t in 1..=3u32 {
+            for _ in 0..MAX_ENDPOINTS_PER_TENANT {
+                f.create_endpoint(TenantId(t)).unwrap();
+            }
+        }
+    }
+
+    /// Regression: close used to keep its slot forever, so create/close
+    /// churn drained the table.
+    #[test]
+    fn close_frees_slot_under_churn() {
+        let mut f = Fabric::new();
+        let t = TenantId(1);
+        for _ in 0..10 * MAX_ENDPOINTS {
+            let ep = f.create_endpoint(t).unwrap();
+            f.close_for(t, ep).unwrap();
+        }
+        assert_eq!(f.live_count(t), 0);
+        for i in 0..MAX_ENDPOINTS {
+            f.create_endpoint(TenantId(2 + (i / MAX_ENDPOINTS_PER_TENANT) as u32)).unwrap();
+        }
+    }
+
+    #[test]
+    fn stale_id_cannot_reach_reused_slot() {
+        let mut f = Fabric::new();
+        let a = TenantId(1);
+        let v = TenantId(2);
+        let old = f.create_endpoint(a).unwrap();
+        // Empty slots are taken first; fill them so reuse must hit slot 0.
+        for i in 1..MAX_ENDPOINTS {
+            f.create_endpoint(TenantId(10 + (i / MAX_ENDPOINTS_PER_TENANT) as u32)).unwrap();
+        }
+        f.close_for(a, old).unwrap();
+        let fresh = f.create_endpoint(v).unwrap();
+        assert_eq!(f.slot_of(fresh), Some(0));
+        assert_ne!(fresh, old);
+        let m = Message::new(old, 0, MsgFlags(MsgFlags::ASYNC), ChipletRoute::LOCAL, a, b"x").unwrap();
+        assert_eq!(f.send(m), Err(FabricError::NoSuchEndpoint));
+        assert_eq!(f.recv(old).unwrap_err(), FabricError::NoSuchEndpoint);
+        assert_eq!(f.close_for(a, old), Err(FabricError::NoSuchEndpoint));
+        assert_eq!(f.pending(fresh), Ok(0));
+        assert_eq!(f.owner(fresh), Ok(v));
+    }
+
+    #[test]
+    fn close_for_refuses_foreign_owner() {
+        let mut f = Fabric::new();
+        let ep = f.create_endpoint(TenantId(1)).unwrap();
+        assert_eq!(f.close_for(TenantId(2), ep), Err(FabricError::NoSuchEndpoint));
+        assert_eq!(f.live_count(TenantId(1)), 1);
+        f.close_for(TenantId(1), ep).unwrap();
+        assert_eq!(f.live_count(TenantId(1)), 0);
+    }
+
+    /// The id counter refuses instead of wrapping, so an id is never reissued.
+    #[test]
+    fn endpoint_id_never_wraps() {
+        let mut f = Fabric::new();
+        f.next_id = u32::MAX - 1;
+        let last = f.create_endpoint(TenantId(1)).unwrap();
+        assert_eq!(last, EndpointId(u32::MAX - 1));
+        f.close(last).unwrap();
         assert_eq!(f.create_endpoint(TenantId(1)), Err(FabricError::EndpointLimit));
+        assert_eq!(f.create_endpoint(TenantId(1)), Err(FabricError::EndpointLimit));
+        assert_eq!(f.slot_of(last), Some(0));
     }
 
     #[test]

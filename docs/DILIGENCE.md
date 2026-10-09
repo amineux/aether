@@ -395,6 +395,8 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Soft-SMMU SET_SID foreign tenant | `run_set_sid_cross_tenant_demo` — Soft-SMMU `set_sid` → `MapError::CrossTenant` when Bound STE tenant ≠ cap tenant (same-tenant set_sid admits). **Not** smmu-cross-tenant bind_stream / set-sid-unbound Soft-CP Fault / SubmitSid / WrongStream | refused |
 | SoftCCT incorrect elision | `run_softcct_incorrect_elision_demo` — SoftCCT `incorrect_elide` dual-proof fold: cross-chiplet hazard must fence (`should_elide` false) while buggy policy would elide. Diligence banner sibling. **Not** UCIe latency / qos-credits / softcct-credit-exhausted | refused |
 | SoftCCT CCT slot exhausted | `run_softcct_credit_exhausted_demo` — SoftCCT `ChipletCoherenceTable::record` → `PartitionError::CreditExhausted` past `MAX_CCT_ENTRIES` (in-budget fills + existing-label update admit). **Not** Timeline qos-credits / softcct-incorrect-elision / UCIe | refused |
+| Fabric endpoint slot exhaustion | `run_fabric_slot_exhaust_demo` — `Fabric::create_endpoint` past `MAX_ENDPOINTS_PER_TENANT` (4) live endpoints → `FabricError::EndpointLimit` with no slot consumed; other tenants still create; 1000 create/close cycles leak no slot; `close_for` on a foreign endpoint → `NoSuchEndpoint`. Per-tenant cap, **not** a reservation: enough tenants together can still fill the 16-slot table. **Not** fabric-endpoint-limit (table full) / hodge-quota | refused |
+| Fabric stale endpoint after slot reuse | `run_fabric_stale_endpoint_demo` — a closed endpoint's slot is reused by another tenant; the old `EndpointId` → `FabricError::NoSuchEndpoint` on send / recv / pending / owner / close (ids never reissued); new owner's queued message untouched; no Hodge quota charged. **Not** fabric-queue-full / CapTable | refused |
 
 Expected stdout (CI greps these):
 
@@ -439,6 +441,8 @@ Expected stdout (CI greps these):
 [redteam] attack=fabric-payload-too-large result=refused
 [redteam] attack=fabric-too-many-caps result=refused
 [redteam] attack=fabric-endpoint-limit result=refused
+[redteam] attack=fabric-slot-exhaust result=refused
+[redteam] attack=fabric-stale-endpoint result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused

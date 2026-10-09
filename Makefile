@@ -188,6 +188,8 @@ red-team:
 	grep -q "\\[redteam\\] attack=fabric-payload-too-large result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-too-many-caps result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-endpoint-limit result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-slot-exhaust result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-stale-endpoint result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
