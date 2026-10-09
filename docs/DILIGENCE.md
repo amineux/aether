@@ -726,11 +726,18 @@ step, C issues a seeded pseudo-random burst of syscalls and accelerator ops:
 arena alloc, `SYS_MAP` with guessed addresses, `SYS_UNMAP` of any IOVA,
 accelerator jobs with random shapes, dtypes, addresses and forged tenant
 tags (plus jobs aimed at its own fresh mappings), stream bind, SET_SID,
-arena handoff, cap derive and revoke, and KV attend and KV pin. After every
-honest step the check records everything A and B can observe: every job
-result including its completion sequence number, every attend result, all
-4096 bytes of each arena, the Soft-SMMU resolve and translate result for
-every 256-byte offset, and the arena metadata. The two worlds must be
+arena handoff, cap derive and revoke, and KV attend and KV pin. Since
+Round 24, each of those syscalls is paired with one fabric endpoint op from
+a separate seeded stream: create (up to and past C's per-tenant endpoint
+quota), tenant-checked `close_for` on its own, A's, B's or junk ids, and
+send / recv / probe on its own closed or slot-reused stale ids. A and B each
+send one message per job step to their own endpoint and receive it at the
+next attend step. After every honest step the check records everything A
+and B can observe: every job result including its completion sequence
+number, every attend result, every honest fabric send and recv result with
+its payload, all 4096 bytes of each arena, the Soft-SMMU resolve and
+translate result for every 256-byte offset, the arena metadata, and each
+endpoint's id, owner, pending count and the tenant's live endpoint count. The two worlds must be
 byte-identical for every seed:
 
 ```
@@ -745,7 +752,7 @@ the fix PRs #183 / #189 propose for issue #161: **current `main`'s kernel
 `sys_unmap` still calls the unchecked `unmap`**, and the `unchecked-unmap`
 control below shows that this breaks noninterference.
 
-Four negative controls each re-open one known hole and must produce
+Five negative controls each re-open one known hole and must produce
 divergences, so the check is shown to be able to fail:
 
 | Control | Hole re-opened | Result |
@@ -754,6 +761,7 @@ divergences, so the check is shown to be able to fail:
 | `raw-map-addr` | `SYS_MAP` pins the caller's address (before #203) | diverges |
 | `leaked-cap` | C holds a copy of A's Memory+MAP cap | diverges |
 | `global-job-seq` | completions numbered from the device-wide counter (before #208) | diverges |
+| `unchecked-endpoint-close` | C closes endpoints with the unchecked `Fabric::close` instead of `close_for` | diverges |
 
 **Bug this found.** On its first run the two-world check found a real
 cross-tenant information flow. The completion `job_seq` that SoftNpu
@@ -768,7 +776,12 @@ the harnesses above.
 and other microarchitectural side channels (both worlds are compared on
 values, not time). The kernel binary, assembly, boot and the x86 / RISC-V /
 AArch64 page tables, which QEMU tests cover separately. Concurrency and SMP
-interleavings. Anything outside the stated bounds and table sizes. The
+interleavings. Fabric sends by C to live endpoints: the fabric has no send
+capability and the Hodge quota (64 messages per flow class) is shared per
+fabric, so a sender that knows an endpoint id can fill its queue or drain
+that quota by design. A and B create their endpoints before C acts, so the
+shared endpoint-id counter, which a later create could observe, is not
+exercised. Anything outside the stated bounds and table sizes. The
 two-world check is randomized testing over many seeds, not exhaustive. We
 describe this work as **bounded model-checked**, never as "formally
 verified" or "zero-trust".

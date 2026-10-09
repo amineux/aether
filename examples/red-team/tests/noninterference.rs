@@ -15,6 +15,9 @@ fn attacker_world_is_byte_identical_for_a_and_b() {
     assert_eq!(s.ops, 48 * 21 * 8);
     // C really did things: some of its own ops and jobs were accepted.
     assert!(s.c.accepted > 0 && s.c.jobs_ok > 0, "{:?}", s.c);
+    // C's endpoint churn ran, and some of it was accepted.
+    assert_eq!(s.c.fabric_ops, s.ops);
+    assert!(s.c.fabric_accepted > 0 && s.c.fabric_accepted < s.c.fabric_ops, "{:?}", s.c);
     assert_eq!(
         s.line(),
         format!("[noninterference] worlds=2 seeds=48 ops={} divergences=0", 48 * 21 * 8)
@@ -45,8 +48,16 @@ fn negative_controls_are_caught() {
         Control::RawMapAddr,
         Control::LeakedCap,
         Control::GlobalSeq,
+        Control::UncheckedClose,
     ] {
         let s = check(64, 16, ctl);
         assert!(s.divergences > 0, "control {} not caught", ctl.name());
     }
+}
+
+#[test]
+fn honest_fabric_traffic_round_trips_in_the_idle_world() {
+    let (obs, _) = run_world(None);
+    assert!(obs.iter().any(|o| o.event.contains("fabric_send=Ok(())")), "{obs:#?}");
+    assert!(obs.iter().any(|o| o.event.contains("fabric_recv=Ok(badge=")), "{obs:#?}");
 }
