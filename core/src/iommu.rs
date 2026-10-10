@@ -731,18 +731,28 @@ impl IommuMap {
     ///
     /// That pairing is the product rule: unmap without invalidate is
     /// stale SVA, not zero-copy UVA.
-    pub fn unmap_va(&mut self, sid: StreamId, va: PhysAddr) -> Result<MappedRegion, MapError> {
-        self.unmap_stream(sid.raw(), va)
+    ///
+    /// Tenant-checked (issue #161): needs Memory+MAP and the pin's owning
+    /// tenant; another tenant's pin is [`MapError::CrossTenant`] and stays.
+    pub fn unmap_va(
+        &mut self,
+        cap: &Capability,
+        sid: StreamId,
+        va: PhysAddr,
+    ) -> Result<MappedRegion, MapError> {
+        self.unmap_stream(cap, sid.raw(), va)
     }
 
     /// Fault injection: drop S1 / the pin ledger and **leave** the SSID
     /// ATC. `resolve_ats` then returns a stale PA until [`InvCmd::CfgCd`].
-    /// Not a public submit path.
+    /// Not a public submit path. Tenant-checked like [`Self::unmap_va`].
     pub fn unmap_va_keep_atc(
         &mut self,
+        cap: &Capability,
         sid: StreamId,
         va: PhysAddr,
     ) -> Result<MappedRegion, MapError> {
+        Self::check_cap(cap)?;
         let pos = match self.regions.iter().position(|r| {
             r.as_ref()
                 .is_some_and(|x| Self::offset_in(x, va, true).is_some())
@@ -750,6 +760,9 @@ impl IommuMap {
             Some(p) => p,
             None => return Err(MapError::NotMapped),
         };
+        if self.regions[pos].as_ref().unwrap().tenant != cap.tenant {
+            return Err(MapError::CrossTenant);
+        }
         let mapped = self.regions[pos].as_ref().unwrap().stream_id;
         if mapped != sid.raw() {
             return Err(MapError::WrongStream);
@@ -1630,37 +1643,36 @@ impl IommuMap {
             .find(|r| Self::offset_in(r, iova, true).is_some())
     }
 
-    /// Unmap by IOVA start (or any byte in the window). Stream is implied
-    /// by the disjoint IOVA windows.
-    pub fn unmap(&mut self, iova: PhysAddr) -> Result<MappedRegion, MapError> {
-        let pos = self
-            .regions
-            .iter()
-            .position(|r| {
-                r.as_ref()
-                    .is_some_and(|x| Self::offset_in(x, iova, true).is_some())
-            })
-            .ok_or(MapError::NotMapped)?;
-        let region = self.regions[pos].take().unwrap();
-        self.drop_pin_tables(&region);
-        Ok(region)
+    /// Unmap by IOVA start (or any byte in the window) authorized by a
+    /// Memory+MAP cap. Stream is implied by the disjoint IOVA windows.
+    ///
+    /// Tenant-checked (issue #161): a pin owned by another tenant is
+    /// [`MapError::CrossTenant`] and the mapping is left untouched.
+    pub fn unmap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<MappedRegion, MapError> {
+        self.unmap_for(cap, iova)
     }
 
-    /// Unmap an IOVA only if it belongs to `stream_id`.
+    /// Unmap an IOVA only if it belongs to `stream_id` **and** to the
+    /// tenant of `cap` (Memory+MAP).
+    ///
+    /// Tenant is checked first: another tenant's pin is
+    /// [`MapError::CrossTenant`] whatever `stream_id` says (so a caller
+    /// that knows A's raw SID + IOVA still cannot drop A's pin). For the
+    /// owning tenant a wrong `stream_id` is [`MapError::WrongStream`].
+    /// Refusals leave the mapping untouched (issue #161).
     pub fn unmap_stream(
         &mut self,
+        cap: &Capability,
         stream_id: u32,
         iova: PhysAddr,
     ) -> Result<MappedRegion, MapError> {
-        let pos = match self.regions.iter().position(|r| {
-            r.as_ref()
-                .is_some_and(|x| Self::offset_in(x, iova, true).is_some())
-        }) {
-            Some(p) => p,
-            None => return Err(MapError::NotMapped),
-        };
-        let sid = self.regions[pos].as_ref().unwrap().stream_id;
-        if sid != stream_id {
+        Self::check_cap(cap)?;
+        let pos = self.pin_pos_at_iova(iova).ok_or(MapError::NotMapped)?;
+        let r = self.regions[pos].as_ref().unwrap();
+        if r.tenant != cap.tenant {
+            return Err(MapError::CrossTenant);
+        }
+        if r.stream_id != stream_id {
             return Err(MapError::WrongStream);
         }
         let region = self.regions[pos].take().unwrap();
@@ -1675,19 +1687,20 @@ impl IommuMap {
         iova: PhysAddr,
     ) -> Result<MappedRegion, MapError> {
         Self::check_cap(cap)?;
-        let pos = match self.regions.iter().position(|r| {
-            r.as_ref()
-                .is_some_and(|x| Self::offset_in(x, iova, true).is_some())
-        }) {
-            Some(p) => p,
-            None => return Err(MapError::NotMapped),
-        };
+        let pos = self.pin_pos_at_iova(iova).ok_or(MapError::NotMapped)?;
         if self.regions[pos].as_ref().unwrap().tenant != cap.tenant {
             return Err(MapError::CrossTenant);
         }
         let region = self.regions[pos].take().unwrap();
         self.drop_pin_tables(&region);
         Ok(region)
+    }
+
+    fn pin_pos_at_iova(&self, iova: PhysAddr) -> Option<usize> {
+        self.regions.iter().position(|r| {
+            r.as_ref()
+                .is_some_and(|x| Self::offset_in(x, iova, true).is_some())
+        })
     }
 
     fn drop_pin_tables(&mut self, region: &MappedRegion) {
@@ -2255,6 +2268,77 @@ pub fn run_smmu_cross_tenant_demo() -> SmmuCrossTenantReport {
     }
 }
 
+/// Host red-team report for Soft-SMMU tenant-checked unmap (issue #161).
+///
+/// Sell line `[redteam] attack=smmu-unmap-cross-tenant` — the unmap path
+/// only ([`IommuMap::unmap_stream`] / [`IommuMap::unmap`] /
+/// [`IommuMap::unmap_va`]). Tenant A pins; Tenant B unmaps A's IOVA with
+/// A's raw SID → [`MapError::CrossTenant`], A's pin untouched. The owner
+/// still unmaps. **Not** the bind-time `smmu-cross-tenant` (bind_stream) /
+/// WrongStream / NotMapped lines. Soft SMMU is software; not a hardware
+/// SMMU claim.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SmmuUnmapCrossTenantReport {
+    /// Tenant A bind + pin admits and translates.
+    pub owner_ok: bool,
+    /// B `unmap_stream(A's SID, A's IOVA)` → `MapError::CrossTenant`.
+    pub unmap_stream_refused: bool,
+    /// B `unmap(A's IOVA)` → `MapError::CrossTenant`.
+    pub unmap_refused: bool,
+    /// After both refusals A's pin is still mapped and translates.
+    pub pin_intact: bool,
+    /// Owner A `unmap_stream` still succeeds (sibling contrast).
+    pub owner_unmap_ok: bool,
+}
+
+impl SmmuUnmapCrossTenantReport {
+    pub fn all_ok(&self) -> bool {
+        self.owner_ok
+            && self.unmap_stream_refused
+            && self.unmap_refused
+            && self.pin_intact
+            && self.owner_unmap_ok
+    }
+}
+
+/// Soft-SMMU foreign-tenant unmap → [`MapError::CrossTenant`], pin intact.
+pub fn run_smmu_unmap_cross_tenant_demo() -> SmmuUnmapCrossTenantReport {
+    use crate::caps::{CapKind, CapRights, Capability};
+    use crate::types::{ChipletId, TenantId, TileId};
+
+    let mut iommu = IommuMap::new();
+    let cap_a = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1))
+        .with_generation(1);
+    let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(2))
+        .with_generation(1);
+    let sid = StreamId::accel(ChipletId(0), TileId(3), 1);
+
+    let pin = iommu
+        .map(
+            &cap_a,
+            MapRequest::pin_accel(PhysAddr(0x0200_0000), 0x1000, sid),
+        )
+        .unwrap();
+    let owner_ok = iommu.translate_stream(sid.raw(), PhysAddr(0x0200_0000)).is_some();
+
+    let unmap_stream_refused =
+        iommu.unmap_stream(&cap_b, sid.raw(), pin.iova) == Err(MapError::CrossTenant);
+    let unmap_refused = iommu.unmap(&cap_b, pin.iova) == Err(MapError::CrossTenant);
+    let pin_intact = iommu.len() == 1
+        && iommu.region_at_iova(pin.iova).is_some()
+        && iommu.translate_stream(sid.raw(), PhysAddr(0x0200_0000)).is_some();
+    let owner_unmap_ok = iommu.unmap_stream(&cap_a, sid.raw(), pin.iova).is_ok()
+        && iommu.is_empty();
+
+    SmmuUnmapCrossTenantReport {
+        owner_ok,
+        unmap_stream_refused,
+        unmap_refused,
+        pin_intact,
+        owner_unmap_ok,
+    }
+}
+
 /// Host red-team report for Soft-SMMU unbound-walk StreamAbort refuse.
 ///
 /// Sell line `[redteam] attack=smmu-stream-abort` — existing
@@ -2526,11 +2610,11 @@ mod tests {
         assert!(iommu.translate(PhysAddr(0x2000)).is_some());
         assert!(iommu.translate(PhysAddr(0x2FFF)).is_some());
         assert!(iommu.translate(PhysAddr(0x3000)).is_none());
-        iommu.unmap(r.iova).unwrap();
+        iommu.unmap(&cap, r.iova).unwrap();
         assert!(iommu.translate(PhysAddr(0x2000)).is_none());
         assert_eq!(iommu.resolve(r.iova), None);
         assert_eq!(iommu.len(), 0);
-        assert_eq!(iommu.unmap(r.iova), Err(MapError::NotMapped));
+        assert_eq!(iommu.unmap(&cap, r.iova), Err(MapError::NotMapped));
         // STE stays Bound after unmap; next pin does not re-abort.
         let r2 = iommu
             .map(&cap, MapRequest::pin(PhysAddr(0x4000), 0x1000))
@@ -2626,6 +2710,99 @@ mod tests {
         assert!(r.all_ok());
     }
 
+    fn pin_for_a(iommu: &mut IommuMap, a: &Capability) -> (StreamId, MappedRegion) {
+        let sid = StreamId::accel(ChipletId(0), TileId(3), 1);
+        let r = iommu
+            .map(a, MapRequest::pin_accel(PhysAddr(0x0200_0000), 0x1000, sid))
+            .unwrap();
+        (sid, r)
+    }
+
+    #[test]
+    fn unmap_stream_cross_tenant_refused_pin_intact() {
+        let mut iommu = IommuMap::new();
+        let a = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let b = mem_cap(2, CapRights::MEM_FULL.0, TenantId(2));
+        let (sid, r) = pin_for_a(&mut iommu, &a);
+        // B knows A's raw SID and IOVA (issue #161 repro).
+        assert_eq!(
+            iommu.unmap_stream(&b, sid.raw(), r.iova),
+            Err(MapError::CrossTenant)
+        );
+        // B guessing a wrong SID still gets CrossTenant, not a pin oracle.
+        assert_eq!(
+            iommu.unmap_stream(&b, 5, r.iova),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(iommu.len(), 1);
+        assert_eq!(iommu.region_at_iova(r.iova).map(|x| x.tenant), Some(TenantId(1)));
+        assert!(iommu
+            .translate_stream(sid.raw(), PhysAddr(0x0200_0000))
+            .is_some());
+        assert!(iommu.walk(sid, r.iova).is_ok());
+        // Owner still unmaps.
+        let gone = iommu.unmap_stream(&a, sid.raw(), r.iova).unwrap();
+        assert_eq!(gone.tenant, TenantId(1));
+        assert!(iommu.is_empty());
+        assert!(iommu
+            .translate_stream(sid.raw(), PhysAddr(0x0200_0000))
+            .is_none());
+    }
+
+    #[test]
+    fn unmap_cross_tenant_refused_pin_intact() {
+        let mut iommu = IommuMap::new();
+        let a = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let b = mem_cap(2, CapRights::MEM_FULL.0, TenantId(2));
+        let (sid, r) = pin_for_a(&mut iommu, &a);
+        assert_eq!(iommu.unmap(&b, r.iova), Err(MapError::CrossTenant));
+        // Any byte inside the window is covered too.
+        assert_eq!(
+            iommu.unmap(&b, PhysAddr(r.iova.0 + 0x10)),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(iommu.len(), 1);
+        assert!(iommu
+            .translate_stream(sid.raw(), PhysAddr(0x0200_0000))
+            .is_some());
+        let gone = iommu.unmap(&a, r.iova).unwrap();
+        assert_eq!(gone.tenant, TenantId(1));
+        assert!(iommu.is_empty());
+    }
+
+    #[test]
+    fn unmap_va_cross_tenant_refused_and_needs_mem_cap() {
+        let mut iommu = IommuMap::new();
+        let a = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let b = mem_cap(2, CapRights::MEM_FULL.0, TenantId(2));
+        let (sid, r) = pin_for_a(&mut iommu, &a);
+        assert_eq!(iommu.unmap_va(&b, sid, r.iova), Err(MapError::CrossTenant));
+        assert_eq!(
+            iommu.unmap_va_keep_atc(&b, sid, r.iova),
+            Err(MapError::CrossTenant)
+        );
+        let ep = Capability::new(CapKind::Endpoint, CapRights::EP_FULL, 1, TenantId(1))
+            .with_generation(1);
+        assert_eq!(
+            iommu.unmap_stream(&ep, sid.raw(), r.iova),
+            Err(MapError::NoMemoryCap)
+        );
+        assert_eq!(iommu.unmap(&ep, r.iova), Err(MapError::NoMemoryCap));
+        assert_eq!(iommu.len(), 1);
+        assert!(iommu.unmap_va(&a, sid, r.iova).is_ok());
+    }
+
+    #[test]
+    fn smmu_unmap_cross_tenant_demo_refuses_foreign_unmap() {
+        let r = run_smmu_unmap_cross_tenant_demo();
+        assert!(r.owner_ok, "owner pin translates");
+        assert!(r.unmap_stream_refused, "foreign unmap_stream → CrossTenant");
+        assert!(r.unmap_refused, "foreign unmap → CrossTenant");
+        assert!(r.pin_intact, "A's pin untouched after refusals");
+        assert!(r.owner_unmap_ok, "owner unmap admits");
+        assert!(r.all_ok());
+    }
+
     #[test]
     fn smmu_stream_abort_demo_refuses_unbound_walk() {
         let r = run_smmu_stream_abort_demo();
@@ -2683,7 +2860,10 @@ mod tests {
             iommu.translate_result(4, PhysAddr(0x4000), Some(TenantId(2))),
             Err(MapError::CrossTenant)
         );
-        assert_eq!(iommu.unmap_stream(5, r.iova), Err(MapError::WrongStream));
+        assert_eq!(
+            iommu.unmap_stream(&a, 5, r.iova),
+            Err(MapError::WrongStream)
+        );
         assert_eq!(iommu.unmap_for(&b, r.iova), Err(MapError::CrossTenant));
         let gone = iommu.unmap_for(&a, r.iova).unwrap();
         assert_eq!(gone.stream_id, 4);

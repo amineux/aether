@@ -161,6 +161,15 @@ impl<M: DmaView> SoftNpuDevice<M> {
         Ok(region.iova)
     }
 
+    /// Tenant-checked unmap (Memory+MAP). Another tenant's pin is refused
+    /// (`HalError::Fault`) and left mapped.
+    pub fn unmap_with_cap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap(cap, iova)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
     /// Pin a typed window (SID + Memory+MAP). Not a CXL.mem decoder.
     pub fn map_window_with_cap(
         &mut self,
@@ -339,10 +348,9 @@ impl<M: DmaView> AccelDevice for SoftNpuDevice<M> {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu
-            .unmap(iova)
-            .map(|_| ())
-            .map_err(|_| HalError::Fault)
+        // Tenant-less unmap is refused (issue #161). Use [`Self::unmap_with_cap`].
+        let _ = iova;
+        Err(HalError::NoMemoryCap)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
@@ -368,6 +376,29 @@ mod tests {
 
     fn mem_cap() -> Capability {
         Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1)).with_generation(1)
+    }
+
+    #[test]
+    fn unmap_is_tenant_checked_and_hal_unmap_refused() {
+        let mut backing = [0u8; 256];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut dev = SoftNpuDevice::new(mem);
+        let cap_b = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(2))
+            .with_generation(1);
+        let iova = dev
+            .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        // Tenant-less HAL unmap no longer drops a pin (issue #161).
+        assert_eq!(dev.unmap(iova).unwrap_err(), HalError::NoMemoryCap);
+        // Tenant B cannot unmap tenant A's pin; A's translate still works.
+        assert_eq!(dev.unmap_with_cap(&cap_b, iova).unwrap_err(), HalError::Fault);
+        assert!(dev.translate(PhysAddr(16)).is_some());
+        // Owner unmap works.
+        dev.unmap_with_cap(&mem_cap(), iova).unwrap();
+        assert!(dev.translate(PhysAddr(16)).is_none());
     }
 
     #[test]
