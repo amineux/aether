@@ -15,8 +15,16 @@
 //! - the bitmap caps at 128 MiB of frames.
 //!
 //! If the mmap is missing or empty after clipping, we use the arch
-//! window and say so on the serial line. RISC-V / aarch64 have no
-//! Multiboot; they take that fallback on purpose (no FDT parser).
+//! window and say so on the serial line.
+//!
+//! RISC-V / aarch64 have no Multiboot. Their trampolines stash the DTB
+//! pointer in [`BOOT_DTB_PA`] (riscv: OpenSBI `a1`; aarch64: `x0`, which
+//! QEMU leaves 0 for an ELF `-kernel`, so we look at the RAM base where
+//! QEMU virt places the blob for bare-metal guests). `aether_core::fdt`
+//! parses `/memory` minus reservations; the plan keeps RAM above the arch
+//! floor (`FRAME_START`: firmware + kernel image live below), below the
+//! Normal identity limit, minus the DTB's own pages, capped at 128 MiB.
+//! A refused DTB prints its named error and falls back to the window.
 
 pub mod frame;
 pub mod heap;
@@ -25,6 +33,17 @@ pub mod paging;
 use crate::console::{self, write_hex, write_str, write_u64};
 use crate::println;
 use aether_core::mmap::{plan_frames, span, MemoryMap};
+
+#[cfg(not(target_arch = "x86_64"))]
+use aether_core::fdt::{parse_fdt_memory, parse_header, plan_fdt_frames, FdtMemory, FDT_HEADER_LEN};
+#[cfg(not(target_arch = "x86_64"))]
+use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Physical DTB address written by the riscv64 / aarch64 trampoline before
+/// any Rust runs (0 = none handed over). Read once in [`init`].
+#[cfg(not(target_arch = "x86_64"))]
+#[no_mangle]
+pub static BOOT_DTB_PA: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(target_arch = "x86_64")]
 use aether_core::mmap::{
@@ -43,6 +62,8 @@ const MAX_MMAP: usize = 2048;
 #[cfg_attr(not(target_arch = "x86_64"), allow(dead_code))]
 enum FramePlan {
     Mmap(MemoryMap),
+    #[cfg(not(target_arch = "x86_64"))]
+    Fdt { mem: FdtMemory, pa: u64 },
     Fallback { why: &'static str, lo: u64, hi: u64 },
 }
 
@@ -62,6 +83,8 @@ pub fn init() {
                 frame::init_from_regions(planned.regions());
             }
         }
+        #[cfg(not(target_arch = "x86_64"))]
+        FramePlan::Fdt { mem, pa } => init_fdt(mem, *pa),
         FramePlan::Fallback { why, lo, hi } => {
             write_str("[mm] mmap: fallback (");
             write_str(why);
@@ -119,10 +142,21 @@ fn discover() -> FramePlan {
     let (lo, hi) = crate::arch::frame_window();
     #[cfg(not(target_arch = "x86_64"))]
     {
-        FramePlan::Fallback {
-            why: "no Multiboot on this HAL",
-            lo,
-            hi,
+        match read_fdt() {
+            Ok((mem, pa)) => FramePlan::Fdt { mem, pa },
+            Err((why, pa)) => {
+                write_str("[mm] fdt refused (");
+                write_str(why);
+                write_str(") dtb=");
+                write_hex(pa);
+                write_str("; using fallback window");
+                console::nl();
+                FramePlan::Fallback {
+                    why: "fdt refused; no Multiboot on this HAL",
+                    lo,
+                    hi,
+                }
+            }
         }
     }
     #[cfg(target_arch = "x86_64")]
@@ -132,6 +166,106 @@ fn discover() -> FramePlan {
             Err(why) => FramePlan::Fallback { why, lo, hi },
         }
     }
+}
+
+/// Borrow `[pa, pa + len)` of physical RAM as bytes, or `None` if the range
+/// leaves the arch RAM window the trampoline identity-maps as Normal memory.
+#[cfg(not(target_arch = "x86_64"))]
+fn phys_bytes(pa: u64, len: usize) -> Option<&'static [u8]> {
+    let (base, limit) = crate::arch::ram_window();
+    let end = pa.checked_add(len as u64)?;
+    if pa < base || end > limit || len == 0 {
+        return None;
+    }
+    // SAFETY: `[pa, end)` lies inside the arch RAM window, which the
+    // trampoline identity-maps as readable Normal memory (riscv Sv39 1 GiB
+    // leaves; aarch64 L1 block [1]). It is only read. Nothing writes the
+    // DTB while the slice lives: this runs on the boot hart before the frame
+    // allocator exists, and `plan_fdt_frames` keeps the DTB's pages out of
+    // the allocator afterwards. The pointer itself comes from firmware
+    // (OpenSBI / QEMU); a pointer into a RAM hole would fault, not corrupt.
+    Some(unsafe { core::slice::from_raw_parts(pa as *const u8, len) })
+}
+
+/// Find, size, and parse the DTB. Errors carry the refusal name and the
+/// address that was tried.
+#[cfg(not(target_arch = "x86_64"))]
+fn read_fdt() -> Result<(FdtMemory, u64), (&'static str, u64)> {
+    let handed = BOOT_DTB_PA.load(Ordering::Relaxed);
+    #[cfg(target_arch = "aarch64")]
+    let pa = if handed == 0 {
+        // QEMU virt, ELF -kernel: x0 is 0 and the DTB sits at the RAM base
+        // (if it fits below the image; the image is linked at 0x40200000).
+        let (base, _) = crate::arch::ram_window();
+        write_str("[mm] fdt: x0=0, trying QEMU virt RAM base ");
+        write_hex(base);
+        console::nl();
+        base
+    } else {
+        handed
+    };
+    #[cfg(target_arch = "riscv64")]
+    let pa = handed;
+    if pa == 0 {
+        return Err(("NoDtb", 0));
+    }
+    let hdr = phys_bytes(pa, FDT_HEADER_LEN).ok_or(("DtbOutsideRam", pa))?;
+    let h = parse_header(hdr).map_err(|e| (e.name(), pa))?;
+    let blob = phys_bytes(pa, h.totalsize).ok_or(("DtbOutsideRam", pa))?;
+    let mem = parse_fdt_memory(blob).map_err(|e| (e.name(), pa))?;
+    Ok((mem, pa))
+}
+
+#[cfg(not(target_arch = "x86_64"))]
+fn init_fdt(mem: &FdtMemory, pa: u64) {
+    write_str("[mm] fdt mmap ok dtb=");
+    write_hex(pa);
+    write_str(" totalsize=");
+    write_u64(mem.totalsize as u64);
+    write_str(" memory=");
+    write_u64(mem.n_memory as u64);
+    write_str(" reserved=");
+    write_u64(mem.n_reserved as u64);
+    write_str(" usable=");
+    write_u64(mem.map.n_usable as u64);
+    write_str(" bytes=");
+    write_hex(mem.usable_bytes());
+    console::nl();
+    print_mmap(&mem.map);
+    let (lo, hi) = crate::arch::frame_window();
+    let (_, limit) = crate::arch::ram_window();
+    let planned = match plan_fdt_frames(mem, pa, lo, limit) {
+        Ok(p) if !p.is_empty() => p,
+        Ok(_) => {
+            println!("[mm] fdt: no usable RAM above the boot floor; fallback arch window");
+            print_window("fallback", lo, hi);
+            frame::init(lo, hi);
+            return;
+        }
+        Err(e) => {
+            write_str("[mm] fdt plan refused (");
+            write_str(e.name());
+            write_str("); fallback arch window");
+            console::nl();
+            print_window("fallback", lo, hi);
+            frame::init(lo, hi);
+            return;
+        }
+    };
+    write_str("[mm] frames fdt floor=");
+    write_hex(lo);
+    write_str(" limit=");
+    write_hex(limit);
+    write_str(" cap=128MiB regions=");
+    write_u64(planned.n_usable as u64);
+    if let Some((a, b)) = span(&planned) {
+        write_str(" ");
+        write_hex(a);
+        write_str("-");
+        write_hex(b);
+    }
+    console::nl();
+    frame::init_from_regions(planned.regions());
 }
 
 #[cfg(target_arch = "x86_64")]

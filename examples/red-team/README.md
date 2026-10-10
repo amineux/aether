@@ -213,6 +213,10 @@ an Endpoint cap without `WRITE`, or a forged sender tag → `FabricError::NoSuch
 missing id); nothing queued, neither tenant's Hodge quota moves; with Endpoint+WRITE on A's endpoint B's send
 admits and is charged to B. The kernel's `SYS_SEND` / `SYS_RECV` use `send_as` / `recv_as`. Before Round 25 any
 tenant that knew an id could send. Not fabric-recv-foreign / fabric-queue-full; software path only).
+FDT needles (Round 26): `[redteam] attack=fdt-bad-magic|fdt-truncated|fdt-bad-version|fdt-too-large|fdt-bad-offset|fdt-bad-token|fdt-bad-string|fdt-too-deep|fdt-bad-cells|fdt-bad-region|fdt-no-memory|fdt-too-many-regions result=refused`
+(`run_fdt_refusal_demo`: one malformed DTB per `FdtError` variant, mutated from a QEMU-virt-shaped fixture,
+refuses with exactly that variant; the valid fixture admits with the expected usable range. This is the boot
+parser riscv64 / aarch64 use for `[mm] fdt mmap ok`; firmware input, not a tenant path; parsed and refused, not verified).
 Fabric-quota-drain needle: `[redteam] attack=fabric-quota-drain result=refused`
 (tenant C sends to its own endpoint until its Gradient budget (64) is spent; further sends →
 `FabricError::Hodge(HodgeError::QuotaExceeded)`, nothing queued; tenants A and B keep full budgets and still
