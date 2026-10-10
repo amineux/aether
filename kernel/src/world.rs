@@ -45,6 +45,9 @@ struct Inner {
     completion: Option<UserCompletion>,
     last_arena: Option<Arena>,
     mapped_va: u64,
+    /// Memory+MAP cap used for the last `sys_map` pin; `sys_unmap` presents
+    /// it so unmap is tenant-checked (issue #161). Not a new syscall field.
+    mapped_cap: Option<Capability>,
     part: PartitionProfile,
     timeline: Timeline,
 }
@@ -125,6 +128,7 @@ pub fn init() {
         completion: None,
         last_arena: None,
         mapped_va: 0,
+        mapped_cap: None,
         part,
         timeline,
     });
@@ -362,7 +366,10 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
             .map_err(|_| SysError::Fault)
     })?;
     paging::allow_user_2m(va);
-    with(|w| w.mapped_va = iova.0);
+    with(|w| {
+        w.mapped_va = iova.0;
+        w.mapped_cap = Some(cap);
+    });
     write_str("[mm] iommu map mem cptr pa=");
     write_hex(va);
     write_str(" iova=");
@@ -373,10 +380,20 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
+    // this is not munmap of `SYS_MMAP` pages. The Result is the existing
+    // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
+    // TODO(sys_unmap): World stores only the last `sys_map` Memory+MAP cap.
+    // A second pin cannot be named. Do not add a syscall for that.
     with(|w| {
-        let _ = w.npu.unmap(PhysAddr(vaddr));
-    });
-    Ok(0)
+        let cap = w.mapped_cap.ok_or(SysError::NoCap)?;
+        w.npu
+            .unmap_with_cap(&cap, PhysAddr(vaddr))
+            .map_err(|_| SysError::Fault)?;
+        w.mapped_va = 0;
+        w.mapped_cap = None;
+        Ok(0)
+    })
 }
 
 pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysError> {

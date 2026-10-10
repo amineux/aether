@@ -535,6 +535,15 @@ impl<M: DmaView> IreeShapedCp<M> {
         Ok(region.iova)
     }
 
+    /// Tenant-checked unmap (Memory+MAP). Another tenant's pin is refused
+    /// and left mapped.
+    pub fn unmap_with_cap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap(cap, iova)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
     /// Consume a frozen `IreeHalCmd` image (PJRT / IREE HAL path).
     /// `AccelDevice::submit` packs then calls this; the job record is
     /// kept for guest-PA DMA after IOVA resolve.
@@ -781,7 +790,9 @@ impl<M: DmaView> AccelDevice for IreeShapedCp<M> {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu.unmap(iova).map(|_| ()).map_err(map_hal_error)
+        // Tenant-less unmap is refused (issue #161). Use [`Self::unmap_with_cap`].
+        let _ = iova;
+        Err(HalError::NoMemoryCap)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {

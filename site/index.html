@@ -246,6 +246,14 @@
 <a href="https://github.com/amineux/aether/actions/runs/37059229955">Inspect the dependency audit ↗</a>
 </div>
 </article>
+<article>
+<span class="check">↗</span>
+<div>
+<h3>Partner-runnable host report</h3>
+<p><code>make eval-run</code> writes commit, toolchain, lockfile hash, SoftGreenCtx milli bandwidth for two tenants, and named refusal checks. It does not prove hardware isolation, a customer, or an advantage over MIG.</p>
+<a href="https://github.com/amineux/aether/blob/main/docs/business/EVAL_RUN.md">Read the field map ↗</a>
+</div>
+</article>
 </div>
 <aside class="terminal">
 <div class="terminal-top">
@@ -265,6 +273,7 @@ cd aether
 cargo test --workspace --locked
 make diligence-demo
 make red-team
+make eval-run
 <span class="terminal-comment"># Capture results with environment metadata</span>
 python3 scripts/collect_evidence.py</code>
 </pre>
@@ -418,7 +427,7 @@ python3 scripts/collect_evidence.py</code>
 <h3>The risks we’re working to resolve</h3>
 <details open>
 <summary>Hardware &amp; security boundaries</summary>
-<p>Real accelerator isolation and runtime integration remain unvalidated. <a href="https://github.com/amineux/aether/issues/161">Open issue #161</a> tracks unchecked raw unmap helpers; tenant reachability is not established. The bounded fuzz excludes those kernel-trust primitives. No formal verification is claimed.</p>
+<p>Real accelerator isolation and runtime integration remain unvalidated. <a href="https://github.com/amineux/aether/issues/161">Issue #161</a> (unchecked raw unmap helpers) is fixed in the Soft SMMU: unmap now requires a Memory+MAP capability and a foreign tenant's pin is refused with <code>CrossTenant</code>; the bounded fuzz now exercises these paths. No formal verification is claimed.</p>
 </details>
 <details>
 <summary>Demand &amp; purchasing</summary>

@@ -121,7 +121,7 @@ mod tests {
             .bind_and_map_va(&mem_cap(), sid, SVA_MM, PhysAddr(SVA_VA), PhysAddr(0), 256)
             .unwrap();
         d.submit(&job).unwrap();
-        d.unmap_va(sid, va).unwrap();
+        d.unmap_va(&mem_cap(), sid, va).unwrap();
         assert_eq!(d.iommu.atc_len(), 0);
         let cpl = d.service().unwrap();
         assert_eq!(
@@ -152,7 +152,7 @@ mod tests {
         // Fill ATC as service would, then drop S1 without TLB invalidate.
         d.iommu.set_sid_bound(sid).unwrap();
         let _ = d.iommu.resolve_ats(sid.raw(), va).unwrap();
-        d.unmap_va_keep_atc(sid, va).unwrap();
+        d.unmap_va_keep_atc(&mem_cap(), sid, va).unwrap();
         assert!(d.iommu.atc_len() > 0, "stale SSID TLB remains");
         let cpl = d.service().unwrap();
         assert_eq!(

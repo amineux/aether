@@ -87,7 +87,7 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 2 | `send(ep_cptr, msg_ptr)` | `require(Endpoint, WRITE)` then fabric.send |
 | 3 | `recv(ep_cptr, msg_out)` | `require(Endpoint, READ)`; blocks if empty |
 | 4 | `map(mem_cptr, vaddr, flags)` | `require(Memory, MAP)`; USER bit on 2 MiB |
-| 5 | `unmap(vaddr, len)` | Accepted; no-op unmap in this cut |
+| 5 | `unmap(vaddr, len)` | Same number and `(vaddr, len)` args. Drops the last `map` Soft-SMMU pin when `vaddr` hits that pin and the stored Memory+MAP cap authorizes it. Returns `0`, `-NoCap` if no pin cap is stored, or `-Fault` if the unmap is refused or missing. `len` is ignored. Not `munmap` of `SYS_MMAP` pages. |
 | 6 | `accel_submit(queue_cptr, job_ptr)` | `require(AccelQueue, SUBMIT)` |
 | 7 | `accel_wait(queue_cptr, cpl_out)` | `require(AccelQueue, WAIT)`; blocks |
 | 8 | `arena_alloc(size, flags, bank)` | Mints a Memory cap |
@@ -112,7 +112,10 @@ Numbers **0–10 stay frozen**. RISC-V / aarch64 do not map the VA.
 
 `SYS_MMAP` is a **documented subset**, not POSIX `mmap`: no file,
 no `MAP_SHARED`, no `PROT_*` / `MAP_*` bits, no `munmap` of
-individual pages (`SYS_UNMAP` stays a no-op). The kernel allocates
+individual pages (`SYS_UNMAP` does not unmap `SYS_MMAP` pages; those
+pages are not DMA-pinned). `SYS_UNMAP` does return the Soft-SMMU pin
+result on the existing negative `SysError` channel (number and args
+unchanged; a miss is not a silent success). The kernel allocates
 4 KiB frames and maps them USER+RW in the caller's PML4 / satp /
 TTBR0. `addr` 0 is first-fit in a fixed grow window
 (`USER_MMAP_BASE` `0x02C0_0000` on x86, after virtio-blk;

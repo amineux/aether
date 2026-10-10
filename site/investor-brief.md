@@ -51,9 +51,18 @@ No verified customers, revenue, hardware validation or production certification
 are claimed. Soft SMMU is software; partner NPU driver is a no-op stub;
 IREE/PJRT-shaped interfaces are research shims, not production plugins.
 No formal verification or demonstrated commercial moat.
-Open issue #161 tracks unchecked raw unmap helpers; tenant reachability is not
-established and bounded fuzz excludes those helpers:
+Issue #161 (unchecked raw unmap helpers) is fixed in the Soft SMMU: unmap now
+requires a Memory+MAP capability and a foreign tenant's pin is refused with
+`CrossTenant`. The bounded seeded fuzz now exercises these unmap paths. That is
+bounded test evidence, not formal verification; Soft SMMU is software:
 https://github.com/amineux/aether/issues/161
+
+A design partner can run `make eval-run` on a Linux host. The JSON
+records the commit, toolchain, Cargo.lock hash, SoftGreenCtx integer
+milli bandwidth for two tenants (solo, 70/30, unpartitioned), and named
+refusal checks. That run is a software model. It is not hardware
+validation, a customer result, or a claim of performance superiority
+versus MIG. Field map: docs/business/EVAL_RUN.md.
 
 Founder-led by repository maintainer amineux: https://github.com/amineux
 Start a conversation through the maintainer's GitHub profile. Keep proprietary
