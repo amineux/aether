@@ -4,6 +4,67 @@
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).
 
+**A capability-based isolation prototype for shared AI accelerators.**
+
+The initial buyer is a small accelerator/NPU company building a runtime that
+must contain workload faults and protect tenant memory. Aether provides
+executable software models, named refusal tests and a frozen command interface
+for evaluating those boundaries.
+
+**Stage: research prototype.** The software demos are real; customer demand,
+revenue, hardware enforcement and production readiness are unverified.
+
+## Start here
+
+| Audience | Next step |
+| --- | --- |
+| Investor | [Five-minute pitch and demo](docs/pitch/INVESTOR_DEMO.md) |
+| Runtime team | [Evaluation scope](docs/business/EVALUATION.md) and [technical worksheet](docs/DESIGN_WIN.md) |
+| Engineer | Run the host checks below, then expand the technical reference |
+| Contributor | Keep one task per branch; inspect open PRs before changing shared APIs |
+
+## Run the investor evaluation
+
+Requires Git, Python 3, GNU Make and a Rust toolchain compatible with the
+workspace (Rust 1.83+ on x86_64 Linux). No accelerator hardware or QEMU is
+required for this host evaluation.
+
+```bash
+cargo test --workspace --locked
+make diligence-demo
+make red-team
+```
+
+To capture the complete evaluation and a portable report from a **clean commit**:
+
+```bash
+python3 scripts/collect_evidence.py --output /tmp/aether-evaluation
+python3 scripts/investor_report.py /tmp/aether-evaluation
+# Open /tmp/aether-evaluation/investor-report.html in a browser.
+```
+
+Choose a new output directory for each run. The report checks required commands,
+clean source provenance and log checksums. Failed or incomplete checks remain
+visible; a verified host bundle is not a production-readiness verdict.
+CI retains the report and adjacent logs in its host-evidence artifact.
+
+## What we are building toward
+
+The first offer is a bounded isolation evaluation: one customer workload,
+one environment, an agreed baseline and measurable acceptance criteria.
+The next proof is independent reproduction and a paid pilot, followed by reuse
+with a second buyer. See the [90-day evidence plan](docs/MATURITY.md) and
+[investor evidence index](docs/business/INVESTOR_EVIDENCE.md).
+
+New research demonstrations, additional architectures and speculative roadmap
+features are outside this initial evaluation unless they resolve a measured
+risk or an agreed buyer requirement. Existing research remains available below.
+The `IreeHalCmd` v1 packet stays frozen pending a real partner table and a
+coordinated specification/implementation update.
+
+<details>
+<summary><strong>Technical reference, research demos and historical roadmaps</strong></summary>
+
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
 **Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
@@ -412,3 +473,5 @@ review offline.
 ## License
 
 MIT OR Apache-2.0.
+
+</details>
