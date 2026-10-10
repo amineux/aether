@@ -927,3 +927,8 @@ isolation-matrix:
 	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
 	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
 	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"
+
+# Bounded all-or-nothing DMA admission; host software CP execution.
+.PHONY: atomic-pipeline
+atomic-pipeline:
+	cargo run --locked --quiet -p aether-drivers --example atomic_pipeline

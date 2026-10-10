@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod abi;
+pub mod admission;
 pub mod accel;
 pub mod activity;
 pub mod arena;
