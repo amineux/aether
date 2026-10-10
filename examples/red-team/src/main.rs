@@ -168,6 +168,18 @@ const LINE_FABRIC_STALE_ENDPOINT: &str = "[redteam] attack=fabric-stale-endpoint
 const LINE_FABRIC_RECV_FOREIGN: &str = "[redteam] attack=fabric-recv-foreign result=refused";
 const LINE_FABRIC_SEND_NO_CAP: &str = "[redteam] attack=fabric-send-no-cap result=refused";
 const LINE_FABRIC_QUOTA_DRAIN: &str = "[redteam] attack=fabric-quota-drain result=refused";
+const LINE_FDT_BAD_MAGIC: &str = "[redteam] attack=fdt-bad-magic result=refused";
+const LINE_FDT_TRUNCATED: &str = "[redteam] attack=fdt-truncated result=refused";
+const LINE_FDT_BAD_VERSION: &str = "[redteam] attack=fdt-bad-version result=refused";
+const LINE_FDT_TOO_LARGE: &str = "[redteam] attack=fdt-too-large result=refused";
+const LINE_FDT_BAD_OFFSET: &str = "[redteam] attack=fdt-bad-offset result=refused";
+const LINE_FDT_BAD_TOKEN: &str = "[redteam] attack=fdt-bad-token result=refused";
+const LINE_FDT_BAD_STRING: &str = "[redteam] attack=fdt-bad-string result=refused";
+const LINE_FDT_TOO_DEEP: &str = "[redteam] attack=fdt-too-deep result=refused";
+const LINE_FDT_BAD_CELLS: &str = "[redteam] attack=fdt-bad-cells result=refused";
+const LINE_FDT_BAD_REGION: &str = "[redteam] attack=fdt-bad-region result=refused";
+const LINE_FDT_NO_MEMORY: &str = "[redteam] attack=fdt-no-memory result=refused";
+const LINE_FDT_TOO_MANY_REGIONS: &str = "[redteam] attack=fdt-too-many-regions result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
@@ -261,6 +273,18 @@ struct RedTeamReport {
     fabric_recv_foreign: bool,
     fabric_send_no_cap: bool,
     fabric_quota_drain: bool,
+    fdt_bad_magic: bool,
+    fdt_truncated: bool,
+    fdt_bad_version: bool,
+    fdt_too_large: bool,
+    fdt_bad_offset: bool,
+    fdt_bad_token: bool,
+    fdt_bad_string: bool,
+    fdt_too_deep: bool,
+    fdt_bad_cells: bool,
+    fdt_bad_region: bool,
+    fdt_no_memory: bool,
+    fdt_too_many_regions: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
     firewall_ident_pa: bool,
@@ -351,6 +375,18 @@ impl RedTeamReport {
             && self.fabric_recv_foreign
             && self.fabric_send_no_cap
             && self.fabric_quota_drain
+            && self.fdt_bad_magic
+            && self.fdt_truncated
+            && self.fdt_bad_version
+            && self.fdt_too_large
+            && self.fdt_bad_offset
+            && self.fdt_bad_token
+            && self.fdt_bad_string
+            && self.fdt_too_deep
+            && self.fdt_bad_cells
+            && self.fdt_bad_region
+            && self.fdt_no_memory
+            && self.fdt_too_many_regions
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
             && self.firewall_ident_pa
@@ -436,6 +472,7 @@ fn run_redteam() -> RedTeamReport {
     let fabric_recv_foreign = aether_core::fabric::run_fabric_recv_foreign_demo();
     let fabric_send_no_cap = aether_core::fabric::run_fabric_send_no_cap_demo();
     let fabric_quota_drain = aether_core::fabric::run_fabric_quota_drain_demo();
+    let fdt = aether_core::fdt::run_fdt_refusal_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
     let firewall = run_firewall_demo();
@@ -611,6 +648,21 @@ fn run_redteam() -> RedTeamReport {
         fabric_send_no_cap: fabric_send_no_cap.all_ok(),
         // One sender spends its own Hodge budget → Hodge(QuotaExceeded); other tenants keep full budgets.
         fabric_quota_drain: fabric_quota_drain.all_ok(),
+        // DTB memory-map parser (riscv64 / aarch64 boot): one malformed blob per FdtError
+        // variant refuses with exactly that variant; the valid QEMU-virt-shaped fixture admits.
+        // Boot-time parser, not a tenant path; refused, not verified.
+        fdt_bad_magic: fdt.valid_ok && fdt.bad_magic, // FdtError::BadMagic: header magic flipped
+        fdt_truncated: fdt.valid_ok && fdt.truncated, // FdtError::Truncated: blob one byte short of totalsize
+        fdt_bad_version: fdt.valid_ok && fdt.bad_version, // FdtError::BadVersion: version 16 (no size_dt_struct)
+        fdt_too_large: fdt.valid_ok && fdt.too_large, // FdtError::TooLarge: totalsize past 2 MiB
+        fdt_bad_offset: fdt.valid_ok && fdt.bad_offset, // FdtError::BadOffset: strings block past totalsize
+        fdt_bad_token: fdt.valid_ok && fdt.bad_token, // FdtError::BadToken: FDT_END replaced by an undefined token
+        fdt_bad_string: fdt.valid_ok && fdt.bad_string, // FdtError::BadString: property name offset past the strings block
+        fdt_too_deep: fdt.valid_ok && fdt.too_deep, // FdtError::TooDeep: nodes nested past FDT_MAX_DEPTH
+        fdt_bad_cells: fdt.valid_ok && fdt.bad_cells, // FdtError::BadCells: root #address-cells = 3
+        fdt_bad_region: fdt.valid_ok && fdt.bad_region, // FdtError::BadRegion: memory reg base + size overflows u64
+        fdt_no_memory: fdt.valid_ok && fdt.no_memory, // FdtError::NoMemory: no /memory node
+        fdt_too_many_regions: fdt.valid_ok && fdt.too_many_regions, // FdtError::TooManyRegions: 17 memory ranges (MAX_REGIONS = 16)
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
@@ -798,6 +850,18 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fabric_recv_foreign, LINE_FABRIC_RECV_FOREIGN);
     emit(r.fabric_send_no_cap, LINE_FABRIC_SEND_NO_CAP);
     emit(r.fabric_quota_drain, LINE_FABRIC_QUOTA_DRAIN);
+    emit(r.fdt_bad_magic, LINE_FDT_BAD_MAGIC);
+    emit(r.fdt_truncated, LINE_FDT_TRUNCATED);
+    emit(r.fdt_bad_version, LINE_FDT_BAD_VERSION);
+    emit(r.fdt_too_large, LINE_FDT_TOO_LARGE);
+    emit(r.fdt_bad_offset, LINE_FDT_BAD_OFFSET);
+    emit(r.fdt_bad_token, LINE_FDT_BAD_TOKEN);
+    emit(r.fdt_bad_string, LINE_FDT_BAD_STRING);
+    emit(r.fdt_too_deep, LINE_FDT_TOO_DEEP);
+    emit(r.fdt_bad_cells, LINE_FDT_BAD_CELLS);
+    emit(r.fdt_bad_region, LINE_FDT_BAD_REGION);
+    emit(r.fdt_no_memory, LINE_FDT_NO_MEMORY);
+    emit(r.fdt_too_many_regions, LINE_FDT_TOO_MANY_REGIONS);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
@@ -941,6 +1005,18 @@ mod tests {
         assert!(r.fabric_recv_foreign, "non-owner recv / pending → NoSuchEndpoint");
         assert!(r.fabric_send_no_cap, "send without Endpoint+WRITE → NoSuchEndpoint");
         assert!(r.fabric_quota_drain, "sender past its own Hodge budget → QuotaExceeded, others unaffected");
+        assert!(r.fdt_bad_magic, "header magic flipped → FdtError::BadMagic");
+        assert!(r.fdt_truncated, "blob one byte short of totalsize → FdtError::Truncated");
+        assert!(r.fdt_bad_version, "version 16 (no size_dt_struct) → FdtError::BadVersion");
+        assert!(r.fdt_too_large, "totalsize past 2 MiB → FdtError::TooLarge");
+        assert!(r.fdt_bad_offset, "strings block past totalsize → FdtError::BadOffset");
+        assert!(r.fdt_bad_token, "FDT_END replaced by an undefined token → FdtError::BadToken");
+        assert!(r.fdt_bad_string, "property name offset past the strings block → FdtError::BadString");
+        assert!(r.fdt_too_deep, "nodes nested past FDT_MAX_DEPTH → FdtError::TooDeep");
+        assert!(r.fdt_bad_cells, "root #address-cells = 3 → FdtError::BadCells");
+        assert!(r.fdt_bad_region, "memory reg base + size overflows u64 → FdtError::BadRegion");
+        assert!(r.fdt_no_memory, "no /memory node → FdtError::NoMemory");
+        assert!(r.fdt_too_many_regions, "17 memory ranges (MAX_REGIONS = 16) → FdtError::TooManyRegions");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -1190,6 +1266,18 @@ mod tests {
         assert_eq!(LINE_FABRIC_RECV_FOREIGN, "[redteam] attack=fabric-recv-foreign result=refused");
         assert_eq!(LINE_FABRIC_SEND_NO_CAP, "[redteam] attack=fabric-send-no-cap result=refused");
         assert_eq!(LINE_FABRIC_QUOTA_DRAIN, "[redteam] attack=fabric-quota-drain result=refused");
+        assert_eq!(LINE_FDT_BAD_MAGIC, "[redteam] attack=fdt-bad-magic result=refused");
+        assert_eq!(LINE_FDT_TRUNCATED, "[redteam] attack=fdt-truncated result=refused");
+        assert_eq!(LINE_FDT_BAD_VERSION, "[redteam] attack=fdt-bad-version result=refused");
+        assert_eq!(LINE_FDT_TOO_LARGE, "[redteam] attack=fdt-too-large result=refused");
+        assert_eq!(LINE_FDT_BAD_OFFSET, "[redteam] attack=fdt-bad-offset result=refused");
+        assert_eq!(LINE_FDT_BAD_TOKEN, "[redteam] attack=fdt-bad-token result=refused");
+        assert_eq!(LINE_FDT_BAD_STRING, "[redteam] attack=fdt-bad-string result=refused");
+        assert_eq!(LINE_FDT_TOO_DEEP, "[redteam] attack=fdt-too-deep result=refused");
+        assert_eq!(LINE_FDT_BAD_CELLS, "[redteam] attack=fdt-bad-cells result=refused");
+        assert_eq!(LINE_FDT_BAD_REGION, "[redteam] attack=fdt-bad-region result=refused");
+        assert_eq!(LINE_FDT_NO_MEMORY, "[redteam] attack=fdt-no-memory result=refused");
+        assert_eq!(LINE_FDT_TOO_MANY_REGIONS, "[redteam] attack=fdt-too-many-regions result=refused");
         assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
@@ -1374,6 +1462,18 @@ mod tests {
             LINE_FABRIC_RECV_FOREIGN,
             LINE_FABRIC_SEND_NO_CAP,
             LINE_FABRIC_QUOTA_DRAIN,
+            LINE_FDT_BAD_MAGIC,
+            LINE_FDT_TRUNCATED,
+            LINE_FDT_BAD_VERSION,
+            LINE_FDT_TOO_LARGE,
+            LINE_FDT_BAD_OFFSET,
+            LINE_FDT_BAD_TOKEN,
+            LINE_FDT_BAD_STRING,
+            LINE_FDT_TOO_DEEP,
+            LINE_FDT_BAD_CELLS,
+            LINE_FDT_BAD_REGION,
+            LINE_FDT_NO_MEMORY,
+            LINE_FDT_TOO_MANY_REGIONS,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
             LINE_FIREWALL_IDENT_PA,

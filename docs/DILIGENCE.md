@@ -225,7 +225,7 @@ gaps:
 | ChipletFleet | KILL as calendar. Thin `ChipletTaskScope` host stub (Soft≠Strict sell line `[scope] soft≠strict`); not a Year-1 pillar, not a partner ask |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW + growable anon `SYS_MMAP` + identity teardown landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write; `USER_MMAP_BASE` `0x02C0_0000` first-fit 4 KiB). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands only; SoftNPU is Soft SMMU + HH. Not a secret slide, not Meltdown-complete, not POSIX `mmap` / `fork` |
-| No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
+| FDT mmap is a small parser | Since Round 26 RISC-V / aarch64 size frames from the DTB `/memory` nodes (`core/src/fdt.rs`, host-tested; `[mm] fdt mmap ok` on both QEMU CI boots). Reads only header, memreserve, root cells, `/memory*` and `/reserved-memory` `reg`; no `status`, no dynamic reserved pools, no hotplug. A malformed DTB is refused with a named `FdtError` and the boot prints that and uses the old fixed window. aarch64 finds the DTB at the QEMU virt RAM base because an ELF `-kernel` gets `x0 = 0`. Parsed and refused, not verified |
 | No CXL.mem | `TypedWindow` (`CxlMemStub`) is a host-tested pin/map stub; `MemorySpace::CxlRegion` is still a typed place. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines; SoftCCT is last-writer elision on that model; fence **counts** only, not a latency claim |
@@ -399,6 +399,7 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Fabric stale endpoint after slot reuse | `run_fabric_stale_endpoint_demo` — a closed endpoint's slot is reused by another tenant; the old `EndpointId` → `FabricError::NoSuchEndpoint` on send / recv / pending / owner / close (ids never reissued); new owner's queued message untouched; no Hodge quota charged. **Not** fabric-queue-full / CapTable | refused |
 | Fabric recv from a foreign endpoint | `run_fabric_recv_foreign_demo` — `Fabric::recv_as` / `pending_as` by a non-owner → `FabricError::NoSuchEndpoint`, identical to a missing id; owner's queued message intact. Kernel `SYS_RECV` uses `recv_as`. **Not** fabric-send-no-cap / fabric-stale-endpoint | refused |
 | Fabric send without the right to send | `run_fabric_send_no_cap_demo` — `Fabric::send_as` with no cap, wrong-object cap, no-`WRITE` cap, or forged sender tag → `FabricError::NoSuchEndpoint`; nothing queued, no quota moved; Endpoint+WRITE admits and charges the sender. Kernel `SYS_SEND` uses `send_as`. **Not** fabric-recv-foreign / fabric-queue-full | refused |
+| Malformed device tree (boot) | `run_fdt_refusal_demo` — one malformed DTB per `FdtError` variant, built from a QEMU-virt-shaped fixture: flipped magic → `BadMagic`; one byte short → `Truncated`; version 16 → `BadVersion`; totalsize > 2 MiB → `TooLarge`; strings block past totalsize → `BadOffset`; undefined token → `BadToken`; name offset past strings → `BadString`; nesting > 16 → `TooDeep`; `#address-cells = 3` → `BadCells`; reg overflow → `BadRegion`; no `/memory` → `NoMemory`; 17 ranges → `TooManyRegions`. The valid fixture admits. Boot-time input from firmware, **not** a tenant path; a bit-flip / truncation sweep of the fixture is a host test (no panic), not a fuzzer campaign | refused |
 | Fabric Hodge quota drain | `run_fabric_quota_drain_demo` — Hodge quota is per sender tenant and class (64 each); a sender past its own budget → `Hodge(QuotaExceeded)`; other tenants keep full budgets. Ledger bound: 16 distinct senders, no refill. **Not** hodge-quota (empty quota) / fabric-queue-full | refused |
 
 Expected stdout (CI greps these):
@@ -449,6 +450,18 @@ Expected stdout (CI greps these):
 [redteam] attack=fabric-recv-foreign result=refused
 [redteam] attack=fabric-send-no-cap result=refused
 [redteam] attack=fabric-quota-drain result=refused
+[redteam] attack=fdt-bad-magic result=refused
+[redteam] attack=fdt-truncated result=refused
+[redteam] attack=fdt-bad-version result=refused
+[redteam] attack=fdt-too-large result=refused
+[redteam] attack=fdt-bad-offset result=refused
+[redteam] attack=fdt-bad-token result=refused
+[redteam] attack=fdt-bad-string result=refused
+[redteam] attack=fdt-too-deep result=refused
+[redteam] attack=fdt-bad-cells result=refused
+[redteam] attack=fdt-bad-region result=refused
+[redteam] attack=fdt-no-memory result=refused
+[redteam] attack=fdt-too-many-regions result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
 [redteam] attack=firewall-ident-pa result=refused

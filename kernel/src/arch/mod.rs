@@ -93,6 +93,20 @@ pub fn frame_window() -> (u64, u64) {
     }
 }
 
+/// Physical RAM window the trampoline identity-maps as Normal memory:
+/// `[base, limit)`. The DTB must lie inside it; FDT frames are clipped to it.
+#[cfg(not(target_arch = "x86_64"))]
+pub fn ram_window() -> (u64, u64) {
+    #[cfg(target_arch = "riscv64")]
+    {
+        (riscv64::RAM_BASE, riscv64::RAM_LIMIT)
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        (aarch64::RAM_BASE, aarch64::RAM_LIMIT)
+    }
+}
+
 pub fn identity_map_note() -> &'static str {
     #[cfg(target_arch = "x86_64")]
     {

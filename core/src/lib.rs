@@ -20,6 +20,7 @@ pub mod cut;
 pub mod demo;
 pub mod elf;
 pub mod fabric;
+pub mod fdt;
 pub mod fence;
 pub mod greenctx;
 pub mod hodge;

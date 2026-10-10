@@ -19,9 +19,15 @@ global_asm!(include_str!("../../../../boot/aarch64/trampoline.S"));
 pub const UART0: usize = 0x0900_0000;
 pub const GICD: usize = 0x0800_0000;
 pub const GICC: usize = 0x0801_0000;
-pub const KERNEL_VA: u64 = 0x4008_0000;
+/// Linked 2 MiB above the RAM base (not 0x40080000) so QEMU virt has room
+/// to place its 1 MiB DTB at 0x40000000 below an ELF `-kernel` image.
+pub const KERNEL_VA: u64 = 0x4020_0000;
 pub const FRAME_START: u64 = 0x4100_0000;
 pub const FRAME_END: u64 = 0x4800_0000;
+/// QEMU virt DRAM base; L1 block [1] (1–2 GiB) is the only Normal-memory
+/// identity block, so FDT frames stop at 2 GiB.
+pub const RAM_BASE: u64 = 0x4000_0000;
+pub const RAM_LIMIT: u64 = 0x8000_0000;
 
 pub fn console_name() -> &'static str {
     "PL011 0x09000000"

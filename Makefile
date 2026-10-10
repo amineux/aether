@@ -143,7 +143,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / accel-shape-overflow / accel-unsupported-dtype / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / fdt-* (12 DTB parser refusals) / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / accel-shape-overflow / accel-unsupported-dtype / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -193,6 +193,18 @@ red-team:
 	grep -q "\\[redteam\\] attack=fabric-recv-foreign result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-send-no-cap result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-quota-drain result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-magic result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-truncated result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-version result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-large result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-offset result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-token result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-string result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-deep result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-cells result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-region result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-no-memory result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-many-regions result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
@@ -733,7 +745,7 @@ qemu-riscv-ci: $(RV_ELF)
 	set -e; \
 	cat $(BUILD)/riscv-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
-	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[mm\\] fdt mmap ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/riscv-serial.log \
@@ -809,7 +821,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	set -e; \
 	cat $(BUILD)/aarch64-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/aarch64-serial.log \
-	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[mm\\] fdt mmap ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/aarch64-serial.log \

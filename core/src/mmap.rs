@@ -2,8 +2,10 @@
 //!
 //! Host-tested, allocation-free. The kernel copies the bootloader
 //! structures into a byte slice and feeds them here. This is not a
-//! general physical-memory manager: no hotplug, no FDT, no 64-bit
-//! windows beyond the trampoline's 4 GiB identity map.
+//! general physical-memory manager: no hotplug, no 64-bit windows
+//! beyond the trampoline's 4 GiB identity map. Device-tree memory maps
+//! (riscv64 / aarch64) are parsed by [`crate::fdt`] into the same
+//! [`MemoryMap`] type.
 
 pub const MB1_BOOT_MAGIC: u32 = 0x2BADB002;
 pub const MB2_BOOT_MAGIC: u32 = 0x36D7_6289;
@@ -63,6 +65,9 @@ pub enum MapSource {
     Multiboot2,
     /// Multiboot2 basic memory tag (type 4) only.
     Multiboot2MemUpper,
+    /// Flattened device tree `/memory*` `reg`, minus memreserve and
+    /// `/reserved-memory` (see [`crate::fdt`]).
+    Fdt,
 }
 
 impl MapSource {
@@ -72,6 +77,7 @@ impl MapSource {
             MapSource::Multiboot1MemUpper => "multiboot1-mem_upper",
             MapSource::Multiboot2 => "multiboot2",
             MapSource::Multiboot2MemUpper => "multiboot2-mem_upper",
+            MapSource::Fdt => "fdt",
         }
     }
 }
@@ -137,7 +143,7 @@ fn r64(b: &[u8], off: usize) -> Result<u64, MmapError> {
     ]))
 }
 
-fn push_usable(map: &mut MemoryMap, start: u64, len: u64) {
+pub(crate) fn push_usable(map: &mut MemoryMap, start: u64, len: u64) {
     let Some(end) = start.checked_add(len) else {
         return;
     };
@@ -374,6 +380,21 @@ pub fn plan_frames(map: &MemoryMap) -> MemoryMap {
 }
 
 /// Inclusive-start / exclusive-end span of a planned map, if any.
+/// Same allocator subset as [`plan_frames`], with an arch-chosen floor and
+/// limit instead of the x86 16 MiB floor / 4 GiB identity limit. riscv64 and
+/// aarch64 pass their boot-reserve floor (kernel image + firmware below it)
+/// and the top of the trampoline's Normal-memory identity map. The
+/// 128 MiB bitmap cap still applies from the lowest kept byte.
+pub fn plan_frames_window(map: &MemoryMap, floor: u64, limit: u64) -> MemoryMap {
+    let clipped = clip_window(map, floor, limit);
+    if clipped.is_empty() {
+        return clipped;
+    }
+    let lo = clipped.regions().iter().map(|r| r.start).min().unwrap_or(0);
+    let cap_end = lo.saturating_add(FRAME_CAP_BYTES);
+    clip_window(&clipped, lo, cap_end)
+}
+
 pub fn span(map: &MemoryMap) -> Option<(u64, u64)> {
     if map.is_empty() {
         return None;
