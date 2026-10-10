@@ -486,6 +486,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
@@ -517,6 +518,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -561,6 +563,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] pcid fallback" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -638,6 +641,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[ramfs\\] open /init ok" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
@@ -678,6 +682,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[mm\\] kpti ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[mm\\] cow ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-blk-serial.log \
@@ -766,6 +771,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[accel\\] used-ring IRQ job#" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/riscv-serial.log \
@@ -840,6 +846,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "svc debug_print ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \

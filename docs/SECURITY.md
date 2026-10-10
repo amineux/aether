@@ -10,6 +10,22 @@ A task holds a `CapTable` of 32 slots. A `CPtr` is an index into *that*
 table. Slot `7` in tenant A's table is unrelated to slot `7` in tenant B's
 table. There is no global “handle namespace” to guess.
 
+The kernel decodes the complete 64-bit syscall capability argument before
+looking up the 16-bit slot. `SYS_SEND`, `SYS_RECV`, `SYS_MAP`, `SYS_ACCEL_SUBMIT`
+and `SYS_ACCEL_WAIT` reject nonzero upper bits with `NoCap`; a value such as
+`0x1_0001` cannot alias slot `1`. Width validation is followed by the existing
+slot, kind and rights checks. This closes an input-validation defect, not a
+claim that the alias granted a capability the caller did not already hold.
+`SYS_ARENA_ALLOC` likewise rejects bank IDs larger than 255 with `Inval`, before
+allocation, rather than wrapping them onto a lower bank. In-range IDs still go
+through the allocator's existing bank selection rules.
+
+Host regression tests cover high bits and valid handles. The userspace `/init`
+smoke tries oversized arguments against live slots through all five syscalls
+and checks the existing error channel, then continues through normal map/submit
+operations. Every QEMU CI variant requires `[init] wide syscall arguments refused`.
+Syscall numbers, structures and `IreeHalCmd` remain unchanged.
+
 Each `Capability` stores:
 
 - `kind` — Memory, Endpoint, AccelQueue, Notification, SpectralCut,
