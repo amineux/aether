@@ -28,7 +28,7 @@ jobs:
         run: python3 -m unittest discover -s scripts -p test_collect_evidence.py
       - name: Preserve evidence including failed checks
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: host-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/aether-evidence
