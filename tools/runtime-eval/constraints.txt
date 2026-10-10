@@ -1,0 +1,7 @@
+# Validated Linux/Python 3.12 environment. Exact versions, not supply-chain attestation.
+iree-base-compiler==3.12.0
+iree-base-runtime==3.12.0
+numpy==2.5.3
+ml_dtypes==0.6.0
+sympy==1.14.0
+mpmath==1.3.0
