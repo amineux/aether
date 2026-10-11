@@ -1,5 +1,7 @@
 # Aether
 
+Contributors and coding agents: follow [the shared branch and review workflow](CONTRIBUTING.md).
+
 **[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).

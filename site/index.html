@@ -418,7 +418,7 @@ python3 scripts/collect_evidence.py</code>
 <h3>The risks we’re working to resolve</h3>
 <details open>
 <summary>Hardware &amp; security boundaries</summary>
-<p>Real accelerator isolation and runtime integration remain unvalidated. <a href="https://github.com/amineux/aether/issues/161">Open issue #161</a> tracks unchecked raw unmap helpers; tenant reachability is not established. The bounded fuzz excludes those kernel-trust primitives. No formal verification is claimed.</p>
+<p>Real accelerator isolation and runtime integration remain unvalidated. <a href="https://github.com/amineux/aether/issues/161">Issue #161</a> (unchecked raw unmap helpers) is fixed in the Soft SMMU: unmap now requires a Memory+MAP capability and a foreign tenant's pin is refused with <code>CrossTenant</code>; the bounded fuzz now exercises these paths. No formal verification is claimed.</p>
 </details>
 <details>
 <summary>Demand &amp; purchasing</summary>
