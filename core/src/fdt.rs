@@ -53,7 +53,7 @@ pub enum FdtError {
     BadVersion,
     /// `totalsize` > [`FDT_MAX_TOTALSIZE`].
     TooLarge,
-    /// A block offset / size is misaligned, overlaps the header, or ends
+    /// A block offset / size is misaligned, overlaps the header or another block, or ends
     /// past `totalsize`; or `totalsize` is smaller than the header.
     BadOffset,
     /// Unknown token, property outside a node, unbalanced `END_NODE`, or
@@ -130,6 +130,10 @@ fn block_ok(off: usize, size: usize, align: usize, total: usize) -> Result<(), F
     }
 }
 
+fn overlaps(a: usize, a_len: usize, b: usize, b_len: usize) -> bool {
+    a_len != 0 && b_len != 0 && a < b + b_len && b < a + a_len
+}
+
 /// Validate the 40-byte header. Needs only the first [`FDT_HEADER_LEN`]
 /// bytes, so the kernel can size the blob from `totalsize` before it builds
 /// the full slice. Block bounds are checked against `totalsize`.
@@ -164,6 +168,14 @@ pub fn parse_header(b: &[u8]) -> Result<FdtHeader, FdtError> {
     block_ok(h.off_mem_rsvmap, 16, 8, h.totalsize)?;
     block_ok(h.off_dt_struct, h.size_dt_struct, 4, h.totalsize)?;
     block_ok(h.off_dt_strings, h.size_dt_strings, 1, h.totalsize)?;
+    // All ends have been checked above. The reservation block has no size
+    // field, but it must have room for at least its terminating entry.
+    if overlaps(h.off_dt_struct, h.size_dt_struct, h.off_dt_strings, h.size_dt_strings)
+        || overlaps(h.off_mem_rsvmap, 16, h.off_dt_struct, h.size_dt_struct)
+        || overlaps(h.off_mem_rsvmap, 16, h.off_dt_strings, h.size_dt_strings)
+    {
+        return Err(FdtError::BadOffset);
+    }
     Ok(h)
 }
 
@@ -348,10 +360,23 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
         n_reserved: 0,
     };
 
-    // Memory-reservation block.
+    // Memory-reservation block. Stop at the next occupied block, regardless
+    // of layout order; a missing terminator must never borrow its bytes.
+    let mut rsv_end = h.totalsize;
+    for (off, size) in [
+        (h.off_dt_struct, h.size_dt_struct),
+        (h.off_dt_strings, h.size_dt_strings),
+    ] {
+        if size != 0 && off > h.off_mem_rsvmap {
+            rsv_end = rsv_end.min(off);
+        }
+    }
     let mut o = h.off_mem_rsvmap;
     let mut n_memreserve = 0usize;
     loop {
+        if o.checked_add(16).map_or(true, |end| end > rsv_end) {
+            return Err(FdtError::Truncated);
+        }
         let base = be64(b, o)?;
         let size = be64(b, o.checked_add(8).ok_or(FdtError::Truncated)?)?;
         o = o.checked_add(16).ok_or(FdtError::Truncated)?;
@@ -432,6 +457,9 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
                 if depth == 0 {
                     return Err(FdtError::BadToken);
                 }
+                if o.checked_add(8).map_or(true, |end| end > s_end) {
+                    return Err(FdtError::Truncated);
+                }
                 let len = be32(b, o)? as usize;
                 let nameoff = be32(b, o + 4)? as usize;
                 let val = o + 8;
@@ -464,7 +492,7 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
             }
             FDT_NOP => {}
             FDT_END => {
-                if depth != 0 || !root_seen {
+                if depth != 0 || !root_seen || o != s_end {
                     return Err(FdtError::BadToken);
                 }
                 break;
@@ -1088,6 +1116,124 @@ mod tests {
         assert_eq!(edit(&rv, |b, n| { put32(b, 16, 8); n }), Err(FdtError::BadOffset), "rsvmap in header");
         assert_eq!(edit(&rv, |b, n| { put32(b, 4, 16); n }), Err(FdtError::BadOffset), "totalsize < header");
         assert_eq!(edit(&rv, |b, n| { put32(b, 36, u32::MAX); n }), Err(FdtError::BadOffset));
+    }
+
+    #[test]
+    fn refuses_overlapping_blocks_in_header_only_view() {
+        let (b, _) = fixture(&VirtFixture::riscv());
+        let st = get32(&b, 8);
+        for (field, offset) in [(12, st), (12, 48), (16, st)] {
+            let mut m = b;
+            put32(&mut m, field, offset);
+            assert_eq!(parse_header(&m[..FDT_HEADER_LEN]), Err(FdtError::BadOffset));
+            assert_eq!(parse_fdt_memory(&m), Err(FdtError::BadOffset));
+        }
+        // Half-open ranges may touch: the fixture places all three adjacent.
+        assert!(parse_header(&b[..FDT_HEADER_LEN]).is_ok());
+    }
+
+    #[test]
+    fn admits_disjoint_reordered_blocks() {
+        let (b, n) = fixture(&VirtFixture::riscv());
+        let expected = parse_fdt_memory(&b[..n]).unwrap();
+        let h = parse_header(&b).unwrap();
+        let mut m = b;
+        // Put strings before structure, with alignment padding between them.
+        let strings = h.off_dt_struct;
+        let structure = align4(strings + h.size_dt_strings).unwrap();
+        let total = structure + h.size_dt_struct;
+        m[strings..strings + h.size_dt_strings]
+            .copy_from_slice(&b[h.off_dt_strings..h.off_dt_strings + h.size_dt_strings]);
+        m[structure..total]
+            .copy_from_slice(&b[h.off_dt_struct..h.off_dt_struct + h.size_dt_struct]);
+        put32(&mut m, 4, total as u32);
+        put32(&mut m, 8, structure as u32);
+        put32(&mut m, 12, strings as u32);
+        let actual = parse_fdt_memory(&m[..total]).unwrap();
+        assert_eq!(actual.map, expected.map);
+        assert_eq!(actual.reserved(), expected.reserved());
+    }
+
+    #[test]
+    fn reservation_scan_stops_before_structure() {
+        let r = edit(&VirtFixture::riscv(), |b, n| {
+            let rsv = get32(b, 16) as usize;
+            // Nonzero address + zero size is skipped, not a terminator.
+            // The next entry would borrow bytes from the structure block.
+            b[rsv + 7] = 1;
+            n
+        });
+        assert_eq!(r, Err(FdtError::Truncated));
+    }
+
+    #[test]
+    fn reservation_scan_stops_before_strings() {
+        let (b, n) = fixture(&VirtFixture::riscv());
+        let h = parse_header(&b).unwrap();
+        let mut m = b;
+        // A strings prefix may contain unused strings. Place 16 zero bytes
+        // at its front and adjust every property's name offset accordingly.
+        // The old scan borrowed this prefix as a reservation terminator.
+        let strings = h.off_dt_struct;
+        let structure = align4(strings + 16 + h.size_dt_strings).unwrap();
+        let total = structure + h.size_dt_struct;
+        m[strings..strings + 16].fill(0);
+        m[strings + 16..strings + 16 + h.size_dt_strings]
+            .copy_from_slice(&b[h.off_dt_strings..n]);
+        m[structure..total]
+            .copy_from_slice(&b[h.off_dt_struct..h.off_dt_struct + h.size_dt_struct]);
+        let mut o = structure;
+        while o < total {
+            let token = get32(&m, o);
+            o += 4;
+            match token {
+                FDT_BEGIN_NODE => {
+                    let len = cstr(&m, o, total).unwrap().len();
+                    o = align4(o + len + 1).unwrap();
+                }
+                FDT_PROP => {
+                    let len = get32(&m, o) as usize;
+                    let name = get32(&m, o + 4);
+                    put32(&mut m, o + 4, name + 16);
+                    o = align4(o + 8 + len).unwrap();
+                }
+                FDT_END_NODE | FDT_NOP | FDT_END => {}
+                _ => panic!("unexpected fixture token"),
+            }
+        }
+        put32(&mut m, 4, total as u32);
+        put32(&mut m, 8, structure as u32);
+        put32(&mut m, 12, strings as u32);
+        put32(&mut m, 32, (16 + h.size_dt_strings) as u32);
+        assert!(parse_fdt_memory(&m[..total]).is_ok());
+        m[h.off_mem_rsvmap + 7] = 1;
+        assert_eq!(parse_fdt_memory(&m[..total]), Err(FdtError::Truncated));
+    }
+
+    #[test]
+    fn property_header_cannot_borrow_string_bytes() {
+        for size in [12, 16] {
+            let r = edit(&VirtFixture::riscv(), |b, n| {
+                put32(b, 36, size);
+                n
+            });
+            assert_eq!(r, Err(FdtError::Truncated));
+        }
+    }
+
+    #[test]
+    fn end_token_must_end_the_structure_block() {
+        let r = edit(&VirtFixture::riscv(), |b, n| {
+            let strings = get32(b, 12) as usize;
+            b.copy_within(strings..n, strings + 4);
+            put32(b, strings, FDT_NOP);
+            let size = get32(b, 36);
+            put32(b, 36, size + 4);
+            put32(b, 12, (strings + 4) as u32);
+            put32(b, 4, (n + 4) as u32);
+            n + 4
+        });
+        assert_eq!(r, Err(FdtError::BadToken));
     }
 
     #[test]
