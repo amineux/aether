@@ -558,6 +558,120 @@ pub fn run_arena_limit_leak_demo() -> ArenaLimitLeakReport {
     }
 }
 
+/// Host red-team report for non-power-of-two align refuse.
+///
+/// Sell line `[redteam] attack=arena-bad-align` — existing
+/// [`ArenaAllocator::alloc`] only. `align` is floored up to `PAGE_4K`
+/// (or `PAGE_2M` when huge); a request whose effective align is not a
+/// power of two → [`ArenaError::BadAlign`]. Power-of-two / below-floor
+/// align still admits. **Not** arena-not-owner / arena-limit-leak /
+/// UnknownBank; no new opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArenaBadAlignReport {
+    /// Control: `PAGE_4K` align admits.
+    pub power_of_two_ok: bool,
+    /// Non-power-of-two align above `PAGE_4K` floor → `BadAlign`.
+    pub bad_4k_refused: bool,
+    /// Non-power-of-two align above `PAGE_2M` floor (huge) → `BadAlign`.
+    pub bad_huge_refused: bool,
+    /// Align below the page floor is raised to the floor and admits.
+    pub below_floor_ok: bool,
+}
+
+impl ArenaBadAlignReport {
+    pub fn all_ok(&self) -> bool {
+        self.power_of_two_ok && self.bad_4k_refused && self.bad_huge_refused && self.below_floor_ok
+    }
+}
+
+/// Non-power-of-two `ArenaRequest.align` above the page floor → [`ArenaError::BadAlign`].
+pub fn run_arena_bad_align_demo() -> ArenaBadAlignReport {
+    let fail = ArenaBadAlignReport {
+        power_of_two_ok: false,
+        bad_4k_refused: false,
+        bad_huge_refused: false,
+        below_floor_ok: false,
+    };
+    let Ok(mut arenas) = ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * PAGE_2M)])
+    else {
+        return fail;
+    };
+    let bank = BankId(0);
+    let power_of_two_ok = arenas
+        .alloc(ArenaRequest::tensor(PAGE_4K, Some(bank)))
+        .is_ok();
+
+    let mut bad4 = ArenaRequest::tensor(PAGE_4K, Some(bank));
+    bad4.huge = false;
+    // Not a power of two, and larger than the PAGE_4K floor.
+    bad4.align = PAGE_4K + (PAGE_4K / 2);
+    let bad_4k_refused = arenas.alloc(bad4) == Err(ArenaError::BadAlign);
+
+    let mut bad_huge = ArenaRequest::tensor(PAGE_2M, Some(bank));
+    bad_huge.huge = true;
+    // Not a power of two, and larger than the PAGE_2M floor.
+    bad_huge.align = PAGE_2M + PAGE_4K;
+    let bad_huge_refused = arenas.alloc(bad_huge) == Err(ArenaError::BadAlign);
+
+    let mut below = ArenaRequest::tensor(PAGE_4K, Some(bank));
+    below.huge = false;
+    // Below the floor: max(align, PAGE_4K) = PAGE_4K (power of two) → admit.
+    below.align = 64;
+    let below_floor_ok = arenas.alloc(below).is_ok();
+
+    ArenaBadAlignReport {
+        power_of_two_ok,
+        bad_4k_refused,
+        bad_huge_refused,
+        below_floor_ok,
+    }
+}
+
+/// Host red-team report for empty / over-full bank table refuse.
+///
+/// Sell line `[redteam] attack=arena-unknown-bank` — existing
+/// [`ArenaAllocator::new`] only. Zero banks or more than [`MAX_BANKS`] →
+/// [`ArenaError::UnknownBank`]. A single valid bank still constructs.
+/// **Not** arena-bad-align / arena-not-owner / arena-limit-leak; no new
+/// opcodes; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ArenaUnknownBankReport {
+    /// Control: one valid bank constructs.
+    pub one_bank_ok: bool,
+    /// Empty bank list → `UnknownBank`.
+    pub empty_refused: bool,
+    /// More than `MAX_BANKS` entries → `UnknownBank`.
+    pub too_many_refused: bool,
+}
+
+impl ArenaUnknownBankReport {
+    pub fn all_ok(&self) -> bool {
+        self.one_bank_ok && self.empty_refused && self.too_many_refused
+    }
+}
+
+/// Empty or over-full bank list → [`ArenaError::UnknownBank`].
+pub fn run_arena_unknown_bank_demo() -> ArenaUnknownBankReport {
+    let one_bank_ok =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x0100_0000), 8 * PAGE_2M)]).is_ok();
+    let empty_refused = matches!(ArenaAllocator::new(&[]), Err(ArenaError::UnknownBank));
+    let too_many: [(BankId, PhysAddr, u64); 5] = [
+        (BankId(0), PhysAddr(0x0100_0000), PAGE_2M),
+        (BankId(1), PhysAddr(0x0200_0000), PAGE_2M),
+        (BankId(2), PhysAddr(0x0300_0000), PAGE_2M),
+        (BankId(3), PhysAddr(0x0400_0000), PAGE_2M),
+        (BankId(4), PhysAddr(0x0500_0000), PAGE_2M),
+    ];
+    let too_many_refused =
+        matches!(ArenaAllocator::new(&too_many), Err(ArenaError::UnknownBank));
+    ArenaUnknownBankReport {
+        one_bank_ok,
+        empty_refused,
+        too_many_refused,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -776,5 +890,24 @@ mod tests {
             a.alloc(ArenaRequest::tensor(0, None)).unwrap_err(),
             ArenaError::BadSize
         );
+    }
+
+    #[test]
+    fn arena_bad_align_demo_all_ok() {
+        let r = run_arena_bad_align_demo();
+        assert!(r.power_of_two_ok, "PAGE_4K align admits: {r:?}");
+        assert!(r.bad_4k_refused, "non-power-of-two > PAGE_4K → ArenaError::BadAlign");
+        assert!(r.bad_huge_refused, "non-power-of-two > PAGE_2M huge → ArenaError::BadAlign");
+        assert!(r.below_floor_ok, "align below floor raised to PAGE_4K admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn arena_unknown_bank_demo_all_ok() {
+        let r = run_arena_unknown_bank_demo();
+        assert!(r.one_bank_ok, "one bank constructs: {r:?}");
+        assert!(r.empty_refused, "empty banks → ArenaError::UnknownBank");
+        assert!(r.too_many_refused, "> MAX_BANKS → ArenaError::UnknownBank");
+        assert!(r.all_ok());
     }
 }

@@ -882,6 +882,82 @@ pub fn run_accel_unsupported_dtype_demo() -> AccelUnsupportedDTypeReport {
     }
 }
 
+/// Host red-team report for SoftNpu BadOp refuse.
+///
+/// Sell line `[redteam] attack=accel-bad-op` — existing SoftNpu
+/// elementwise `_ => Err(AccelError::BadOp)` arms. A non-elementwise op
+/// (`MatMul`) routed into the elementwise path is refused as
+/// [`AccelError::BadOp`] on I32 / F32 / F16. Elementwise `Add` still
+/// admits. **Not** new SoftNPU opcodes (KILL); **not** BadShape /
+/// Overflow / UnsupportedDType rehash; software SoftNpu only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccelBadOpReport {
+    /// Control: elementwise Add I32 admits.
+    pub add_ok: bool,
+    /// MatMul on elementwise I32 path → `AccelError::BadOp`.
+    pub matmul_i32_refused: bool,
+    /// MatMul on elementwise F32 path → `AccelError::BadOp`.
+    pub matmul_f32_refused: bool,
+    /// MatMul on elementwise F16 path → `AccelError::BadOp`.
+    pub matmul_f16_refused: bool,
+}
+
+impl AccelBadOpReport {
+    pub fn all_ok(&self) -> bool {
+        self.add_ok
+            && self.matmul_i32_refused
+            && self.matmul_f32_refused
+            && self.matmul_f16_refused
+    }
+}
+
+/// SoftNpu elementwise unknown-op arms → [`AccelError::BadOp`].
+/// Hits the existing `_ => Err(AccelError::BadOp)` refuse; no new opcodes.
+pub fn run_accel_bad_op_demo() -> AccelBadOpReport {
+    let mut buf = [0u8; 64];
+    for (i, v) in [1i32, 2, 3, 4].iter().enumerate() {
+        buf[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+    }
+    let mut mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut buf,
+    };
+    let add = AccelJobDesc::add_i32(1, 2, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+    let add_ok = SoftNpu::new().execute(&add, &mut mem).is_ok();
+
+    // Same-module call into the private elementwise path with MatMul —
+    // the `_` arms refuse non-ew ops. execute() never routes MatMul here;
+    // this is the named refuse for those arms (no new opcodes).
+    let matmul = AccelJobDesc::matmul_i32(1, 2, 1, PhysAddr(0), PhysAddr(8), PhysAddr(16), 1);
+    let matmul_i32_refused =
+        SoftNpu::new().elementwise_i32(&matmul, &mut mem) == Err(AccelError::BadOp);
+
+    let mut f32_job = matmul;
+    f32_job.dtype = DType::F32;
+    let matmul_f32_refused =
+        SoftNpu::new().elementwise_f32(&f32_job, &mut mem) == Err(AccelError::BadOp);
+
+    // F16 path needs u16 DMA; SliceMem provides it. MatMul still → BadOp
+    // before any load (match on op is first inside the loops after shape).
+    let mut f16_buf = [0u8; 64];
+    let mut f16_mem = SliceMem {
+        base: PhysAddr(0),
+        bytes: &mut f16_buf,
+    };
+    let mut f16_job = matmul;
+    f16_job.dtype = DType::F16;
+    let matmul_f16_refused =
+        SoftNpu::new().elementwise_f16(&f16_job, &mut f16_mem) == Err(AccelError::BadOp);
+
+    AccelBadOpReport {
+        add_ok,
+        matmul_i32_refused,
+        matmul_f32_refused,
+        matmul_f16_refused,
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1059,6 +1135,16 @@ mod tests {
         assert!(r.tiny_ok, "tiny i32 matmul admits");
         assert!(r.f16_no_u16, "f16 without u16 → UnsupportedDType");
         assert!(r.nop_ok, "nop on no-u16 view admits");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn accel_bad_op_demo_all_ok() {
+        let r = run_accel_bad_op_demo();
+        assert!(r.add_ok, "elementwise Add I32 admits");
+        assert!(r.matmul_i32_refused, "MatMul on ew I32 → AccelError::BadOp");
+        assert!(r.matmul_f32_refused, "MatMul on ew F32 → AccelError::BadOp");
+        assert!(r.matmul_f16_refused, "MatMul on ew F16 → AccelError::BadOp");
         assert!(r.all_ok());
     }
 
