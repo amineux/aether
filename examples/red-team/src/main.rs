@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -64,7 +64,10 @@
 //! `SpectralCut::from_mask` with unbalanced partition → `CutError::Unbalanced` (chiplet-balanced mask under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / ConductanceExceeded; not cut-not-bound / cut-conductance / cut-empty-part rehash; not an EDA package solver). Cut-too-large is
 //! `SpectralCut::min_balanced` on `two_chiplet_mesh(16)` (n > ENUM_MAX=8) → `CutError::TooLarge` (min_balanced on qemu_package n=6 admits; enumeration refuse only — Fiedler/from_placement still works at n=16, not a placement kill; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / Unbalanced / ConductanceExceeded; not cut-not-bound / cut-conductance rehash; not an EDA package solver). Accel-shape-overflow is
 //! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Accel-unsupported-dtype is
-//! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
+//! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Accel-bad-op is
+//! SoftNpu elementwise `_ => Err(AccelError::BadOp)` arms (MatMul on ew path) → `AccelError::BadOp` (Add admits; not new SoftNPU opcodes; not BadShape/Overflow/UnsupportedDType rehash; software SoftNpu only). Arena-bad-align is
+//! `ArenaAllocator::alloc` non-power-of-two align above page floor → `ArenaError::BadAlign` (power-of-two / below-floor admit; not arena-not-owner / arena-limit-leak / UnknownBank). Arena-unknown-bank is
+//! `ArenaAllocator::new` empty or > `MAX_BANKS` → `ArenaError::UnknownBank` (one bank constructs; not arena-bad-align / arena-not-owner / arena-limit-leak). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -96,7 +99,7 @@ mod fuzz;
 
 use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
-use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo};
+use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo, run_accel_bad_op_demo};
 use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo};
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_window_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
@@ -138,6 +141,8 @@ const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refu
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_ARENA_NOT_OWNER: &str = "[redteam] attack=arena-not-owner result=refused";
 const LINE_ARENA_LIMIT_LEAK: &str = "[redteam] attack=arena-limit-leak result=refused";
+const LINE_ARENA_BAD_ALIGN: &str = "[redteam] attack=arena-bad-align result=refused";
+const LINE_ARENA_UNKNOWN_BANK: &str = "[redteam] attack=arena-unknown-bank result=refused";
 const LINE_USER_COPY_STRADDLE: &str = "[redteam] attack=user-copy-straddle result=refused";
 const LINE_MAP_USER_PHYS: &str = "[redteam] attack=map-user-phys result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
@@ -213,6 +218,7 @@ const LINE_CUT_UNBALANCED: &str = "[redteam] attack=cut-unbalanced result=refuse
 const LINE_CUT_TOO_LARGE: &str = "[redteam] attack=cut-too-large result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
 const LINE_ACCEL_UNSUPPORTED_DTYPE: &str = "[redteam] attack=accel-unsupported-dtype result=refused";
+const LINE_ACCEL_BAD_OP: &str = "[redteam] attack=accel-bad-op result=refused";
 /// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
 const LINE_TENANT_FUZZ: &str = "[redteam] attack=tenant-fuzz result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
@@ -243,6 +249,8 @@ struct RedTeamReport {
     outside_slice: bool,
     arena_not_owner: bool,
     arena_limit_leak: bool,
+    arena_bad_align: bool,
+    arena_unknown_bank: bool,
     user_copy_straddle: bool,
     map_user_phys: bool,
     silent_remote: bool,
@@ -318,6 +326,7 @@ struct RedTeamReport {
     cut_too_large: bool,
     accel_shape_overflow: bool,
     accel_unsupported_dtype: bool,
+    accel_bad_op: bool,
     tenant_fuzz: TenantFuzzReport,
     class: bool,
     atomic: bool,
@@ -345,6 +354,8 @@ impl RedTeamReport {
             && self.outside_slice
             && self.arena_not_owner
             && self.arena_limit_leak
+            && self.arena_bad_align
+            && self.arena_unknown_bank
             && self.user_copy_straddle
             && self.map_user_phys
             && self.silent_remote
@@ -420,6 +431,7 @@ impl RedTeamReport {
             && self.cut_too_large
             && self.accel_shape_overflow
             && self.accel_unsupported_dtype
+            && self.accel_bad_op
             && self.tenant_fuzz.all_ok()
             && self.class
             && self.atomic
@@ -443,6 +455,8 @@ fn run_redteam() -> RedTeamReport {
     let outside = run_outside_slice_demo();
     let arena_not_owner = aether_core::arena::run_arena_not_owner_demo();
     let arena_limit_leak = aether_core::arena::run_arena_limit_leak_demo();
+    let arena_bad_align = aether_core::arena::run_arena_bad_align_demo();
+    let arena_unknown_bank = aether_core::arena::run_arena_unknown_bank_demo();
     let user_copy_straddle = aether_core::sysnr::run_user_copy_straddle_demo();
     let map_user_phys = aether_core::sysnr::run_map_user_phys_demo();
     let silent = run_silent_remote_demo();
@@ -507,6 +521,7 @@ fn run_redteam() -> RedTeamReport {
     let cut_too_large = run_cut_too_large_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
+    let accel_bad_op = run_accel_bad_op_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
     let sfi_bad_insn = aether_core::softsfi::run_softsfi_bad_insn_demo();
@@ -560,6 +575,10 @@ fn run_redteam() -> RedTeamReport {
         // Full arena table → ArenaLimit before any span split; free bytes / spans
         // unchanged across repeated refusals (was NoSpace + leaked split span).
         arena_limit_leak: arena_limit_leak.all_ok(),
+        // Non-power-of-two align above page floor → BadAlign. Software allocator only.
+        arena_bad_align: arena_bad_align.all_ok(),
+        // Empty / > MAX_BANKS bank list → UnknownBank. Software allocator only.
+        arena_unknown_bank: arena_unknown_bank.all_ok(),
         // Kernel user copy splits at 4 KiB and checks every page before any
         // byte moves; a range whose tail is unmapped is refused whole (was:
         // only the first page translated). Same split/gate the kernel calls.
@@ -750,6 +769,8 @@ fn run_redteam() -> RedTeamReport {
         accel_shape_overflow: accel_shape_overflow.all_ok(),
         // SoftNpu F16 without u16 → UnsupportedDType. Software SoftNpu only.
         accel_unsupported_dtype: accel_unsupported_dtype.all_ok(),
+        // SoftNpu elementwise unknown-op → BadOp. Software SoftNpu only; no new opcodes.
+        accel_bad_op: accel_bad_op.all_ok(),
         // Bounded seeded hostile-tenant fuzz: evidence, not a proof, not a hardware claim.
         // unmap_stream / unmap excluded as kernel-trust primitives (issue #161).
         tenant_fuzz,
@@ -820,6 +841,8 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.arena_not_owner, LINE_ARENA_NOT_OWNER);
     emit(r.arena_limit_leak, LINE_ARENA_LIMIT_LEAK);
+    emit(r.arena_bad_align, LINE_ARENA_BAD_ALIGN);
+    emit(r.arena_unknown_bank, LINE_ARENA_UNKNOWN_BANK);
     emit(r.user_copy_straddle, LINE_USER_COPY_STRADDLE);
     emit(r.map_user_phys, LINE_MAP_USER_PHYS);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
@@ -895,6 +918,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.cut_too_large, LINE_CUT_TOO_LARGE);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
     emit(r.accel_unsupported_dtype, LINE_ACCEL_UNSUPPORTED_DTYPE);
+    emit(r.accel_bad_op, LINE_ACCEL_BAD_OP);
     emit_tenant_fuzz(&r.tenant_fuzz);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
@@ -942,6 +966,8 @@ mod tests {
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.arena_not_owner, "non-owner / stale arena handoff → NotOwner");
         assert!(r.arena_limit_leak, "full arena table → ArenaLimit, no bytes lost");
+        assert!(r.arena_bad_align, "non-power-of-two align above floor → BadAlign");
+        assert!(r.arena_unknown_bank, "empty / > MAX_BANKS → UnknownBank");
         assert!(r.user_copy_straddle, "user copy with unmapped tail page → refused whole");
         assert!(r.map_user_phys, "SYS_MAP caller-supplied physical address → refused");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
@@ -1150,6 +1176,10 @@ mod tests {
             "SoftNpu F16 without u16 → UnsupportedDType"
         );
         assert!(
+            r.accel_bad_op,
+            "SoftNpu elementwise unknown-op → BadOp"
+        );
+        assert!(
             r.tenant_fuzz.all_ok(),
             "tenant-fuzz: escapes=0 unnamed=0 (bounded seeded fuzz)"
         );
@@ -1182,6 +1212,8 @@ mod tests {
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_ARENA_NOT_OWNER, "[redteam] attack=arena-not-owner result=refused");
         assert_eq!(LINE_ARENA_LIMIT_LEAK, "[redteam] attack=arena-limit-leak result=refused");
+        assert_eq!(LINE_ARENA_BAD_ALIGN, "[redteam] attack=arena-bad-align result=refused");
+        assert_eq!(LINE_ARENA_UNKNOWN_BANK, "[redteam] attack=arena-unknown-bank result=refused");
         assert_eq!(
             LINE_USER_COPY_STRADDLE,
             "[redteam] attack=user-copy-straddle result=refused"
@@ -1411,6 +1443,10 @@ mod tests {
             "[redteam] attack=accel-unsupported-dtype result=refused"
         );
         assert_eq!(
+            LINE_ACCEL_BAD_OP,
+            "[redteam] attack=accel-bad-op result=refused"
+        );
+        assert_eq!(
             LINE_TENANT_FUZZ,
             "[redteam] attack=tenant-fuzz result=refused"
         );
@@ -1437,6 +1473,8 @@ mod tests {
             LINE_OUTSIDE_SLICE,
             LINE_ARENA_NOT_OWNER,
             LINE_ARENA_LIMIT_LEAK,
+            LINE_ARENA_BAD_ALIGN,
+            LINE_ARENA_UNKNOWN_BANK,
             LINE_USER_COPY_STRADDLE,
             LINE_SILENT_REMOTE,
             LINE_SPACE_NOT_MAPPABLE,
@@ -1507,6 +1545,7 @@ mod tests {
         LINE_CUT_TOO_LARGE,
         LINE_ACCEL_SHAPE_OVERFLOW,
         LINE_ACCEL_UNSUPPORTED_DTYPE,
+        LINE_ACCEL_BAD_OP,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),
