@@ -76,7 +76,7 @@ pub use chipsync::{
     DEMO_WORKERS_PER_CHIPLET, MAX_CCT_ENTRIES, MAX_SYNC_CHIPLETS,
 };
 pub use color::{admit_wave, run_bank_color_demo, run_foreign_tenant_color_demo, run_uncolored_compute_demo, BankColor, BankColorReport, ColorError, ForeignTenantColorReport, UncoloredComputeReport};
-pub use cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo, AffinityGraph, CutConductanceReport, CutEmptyPartReport, CutUnbalancedReport, CutTooLargeReport, CutError, CutId, CutNotBoundReport, SpectralCut};
+pub use cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo, run_cut_unknown_vertex_demo, AffinityGraph, CutConductanceReport, CutEmptyPartReport, CutUnbalancedReport, CutTooLargeReport, CutUnknownVertexReport, CutError, CutId, CutNotBoundReport, SpectralCut};
 pub use demo::{run_boot_demo, DemoReport};
 pub use elf::{parse_elf64, ElfError, ElfImage};
 pub use fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
@@ -129,7 +129,7 @@ pub use reloc::{
     apply_pie_image, apply_rela_bytes, apply_rela_dyn, parse_pie_trailer, parse_rela64, Rela64,
     RelocError, PIE_RELOC_MAGIC, PIE_TRAILER_SIZE, RELA64_SIZE, R_X86_64_RELATIVE,
 };
-pub use sched::{run_chiplet_scope_demo, ChipletLocalPolicy, ChipletScopeReport, ChipletTaskScope, Job, JobKind, TileKind, TileScheduler};
+pub use sched::{run_chiplet_scope_demo, run_cut_no_cut_demo, ChipletLocalPolicy, ChipletScopeReport, ChipletTaskScope, CutNoCutReport, Job, JobKind, TileKind, TileScheduler};
 pub use sid::{run_sid_budget_demo, run_sid_submit_demo, run_submit_sid_demo, SidBudgetReport, SidSubmitReport, SubmitSidReport, SID_SUBMIT_A, SID_SUBMIT_B};
 pub use smmu_bringup::{
     kit_cp_sid, kit_iree_sid, replay_jsonl, write_dump_json, BringupError, KIT_CP_SSID,

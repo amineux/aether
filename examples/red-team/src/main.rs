@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_cut_no_cut_demo`, `run_cut_unknown_vertex_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_accel_not_found_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -65,7 +65,10 @@
 //! `SpectralCut::min_balanced` on `two_chiplet_mesh(16)` (n > ENUM_MAX=8) → `CutError::TooLarge` (min_balanced on qemu_package n=6 admits; enumeration refuse only — Fiedler/from_placement still works at n=16, not a placement kill; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / Unbalanced / ConductanceExceeded; not cut-not-bound / cut-conductance rehash; not an EDA package solver). Accel-shape-overflow is
 //! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Accel-unsupported-dtype is
 //! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Accel-bad-op is
-//! SoftNpu elementwise `_ => Err(AccelError::BadOp)` arms (MatMul on ew path) → `AccelError::BadOp` (Add admits; not new SoftNPU opcodes; not BadShape/Overflow/UnsupportedDType rehash; software SoftNpu only). Arena-bad-align is
+//! SoftNpu elementwise `_ => Err(AccelError::BadOp)` arms (MatMul on ew path) → `AccelError::BadOp` (Add admits; not new SoftNPU opcodes; not BadShape/Overflow/UnsupportedDType rehash; software SoftNpu only). Accel-not-found is
+//! SoftNpuDevice `probe` when MMIO negotiate fails (bad magic / bad qsize) → `HalError::NotFound` (fresh BAR probes; not BadOp/BadShape/UnsupportedDType; software SoftNpu + frozen MMIO only). Cut-no-cut is
+//! `TileScheduler::bind_laplacian_cut` on a full cut table / `place_ok` unbound cut_id → `CutError::NoCut` (empty table binds; not EmptyPart/Unbalanced/ConductanceExceeded/UnknownVertex). Cut-unknown-vertex is
+//! `SpectralCut::allow_place` tile/bank outside the graph → `CutError::UnknownVertex` (known tile+bank admits; not CrossCut/NoCut/cut-not-bound). Arena-bad-align is
 //! `ArenaAllocator::alloc` non-power-of-two align above page floor → `ArenaError::BadAlign` (power-of-two / below-floor admit; not arena-not-owner / arena-limit-leak / UnknownBank). Arena-unknown-bank is
 //! `ArenaAllocator::new` empty or > `MAX_BANKS` → `ArenaError::UnknownBank` (one bank constructs; not arena-bad-align / arena-not-owner / arena-limit-leak). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
@@ -100,7 +103,8 @@ mod fuzz;
 use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
 use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo, run_accel_bad_op_demo};
-use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo};
+use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo, run_cut_unknown_vertex_demo};
+use aether_core::sched::run_cut_no_cut_demo;
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_window_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
@@ -120,8 +124,8 @@ use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_de
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
-    run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
-    run_xqueue_sid_override_demo,
+    run_accel_not_found_demo, run_firewall_demo, run_firewall_ident_pa_demo,
+    run_set_sid_unbound_demo, run_xqueue_sid_override_demo,
 };
 
 /// Grep-able proof lines. CI matches these exactly.
@@ -216,9 +220,12 @@ const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refu
 const LINE_CUT_EMPTY_PART: &str = "[redteam] attack=cut-empty-part result=refused";
 const LINE_CUT_UNBALANCED: &str = "[redteam] attack=cut-unbalanced result=refused";
 const LINE_CUT_TOO_LARGE: &str = "[redteam] attack=cut-too-large result=refused";
+const LINE_CUT_NO_CUT: &str = "[redteam] attack=cut-no-cut result=refused";
+const LINE_CUT_UNKNOWN_VERTEX: &str = "[redteam] attack=cut-unknown-vertex result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
 const LINE_ACCEL_UNSUPPORTED_DTYPE: &str = "[redteam] attack=accel-unsupported-dtype result=refused";
 const LINE_ACCEL_BAD_OP: &str = "[redteam] attack=accel-bad-op result=refused";
+const LINE_ACCEL_NOT_FOUND: &str = "[redteam] attack=accel-not-found result=refused";
 /// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
 const LINE_TENANT_FUZZ: &str = "[redteam] attack=tenant-fuzz result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
@@ -324,9 +331,12 @@ struct RedTeamReport {
     cut_empty_part: bool,
     cut_unbalanced: bool,
     cut_too_large: bool,
+    cut_no_cut: bool,
+    cut_unknown_vertex: bool,
     accel_shape_overflow: bool,
     accel_unsupported_dtype: bool,
     accel_bad_op: bool,
+    accel_not_found: bool,
     tenant_fuzz: TenantFuzzReport,
     class: bool,
     atomic: bool,
@@ -429,9 +439,12 @@ impl RedTeamReport {
             && self.cut_empty_part
             && self.cut_unbalanced
             && self.cut_too_large
+            && self.cut_no_cut
+            && self.cut_unknown_vertex
             && self.accel_shape_overflow
             && self.accel_unsupported_dtype
             && self.accel_bad_op
+            && self.accel_not_found
             && self.tenant_fuzz.all_ok()
             && self.class
             && self.atomic
@@ -519,9 +532,12 @@ fn run_redteam() -> RedTeamReport {
     let cut_empty_part = run_cut_empty_part_demo();
     let cut_unbalanced = run_cut_unbalanced_demo();
     let cut_too_large = run_cut_too_large_demo();
+    let cut_no_cut = run_cut_no_cut_demo();
+    let cut_unknown_vertex = run_cut_unknown_vertex_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
     let accel_bad_op = run_accel_bad_op_demo();
+    let accel_not_found = run_accel_not_found_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
     let sfi_bad_insn = aether_core::softsfi::run_softsfi_bad_insn_demo();
@@ -765,12 +781,18 @@ fn run_redteam() -> RedTeamReport {
         cut_unbalanced: cut_unbalanced.all_ok(),
         // min_balanced n>ENUM_MAX → TooLarge. Enumeration refuse only; placement still ok.
         cut_too_large: cut_too_large.all_ok(),
+        // Full cut table / unbound cut_id → NoCut. Cut-only.
+        cut_no_cut: cut_no_cut.all_ok(),
+        // allow_place tile/bank outside graph → UnknownVertex. Cut-only.
+        cut_unknown_vertex: cut_unknown_vertex.all_ok(),
         // SoftNpu BadShape / Overflow refuse. Software SoftNpu only.
         accel_shape_overflow: accel_shape_overflow.all_ok(),
         // SoftNpu F16 without u16 → UnsupportedDType. Software SoftNpu only.
         accel_unsupported_dtype: accel_unsupported_dtype.all_ok(),
         // SoftNpu elementwise unknown-op → BadOp. Software SoftNpu only; no new opcodes.
         accel_bad_op: accel_bad_op.all_ok(),
+        // SoftNpuDevice probe bad MMIO negotiate → NotFound. Software SoftNpu + frozen MMIO only.
+        accel_not_found: accel_not_found.all_ok(),
         // Bounded seeded hostile-tenant fuzz: evidence, not a proof, not a hardware claim.
         // unmap_stream / unmap excluded as kernel-trust primitives (issue #161).
         tenant_fuzz,
@@ -916,9 +938,12 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.cut_empty_part, LINE_CUT_EMPTY_PART);
     emit(r.cut_unbalanced, LINE_CUT_UNBALANCED);
     emit(r.cut_too_large, LINE_CUT_TOO_LARGE);
+    emit(r.cut_no_cut, LINE_CUT_NO_CUT);
+    emit(r.cut_unknown_vertex, LINE_CUT_UNKNOWN_VERTEX);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
     emit(r.accel_unsupported_dtype, LINE_ACCEL_UNSUPPORTED_DTYPE);
     emit(r.accel_bad_op, LINE_ACCEL_BAD_OP);
+    emit(r.accel_not_found, LINE_ACCEL_NOT_FOUND);
     emit_tenant_fuzz(&r.tenant_fuzz);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
@@ -1168,6 +1193,14 @@ mod tests {
             "min_balanced n>ENUM_MAX → TooLarge (placement still ok)"
         );
         assert!(
+            r.cut_no_cut,
+            "full cut table / unbound cut_id → NoCut"
+        );
+        assert!(
+            r.cut_unknown_vertex,
+            "allow_place unknown tile/bank → UnknownVertex"
+        );
+        assert!(
             r.accel_shape_overflow,
             "SoftNpu BadShape / Overflow refuse"
         );
@@ -1178,6 +1211,10 @@ mod tests {
         assert!(
             r.accel_bad_op,
             "SoftNpu elementwise unknown-op → BadOp"
+        );
+        assert!(
+            r.accel_not_found,
+            "SoftNpuDevice probe bad negotiate → NotFound"
         );
         assert!(
             r.tenant_fuzz.all_ok(),
@@ -1435,6 +1472,14 @@ mod tests {
             "[redteam] attack=cut-too-large result=refused"
         );
         assert_eq!(
+            LINE_CUT_NO_CUT,
+            "[redteam] attack=cut-no-cut result=refused"
+        );
+        assert_eq!(
+            LINE_CUT_UNKNOWN_VERTEX,
+            "[redteam] attack=cut-unknown-vertex result=refused"
+        );
+        assert_eq!(
             LINE_ACCEL_SHAPE_OVERFLOW,
             "[redteam] attack=accel-shape-overflow result=refused"
         );
@@ -1445,6 +1490,10 @@ mod tests {
         assert_eq!(
             LINE_ACCEL_BAD_OP,
             "[redteam] attack=accel-bad-op result=refused"
+        );
+        assert_eq!(
+            LINE_ACCEL_NOT_FOUND,
+            "[redteam] attack=accel-not-found result=refused"
         );
         assert_eq!(
             LINE_TENANT_FUZZ,
@@ -1543,9 +1592,12 @@ mod tests {
         LINE_CUT_EMPTY_PART,
         LINE_CUT_UNBALANCED,
         LINE_CUT_TOO_LARGE,
+        LINE_CUT_NO_CUT,
+        LINE_CUT_UNKNOWN_VERTEX,
         LINE_ACCEL_SHAPE_OVERFLOW,
         LINE_ACCEL_UNSUPPORTED_DTYPE,
         LINE_ACCEL_BAD_OP,
+        LINE_ACCEL_NOT_FOUND,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

@@ -51,7 +51,7 @@ pub use mmio::{
 };
 pub use partner::{PartnerCmd, PartnerNpuStub};
 pub use path_a::{path_a_sid, PathABar, PATH_A_PCI_DEVICE, PATH_A_SSID};
-pub use softnpu::{IdentityDma, KernelDma, SoftNpuDevice};
+pub use softnpu::{run_accel_not_found_demo, AccelNotFoundReport, IdentityDma, KernelDma, SoftNpuDevice};
 pub use virtio_accel::{VirtioAccelQueue, VIRTIO_ACCEL_MAGIC, VIRTIO_ACCEL_VERSION};
 
 pub use sparsify::{run_softcp_sparsify_demo, SoftcpSparsifyReport};

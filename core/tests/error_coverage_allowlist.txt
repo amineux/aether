@@ -12,11 +12,8 @@ CapError::GenerationMismatch | never constructed; CapError changes are on the ki
 SpaceError::SpaceMismatch | never constructed anywhere in the tree; candidate for removal or a real check in a later PR
 
 # --- Constructed, refuse path exists, no test names it yet (needle candidates) ---
-CutError::NoCut | SpectralCut construction finds no admissible cut; no test names it
-CutError::UnknownVertex | SpectralCut/affinity lookup of a vertex outside the graph; no test names it
 OpKernelError::Cap | wrapper for a CapError from the operator-kernel cap lookup; inner CapError variants are named elsewhere
 OpKernelError::Fabric | wrapper for a FabricError from operator-kernel inject; inner FabricError variants are named elsewhere
-HalError::NotFound | AccelDevice probe found no device; no test names it
 
 # --- Boot-time parsers and image tooling (not tenant refuse paths) ---
 BootFsError::NoRoom | AETHFS01 pack: output buffer too small; boot image tooling, not a tenant refuse path
