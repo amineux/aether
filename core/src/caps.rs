@@ -172,6 +172,9 @@ pub enum CapError {
     GenerationMismatch,
     CrossTenant,
     WouldEscalate,
+    /// A named-table revoke has more descendants than the bounded walk can
+    /// represent. The revoke refuses before changing any table.
+    RevokeTooLarge,
 }
 
 /// Fixed-size kill set for revoke walks. `CAP_SLOTS` per table × two tables
@@ -195,16 +198,16 @@ impl KillSet {
         self.nodes.iter().take(self.len).any(|s| *s == Some(n))
     }
 
-    fn insert(&mut self, n: CdtNode) -> bool {
+    fn insert(&mut self, n: CdtNode) -> Result<bool, CapError> {
         if self.contains(n) {
-            return false;
+            return Ok(false);
         }
         if self.len >= CDT_KILL_CAP {
-            return false;
+            return Err(CapError::RevokeTooLarge);
         }
         self.nodes[self.len] = Some(n);
         self.len += 1;
-        true
+        Ok(true)
     }
 }
 
@@ -314,14 +317,18 @@ impl CapTable {
         cptr: CPtr,
         others: &mut [&mut CapTable],
     ) -> Result<Capability, CapError> {
-        let cap = self.take_slot(cptr)?;
+        // Plan the complete walk before mutating any table. The old walk
+        // removed the root first and silently ignored descendants once the
+        // fixed kill set filled, so a call naming three full tables could
+        // report success while leaving live children behind.
+        let cap = *self.lookup(cptr)?;
         let mut kill = KillSet::new();
-        kill.insert(cap.cdt());
+        kill.insert(cap.cdt())?;
         loop {
             let before = kill.len;
-            self.collect_into(&mut kill);
+            self.collect_into(&mut kill)?;
             for t in others.iter() {
-                t.collect_into(&mut kill);
+                t.collect_into(&mut kill)?;
             }
             if kill.len == before {
                 break;
@@ -334,14 +341,15 @@ impl CapTable {
         Ok(cap)
     }
 
-    fn collect_into(&self, kill: &mut KillSet) {
+    fn collect_into(&self, kill: &mut KillSet) -> Result<(), CapError> {
         for cap in self.slots.iter().flatten() {
             if let Some(parent) = cap.parent {
                 if kill.contains(parent) {
-                    kill.insert(cap.cdt());
+                    kill.insert(cap.cdt())?;
                 }
             }
         }
+        Ok(())
     }
 
     fn empty_killed(&mut self, kill: &KillSet) {
@@ -636,6 +644,67 @@ mod tests {
         ta.revoke(parent).unwrap();
         assert_eq!(ta.lookup(parent).unwrap_err(), CapError::EmptySlot);
         assert!(tb.require(child, CapKind::Memory, CapRights::READ).is_ok());
+    }
+
+    fn fill_descendants(src: &mut CapTable, root: CPtr, dest: &mut CapTable) -> Vec<CPtr> {
+        let mut out = Vec::new();
+        while dest.occupied() < CAP_SLOTS {
+            out.push(
+                src.transfer(
+                    root,
+                    dest,
+                    CapRights(CapRights::READ | CapRights::GRANT),
+                    false,
+                )
+                .unwrap(),
+            );
+        }
+        out
+    }
+
+    #[test]
+    fn revoke_at_kill_capacity_removes_every_descendant() {
+        let a = TenantId(1);
+        let b = TenantId(2);
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        fill_descendants(&mut ta, root, &mut tb);
+        assert_eq!(ta.occupied() + tb.occupied(), CDT_KILL_CAP);
+
+        ta.revoke_in(root, &mut [&mut tb]).unwrap();
+        assert_eq!(ta.occupied(), 0);
+        assert_eq!(tb.occupied(), 0);
+    }
+
+    #[test]
+    fn oversized_revoke_is_atomic() {
+        let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let mut tc = CapTable::new(c);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        let b_caps = fill_descendants(&mut ta, root, &mut tb);
+        fill_descendants(&mut tb, b_caps[0], &mut tc);
+        let before = (ta.occupied(), tb.occupied(), tc.occupied());
+        assert!(before.0 + before.1 + before.2 > CDT_KILL_CAP);
+
+        assert_eq!(
+            ta.revoke_in(root, &mut [&mut tb, &mut tc]),
+            Err(CapError::RevokeTooLarge)
+        );
+        assert_eq!((ta.occupied(), tb.occupied(), tc.occupied()), before);
+        assert!(ta.require(root, CapKind::Memory, CapRights::READ).is_ok());
+        assert!(tb
+            .require(b_caps[0], CapKind::Memory, CapRights::READ)
+            .is_ok());
+        assert!(tc.holds(CapKind::Memory, 7));
     }
 }
 
