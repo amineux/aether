@@ -459,8 +459,9 @@ impl MapUserPhysReport {
 pub fn run_map_user_phys_demo() -> MapUserPhysReport {
     let arena_base = 0x0100_0000u64;
     // Physical addresses a tenant must never be able to name: the x86,
-    // RISC-V and aarch64 kernel load addresses, and a foreign arena.
-    let kernel_phys = [0x0040_0000u64, 0x8020_0000, 0x4008_0000];
+    // RISC-V and aarch64 kernel load addresses (aarch64 moved from
+    // 0x40080000 to 0x40200000 in Round 26; both kept), and a foreign arena.
+    let kernel_phys = [0x0040_0000u64, 0x8020_0000, 0x4020_0000, 0x4008_0000];
     let foreign_arena = arena_base + 0x20_0000;
 
     let default_uses_arena_base = map_pin_addr(arena_base, 0) == Some(arena_base);

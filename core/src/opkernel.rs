@@ -167,7 +167,8 @@ impl OperatorKernelHandle {
     }
 
     /// Bind-checked inject: header flow + TREE_OFFLOAD / RING_RESERVE come
-    /// from the handle, then [`Fabric::send`] runs Hodge admit.
+    /// from the handle, then [`Fabric::send_as`] checks the caller's right to
+    /// send to `dest` and runs Hodge admit on the caller's own quota.
     pub fn inject(
         self,
         tab: &CapTable,
@@ -213,7 +214,9 @@ impl OperatorKernelHandle {
         .map_err(OpKernelError::Fabric)?
         .with_flow(self.flow)
         .with_phase(Phase::Exchange);
-        fabric.send(msg).map_err(OpKernelError::Fabric)
+        // Checked send: `tenant` must be `tab`'s owner, and the owner must
+        // own `dest` or hold an Endpoint+WRITE cap on it.
+        fabric.send_as(tab, msg).map_err(OpKernelError::Fabric)
     }
 }
 
@@ -399,12 +402,12 @@ pub fn run_opkernel_class_mismatch_demo() -> OpKernelClassMismatchReport {
         b"wrong-class",
         FlowClass::Curl,
     ) == Err(OpKernelError::ClassMismatch)
-        && fabric.pending(ep).ok() == Some(0);
+        && fabric.pending_as(tenant, ep).ok() == Some(0);
 
     let matched_ok = h.admit_as(&mut q, FlowClass::Gradient).is_ok()
         && h.inject(&caps, cptr, &mut fabric, ep, tenant, b"allreduce").is_ok()
         && fabric
-            .recv(ep)
+            .recv_as(tenant, ep)
             .is_ok_and(|m| m.payload() == b"allreduce" && m.header.flow == FlowClass::Gradient);
 
     OpKernelClassMismatchReport {
@@ -564,7 +567,7 @@ mod tests {
         let cptr = h.mint(&mut caps).unwrap();
         h.inject(&caps, cptr, &mut fabric, ep, TenantId(1), b"allreduce")
             .unwrap();
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.payload(), b"allreduce");
         assert_eq!(got.header.flow, FlowClass::Gradient);
         assert!(got.header.flags.tree_offload());
@@ -582,7 +585,7 @@ mod tests {
             .unwrap_err(),
             OpKernelError::ClassMismatch
         );
-        assert_eq!(fabric.pending(ep).unwrap(), 0);
+        assert_eq!(fabric.pending_unchecked(ep).unwrap(), 0);
     }
 
     #[test]
@@ -596,7 +599,7 @@ mod tests {
         let rp = ring.mint(&mut caps).unwrap();
         ring.inject(&caps, rp, &mut fabric, ep, TenantId(1), b"ring")
             .unwrap();
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.header.flow, FlowClass::Curl);
         assert!(got.header.flags.ring_reserve());
         assert!(!got.header.flags.tree_offload());
@@ -608,7 +611,7 @@ mod tests {
         torus
             .inject(&caps, tp, &mut fabric, ep, TenantId(1), b"cycle")
             .unwrap();
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.header.flow, FlowClass::Harmonic);
         assert!(!got.header.flags.tree_offload());
     }

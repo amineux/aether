@@ -259,15 +259,18 @@ Physical sketch (128 MiB guest, RAM at `0x80000000`):
 | `0x0c000000` | SiFive PLIC (hart 0 S-mode context 1) |
 | `0x10000000` | UART0 (16550; THRE → PLIC source 10 SoftNPU doorbell) |
 | `0x80200000` | Kernel `.text` (OpenSBI payload) |
-| `0x81000000–0x88000000` | Frame allocator window (arch fallback; no FDT mmap) |
+| `0x81000000–0x88000000` | Frame allocator: DTB `/memory` minus reservations, clipped to ≥ `0x81000000` (fixed window only if the DTB is refused) |
+| `0x87e00000` | DTB from OpenSBI (`a1`); its pages are kept out of the allocator |
 | `0x8200_0000–0x8220_0000` | `/init` ELF + user stack (U-bit 2 MiB in task satp) |
 | `0x8300_0000–0x8400_0000` | SoftNPU arena banks (identity; reserved) |
 
 PLIC is live; SoftNPU stays the in-kernel BAR (no virtio-mmio
-`-device`, no `/probe`, no FDT mmap parser). Serial prints
+`-device`, no `/probe`). The trampoline stashes OpenSBI's DTB pointer
+(`a1`) and `mm::init` parses it with `aether_core::fdt`. Serial prints
 `[plic] claim irq=10 SoftNPU used-ring`,
-`[mm] mmap: fallback (no Multiboot on this HAL)`, and
-`[init] U-mode /init`.
+`[mm] fdt mmap ok dtb=0x87e00000 …`, and
+`[init] U-mode /init`. A refused DTB prints
+`[mm] fdt refused (<FdtError>) …; using fallback window`.
 
 ## Boot (aarch64 / QEMU virt)
 
@@ -276,7 +279,7 @@ bank-color, and CDT checks. **Not** a product-class second kernel.
 
 ```
 QEMU -machine virt,gic-version=2 -cpu cortex-a72 -kernel build/aether-aarch64.elf
-        │  -semihosting -nic none; x0=dtb; EL1 (or EL2 → EL1 in the trampoline)
+        │  -semihosting -nic none; ELF ⇒ x0=0, DTB at 0x40000000; EL1 (or EL2 → EL1)
         ▼
 boot/aarch64/trampoline.S
         │  park extra PEs, PL011 hello
@@ -303,15 +306,16 @@ Physical sketch (128 MiB guest, RAM at `0x40000000`):
 | `0x08000000` | GICv2 distributor |
 | `0x08010000` | GICv2 CPU interface |
 | `0x09000000` | PL011 UART |
-| `0x40080000` | Kernel `.text` |
-| `0x41000000–0x48000000` | Frame allocator window (arch fallback; no FDT mmap) |
+| `0x40000000` | DTB (QEMU places the 1 MiB virt blob at RAM base for an ELF guest) |
+| `0x40200000` | Kernel `.text` (2 MiB up so the DTB fits below it; was `0x40080000`) |
+| `0x41000000–0x48000000` | Frame allocator: DTB `/memory`, clipped to ≥ `0x41000000` and < 2 GiB (Normal block) |
 | `0x42000000–0x42200000` | `/init` ELF + user stack (AP_EL0 2 MiB in task TTBR0) |
 | `0x43000000–0x44000000` | SoftNPU arena banks (identity; reserved) |
 
 SoftNPU stays the in-kernel BAR with a GICv2 SPI 40 software doorbell
-(no virtio-mmio `-device`, no GICv3, no `/probe`, no FDT mmap parser).
+(no virtio-mmio `-device`, no GICv3, no `/probe`).
 Extra PEs stay parked.
-Serial prints `[mm] mmap: fallback (no Multiboot on this HAL)`,
+Serial prints `[mm] fdt mmap ok dtb=0x40000000 …`,
 `[mm] aspace isolate ok`, and `[init] EL0 /init`.
 
 ## HAL ports

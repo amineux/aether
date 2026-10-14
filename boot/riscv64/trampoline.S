@@ -1,7 +1,8 @@
 /* Aether RISC-V trampoline: OpenSBI S-mode -> Sv39 identity map -> kmain.
  *
  * QEMU virt + default OpenSBI loads this ELF at 0x80200000 (a0=hartid,
- * a1=dtb). We park extra harts, identity-map 4 GiB with 1 GiB pages,
+ * a1=dtb). We park extra harts, stash a1 in BOOT_DTB_PA (kernel/src/mm,
+ * parsed by aether_core::fdt), identity-map 4 GiB with 1 GiB pages,
  * and call the Rust kmain. UART0 is 16550 MMIO at 0x10000000.
  */
     .section .text.boot, "ax"
@@ -11,6 +12,10 @@ _start:
     csrw    sie, zero
     csrw    sip, zero
     bnez    a0, .park
+
+    /* Boot hart only: keep OpenSBI's DTB pointer before a0/a1 are reused. */
+    la      t0, BOOT_DTB_PA
+    sd      a1, 0(t0)
 
     la      sp, boot_stack_top
     andi    sp, sp, -16
