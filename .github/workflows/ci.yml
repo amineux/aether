@@ -24,8 +24,14 @@ jobs:
           persist-credentials: false
       - name: Record and validate host evidence
         run: python3 scripts/collect_evidence.py --output "${{ runner.temp }}/aether-evidence"
-      - name: Evidence failure-path tests
-        run: python3 -m unittest discover -s scripts -p test_collect_evidence.py
+      - name: Render investor evaluation report
+        if: always()
+        run: python3 scripts/investor_report.py "${{ runner.temp }}/aether-evidence"
+      - name: Evidence and report failure-path tests
+        if: always()
+        run: |
+          python3 -m unittest discover -s scripts -p test_collect_evidence.py
+          python3 -m unittest discover -s scripts -p test_investor_report.py
       - name: Preserve evidence including failed checks
         if: always()
         uses: actions/upload-artifact@v4

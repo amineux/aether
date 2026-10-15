@@ -150,7 +150,7 @@ REDTEAM_LOG := $(BUILD)/redteam.log
 red-team:
 	mkdir -p $(BUILD)
 	rm -f $(REDTEAM_LOG)
-	cargo run -p aether-redteam --release > $(REDTEAM_LOG)
+	cargo run --locked -p aether-redteam --release > $(REDTEAM_LOG)
 	cat $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=wrong-sid-crosscut result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softcmdfirewall result=refused" $(REDTEAM_LOG)
