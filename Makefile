@@ -143,7 +143,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / cut-no-cut / cut-unknown-vertex / accel-shape-overflow / accel-unsupported-dtype / accel-bad-op / accel-not-found / arena-bad-align / arena-unknown-bank / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / cut-no-cut / cut-unknown-vertex / accel-shape-overflow / accel-unsupported-dtype / accel-bad-op / accel-not-found / arena-bad-align / arena-unknown-bank / opkernel-fabric / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -176,6 +176,10 @@ red-team:
 	grep -q "\\[redteam\\] attack=hbm-bw result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=submit-sid result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=sid-budget result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=stage2-fault result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softnoi-exhausted result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-insufficient-rights result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-seq-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-wrong-stream result=refused" $(REDTEAM_LOG)
@@ -207,6 +211,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=fdt-too-many-regions result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=opkernel-fabric result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-overcommit result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-unbound result=refused" $(REDTEAM_LOG)
@@ -506,6 +511,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[mm\\] mmap grow" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/qemu-serial.log \
@@ -538,6 +544,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -583,6 +590,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -661,6 +669,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/smp-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -702,6 +711,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[init\\] clone ok (shared aspace)" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/qemu-blk-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-blk-serial.log \
@@ -791,6 +801,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/riscv-serial.log \
@@ -866,6 +877,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] user-thread share-aspace" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] wide syscall arguments refused" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] mmap grow ok" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/aarch64-serial.log \

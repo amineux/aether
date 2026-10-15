@@ -417,6 +417,89 @@ pub fn run_opkernel_class_mismatch_demo() -> OpKernelClassMismatchReport {
     }
 }
 
+/// Host red-team report for OperatorKernel inject refused by the fabric.
+///
+/// Sell line `[redteam] attack=opkernel-fabric` — existing
+/// [`OperatorKernelHandle::inject`] only. The handle, cap and class all
+/// check out, so the refusal comes from the fabric step and surfaces as the
+/// [`OpKernelError::Fabric`] wrapper:
+/// - payload past [`crate::fabric::MAX_MSG_BYTES`] → `Message::new` →
+///   `Fabric(PayloadTooLarge)`;
+/// - destination endpoint owned by another tenant, no Endpoint+WRITE cap →
+///   [`Fabric::send_as`] → `Fabric(NoSuchEndpoint)`.
+///
+/// Both refuse before Hodge admit: the caller's per-tenant quota does not
+/// move and nothing is queued. An in-bounds inject to the caller's own
+/// endpoint admits. **Not** fabric-queue-full / hodge-quota /
+/// opkernel-class-mismatch rehash; no Fabric API change, no CapTable
+/// change; software path only.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OpKernelFabricReport {
+    /// In-bounds inject to the caller's own endpoint admits and is received.
+    pub own_ok: bool,
+    /// Oversized payload → `OpKernelError::Fabric(FabricError::PayloadTooLarge)`.
+    pub payload_refused: bool,
+    /// Foreign endpoint, no cap → `OpKernelError::Fabric(FabricError::NoSuchEndpoint)`.
+    pub foreign_dest_refused: bool,
+    /// Refusals left the caller's Hodge quota and both queues untouched.
+    pub no_charge: bool,
+}
+
+impl OpKernelFabricReport {
+    pub fn all_ok(&self) -> bool {
+        self.own_ok && self.payload_refused && self.foreign_dest_refused && self.no_charge
+    }
+}
+
+/// Bound Tree+Gradient handle with a valid cap: fabric refuses are wrapped
+/// as [`OpKernelError::Fabric`]; the in-bounds own-endpoint inject admits.
+pub fn run_opkernel_fabric_demo() -> OpKernelFabricReport {
+    const FAIL: OpKernelFabricReport = OpKernelFabricReport {
+        own_ok: false,
+        payload_refused: false,
+        foreign_dest_refused: false,
+        no_charge: false,
+    };
+    let tenant = TenantId(1);
+    let other = TenantId(2);
+    let Ok(h) =
+        OperatorKernelHandle::bind(OpKernelId(1), CollectiveKind::Tree, FlowClass::Gradient)
+    else {
+        return FAIL;
+    };
+    let mut caps = CapTable::new(tenant);
+    let mut fabric = Fabric::new();
+    let (Ok(cptr), Ok(own), Ok(foreign)) = (
+        h.mint(&mut caps),
+        fabric.create_endpoint(tenant),
+        fabric.create_endpoint(other),
+    ) else {
+        return FAIL;
+    };
+
+    let grad0 = fabric.remain_for(tenant, FlowClass::Gradient);
+    let over = [0xA5u8; crate::fabric::MAX_MSG_BYTES + 1];
+    let payload_refused = h.inject(&caps, cptr, &mut fabric, own, tenant, &over)
+        == Err(OpKernelError::Fabric(FabricError::PayloadTooLarge));
+    let foreign_dest_refused = h.inject(&caps, cptr, &mut fabric, foreign, tenant, b"probe")
+        == Err(OpKernelError::Fabric(FabricError::NoSuchEndpoint));
+    let no_charge = fabric.remain_for(tenant, FlowClass::Gradient) == grad0
+        && fabric.pending_as(tenant, own).ok() == Some(0)
+        && fabric.pending_as(other, foreign).ok() == Some(0);
+
+    let own_ok = h.inject(&caps, cptr, &mut fabric, own, tenant, b"allreduce").is_ok()
+        && fabric
+            .recv_as(tenant, own)
+            .is_ok_and(|m| m.payload() == b"allreduce" && m.header.flow == FlowClass::Gradient);
+
+    OpKernelFabricReport {
+        own_ok,
+        payload_refused,
+        foreign_dest_refused,
+        no_charge,
+    }
+}
+
 /// BIND is required. Without it the handle is inert (same as SpectralCut).
 pub fn require_opkernel_bind(tab: &CapTable, cptr: CPtr) -> Result<&Capability, CapError> {
     tab.require(cptr, CapKind::OperatorKernel, CapRights::BIND)
@@ -531,6 +614,36 @@ mod tests {
         h.admit(&mut q).unwrap();
         assert!(!h.inject_flags().tree_offload());
         assert_eq!(q.remain(FlowClass::Harmonic), 63);
+    }
+
+    #[test]
+    fn opkernel_fabric_demo_all_ok() {
+        let r = run_opkernel_fabric_demo();
+        assert!(r.own_ok, "own-endpoint inject admits: {r:?}");
+        assert!(r.payload_refused, "oversized payload → OpKernelError::Fabric(PayloadTooLarge)");
+        assert!(r.foreign_dest_refused, "foreign endpoint → OpKernelError::Fabric(NoSuchEndpoint)");
+        assert!(r.no_charge, "fabric refuses charge no Hodge quota, queue nothing");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn missing_or_out_of_range_cptr_is_not_bound() {
+        // require_opkernel_bind runs before the cap lookup and maps every
+        // lookup failure (EmptySlot / InvalidCptr) to NotBound, so the
+        // lookup wrapper after it cannot fire on this path.
+        let mut fabric = Fabric::new();
+        let ep = fabric.create_endpoint(TenantId(1)).unwrap();
+        let caps = tab();
+        let h = OperatorKernelHandle::bind(OpKernelId(8), CollectiveKind::Ring, FlowClass::Curl)
+            .unwrap();
+        for cptr in [CPtr(0), CPtr(u16::MAX)] {
+            assert_eq!(
+                h.inject(&caps, cptr, &mut fabric, ep, TenantId(1), b"x")
+                    .unwrap_err(),
+                OpKernelError::NotBound
+            );
+        }
+        assert_eq!(fabric.pending_unchecked(ep).unwrap(), 0);
     }
 
     #[test]

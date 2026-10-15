@@ -314,12 +314,23 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] wide syscall arguments refused\r\n");
+    // A later allocation must not invalidate the first live arena handle.
+    let newer_cap = sys(SYS_ARENA_ALLOC, 256, 0, 0);
+    if newer_cap < 0 {
+        debug_print(b"[init] second arena_alloc FAIL\r\n");
+        exit(1);
+    }
     let mapped = sys(SYS_MAP, cap as u64, 0, 0);
     if mapped < 0 {
         debug_print(b"[init] map FAIL\r\n");
         exit(1);
     }
     debug_print(b"[init] arena_alloc + map ok\r\n");
+    if sys(SYS_MAP, newer_cap as u64, 0, 0) < 0 {
+        debug_print(b"[init] second arena map FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] older arena capability survives allocation\r\n");
     if !map_user_phys_probe() {
         exit(1);
     }
