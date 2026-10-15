@@ -4,6 +4,11 @@
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).
 
+**[LeaseLab interactive simulation](https://amineux.github.io/aether/simulation.html)** —
+explore a proposed locality-aware lease planner; adjustable assumptions, copy/local/remote
+comparison and epoch-replay sketch. [Model and validation plan](docs/research/LEASELAB.md).
+Illustrative browser model, not a hardware benchmark or kernel integration.
+
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
 **Week 1 call (20 min):** [`docs/WEEK1_CALL.md`](docs/WEEK1_CALL.md).
