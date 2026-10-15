@@ -239,51 +239,59 @@ fn user_frame(rip: u64, rsp: u64) -> InterruptFrame {
 #[cfg(target_arch = "x86_64")]
 #[allow(dead_code)]
 unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
-    core::arch::asm!(
-        "mov rsp, {f}",
-        "pop r15",
-        "pop r14",
-        "pop r13",
-        "pop r12",
-        "pop r11",
-        "pop r10",
-        "pop r9",
-        "pop r8",
-        "pop rdi",
-        "pop rsi",
-        "pop rbp",
-        "pop rbx",
-        "pop rdx",
-        "pop rcx",
-        "pop rax",
-        "add rsp, 16",
-        "iretq",
-        f = in(reg) frame as u64,
-        options(noreturn)
-    );
+    // SAFETY: caller passes a complete saved InterruptFrame (fn contract); the asm
+    // pops it and iretq never returns.
+    unsafe {
+        core::arch::asm!(
+            "mov rsp, {f}",
+            "pop r15",
+            "pop r14",
+            "pop r13",
+            "pop r12",
+            "pop r11",
+            "pop r10",
+            "pop r9",
+            "pop r8",
+            "pop rdi",
+            "pop rsi",
+            "pop rbp",
+            "pop rbx",
+            "pop rdx",
+            "pop rcx",
+            "pop rax",
+            "add rsp, 16",
+            "iretq",
+            f = in(reg) frame as u64,
+            options(noreturn)
+        );
+    }
 }
 
 #[cfg(any(target_arch = "riscv64", target_arch = "aarch64"))]
 unsafe fn resume_to(frame: *const InterruptFrame) -> ! {
-    extern "C" {
-        fn trap_return();
+    // SAFETY: caller passes a complete saved trap frame (fn contract); trap_return
+    // restores it and never returns.
+    unsafe {
+        extern "C" {
+            fn trap_return();
+        }
+        #[cfg(target_arch = "riscv64")]
+        core::arch::asm!(
+            "mv sp, {f}",
+            "j {ret}",
+            f = in(reg) frame as u64,
+            ret = sym trap_return,
+            options(noreturn)
+        );
+        #[cfg(target_arch = "aarch64")]
+        core::arch::asm!(
+            "mov sp, {f}",
+            "b {ret}",
+            f = in(reg) frame as u64,
+            ret = sym trap_return,
+            options(noreturn)
+        );
     }
-    #[cfg(target_arch = "riscv64")]
-    core::arch::asm!(
-        "mv sp, {f}",
-        "j {ret}",
-        f = in(reg) frame as u64,
-        ret = sym trap_return,
-        options(noreturn)
-    );
-    #[cfg(target_arch = "aarch64")]
-    core::arch::asm!(
-        "mov sp, {f}",
-        "b {ret}",
-        f = in(reg) frame as u64,
-        ret = sym trap_return,
-        options(noreturn)
-    );
 }
 
 pub fn init() {

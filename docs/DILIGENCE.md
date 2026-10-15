@@ -42,7 +42,7 @@ reserved. Freeze proof: `make design-win-standin`. Port skipped
 | Command | What they see |
 | --- | --- |
 | `make diligence-demo` | blast / pjrt / event + fence counts / softcct package ≪ broadcast + single-chiplet=noop + incorrect-elision=refused / `[scope] soft≠strict` / firewall / greenctx 70/30 + interference + migrate SID-sticky / cdt revoke descendants / softcp sparsify DROP / opinject resident+hot-add / partner-hello bad-exec |
-| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `softnoi-unbound` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `hodge-class-unauthorized` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `smmu-cross-tenant` + `smmu-stream-abort` + `set-sid-cross-tenant` + `softcct-incorrect-elision` + `softcct-credit-exhausted` + `chipsync-unbound` + `softnoi-ring-exhausted` + `opinject-stale-version` + `opinject-oob` + `opinject-not-running` + `opinject-busy` + `opinject-unknown-slot` + `opinject-bad-arg` + `smmu-bad-range` + `smmu-table-full` + `smmu-ssid-abort` + `smmu-window-full` + `cut-not-bound` + `cut-conductance` + `cut-empty-part` + `cut-unbalanced` + `cut-too-large` + `accel-shape-overflow` + `accel-unsupported-dtype` + `tenant-fuzz` + `foreign-tenant-color` |
+| `make red-team` | named refuses + fabric-class + `ATOMIC_ADD` + `[softsfi] tensor=refused` + `[softsfi] heap=refused` + `[softsfi] unknown=refused` + `[softsfi] unknown-base=refused` + `typed-window-sid` + `hbm-bw` + `xqueue-sid-override` + `set-sid-unbound` + `submit-sid` + `sid-budget` + `stage2-fault` + `softnoi-exhausted` + `softnoi-unbound` + `hodge-harmonic-tree` + `hodge-curl-tree` + `hodge-quota` + `hodge-class-unauthorized` + `firewall-ident-pa` + `greenctx-overcommit` + `greenctx-unbound` + `greenctx-exhausted` / `greenctx-busy` + `smmu-overlap` + `smmu-not-mapped` + `smmu-wrong-stream` + `smmu-cross-tenant` + `smmu-stream-abort` + `set-sid-cross-tenant` + `softcct-incorrect-elision` + `softcct-credit-exhausted` + `chipsync-unbound` + `softnoi-ring-exhausted` + `opinject-stale-version` + `opinject-oob` + `opinject-not-running` + `opinject-busy` + `opinject-unknown-slot` + `opinject-bad-arg` + `smmu-bad-range` + `smmu-table-full` + `smmu-ssid-abort` + `smmu-window-full` + `cut-not-bound` + `cut-conductance` + `cut-empty-part` + `cut-unbalanced` + `cut-too-large` + `accel-shape-overflow` + `accel-unsupported-dtype` + `accel-bad-op` + `accel-not-found` + `cut-no-cut` + `cut-unknown-vertex` + `arena-bad-align` + `arena-unknown-bank` + `opkernel-fabric` + `tenant-fuzz` + `foreign-tenant-color` |
 | `make partner-hello` | frozen `IreeHalCmd` → `IreeShapedCp`; bad exec refused |
 | `make mp-shim` | MicroPerceptron-shaped thin consumer (PR #83). Inspiration name only. Not a port. |
 | `make design-win-check` / `make design-win-standin` | blank they fill, or the IREE HAL research stand-in (not a partner). TRANSFER-only refused. |
@@ -225,7 +225,7 @@ gaps:
 | ChipletFleet | KILL as calendar. Thin `ChipletTaskScope` host stub (Soft≠Strict sell line `[scope] soft≠strict`); not a Year-1 pillar, not a partner ask |
 | SMP is a QEMU smoke | INIT-SIPI + `gs` + two-hart steal on `-smp 2`; APs are kernel-only |
 | No secret KASLR / `fork` COW | HH + boot-time slide + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW + growable anon `SYS_MMAP` + identity teardown landed (`ffffffff80000000+PA` + 16 MiB slots; user CR3 has no HH / no identity DMA; tagged `mov cr3` when CPUID.PCID, else full flush; `USER_COW_BASE` RO until write; `USER_MMAP_BASE` `0x02C0_0000` first-fit 4 KiB). Kernel CR3 keeps SIPI / mailbox / trampoline / virtio-blk / APIC islands only; SoftNPU is Soft SMMU + HH. Not a secret slide, not Meltdown-complete, not POSIX `mmap` / `fork` |
-| No FDT mmap | RISC-V / aarch64 print an explicit Multiboot-missing fallback; they do not invent a map |
+| FDT mmap is a small parser | Since Round 26 RISC-V / aarch64 size frames from the DTB `/memory` nodes (`core/src/fdt.rs`, host-tested; `[mm] fdt mmap ok` on both QEMU CI boots). Reads only header, memreserve, root cells, `/memory*` and `/reserved-memory` `reg`; no `status`, no dynamic reserved pools, no hotplug. A malformed DTB is refused with a named `FdtError` and the boot prints that and uses the old fixed window. aarch64 finds the DTB at the QEMU virt RAM base because an ELF `-kernel` gets `x0 = 0`. Parsed and refused, not verified |
 | No CXL.mem | `TypedWindow` (`CxlMemStub`) is a host-tested pin/map stub; `MemorySpace::CxlRegion` is still a typed place. Not a HDM decoder, not QEMU CXL. See [WINDOW.md](WINDOW.md) |
 | Cap CDT / revoke | **Landed** (small parent/child + `revoke_in`). Not a seL4 CNode. No user syscall. Kernel World is still one shared table |
 | Hardware fence / timeline | **Landed** as a software model (seq / wait / complete + credits). Timeout is software. QEMU IRQ is still software. Not a silicon fence. SoftChipletSync is scoped software timelines; SoftCCT is last-writer elision on that model; fence **counts** only, not a latency claim |
@@ -368,6 +368,12 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Over QoS credits | `run_qos_credits_demo` — `Timeline::submit` → `PartitionError::CreditExhausted` when `in_flight >= qos.credits` (in-budget admits; complete/timeout frees). Not EventRing theater | refused |
 | Wait before fence retire | `run_fence_not_ready_demo` — `Timeline::wait` → `PartitionError::FenceNotReady` (issued-but-not-retired; complete then wait OK). Not CreditExhausted / qos-credits; timeout-frees stays in qos demo | refused |
 | Full arena table | `run_arena_limit_leak_demo` — `ArenaAllocator::alloc` → `ArenaError::ArenaLimit` when every arena slot is in use, checked before any free span is split; free bytes and free spans unchanged across repeated refusals (Round 21 fix: this path used to return `NoSpace` and lose the split span, reachable from `SYS_ARENA_ALLOC`). Not arena-not-owner / bank-color; software allocator only | refused |
+| Non-power-of-two arena align | `run_arena_bad_align_demo` — `ArenaAllocator::alloc` → `ArenaError::BadAlign` when effective align (floored to `PAGE_4K` / `PAGE_2M` huge) is not a power of two; below-floor / power-of-two admit. Not arena-not-owner / arena-limit-leak / UnknownBank; software allocator only | refused |
+| Empty / over-full bank table | `run_arena_unknown_bank_demo` — `ArenaAllocator::new` → `ArenaError::UnknownBank` on zero banks or more than `MAX_BANKS`; one bank constructs. Not arena-bad-align / arena-not-owner / arena-limit-leak; software allocator only | refused |
+| Full SpectralCut table / unbound cut | `run_cut_no_cut_demo` — `TileScheduler::bind_laplacian_cut` when all `MAX_CUTS_SCHED` slots are full → `CutError::NoCut`; `place_ok` with never-installed cut_id → `NoCut`; empty table binds. Not EmptyPart / Unbalanced / ConductanceExceeded / UnknownVertex / cut-not-bound; cut-only, no SoftNoI | refused |
+| Vertex outside affinity graph | `run_cut_unknown_vertex_demo` — `SpectralCut::allow_place` tile or bank not in the graph → `CutError::UnknownVertex`; known tile+bank admits. Not CrossCut / NoCut / cut-not-bound; cut-only, no SoftNoI | refused |
+| AccelDevice probe finds no device | `run_accel_not_found_demo` — `SoftNpuDevice::probe` when VirtIO-Accel MMIO negotiate fails (bad magic / bad qsize) → `HalError::NotFound`; fresh BAR probes. Not BadOp / BadShape / UnsupportedDType; software SoftNpu + frozen MMIO only; no new opcodes | refused |
+| OperatorKernel inject refused by the fabric | `run_opkernel_fabric_demo` — bound Tree+Gradient handle with a valid OperatorKernel cap: `OperatorKernelHandle::inject` with payload > `MAX_MSG_BYTES` → `OpKernelError::Fabric(FabricError::PayloadTooLarge)`; inject to another tenant's endpoint without an Endpoint+WRITE cap → `OpKernelError::Fabric(FabricError::NoSuchEndpoint)` from `Fabric::send_as`. Both refuse before Hodge admit: caller quota unchanged, nothing queued; own-endpoint inject admits. Not fabric-queue-full / hodge-quota / opkernel-class-mismatch; no Fabric API change. (`OpKernelError::Cap` stays allowlisted: `require_opkernel_bind` runs first and maps every lookup failure to `NotBound`, so the wrapper is unreachable on this path) | refused |
 | User copy past a mapped page | `run_user_copy_straddle_demo` — `sysnr::user_chunks` splits a user range at 4 KiB and `sysnr::user_pages_ok` refuses it if any page is unmapped (8 mapped + 8 unmapped bytes → refused, naming the unmapped page; wrap refused; mapped straddles pass). The kernel's `read_user_in` / `write_user_in` run this gate, then translate each page on its own (Round 21 fix: only the first page was translated, so an x86 copy ran into the next physical frame and RISC-V / aarch64 took a kernel fault on an unmapped tail). QEMU `/init` checks the same on all three arches. Not a new syscall or struct; not SMAP/PAN hardening | refused |
 | SYS_MAP caller-supplied physical address | `run_map_user_phys_demo` — `sysnr::map_pin_addr` derives the pinned physical address only from the caller's own arena capability base: `vaddr == 0` (or the arena's own base) pins the arena base; any other caller-supplied address — a kernel load address or a foreign arena — is refused with `SysError::Inval`, so a tenant cannot pin and (on x86, via `allow_user_2m`) user-map arbitrary physical memory. The kernel's `sys_map` runs the same gate; QEMU `/init` checks it on all three arches. Not a new syscall number / struct / enum variant | refused |
 | Foreign chiplet admit | `run_outside_slice_demo` — `PartitionProfile::admit_chiplet` → `PartitionError::OutsideSlice` (own chiplet admits). Not hops / qos / CrossCut / bank-color | refused |
@@ -395,6 +401,12 @@ runs `examples/red-team` on the host and prints grep-able lines. It
 | Soft-SMMU SET_SID foreign tenant | `run_set_sid_cross_tenant_demo` — Soft-SMMU `set_sid` → `MapError::CrossTenant` when Bound STE tenant ≠ cap tenant (same-tenant set_sid admits). **Not** smmu-cross-tenant bind_stream / set-sid-unbound Soft-CP Fault / SubmitSid / WrongStream | refused |
 | SoftCCT incorrect elision | `run_softcct_incorrect_elision_demo` — SoftCCT `incorrect_elide` dual-proof fold: cross-chiplet hazard must fence (`should_elide` false) while buggy policy would elide. Diligence banner sibling. **Not** UCIe latency / qos-credits / softcct-credit-exhausted | refused |
 | SoftCCT CCT slot exhausted | `run_softcct_credit_exhausted_demo` — SoftCCT `ChipletCoherenceTable::record` → `PartitionError::CreditExhausted` past `MAX_CCT_ENTRIES` (in-budget fills + existing-label update admit). **Not** Timeline qos-credits / softcct-incorrect-elision / UCIe | refused |
+| Fabric endpoint slot exhaustion | `run_fabric_slot_exhaust_demo` — `Fabric::create_endpoint` past `MAX_ENDPOINTS_PER_TENANT` (4) live endpoints → `FabricError::EndpointLimit` with no slot consumed; other tenants still create; 1000 create/close cycles leak no slot; `close_for` on a foreign endpoint → `NoSuchEndpoint`. Per-tenant cap, **not** a reservation: enough tenants together can still fill the 16-slot table. **Not** fabric-endpoint-limit (table full) / hodge-quota | refused |
+| Fabric stale endpoint after slot reuse | `run_fabric_stale_endpoint_demo` — a closed endpoint's slot is reused by another tenant; the old `EndpointId` → `FabricError::NoSuchEndpoint` on send / recv / pending / owner / close (ids never reissued); new owner's queued message untouched; no Hodge quota charged. **Not** fabric-queue-full / CapTable | refused |
+| Fabric recv from a foreign endpoint | `run_fabric_recv_foreign_demo` — `Fabric::recv_as` / `pending_as` by a non-owner → `FabricError::NoSuchEndpoint`, identical to a missing id; owner's queued message intact. Kernel `SYS_RECV` uses `recv_as`. **Not** fabric-send-no-cap / fabric-stale-endpoint | refused |
+| Fabric send without the right to send | `run_fabric_send_no_cap_demo` — `Fabric::send_as` with no cap, wrong-object cap, no-`WRITE` cap, or forged sender tag → `FabricError::NoSuchEndpoint`; nothing queued, no quota moved; Endpoint+WRITE admits and charges the sender. Kernel `SYS_SEND` uses `send_as`. **Not** fabric-recv-foreign / fabric-queue-full | refused |
+| Malformed device tree (boot) | `run_fdt_refusal_demo` — one malformed DTB per `FdtError` variant, built from a QEMU-virt-shaped fixture: flipped magic → `BadMagic`; one byte short → `Truncated`; version 16 → `BadVersion`; totalsize > 2 MiB → `TooLarge`; strings block past totalsize → `BadOffset`; undefined token → `BadToken`; name offset past strings → `BadString`; nesting > 16 → `TooDeep`; `#address-cells = 3` → `BadCells`; reg overflow → `BadRegion`; no `/memory` → `NoMemory`; 17 ranges → `TooManyRegions`. The valid fixture admits. Boot-time input from firmware, **not** a tenant path; a bit-flip / truncation sweep of the fixture is a host test (no panic), not a fuzzer campaign | refused |
+| Fabric Hodge quota drain | `run_fabric_quota_drain_demo` — Hodge quota is per sender tenant and class (64 each); a sender past its own budget → `Hodge(QuotaExceeded)`; other tenants keep full budgets. Ledger bound: 16 distinct senders, no refill. **Not** hodge-quota (empty quota) / fabric-queue-full | refused |
 
 Expected stdout (CI greps these):
 
@@ -415,6 +427,8 @@ Expected stdout (CI greps these):
 [redteam] attack=outside-slice result=refused
 [redteam] attack=arena-not-owner result=refused
 [redteam] attack=arena-limit-leak result=refused
+[redteam] attack=arena-bad-align result=refused
+[redteam] attack=arena-unknown-bank result=refused
 [redteam] attack=user-copy-straddle result=refused
 [redteam] attack=map-user-phys result=refused
 [redteam] attack=silent-remote result=refused
@@ -424,6 +438,9 @@ Expected stdout (CI greps these):
 [redteam] attack=xqueue-sid-override result=refused
 [redteam] attack=set-sid-unbound result=refused
 [redteam] attack=kv-insufficient-rights result=refused
+[redteam] attack=kv-seq-mismatch result=refused
+[redteam] attack=kv-wrong-stream result=refused
+[redteam] attack=kv-bad-grant result=refused
 [redteam] attack=submit-sid result=refused
 [redteam] attack=sid-budget result=refused
 [redteam] attack=stage2-fault result=refused
@@ -433,8 +450,29 @@ Expected stdout (CI greps these):
 [redteam] attack=hodge-curl-tree result=refused
 [redteam] attack=hodge-quota result=refused
 [redteam] attack=fabric-queue-full result=refused
+[redteam] attack=fabric-payload-too-large result=refused
+[redteam] attack=fabric-too-many-caps result=refused
+[redteam] attack=fabric-endpoint-limit result=refused
+[redteam] attack=fabric-slot-exhaust result=refused
+[redteam] attack=fabric-stale-endpoint result=refused
+[redteam] attack=fabric-recv-foreign result=refused
+[redteam] attack=fabric-send-no-cap result=refused
+[redteam] attack=fabric-quota-drain result=refused
+[redteam] attack=fdt-bad-magic result=refused
+[redteam] attack=fdt-truncated result=refused
+[redteam] attack=fdt-bad-version result=refused
+[redteam] attack=fdt-too-large result=refused
+[redteam] attack=fdt-bad-offset result=refused
+[redteam] attack=fdt-bad-token result=refused
+[redteam] attack=fdt-bad-string result=refused
+[redteam] attack=fdt-too-deep result=refused
+[redteam] attack=fdt-bad-cells result=refused
+[redteam] attack=fdt-bad-region result=refused
+[redteam] attack=fdt-no-memory result=refused
+[redteam] attack=fdt-too-many-regions result=refused
 [redteam] attack=hodge-class-unauthorized result=refused
 [redteam] attack=opkernel-class-mismatch result=refused
+[redteam] attack=opkernel-fabric result=refused
 [redteam] attack=firewall-ident-pa result=refused
 [redteam] attack=greenctx-overcommit result=refused
 [redteam] attack=greenctx-unbound result=refused
@@ -465,8 +503,12 @@ Expected stdout (CI greps these):
 [redteam] attack=cut-empty-part result=refused
 [redteam] attack=cut-unbalanced result=refused
 [redteam] attack=cut-too-large result=refused
+[redteam] attack=cut-no-cut result=refused
+[redteam] attack=cut-unknown-vertex result=refused
 [redteam] attack=accel-shape-overflow result=refused
 [redteam] attack=accel-unsupported-dtype result=refused
+[redteam] attack=accel-bad-op result=refused
+[redteam] attack=accel-not-found result=refused
 [redteam] attack=tenant-fuzz result=refused seed=0x5AE7 ops=4096 escapes=0 unnamed=0 variants=<n>
 [redteam] fabric-class admit/refuse
 [redteam] ATOMIC_ADD accept/reject
@@ -620,8 +662,8 @@ Two adapters ship:
 Expected summary lines (`make isolation-matrix` greps the first two):
 
 ```
-[isolation-kit] backend=aether-soft classes=12 applicable=12 refused=12 accepted=0 n/a=0 result=conformant
-[isolation-kit] backend=weak-sample-example-only classes=12 applicable=11 refused=4 accepted=7 n/a=1 result=NONCONFORMANT
+[isolation-kit] backend=aether-soft classes=15 applicable=15 refused=15 accepted=0 n/a=0 result=conformant
+[isolation-kit] backend=weak-sample-example-only classes=15 applicable=14 refused=4 accepted=10 n/a=1 result=NONCONFORMANT
 ```
 
 Scope: host software checks only. Not certification, not a partner or
@@ -640,3 +682,143 @@ grep-able on purpose: it can later be registered as one more evidence check
 (for example a `COMMANDS` entry feeding `scripts/investor_report.py` from PR
 #190) without changing the kit — wiring that is left to the owners of
 `scripts/collect_evidence.py` and `ci.yml`.
+
+## Bounded model-checked tenant noninterference (Kani + two-world check)
+
+Two complementary checks of the same claim: nothing one tenant does changes
+what another tenant sees.
+
+**1. Kani harnesses over the pure core** (`proofs/`, `make kani`). Each
+harness is a small Rust function behind `#[cfg(kani)]` that Kani 0.68 / CBMC
+checks for **every** input inside the harness's stated bounds, not for a
+sample of inputs. This is **bounded model checking**: the result holds inside
+the bounds below and says nothing outside them. It is not a whole-system
+proof, not a proof about the kernel binary, and not a hardware guarantee.
+The `proofs/` crate is its own workspace, so normal builds and
+`cargo test --workspace` are unchanged. `scripts/run_kani.sh` prints one
+line per harness:
+
+```
+[proof] harness=<name> result=verified checks=<n> time=<s>s
+[proof] summary harnesses=<n> verified=<n> failed=<n> kind=bounded-model-checked
+```
+
+Status at this commit (8 cores, 16 GB, Kani 0.68): 15 of the 18 harnesses
+verify, each in under 5 minutes. Three have not completed on that machine and
+are **not** claimed as verified: `arena_alloc_never_overlaps_live_arena` and
+`unmap_for_cross_tenant_leaves_region` (CBMC runs out of memory or exceeds
+30 minutes) and `arena_limit_refuses_and_conserves` (exceeds 10 minutes).
+Their properties are still exercised by the unit and red-team tests and the
+two-world check below; they need a bigger machine or tighter bounds.
+
+Kani also checks every arithmetic overflow, out-of-bounds index, `unwrap`
+and `panic!` reachable inside the bounds, so "verified" also means none of
+those can happen there.
+
+| Harness | Property | Bounds |
+|---|---|---|
+| `cap_mint_rejects_cross_tenant` | `mint` stores a cap only for the table owner, never `Empty` | tenants `< 4`; all 10 kinds; all rights and object ids |
+| `cap_require_matches_kind_rights_tenant` | `require` returns a cap only with the asked kind, every asked right, and the owner's tenant | tenant `< 4`; kinds 1..=9; all rights |
+| `cap_transfer_never_escalates` | `transfer` needs `GRANT`; the minted cap belongs to the destination owner with a subset of the rights; a refusal leaves every destination slot empty | tenants `< 4`; kinds 1..=9; all rights; move and copy |
+| `translate_stays_within_mapped_region` | after a map, `translate_stream` returns `Some` only inside `[base, base+len)`, at the same offset in the region's own IOVA window | one 4 KiB region, tenant 1, stream 0; query PA over all of `u64` |
+| `translate_refuses_other_tenant` | a walk tagged with another tenant is `CrossTenant`; the owner walks | one 4 KiB region; attacker tenants `< 4`; every in-range offset |
+| `unmap_for_cross_tenant_leaves_region` | another tenant can never unmap a region; the region and the owner's translations are unchanged | one 4 KiB region of tenant 1; attacker tenant 2 with any rights / object; unmap IOVA over all of `u64` |
+| `map_on_foreign_stream_refused` | a tenant cannot pin anything on a stream another tenant owns (`CrossTenant`, table unchanged) | stream bound by tenant 1; attacker tenant 2 with full Memory+MAP; any guest PA, `len <= 16 KiB` |
+| `arena_limit_refuses_and_conserves` | with all 16 arena slots used, the next alloc is `ArenaLimit` and no free byte or span is lost (the #199 fix) | 16 one-page arenas; probe size `[1, 4 KiB]` |
+| `arena_free_any_order_conserves_bytes` | every `free` returns exactly that arena's bytes, and after all frees the bank's free bytes equal the start and the free list re-coalesces to one span (no leak, any free order) | three live arenas (1, 2, 1 pages; tenants 1, 2, 3); all 6 free orders |
+| `arena_alloc_never_overlaps_live_arena` | a new allocation never overlaps another tenant's live arena, stays inside the bank, and leaves that arena byte-identical | one live arena of tenant 2; tenant 1 asks for `[1, 8 KiB]` |
+| `arena_op_does_not_touch_other_tenant` | an ownership handoff on one arena never changes another tenant's arena | two live arenas; tiles and tenant `< 4` |
+| `arena_free_does_not_touch_other_tenant` | freeing any other arena id leaves tenant 2's arena live and byte-identical | two live arenas; ids `< 8` |
+| `arena_nonowner_transfer_refused_leaves_state` | a handoff claimed by a non-owner is `NotOwner`, arena unchanged | kernel-owned arena; tiles and tenant `< 8` |
+| `arena_reclaim_by_non_owner_refused` | after kernel → tile 2, only tile 2 can hand it on; kernel-style reclaim and every other tile are `NotOwner` | any `from` other than `Some(2)`; `to`, tenant `< 8` |
+| `kv_attend_never_crosses_tenant` | `attend` succeeds only for the owner's KV page (not weights), matching sequence, and the right READ / WRITE | tenants, ids, seq `< 3`; any rights and request |
+| `kv_regrant_requires_grant` | decode-side regrant needs `GRANT`, else `WouldRegrant` and the destination stays empty | tenants `< 3`; any rights |
+| `kv_pin_cross_tenant_installs_nothing` | `pin_kv` on another tenant's KV object fails and installs nothing in the SMMU | object of tenant 1, cap of tenant 2, any rights |
+| `map_pin_addr_only_from_arena_cap` | `SYS_MAP`'s pinned address comes only from the arena cap: `Some(base)` iff `vaddr` is `0` or `base` (the #203 fix) | `arena_base` and `vaddr` over all of `u64` |
+
+Where a harness fixes one tenant pair (for example attacker tenant 2 against
+owner tenant 1), it does so to stop the checker unrolling a path the tenant
+gate makes unreachable. The gates compare tenant ids for equality, so any
+other distinct pair takes the same path, but the checked statement is only
+for the pair named.
+
+Assumptions: Rust's semantics as Kani models them; the `aether-core` source
+at the checked commit; the fixed table sizes in the code (`MAX_ARENAS = 16`,
+`MAX_FREE = 24`, `MAX_MAPS = 16`, `MAX_STES = 8`, `CAP_SLOTS = 32`). Loop
+bounds are set per harness with `#[kani::unwind]`, and Kani's unwinding
+assertions fail the harness if a bound is too small.
+
+**2. Two-world noninterference check** (`make noninterference`,
+`examples/red-team/examples/noninterference`, tests in
+`examples/red-team/tests/noninterference.rs`). The same honest workload runs
+in two worlds. Tenants A and B run the two-tenant MLP (5 accelerator jobs
+each, through their own Soft-SMMU stream and SoftNpu queue) and attend their
+own KV pages. In world 0 tenant C is idle. In world 1, between every honest
+step, C issues a seeded pseudo-random burst of syscalls and accelerator ops:
+arena alloc, `SYS_MAP` with guessed addresses, `SYS_UNMAP` of any IOVA,
+accelerator jobs with random shapes, dtypes, addresses and forged tenant
+tags (plus jobs aimed at its own fresh mappings), stream bind, SET_SID,
+arena handoff, cap derive and revoke, and KV attend and KV pin. Since
+Round 24, each of those syscalls is paired with one fabric endpoint op from
+a separate seeded stream: create (up to and past C's per-tenant endpoint
+quota), tenant-checked `close_for` on its own, A's, B's or junk ids, and
+send / recv / probe on its own closed or slot-reused stale ids. Since
+Round 25 C's sends are checked bursts (`send_as`, random flow class, C's or
+a forged A sender tag) at its own live, closed or stale ids, A's and B's
+endpoints or junk ids, and its recv / pending probes go through `recv_as` /
+`pending_as` on the same targets. A and B each
+send one message per job step to their own endpoint and receive it at the
+next attend step. After every honest step the check records everything A
+and B can observe: every job result including its completion sequence
+number, every attend result, every honest fabric send and recv result with
+its payload, all 4096 bytes of each arena, the Soft-SMMU resolve and
+translate result for every 256-byte offset, the arena metadata, and each
+endpoint's id, owner, pending count, the tenant's live endpoint count, and
+its remaining Hodge quota per class. The two worlds must be
+byte-identical for every seed:
+
+```
+[noninterference] worlds=2 seeds=512 ops=172032 divergences=0
+```
+
+C's syscalls go through the same `aether_core` functions the kernel calls,
+with the kernel's gates. `SYS_MAP` takes the address from the caller's arena
+cap through `map_pin_addr`, and an arena handoff names the caller's own
+tile. `SYS_UNMAP` is modelled as the capability-checked `unmap_for`. That is
+the fix PRs #183 / #189 propose for issue #161: **current `main`'s kernel
+`sys_unmap` still calls the unchecked `unmap`**, and the `unchecked-unmap`
+control below shows that this breaks noninterference.
+
+Seven negative controls each re-open one known hole and must produce
+divergences, so the check is shown to be able to fail:
+
+| Control | Hole re-opened | Result |
+|---|---|---|
+| `unchecked-unmap` | `SYS_UNMAP` without the tenant check (issue #161) | diverges |
+| `raw-map-addr` | `SYS_MAP` pins the caller's address (before #203) | diverges |
+| `leaked-cap` | C holds a copy of A's Memory+MAP cap | diverges |
+| `global-job-seq` | completions numbered from the device-wide counter (before #208) | diverges |
+| `unchecked-endpoint-close` | C closes endpoints with the unchecked `Fabric::close` instead of `close_for` | diverges |
+| `unchecked-endpoint-recv` | C receives with `recv_unchecked`, so it can dequeue A's or B's messages (before Round 25) | diverges |
+| `forged-sender-quota` | C sends with `send_unchecked` and A's sender tag, so its traffic is charged to A's Hodge quota (the shared-quota shape before Round 25) | diverges |
+
+**Bug this found.** On its first run the two-world check found a real
+cross-tenant information flow. The completion `job_seq` that SoftNpu
+returned to a tenant came from the device-wide counter, so tenant A could
+count how many jobs tenant C ran between two of A's jobs. PR #208 fixed it
+with per-tenant queue numbering (`TenantQueue`, `SoftNpu::execute_queued`)
+and added a regression test. With `job_seq` excluded, every other
+observation already matched byte for byte. Kani found no counterexample in
+the harnesses above.
+
+**Out of scope.** Hardware isolation and real silicon. Timing, cache, power
+and other microarchitectural side channels (both worlds are compared on
+values, not time). The kernel binary, assembly, boot and the x86 / RISC-V /
+AArch64 page tables, which QEMU tests cover separately. Concurrency and SMP
+interleavings. A and B create their endpoints before C acts, so the shared
+endpoint-id counter, which a later create could observe, is not exercised
+(in the kernel, user code names endpoints by cptr and is never handed the
+id; host callers of `create_endpoint` do see it). Anything outside the stated bounds and table sizes. The
+two-world check is randomized testing over many seeds, not exhaustive. We
+describe this work as **bounded model-checked**, never as "formally
+verified" or "zero-trust".

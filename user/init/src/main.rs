@@ -73,7 +73,7 @@ const FOREIGN_PHYS: u64 = 0x0040_0000;
 #[cfg(target_arch = "riscv64")]
 const FOREIGN_PHYS: u64 = 0x8020_0000;
 #[cfg(target_arch = "aarch64")]
-const FOREIGN_PHYS: u64 = 0x4008_0000;
+const FOREIGN_PHYS: u64 = 0x4020_0000;
 
 /// Regression for the SYS_MAP physical-address source check. SYS_MAP must
 /// derive the pinned physical address from the caller's own arena

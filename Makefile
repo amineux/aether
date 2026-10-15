@@ -143,7 +143,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / accel-shape-overflow / accel-unsupported-dtype / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / cut-no-cut / cut-unknown-vertex / accel-shape-overflow / accel-unsupported-dtype / accel-bad-op / accel-not-found / arena-bad-align / arena-unknown-bank / opkernel-fabric / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -176,14 +176,42 @@ red-team:
 	grep -q "\\[redteam\\] attack=hbm-bw result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=submit-sid result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=sid-budget result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=stage2-fault result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softnoi-exhausted result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-insufficient-rights result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=kv-seq-mismatch result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=kv-wrong-stream result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=kv-bad-grant result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=softnoi-unbound result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-harmonic-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-curl-tree result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-quota result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=fabric-queue-full result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-payload-too-large result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-too-many-caps result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-endpoint-limit result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-slot-exhaust result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-stale-endpoint result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-recv-foreign result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-send-no-cap result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fabric-quota-drain result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-magic result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-truncated result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-version result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-large result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-offset result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-token result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-string result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-deep result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-cells result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-bad-region result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-no-memory result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=fdt-too-many-regions result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=opkernel-fabric result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-overcommit result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-unbound result=refused" $(REDTEAM_LOG)
@@ -216,6 +244,12 @@ red-team:
 	grep -q "\\[redteam\\] attack=cut-too-large result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=accel-shape-overflow result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=accel-unsupported-dtype result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=accel-bad-op result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=accel-not-found result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=cut-no-cut result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=cut-unknown-vertex result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-bad-align result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-unknown-bank result=refused" $(REDTEAM_LOG)
 	grep -F -q "[redteam] attack=tenant-fuzz result=refused" $(REDTEAM_LOG)
 	grep -F -q " escapes=0 " $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] fabric-class admit/refuse" $(REDTEAM_LOG)
@@ -732,7 +766,7 @@ qemu-riscv-ci: $(RV_ELF)
 	set -e; \
 	cat $(BUILD)/riscv-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/riscv-serial.log \
-	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/riscv-serial.log \
+	   && grep -q "\\[mm\\] fdt mmap ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/riscv-serial.log \
@@ -810,7 +844,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	set -e; \
 	cat $(BUILD)/aarch64-serial.log; \
 	if grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/aarch64-serial.log \
-	   && grep -q "\\[mm\\] mmap: fallback" $(BUILD)/aarch64-serial.log \
+	   && grep -q "\\[mm\\] fdt mmap ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[cdt\\] revoke descendants ok" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/aarch64-serial.log \
@@ -881,6 +915,35 @@ two-tenant-infer:
 	cmp $(TTI_LOG) $(TTI_LOG).2
 	grep -qxF "[demo] tenants=2 attacker=1 attacks=9 refused=9 outputs_match_cpu=true deterministic=true unperturbed=true" $(TTI_LOG)
 	@echo "two-tenant-infer: outputs CPU-exact, every attack refused, log byte-identical"
+
+# Two-world tenant noninterference (host) plus Kani bounded model checking.
+# World 0: tenants A and B run the MLP + KV attends with tenant C idle.
+# World 1: same, with C issuing seeded pseudo-random syscalls and accelerator
+# ops between every honest step. A's and B's results, traces, arena bytes,
+# Soft-SMMU translations and arena metadata must be byte-identical for every
+# seed. C also churns fabric endpoints (create past quota, tenant-checked
+# close, stale-id send/recv); A's and B's endpoint views must not change.
+# Seven negative controls re-open known holes and must diverge. The
+# Kani harnesses (proofs/, `make kani`) take tens of minutes, so they run
+# here only with PROOFS=1. "Bounded model-checked", not formally verified.
+# Software model only: not hardware, no timing / cache / power side channels.
+.PHONY: noninterference kani
+NONINTERFERENCE_LOG := $(BUILD)/noninterference.log
+NI_SEEDS ?= 512
+NI_OPS_PER_GAP ?= 16
+
+noninterference:
+	mkdir -p $(BUILD)
+	rm -f $(NONINTERFERENCE_LOG)
+	cargo run --locked --release -p aether-redteam --quiet --example noninterference -- $(NI_SEEDS) $(NI_OPS_PER_GAP) > $(NONINTERFERENCE_LOG)
+	cat $(NONINTERFERENCE_LOG)
+	grep -Eq "^\[noninterference\] worlds=2 seeds=$(NI_SEEDS) ops=[0-9]+ divergences=0$$" $(NONINTERFERENCE_LOG)
+	test "$$(grep -c "^\[noninterference\] control=.* caught=true$$" $(NONINTERFERENCE_LOG))" = 7
+	@if [ "$(PROOFS)" = "1" ]; then bash scripts/run_kani.sh; else echo "[proof] kani=skipped (PROOFS=1 or make kani runs the bounded model-checked harnesses)"; fi
+	@echo "noninterference: 0 divergences across seeds; every negative control caught"
+
+kani:
+	bash scripts/run_kani.sh
 
 # Pre-silicon tenant-isolation conformance kit (use case B). A backend
 # implements the IsolationBackend trait; the kit runs the existing named attack

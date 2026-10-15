@@ -358,6 +358,54 @@ impl<M: DmaView> AccelDevice for SoftNpuDevice<M> {
     }
 }
 
+
+/// Host red-team report for AccelDevice probe NotFound refuse.
+///
+/// Sell line `[redteam] attack=accel-not-found` — existing
+/// [`SoftNpuDevice::probe`] only. When VirtIO-Accel MMIO negotiate fails
+/// (bad magic / bad qsize) → [`HalError::NotFound`]. A fresh BAR still
+/// probes. **Not** BadOp / BadShape / UnsupportedDType / NoMemoryCap;
+/// software SoftNpu + frozen MMIO only; no new SoftNPU opcodes; not BAR0
+/// productization.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AccelNotFoundReport {
+    /// Fresh SoftNpuDevice probe admits.
+    pub probe_ok: bool,
+    /// Corrupted REG_MAGIC → `HalError::NotFound`.
+    pub bad_magic_refused: bool,
+    /// Corrupted REG_QSIZE → `HalError::NotFound`.
+    pub bad_qsize_refused: bool,
+}
+
+impl AccelNotFoundReport {
+    pub fn all_ok(&self) -> bool {
+        self.probe_ok && self.bad_magic_refused && self.bad_qsize_refused
+    }
+}
+
+/// SoftNpuDevice probe with failed MMIO negotiate → [`HalError::NotFound`].
+/// Hits the existing `if !self.mmio.negotiate()` refuse; no new opcodes.
+pub fn run_accel_not_found_demo() -> AccelNotFoundReport {
+    use crate::mmio::{REG_MAGIC, REG_QSIZE};
+
+    let mut ok = SoftNpuDevice::new(IdentityDma);
+    let probe_ok = ok.probe().is_ok();
+
+    let mut bad_magic = SoftNpuDevice::new(IdentityDma);
+    bad_magic.mmio.write_u32(REG_MAGIC, 0);
+    let bad_magic_refused = bad_magic.probe() == Err(HalError::NotFound);
+
+    let mut bad_qsize = SoftNpuDevice::new(IdentityDma);
+    bad_qsize.mmio.write_u32(REG_QSIZE, 3);
+    let bad_qsize_refused = bad_qsize.probe() == Err(HalError::NotFound);
+
+    AccelNotFoundReport {
+        probe_ok,
+        bad_magic_refused,
+        bad_qsize_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,6 +417,17 @@ mod tests {
     fn mem_cap() -> Capability {
         Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1)).with_generation(1)
     }
+
+
+    #[test]
+    fn accel_not_found_demo_all_ok() {
+        let r = run_accel_not_found_demo();
+        assert!(r.probe_ok, "fresh SoftNpuDevice probe admits: {r:?}");
+        assert!(r.bad_magic_refused, "bad magic → HalError::NotFound");
+        assert!(r.bad_qsize_refused, "bad qsize → HalError::NotFound");
+        assert!(r.all_ok());
+    }
+
 
     #[test]
     fn submit_kicks_doorbell_service_raises_irq() {

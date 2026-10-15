@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_cut_no_cut_demo`, `run_cut_unknown_vertex_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_accel_not_found_demo`, `run_opkernel_fabric_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -64,7 +64,14 @@
 //! `SpectralCut::from_mask` with unbalanced partition → `CutError::Unbalanced` (chiplet-balanced mask under a generous bound admits; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / ConductanceExceeded; not cut-not-bound / cut-conductance / cut-empty-part rehash; not an EDA package solver). Cut-too-large is
 //! `SpectralCut::min_balanced` on `two_chiplet_mesh(16)` (n > ENUM_MAX=8) → `CutError::TooLarge` (min_balanced on qemu_package n=6 admits; enumeration refuse only — Fiedler/from_placement still works at n=16, not a placement kill; cut-only, no SoftNoI mixing; not CrossCut / EmptyPart / Unbalanced / ConductanceExceeded; not cut-not-bound / cut-conductance rehash; not an EDA package solver). Accel-shape-overflow is
 //! SoftNpu `execute` m/n/k 0 or >64 → `AccelError::BadShape` and i32 Mul overflow → `AccelError::Overflow` (tiny matmul admits; not new SoftNPU opcodes; not FLOPs/tape-out; software SoftNpu only). Accel-unsupported-dtype is
-//! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
+//! SoftNpu F16 path when `DmaView` lacks u16 → `AccelError::UnsupportedDType` (tiny I32 matmul admits; not new SoftNPU opcodes; not BadShape/Overflow rehash; software SoftNpu only). Accel-bad-op is
+//! SoftNpu elementwise `_ => Err(AccelError::BadOp)` arms (MatMul on ew path) → `AccelError::BadOp` (Add admits; not new SoftNPU opcodes; not BadShape/Overflow/UnsupportedDType rehash; software SoftNpu only). Accel-not-found is
+//! SoftNpuDevice `probe` when MMIO negotiate fails (bad magic / bad qsize) → `HalError::NotFound` (fresh BAR probes; not BadOp/BadShape/UnsupportedDType; software SoftNpu + frozen MMIO only). Cut-no-cut is
+//! `TileScheduler::bind_laplacian_cut` on a full cut table / `place_ok` unbound cut_id → `CutError::NoCut` (empty table binds; not EmptyPart/Unbalanced/ConductanceExceeded/UnknownVertex). Cut-unknown-vertex is
+//! `SpectralCut::allow_place` tile/bank outside the graph → `CutError::UnknownVertex` (known tile+bank admits; not CrossCut/NoCut/cut-not-bound). Arena-bad-align is
+//! `ArenaAllocator::alloc` non-power-of-two align above page floor → `ArenaError::BadAlign` (power-of-two / below-floor admit; not arena-not-owner / arena-limit-leak / UnknownBank). Arena-unknown-bank is
+//! `ArenaAllocator::new` empty or > `MAX_BANKS` → `ArenaError::UnknownBank` (one bank constructs; not arena-bad-align / arena-not-owner / arena-limit-leak). Opkernel-fabric is
+//! `OperatorKernelHandle::inject` with a bound handle and valid cap when the fabric step refuses (payload > `MAX_MSG_BYTES` / foreign endpoint without Endpoint+WRITE) → `OpKernelError::Fabric(PayloadTooLarge | NoSuchEndpoint)`, caller quota and queues untouched (own-endpoint inject admits; not fabric-queue-full / hodge-quota / opkernel-class-mismatch; no Fabric API change). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -96,8 +103,9 @@ mod fuzz;
 
 use fuzz::{run_tenant_fuzz_demo, TenantFuzzReport, FUZZ_OPS, FUZZ_SEED};
 use aether_core::blast::run_blast_demo;
-use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo};
-use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo};
+use aether_core::accel::{run_accel_shape_overflow_demo, run_accel_unsupported_dtype_demo, run_accel_bad_op_demo};
+use aether_core::cut::{run_cut_empty_part_demo, run_cut_unbalanced_demo, run_cut_too_large_demo, run_cut_conductance_demo, run_cut_not_bound_demo, run_cut_unknown_vertex_demo};
+use aether_core::sched::run_cut_no_cut_demo;
 use aether_core::chipsync::{run_chipsync_unbound_demo, run_softcct_credit_exhausted_demo, run_softcct_incorrect_elision_demo};
 use aether_core::iommu::{run_set_sid_cross_tenant_demo, run_smmu_cross_tenant_demo, run_smmu_not_mapped_demo, run_smmu_overlap_demo, run_smmu_ssid_abort_demo, run_smmu_stream_abort_demo, run_smmu_table_full_demo, run_smmu_window_full_demo, run_smmu_wrong_stream_demo, run_stage2_fault_demo};
 use aether_core::sid::{run_sid_budget_demo, run_submit_sid_demo};
@@ -113,12 +121,12 @@ use aether_core::space::{run_silent_remote_demo, run_space_not_mappable_demo};
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
-use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo};
+use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo, run_opkernel_fabric_demo};
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
-    run_firewall_demo, run_firewall_ident_pa_demo, run_set_sid_unbound_demo,
-    run_xqueue_sid_override_demo,
+    run_accel_not_found_demo, run_firewall_demo, run_firewall_ident_pa_demo,
+    run_set_sid_unbound_demo, run_xqueue_sid_override_demo,
 };
 
 /// Grep-able proof lines. CI matches these exactly.
@@ -138,6 +146,8 @@ const LINE_FENCE_NOT_READY: &str = "[redteam] attack=fence-not-ready result=refu
 const LINE_OUTSIDE_SLICE: &str = "[redteam] attack=outside-slice result=refused";
 const LINE_ARENA_NOT_OWNER: &str = "[redteam] attack=arena-not-owner result=refused";
 const LINE_ARENA_LIMIT_LEAK: &str = "[redteam] attack=arena-limit-leak result=refused";
+const LINE_ARENA_BAD_ALIGN: &str = "[redteam] attack=arena-bad-align result=refused";
+const LINE_ARENA_UNKNOWN_BANK: &str = "[redteam] attack=arena-unknown-bank result=refused";
 const LINE_USER_COPY_STRADDLE: &str = "[redteam] attack=user-copy-straddle result=refused";
 const LINE_MAP_USER_PHYS: &str = "[redteam] attack=map-user-phys result=refused";
 const LINE_SILENT_REMOTE: &str = "[redteam] attack=silent-remote result=refused";
@@ -147,6 +157,9 @@ const LINE_HBM_BW: &str = "[redteam] attack=hbm-bw result=refused";
 const LINE_XQUEUE_SID_OVERRIDE: &str = "[redteam] attack=xqueue-sid-override result=refused";
 const LINE_SET_SID_UNBOUND: &str = "[redteam] attack=set-sid-unbound result=refused";
 const LINE_KV_INSUFFICIENT_RIGHTS: &str = "[redteam] attack=kv-insufficient-rights result=refused";
+const LINE_KV_SEQ_MISMATCH: &str = "[redteam] attack=kv-seq-mismatch result=refused";
+const LINE_KV_WRONG_STREAM: &str = "[redteam] attack=kv-wrong-stream result=refused";
+const LINE_KV_BAD_GRANT: &str = "[redteam] attack=kv-bad-grant result=refused";
 const LINE_SUBMIT_SID: &str = "[redteam] attack=submit-sid result=refused";
 const LINE_SID_BUDGET: &str = "[redteam] attack=sid-budget result=refused";
 const LINE_STAGE2_FAULT: &str = "[redteam] attack=stage2-fault result=refused";
@@ -157,8 +170,29 @@ const LINE_HODGE_HARMONIC_TREE: &str = "[redteam] attack=hodge-harmonic-tree res
 const LINE_HODGE_CURL_TREE: &str = "[redteam] attack=hodge-curl-tree result=refused";
 const LINE_HODGE_QUOTA: &str = "[redteam] attack=hodge-quota result=refused";
 const LINE_FABRIC_QUEUE_FULL: &str = "[redteam] attack=fabric-queue-full result=refused";
+const LINE_FABRIC_PAYLOAD_TOO_LARGE: &str = "[redteam] attack=fabric-payload-too-large result=refused";
+const LINE_FABRIC_TOO_MANY_CAPS: &str = "[redteam] attack=fabric-too-many-caps result=refused";
+const LINE_FABRIC_ENDPOINT_LIMIT: &str = "[redteam] attack=fabric-endpoint-limit result=refused";
+const LINE_FABRIC_SLOT_EXHAUST: &str = "[redteam] attack=fabric-slot-exhaust result=refused";
+const LINE_FABRIC_STALE_ENDPOINT: &str = "[redteam] attack=fabric-stale-endpoint result=refused";
+const LINE_FABRIC_RECV_FOREIGN: &str = "[redteam] attack=fabric-recv-foreign result=refused";
+const LINE_FABRIC_SEND_NO_CAP: &str = "[redteam] attack=fabric-send-no-cap result=refused";
+const LINE_FABRIC_QUOTA_DRAIN: &str = "[redteam] attack=fabric-quota-drain result=refused";
+const LINE_FDT_BAD_MAGIC: &str = "[redteam] attack=fdt-bad-magic result=refused";
+const LINE_FDT_TRUNCATED: &str = "[redteam] attack=fdt-truncated result=refused";
+const LINE_FDT_BAD_VERSION: &str = "[redteam] attack=fdt-bad-version result=refused";
+const LINE_FDT_TOO_LARGE: &str = "[redteam] attack=fdt-too-large result=refused";
+const LINE_FDT_BAD_OFFSET: &str = "[redteam] attack=fdt-bad-offset result=refused";
+const LINE_FDT_BAD_TOKEN: &str = "[redteam] attack=fdt-bad-token result=refused";
+const LINE_FDT_BAD_STRING: &str = "[redteam] attack=fdt-bad-string result=refused";
+const LINE_FDT_TOO_DEEP: &str = "[redteam] attack=fdt-too-deep result=refused";
+const LINE_FDT_BAD_CELLS: &str = "[redteam] attack=fdt-bad-cells result=refused";
+const LINE_FDT_BAD_REGION: &str = "[redteam] attack=fdt-bad-region result=refused";
+const LINE_FDT_NO_MEMORY: &str = "[redteam] attack=fdt-no-memory result=refused";
+const LINE_FDT_TOO_MANY_REGIONS: &str = "[redteam] attack=fdt-too-many-regions result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
+const LINE_OPKERNEL_FABRIC: &str = "[redteam] attack=opkernel-fabric result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
@@ -188,8 +222,12 @@ const LINE_CUT_CONDUCTANCE: &str = "[redteam] attack=cut-conductance result=refu
 const LINE_CUT_EMPTY_PART: &str = "[redteam] attack=cut-empty-part result=refused";
 const LINE_CUT_UNBALANCED: &str = "[redteam] attack=cut-unbalanced result=refused";
 const LINE_CUT_TOO_LARGE: &str = "[redteam] attack=cut-too-large result=refused";
+const LINE_CUT_NO_CUT: &str = "[redteam] attack=cut-no-cut result=refused";
+const LINE_CUT_UNKNOWN_VERTEX: &str = "[redteam] attack=cut-unknown-vertex result=refused";
 const LINE_ACCEL_SHAPE_OVERFLOW: &str = "[redteam] attack=accel-shape-overflow result=refused";
 const LINE_ACCEL_UNSUPPORTED_DTYPE: &str = "[redteam] attack=accel-unsupported-dtype result=refused";
+const LINE_ACCEL_BAD_OP: &str = "[redteam] attack=accel-bad-op result=refused";
+const LINE_ACCEL_NOT_FOUND: &str = "[redteam] attack=accel-not-found result=refused";
 /// Stable prefix; the seed / ops / escapes / unnamed / variants tail is data.
 const LINE_TENANT_FUZZ: &str = "[redteam] attack=tenant-fuzz result=refused";
 const LINE_CLASS: &str = "[redteam] fabric-class admit/refuse";
@@ -220,6 +258,8 @@ struct RedTeamReport {
     outside_slice: bool,
     arena_not_owner: bool,
     arena_limit_leak: bool,
+    arena_bad_align: bool,
+    arena_unknown_bank: bool,
     user_copy_straddle: bool,
     map_user_phys: bool,
     silent_remote: bool,
@@ -229,6 +269,9 @@ struct RedTeamReport {
     xqueue_sid_override: bool,
     set_sid_unbound: bool,
     kv_insufficient_rights: bool,
+    kv_seq_mismatch: bool,
+    kv_wrong_stream: bool,
+    kv_bad_grant: bool,
     submit_sid: bool,
     sid_budget: bool,
     stage2_fault: bool,
@@ -239,8 +282,29 @@ struct RedTeamReport {
     hodge_curl_tree: bool,
     hodge_quota: bool,
     fabric_queue_full: bool,
+    fabric_payload_too_large: bool,
+    fabric_too_many_caps: bool,
+    fabric_endpoint_limit: bool,
+    fabric_slot_exhaust: bool,
+    fabric_stale_endpoint: bool,
+    fabric_recv_foreign: bool,
+    fabric_send_no_cap: bool,
+    fabric_quota_drain: bool,
+    fdt_bad_magic: bool,
+    fdt_truncated: bool,
+    fdt_bad_version: bool,
+    fdt_too_large: bool,
+    fdt_bad_offset: bool,
+    fdt_bad_token: bool,
+    fdt_bad_string: bool,
+    fdt_too_deep: bool,
+    fdt_bad_cells: bool,
+    fdt_bad_region: bool,
+    fdt_no_memory: bool,
+    fdt_too_many_regions: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
+    opkernel_fabric: bool,
     firewall_ident_pa: bool,
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
@@ -270,8 +334,12 @@ struct RedTeamReport {
     cut_empty_part: bool,
     cut_unbalanced: bool,
     cut_too_large: bool,
+    cut_no_cut: bool,
+    cut_unknown_vertex: bool,
     accel_shape_overflow: bool,
     accel_unsupported_dtype: bool,
+    accel_bad_op: bool,
+    accel_not_found: bool,
     tenant_fuzz: TenantFuzzReport,
     class: bool,
     atomic: bool,
@@ -299,6 +367,8 @@ impl RedTeamReport {
             && self.outside_slice
             && self.arena_not_owner
             && self.arena_limit_leak
+            && self.arena_bad_align
+            && self.arena_unknown_bank
             && self.user_copy_straddle
             && self.map_user_phys
             && self.silent_remote
@@ -308,6 +378,9 @@ impl RedTeamReport {
             && self.xqueue_sid_override
             && self.set_sid_unbound
             && self.kv_insufficient_rights
+            && self.kv_seq_mismatch
+            && self.kv_wrong_stream
+            && self.kv_bad_grant
             && self.submit_sid
             && self.sid_budget
             && self.stage2_fault
@@ -318,8 +391,29 @@ impl RedTeamReport {
             && self.hodge_curl_tree
             && self.hodge_quota
             && self.fabric_queue_full
+            && self.fabric_payload_too_large
+            && self.fabric_too_many_caps
+            && self.fabric_endpoint_limit
+            && self.fabric_slot_exhaust
+            && self.fabric_stale_endpoint
+            && self.fabric_recv_foreign
+            && self.fabric_send_no_cap
+            && self.fabric_quota_drain
+            && self.fdt_bad_magic
+            && self.fdt_truncated
+            && self.fdt_bad_version
+            && self.fdt_too_large
+            && self.fdt_bad_offset
+            && self.fdt_bad_token
+            && self.fdt_bad_string
+            && self.fdt_too_deep
+            && self.fdt_bad_cells
+            && self.fdt_bad_region
+            && self.fdt_no_memory
+            && self.fdt_too_many_regions
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
+            && self.opkernel_fabric
             && self.firewall_ident_pa
             && self.greenctx_overcommit
             && self.greenctx_unbound
@@ -349,8 +443,12 @@ impl RedTeamReport {
             && self.cut_empty_part
             && self.cut_unbalanced
             && self.cut_too_large
+            && self.cut_no_cut
+            && self.cut_unknown_vertex
             && self.accel_shape_overflow
             && self.accel_unsupported_dtype
+            && self.accel_bad_op
+            && self.accel_not_found
             && self.tenant_fuzz.all_ok()
             && self.class
             && self.atomic
@@ -374,6 +472,8 @@ fn run_redteam() -> RedTeamReport {
     let outside = run_outside_slice_demo();
     let arena_not_owner = aether_core::arena::run_arena_not_owner_demo();
     let arena_limit_leak = aether_core::arena::run_arena_limit_leak_demo();
+    let arena_bad_align = aether_core::arena::run_arena_bad_align_demo();
+    let arena_unknown_bank = aether_core::arena::run_arena_unknown_bank_demo();
     let user_copy_straddle = aether_core::sysnr::run_user_copy_straddle_demo();
     let map_user_phys = aether_core::sysnr::run_map_user_phys_demo();
     let silent = run_silent_remote_demo();
@@ -383,6 +483,9 @@ fn run_redteam() -> RedTeamReport {
     let xqueue_sid = run_xqueue_sid_override_demo();
     let set_sid_unbound = run_set_sid_unbound_demo();
     let kv_insufficient_rights = aether_core::kvfabric::run_kv_insufficient_rights_demo();
+    let kv_seq_mismatch = aether_core::kvfabric::run_kv_seq_mismatch_demo();
+    let kv_wrong_stream = aether_core::kvfabric::run_kv_wrong_stream_demo();
+    let kv_bad_grant = aether_core::kvfabric::run_kv_bad_grant_demo();
     let submit_sid = run_submit_sid_demo();
     let sid_budget = run_sid_budget_demo();
     let stage2_fault = run_stage2_fault_demo();
@@ -393,8 +496,17 @@ fn run_redteam() -> RedTeamReport {
     let hodge_ct = run_hodge_curl_tree_demo();
     let hodge_quota = run_hodge_quota_demo();
     let fabric_queue_full = aether_core::fabric::run_fabric_queue_full_demo();
+    let fabric_oversized = aether_core::fabric::run_fabric_oversized_msg_demo();
+    let fabric_endpoint_limit = aether_core::fabric::run_fabric_endpoint_limit_demo();
+    let fabric_slot_exhaust = aether_core::fabric::run_fabric_slot_exhaust_demo();
+    let fabric_stale_endpoint = aether_core::fabric::run_fabric_stale_endpoint_demo();
+    let fabric_recv_foreign = aether_core::fabric::run_fabric_recv_foreign_demo();
+    let fabric_send_no_cap = aether_core::fabric::run_fabric_send_no_cap_demo();
+    let fabric_quota_drain = aether_core::fabric::run_fabric_quota_drain_demo();
+    let fdt = aether_core::fdt::run_fdt_refusal_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
+    let opkernel_fabric = run_opkernel_fabric_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let greenctx_over = run_greenctx_overcommit_demo();
@@ -425,8 +537,12 @@ fn run_redteam() -> RedTeamReport {
     let cut_empty_part = run_cut_empty_part_demo();
     let cut_unbalanced = run_cut_unbalanced_demo();
     let cut_too_large = run_cut_too_large_demo();
+    let cut_no_cut = run_cut_no_cut_demo();
+    let cut_unknown_vertex = run_cut_unknown_vertex_demo();
     let accel_shape_overflow = run_accel_shape_overflow_demo();
     let accel_unsupported_dtype = run_accel_unsupported_dtype_demo();
+    let accel_bad_op = run_accel_bad_op_demo();
+    let accel_not_found = run_accel_not_found_demo();
     let tenant_fuzz = run_tenant_fuzz_demo(FUZZ_SEED, FUZZ_OPS);
     let sfi = run_softsfi_demo();
     let sfi_bad_insn = aether_core::softsfi::run_softsfi_bad_insn_demo();
@@ -480,6 +596,10 @@ fn run_redteam() -> RedTeamReport {
         // Full arena table → ArenaLimit before any span split; free bytes / spans
         // unchanged across repeated refusals (was NoSpace + leaked split span).
         arena_limit_leak: arena_limit_leak.all_ok(),
+        // Non-power-of-two align above page floor → BadAlign. Software allocator only.
+        arena_bad_align: arena_bad_align.all_ok(),
+        // Empty / > MAX_BANKS bank list → UnknownBank. Software allocator only.
+        arena_unknown_bank: arena_unknown_bank.all_ok(),
         // Kernel user copy splits at 4 KiB and checks every page before any
         // byte moves; a range whose tail is unmapped is refused whole (was:
         // only the first page translated). Same split/gate the kernel calls.
@@ -509,6 +629,15 @@ fn run_redteam() -> RedTeamReport {
         // KV cap without READ (attend) / without MAP or non-Memory (pin_kv) → InsufficientRights;
         // refused pin installs no translation. Not kv write / regrant / weights / oob / forge.
         kv_insufficient_rights: kv_insufficient_rights.all_ok(),
+        // KV grant for seq 1 attending seq 2 (read or write) → SeqMismatch; after revoke → Revoked
+        // for every seq; seq-2 grant keeps working. Not kv insufficient-rights / write / oob / forge.
+        kv_seq_mismatch: kv_seq_mismatch.all_ok(),
+        // Valid KV grant pinned on SSID >= MAX_CDS → Soft-SMMU StreamAbort, reported by pin_kv as
+        // WrongStream; no STE / translation added; SSID-0 pin intact. Not kv wrong-sid / smmu-ssid-abort.
+        kv_wrong_stream: kv_wrong_stream.all_ok(),
+        // Cap on an unregistered arena / non-Memory cap / full ledger → BadGrant; real grant keeps
+        // attending. Not kv insufficient-rights / forge / seq-mismatch.
+        kv_bad_grant: kv_bad_grant.all_ok(),
         // Soft-SMMU resolve_submit without SET_SID → SubmitSid; walk still OK.
         // Not set-sid-unbound StreamAbort / Soft-CP Fault, not SidBudget.
         submit_sid: submit_sid.all_ok(),
@@ -539,12 +668,50 @@ fn run_redteam() -> RedTeamReport {
         // Endpoint flood past MAX_QUEUE → QueueFull; closed endpoint → Closed. Both gates run
         // before Hodge admit: nothing enqueued, no quota charged. Not hodge-quota (QuotaExceeded).
         fabric_queue_full: fabric_queue_full.all_ok(),
+        // Message::new past MAX_MSG_BYTES → PayloadTooLarge (no truncation); MAX_MSG_BYTES admits.
+        fabric_payload_too_large: fabric_oversized.payload_too_large_ok(),
+        // attach_cap past MAX_MSG_CAPS → TooManyCaps, existing caps untouched; maximal msg round-trips.
+        // Not fabric-queue-full (QueueFull) / hodge-quota / CapTable.
+        fabric_too_many_caps: fabric_oversized.too_many_caps_ok(),
+        // create_endpoint on a full table → EndpointLimit; existing endpoints intact; close frees a
+        // slot. The table is global (checked): a resource bound, not a per-tenant reservation.
+        fabric_endpoint_limit: fabric_endpoint_limit.all_ok(),
+        // One tenant past MAX_ENDPOINTS_PER_TENANT → EndpointLimit, no slot consumed; others admit;
+        // create/close churn leaks no slot; close_for on a foreign endpoint → NoSuchEndpoint.
+        fabric_slot_exhaust: fabric_slot_exhaust.all_ok(),
+        // Stale EndpointId after its slot is reused by another tenant → NoSuchEndpoint on
+        // send/recv/pending/owner/close; new owner untouched; no Hodge quota charged.
+        fabric_stale_endpoint: fabric_stale_endpoint.all_ok(),
+        // recv_as / pending_as by a non-owner → NoSuchEndpoint, same as a missing id; owner's message intact.
+        fabric_recv_foreign: fabric_recv_foreign.all_ok(),
+        // send_as without owner or Endpoint+WRITE cap, or with a forged sender tag → NoSuchEndpoint; no side effect.
+        fabric_send_no_cap: fabric_send_no_cap.all_ok(),
+        // One sender spends its own Hodge budget → Hodge(QuotaExceeded); other tenants keep full budgets.
+        fabric_quota_drain: fabric_quota_drain.all_ok(),
+        // DTB memory-map parser (riscv64 / aarch64 boot): one malformed blob per FdtError
+        // variant refuses with exactly that variant; the valid QEMU-virt-shaped fixture admits.
+        // Boot-time parser, not a tenant path; refused, not verified.
+        fdt_bad_magic: fdt.valid_ok && fdt.bad_magic, // FdtError::BadMagic: header magic flipped
+        fdt_truncated: fdt.valid_ok && fdt.truncated, // FdtError::Truncated: blob one byte short of totalsize
+        fdt_bad_version: fdt.valid_ok && fdt.bad_version, // FdtError::BadVersion: version 16 (no size_dt_struct)
+        fdt_too_large: fdt.valid_ok && fdt.too_large, // FdtError::TooLarge: totalsize past 2 MiB
+        fdt_bad_offset: fdt.valid_ok && fdt.bad_offset, // FdtError::BadOffset: strings block past totalsize
+        fdt_bad_token: fdt.valid_ok && fdt.bad_token, // FdtError::BadToken: FDT_END replaced by an undefined token
+        fdt_bad_string: fdt.valid_ok && fdt.bad_string, // FdtError::BadString: property name offset past the strings block
+        fdt_too_deep: fdt.valid_ok && fdt.too_deep, // FdtError::TooDeep: nodes nested past FDT_MAX_DEPTH
+        fdt_bad_cells: fdt.valid_ok && fdt.bad_cells, // FdtError::BadCells: root #address-cells = 3
+        fdt_bad_region: fdt.valid_ok && fdt.bad_region, // FdtError::BadRegion: memory reg base + size overflows u64
+        fdt_no_memory: fdt.valid_ok && fdt.no_memory, // FdtError::NoMemory: no /memory node
+        fdt_too_many_regions: fdt.valid_ok && fdt.too_many_regions, // FdtError::TooManyRegions: 17 memory ranges (MAX_REGIONS = 16)
         // authorize FlowQuota badge/kind/WRITE → ClassNotAuthorized.
         // Not QuotaExceeded / CurlOnTree / HarmonicTreeReduce; not CapTable.
         hodge_class_unauthorized: hodge_class_unauthorized.all_ok(),
         // OperatorKernel admit_as/inject_as wrong class → ClassMismatch before quota/fabric.
         // Not CurlOnTree / HarmonicTreeReduce / ClassNotAuthorized; no new opcodes.
         opkernel_class_mismatch: opkernel_class_mismatch.all_ok(),
+        // Bound handle + valid cap; fabric refuse (oversized payload / foreign
+        // endpoint) surfaces as OpKernelError::Fabric, no quota charged. No Fabric API change.
+        opkernel_fabric: opkernel_fabric.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -622,10 +789,18 @@ fn run_redteam() -> RedTeamReport {
         cut_unbalanced: cut_unbalanced.all_ok(),
         // min_balanced n>ENUM_MAX → TooLarge. Enumeration refuse only; placement still ok.
         cut_too_large: cut_too_large.all_ok(),
+        // Full cut table / unbound cut_id → NoCut. Cut-only.
+        cut_no_cut: cut_no_cut.all_ok(),
+        // allow_place tile/bank outside graph → UnknownVertex. Cut-only.
+        cut_unknown_vertex: cut_unknown_vertex.all_ok(),
         // SoftNpu BadShape / Overflow refuse. Software SoftNpu only.
         accel_shape_overflow: accel_shape_overflow.all_ok(),
         // SoftNpu F16 without u16 → UnsupportedDType. Software SoftNpu only.
         accel_unsupported_dtype: accel_unsupported_dtype.all_ok(),
+        // SoftNpu elementwise unknown-op → BadOp. Software SoftNpu only; no new opcodes.
+        accel_bad_op: accel_bad_op.all_ok(),
+        // SoftNpuDevice probe bad MMIO negotiate → NotFound. Software SoftNpu + frozen MMIO only.
+        accel_not_found: accel_not_found.all_ok(),
         // Bounded seeded hostile-tenant fuzz: evidence, not a proof, not a hardware claim.
         // unmap_stream / unmap excluded as kernel-trust primitives (issue #161).
         tenant_fuzz,
@@ -696,6 +871,8 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.outside_slice, LINE_OUTSIDE_SLICE);
     emit(r.arena_not_owner, LINE_ARENA_NOT_OWNER);
     emit(r.arena_limit_leak, LINE_ARENA_LIMIT_LEAK);
+    emit(r.arena_bad_align, LINE_ARENA_BAD_ALIGN);
+    emit(r.arena_unknown_bank, LINE_ARENA_UNKNOWN_BANK);
     emit(r.user_copy_straddle, LINE_USER_COPY_STRADDLE);
     emit(r.map_user_phys, LINE_MAP_USER_PHYS);
     emit(r.silent_remote, LINE_SILENT_REMOTE);
@@ -705,6 +882,9 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.xqueue_sid_override, LINE_XQUEUE_SID_OVERRIDE);
     emit(r.set_sid_unbound, LINE_SET_SID_UNBOUND);
     emit(r.kv_insufficient_rights, LINE_KV_INSUFFICIENT_RIGHTS);
+    emit(r.kv_seq_mismatch, LINE_KV_SEQ_MISMATCH);
+    emit(r.kv_wrong_stream, LINE_KV_WRONG_STREAM);
+    emit(r.kv_bad_grant, LINE_KV_BAD_GRANT);
     emit(r.submit_sid, LINE_SUBMIT_SID);
     emit(r.sid_budget, LINE_SID_BUDGET);
     emit(r.stage2_fault, LINE_STAGE2_FAULT);
@@ -715,8 +895,29 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.hodge_curl_tree, LINE_HODGE_CURL_TREE);
     emit(r.hodge_quota, LINE_HODGE_QUOTA);
     emit(r.fabric_queue_full, LINE_FABRIC_QUEUE_FULL);
+    emit(r.fabric_payload_too_large, LINE_FABRIC_PAYLOAD_TOO_LARGE);
+    emit(r.fabric_too_many_caps, LINE_FABRIC_TOO_MANY_CAPS);
+    emit(r.fabric_endpoint_limit, LINE_FABRIC_ENDPOINT_LIMIT);
+    emit(r.fabric_slot_exhaust, LINE_FABRIC_SLOT_EXHAUST);
+    emit(r.fabric_stale_endpoint, LINE_FABRIC_STALE_ENDPOINT);
+    emit(r.fabric_recv_foreign, LINE_FABRIC_RECV_FOREIGN);
+    emit(r.fabric_send_no_cap, LINE_FABRIC_SEND_NO_CAP);
+    emit(r.fabric_quota_drain, LINE_FABRIC_QUOTA_DRAIN);
+    emit(r.fdt_bad_magic, LINE_FDT_BAD_MAGIC);
+    emit(r.fdt_truncated, LINE_FDT_TRUNCATED);
+    emit(r.fdt_bad_version, LINE_FDT_BAD_VERSION);
+    emit(r.fdt_too_large, LINE_FDT_TOO_LARGE);
+    emit(r.fdt_bad_offset, LINE_FDT_BAD_OFFSET);
+    emit(r.fdt_bad_token, LINE_FDT_BAD_TOKEN);
+    emit(r.fdt_bad_string, LINE_FDT_BAD_STRING);
+    emit(r.fdt_too_deep, LINE_FDT_TOO_DEEP);
+    emit(r.fdt_bad_cells, LINE_FDT_BAD_CELLS);
+    emit(r.fdt_bad_region, LINE_FDT_BAD_REGION);
+    emit(r.fdt_no_memory, LINE_FDT_NO_MEMORY);
+    emit(r.fdt_too_many_regions, LINE_FDT_TOO_MANY_REGIONS);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
+    emit(r.opkernel_fabric, LINE_OPKERNEL_FABRIC);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
@@ -746,8 +947,12 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.cut_empty_part, LINE_CUT_EMPTY_PART);
     emit(r.cut_unbalanced, LINE_CUT_UNBALANCED);
     emit(r.cut_too_large, LINE_CUT_TOO_LARGE);
+    emit(r.cut_no_cut, LINE_CUT_NO_CUT);
+    emit(r.cut_unknown_vertex, LINE_CUT_UNKNOWN_VERTEX);
     emit(r.accel_shape_overflow, LINE_ACCEL_SHAPE_OVERFLOW);
     emit(r.accel_unsupported_dtype, LINE_ACCEL_UNSUPPORTED_DTYPE);
+    emit(r.accel_bad_op, LINE_ACCEL_BAD_OP);
+    emit(r.accel_not_found, LINE_ACCEL_NOT_FOUND);
     emit_tenant_fuzz(&r.tenant_fuzz);
     emit_tagged(r.class, LINE_CLASS);
     emit_tagged(r.atomic, LINE_ATOMIC);
@@ -795,6 +1000,8 @@ mod tests {
         assert!(r.outside_slice, "admit_chiplet foreign chiplet → OutsideSlice");
         assert!(r.arena_not_owner, "non-owner / stale arena handoff → NotOwner");
         assert!(r.arena_limit_leak, "full arena table → ArenaLimit, no bytes lost");
+        assert!(r.arena_bad_align, "non-power-of-two align above floor → BadAlign");
+        assert!(r.arena_unknown_bank, "empty / > MAX_BANKS → UnknownBank");
         assert!(r.user_copy_straddle, "user copy with unmapped tail page → refused whole");
         assert!(r.map_user_phys, "SYS_MAP caller-supplied physical address → refused");
         assert!(r.silent_remote, "map_place remote → SilentRemoteLoad");
@@ -810,6 +1017,9 @@ mod tests {
             "set_sid / submit unbound → HalError::Fault"
         );
         assert!(r.kv_insufficient_rights, "KV grant missing READ / MAP → InsufficientRights, no stray pin");
+        assert!(r.kv_seq_mismatch, "KV grant for another sequence → SeqMismatch; revoked → Revoked");
+        assert!(r.kv_wrong_stream, "KV pin on SSID >= MAX_CDS → WrongStream, no stray STE");
+        assert!(r.kv_bad_grant, "unregistered / non-Memory / full-ledger KV grant → BadGrant");
         assert!(
             r.submit_sid,
             "resolve_submit without SET_SID → SubmitSid"
@@ -847,6 +1057,26 @@ mod tests {
             "HodgeQuota::empty().admit → QuotaExceeded"
         );
         assert!(r.fabric_queue_full, "fabric endpoint flood → QueueFull / Closed, no quota burn");
+        assert!(r.fabric_payload_too_large, "payload past MAX_MSG_BYTES → PayloadTooLarge");
+        assert!(r.fabric_too_many_caps, "cap past MAX_MSG_CAPS → TooManyCaps, caps unchanged");
+        assert!(r.fabric_endpoint_limit, "full table → EndpointLimit, existing intact, close frees slot");
+        assert!(r.fabric_slot_exhaust, "one tenant past its endpoint quota → EndpointLimit");
+        assert!(r.fabric_stale_endpoint, "stale endpoint id after slot reuse → NoSuchEndpoint");
+        assert!(r.fabric_recv_foreign, "non-owner recv / pending → NoSuchEndpoint");
+        assert!(r.fabric_send_no_cap, "send without Endpoint+WRITE → NoSuchEndpoint");
+        assert!(r.fabric_quota_drain, "sender past its own Hodge budget → QuotaExceeded, others unaffected");
+        assert!(r.fdt_bad_magic, "header magic flipped → FdtError::BadMagic");
+        assert!(r.fdt_truncated, "blob one byte short of totalsize → FdtError::Truncated");
+        assert!(r.fdt_bad_version, "version 16 (no size_dt_struct) → FdtError::BadVersion");
+        assert!(r.fdt_too_large, "totalsize past 2 MiB → FdtError::TooLarge");
+        assert!(r.fdt_bad_offset, "strings block past totalsize → FdtError::BadOffset");
+        assert!(r.fdt_bad_token, "FDT_END replaced by an undefined token → FdtError::BadToken");
+        assert!(r.fdt_bad_string, "property name offset past the strings block → FdtError::BadString");
+        assert!(r.fdt_too_deep, "nodes nested past FDT_MAX_DEPTH → FdtError::TooDeep");
+        assert!(r.fdt_bad_cells, "root #address-cells = 3 → FdtError::BadCells");
+        assert!(r.fdt_bad_region, "memory reg base + size overflows u64 → FdtError::BadRegion");
+        assert!(r.fdt_no_memory, "no /memory node → FdtError::NoMemory");
+        assert!(r.fdt_too_many_regions, "17 memory ranges (MAX_REGIONS = 16) → FdtError::TooManyRegions");
         assert!(
             r.hodge_class_unauthorized,
             "authorize badge/kind/WRITE → ClassNotAuthorized"
@@ -854,6 +1084,10 @@ mod tests {
         assert!(
             r.opkernel_class_mismatch,
             "admit_as/inject_as wrong class → ClassMismatch, quota + queue untouched"
+        );
+        assert!(
+            r.opkernel_fabric,
+            "inject oversized / foreign endpoint → OpKernelError::Fabric, quota + queues untouched"
         );
         assert!(
             r.firewall_ident_pa,
@@ -972,12 +1206,28 @@ mod tests {
             "min_balanced n>ENUM_MAX → TooLarge (placement still ok)"
         );
         assert!(
+            r.cut_no_cut,
+            "full cut table / unbound cut_id → NoCut"
+        );
+        assert!(
+            r.cut_unknown_vertex,
+            "allow_place unknown tile/bank → UnknownVertex"
+        );
+        assert!(
             r.accel_shape_overflow,
             "SoftNpu BadShape / Overflow refuse"
         );
         assert!(
             r.accel_unsupported_dtype,
             "SoftNpu F16 without u16 → UnsupportedDType"
+        );
+        assert!(
+            r.accel_bad_op,
+            "SoftNpu elementwise unknown-op → BadOp"
+        );
+        assert!(
+            r.accel_not_found,
+            "SoftNpuDevice probe bad negotiate → NotFound"
         );
         assert!(
             r.tenant_fuzz.all_ok(),
@@ -1012,6 +1262,8 @@ mod tests {
         assert_eq!(LINE_OUTSIDE_SLICE, "[redteam] attack=outside-slice result=refused");
         assert_eq!(LINE_ARENA_NOT_OWNER, "[redteam] attack=arena-not-owner result=refused");
         assert_eq!(LINE_ARENA_LIMIT_LEAK, "[redteam] attack=arena-limit-leak result=refused");
+        assert_eq!(LINE_ARENA_BAD_ALIGN, "[redteam] attack=arena-bad-align result=refused");
+        assert_eq!(LINE_ARENA_UNKNOWN_BANK, "[redteam] attack=arena-unknown-bank result=refused");
         assert_eq!(
             LINE_USER_COPY_STRADDLE,
             "[redteam] attack=user-copy-straddle result=refused"
@@ -1033,6 +1285,9 @@ mod tests {
             "[redteam] attack=set-sid-unbound result=refused"
         );
         assert_eq!(LINE_KV_INSUFFICIENT_RIGHTS, "[redteam] attack=kv-insufficient-rights result=refused");
+        assert_eq!(LINE_KV_SEQ_MISMATCH, "[redteam] attack=kv-seq-mismatch result=refused");
+        assert_eq!(LINE_KV_WRONG_STREAM, "[redteam] attack=kv-wrong-stream result=refused");
+        assert_eq!(LINE_KV_BAD_GRANT, "[redteam] attack=kv-bad-grant result=refused");
         assert_eq!(
             LINE_SUBMIT_SID,
             "[redteam] attack=submit-sid result=refused"
@@ -1071,12 +1326,51 @@ mod tests {
         );
         assert_eq!(LINE_FABRIC_QUEUE_FULL, "[redteam] attack=fabric-queue-full result=refused");
         assert_eq!(
+            LINE_FABRIC_PAYLOAD_TOO_LARGE,
+            "[redteam] attack=fabric-payload-too-large result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_TOO_MANY_CAPS,
+            "[redteam] attack=fabric-too-many-caps result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_ENDPOINT_LIMIT,
+            "[redteam] attack=fabric-endpoint-limit result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_SLOT_EXHAUST,
+            "[redteam] attack=fabric-slot-exhaust result=refused"
+        );
+        assert_eq!(
+            LINE_FABRIC_STALE_ENDPOINT,
+            "[redteam] attack=fabric-stale-endpoint result=refused"
+        );
+        assert_eq!(LINE_FABRIC_RECV_FOREIGN, "[redteam] attack=fabric-recv-foreign result=refused");
+        assert_eq!(LINE_FABRIC_SEND_NO_CAP, "[redteam] attack=fabric-send-no-cap result=refused");
+        assert_eq!(LINE_FABRIC_QUOTA_DRAIN, "[redteam] attack=fabric-quota-drain result=refused");
+        assert_eq!(LINE_FDT_BAD_MAGIC, "[redteam] attack=fdt-bad-magic result=refused");
+        assert_eq!(LINE_FDT_TRUNCATED, "[redteam] attack=fdt-truncated result=refused");
+        assert_eq!(LINE_FDT_BAD_VERSION, "[redteam] attack=fdt-bad-version result=refused");
+        assert_eq!(LINE_FDT_TOO_LARGE, "[redteam] attack=fdt-too-large result=refused");
+        assert_eq!(LINE_FDT_BAD_OFFSET, "[redteam] attack=fdt-bad-offset result=refused");
+        assert_eq!(LINE_FDT_BAD_TOKEN, "[redteam] attack=fdt-bad-token result=refused");
+        assert_eq!(LINE_FDT_BAD_STRING, "[redteam] attack=fdt-bad-string result=refused");
+        assert_eq!(LINE_FDT_TOO_DEEP, "[redteam] attack=fdt-too-deep result=refused");
+        assert_eq!(LINE_FDT_BAD_CELLS, "[redteam] attack=fdt-bad-cells result=refused");
+        assert_eq!(LINE_FDT_BAD_REGION, "[redteam] attack=fdt-bad-region result=refused");
+        assert_eq!(LINE_FDT_NO_MEMORY, "[redteam] attack=fdt-no-memory result=refused");
+        assert_eq!(LINE_FDT_TOO_MANY_REGIONS, "[redteam] attack=fdt-too-many-regions result=refused");
+        assert_eq!(
             LINE_HODGE_CLASS_UNAUTHORIZED,
             "[redteam] attack=hodge-class-unauthorized result=refused"
         );
         assert_eq!(
             LINE_OPKERNEL_CLASS_MISMATCH,
             "[redteam] attack=opkernel-class-mismatch result=refused"
+        );
+        assert_eq!(
+            LINE_OPKERNEL_FABRIC,
+            "[redteam] attack=opkernel-fabric result=refused"
         );
         assert_eq!(
             LINE_FIREWALL_IDENT_PA,
@@ -1195,12 +1489,28 @@ mod tests {
             "[redteam] attack=cut-too-large result=refused"
         );
         assert_eq!(
+            LINE_CUT_NO_CUT,
+            "[redteam] attack=cut-no-cut result=refused"
+        );
+        assert_eq!(
+            LINE_CUT_UNKNOWN_VERTEX,
+            "[redteam] attack=cut-unknown-vertex result=refused"
+        );
+        assert_eq!(
             LINE_ACCEL_SHAPE_OVERFLOW,
             "[redteam] attack=accel-shape-overflow result=refused"
         );
         assert_eq!(
             LINE_ACCEL_UNSUPPORTED_DTYPE,
             "[redteam] attack=accel-unsupported-dtype result=refused"
+        );
+        assert_eq!(
+            LINE_ACCEL_BAD_OP,
+            "[redteam] attack=accel-bad-op result=refused"
+        );
+        assert_eq!(
+            LINE_ACCEL_NOT_FOUND,
+            "[redteam] attack=accel-not-found result=refused"
         );
         assert_eq!(
             LINE_TENANT_FUZZ,
@@ -1229,6 +1539,8 @@ mod tests {
             LINE_OUTSIDE_SLICE,
             LINE_ARENA_NOT_OWNER,
             LINE_ARENA_LIMIT_LEAK,
+            LINE_ARENA_BAD_ALIGN,
+            LINE_ARENA_UNKNOWN_BANK,
             LINE_USER_COPY_STRADDLE,
             LINE_SILENT_REMOTE,
             LINE_SPACE_NOT_MAPPABLE,
@@ -1237,14 +1549,38 @@ mod tests {
             LINE_XQUEUE_SID_OVERRIDE,
             LINE_SET_SID_UNBOUND,
             LINE_KV_INSUFFICIENT_RIGHTS,
+            LINE_KV_SEQ_MISMATCH,
+            LINE_KV_WRONG_STREAM,
+            LINE_KV_BAD_GRANT,
             LINE_SOFTNOI_UNBOUND,
             LINE_SOFTNOI_RING_EXHAUSTED,
             LINE_HODGE_HARMONIC_TREE,
             LINE_HODGE_CURL_TREE,
             LINE_HODGE_QUOTA,
             LINE_FABRIC_QUEUE_FULL,
+            LINE_FABRIC_PAYLOAD_TOO_LARGE,
+            LINE_FABRIC_TOO_MANY_CAPS,
+            LINE_FABRIC_ENDPOINT_LIMIT,
+            LINE_FABRIC_SLOT_EXHAUST,
+            LINE_FABRIC_STALE_ENDPOINT,
+            LINE_FABRIC_RECV_FOREIGN,
+            LINE_FABRIC_SEND_NO_CAP,
+            LINE_FABRIC_QUOTA_DRAIN,
+            LINE_FDT_BAD_MAGIC,
+            LINE_FDT_TRUNCATED,
+            LINE_FDT_BAD_VERSION,
+            LINE_FDT_TOO_LARGE,
+            LINE_FDT_BAD_OFFSET,
+            LINE_FDT_BAD_TOKEN,
+            LINE_FDT_BAD_STRING,
+            LINE_FDT_TOO_DEEP,
+            LINE_FDT_BAD_CELLS,
+            LINE_FDT_BAD_REGION,
+            LINE_FDT_NO_MEMORY,
+            LINE_FDT_TOO_MANY_REGIONS,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
+            LINE_OPKERNEL_FABRIC,
             LINE_FIREWALL_IDENT_PA,
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,
@@ -1274,8 +1610,12 @@ mod tests {
         LINE_CUT_EMPTY_PART,
         LINE_CUT_UNBALANCED,
         LINE_CUT_TOO_LARGE,
+        LINE_CUT_NO_CUT,
+        LINE_CUT_UNKNOWN_VERTEX,
         LINE_ACCEL_SHAPE_OVERFLOW,
         LINE_ACCEL_UNSUPPORTED_DTYPE,
+        LINE_ACCEL_BAD_OP,
+        LINE_ACCEL_NOT_FOUND,
         ] {
             assert!(
                 line.starts_with("[redteam] attack=") && line.ends_with(" result=refused"),

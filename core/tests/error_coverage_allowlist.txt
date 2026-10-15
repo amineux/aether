@@ -10,29 +10,13 @@
 # --- Never constructed (dead variants) ---
 CapError::GenerationMismatch | never constructed; CapError changes are on the kill list, so it stays as-is and is listed here instead
 SpaceError::SpaceMismatch | never constructed anywhere in the tree; candidate for removal or a real check in a later PR
+OpKernelError::Cap | constructed but unreachable: inject_as / sparsify require_authorized call require_opkernel_bind first, which maps every lookup failure (EmptySlot / InvalidCptr) to NotBound, so the later tab.lookup on the same &CapTable cannot fail; host test missing_or_out_of_range_cptr_is_not_bound pins the NotBound path. Removing or rewiring the wrapper is an owner call, not a needle
 
 # --- Constructed, refuse path exists, no test names it yet (needle candidates) ---
-AccelError::BadOp | SoftNPU unknown opcode refuse; constructed in accel.rs, no test asserts it by name (SoftNPU ops beyond Max stay killed; this is the refuse only)
-CutError::NoCut | SpectralCut construction finds no admissible cut; no test names it
-CutError::UnknownVertex | SpectralCut/affinity lookup of a vertex outside the graph; no test names it
-FabricError::EndpointLimit | endpoint table full on create; no test names it
-FabricError::TooManyCaps | message carries more than MAX_MSG_CAPS caps; no test names it (Round 21 fabric candidate)
-KvError::BadGrant | malformed KV grant record; constructed in kvfabric.rs, no test names it
-KvError::SeqMismatch | decode on a grant for another sequence; constructed in kvfabric.rs, no test names it (Round 21 KV candidate)
-KvError::WrongStream | KV pin on a Soft-SMMU stream that does not match the grant; no test names it
-OpKernelError::Cap | wrapper for a CapError from the operator-kernel cap lookup; inner CapError variants are named elsewhere
-OpKernelError::Fabric | wrapper for a FabricError from operator-kernel inject; inner FabricError variants are named elsewhere
-HalError::NotFound | AccelDevice probe found no device; no test names it
+# (none left after Round 30)
 
 # --- Boot-time parsers and image tooling (not tenant refuse paths) ---
 BootFsError::NoRoom | AETHFS01 pack: output buffer too small; boot image tooling, not a tenant refuse path
-ElfError::BadPhdr | static ELF64 loader header check; boot-time parser, no test names it
-ElfError::BadSegment | static ELF64 loader segment bounds; boot-time parser, no test names it
-ElfError::BadVersion | static ELF64 loader e_version check; boot-time parser
-ElfError::Empty | static ELF64 loader: no PT_LOAD; boot-time parser
-ElfError::Not64 | static ELF64 loader: ELFCLASS32 refuse; boot-time parser
-ElfError::NotLe | static ELF64 loader: big-endian refuse; boot-time parser
-ElfError::TooManyLoads | static ELF64 loader: more PT_LOAD than slots; boot-time parser
 MmapError::Empty | Multiboot mmap parser: no usable region; boot-time parser
 RelocError::BadMagic | PIE reloc pack parser; RelocError is on the kill list, no needles
 RelocError::Truncated | PIE reloc pack parser; RelocError is on the kill list, no needles

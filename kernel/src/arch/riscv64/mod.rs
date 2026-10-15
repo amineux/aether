@@ -20,6 +20,9 @@ pub const TEST_FINISHER: usize = 0x0010_0000;
 pub const KERNEL_VA: u64 = 0x8020_0000;
 pub const FRAME_START: u64 = 0x8100_0000;
 pub const FRAME_END: u64 = 0x8800_0000;
+/// QEMU virt DRAM base; the Sv39 trampoline identity-maps up to 4 GiB.
+pub const RAM_BASE: u64 = 0x8000_0000;
+pub const RAM_LIMIT: u64 = 0x1_0000_0000;
 
 const FINISHER_PASS: u32 = 0x5555;
 const FINISHER_FAIL: u32 = 0x3333;

@@ -192,7 +192,7 @@ qemu-system-aarch64 \
   -no-reboot -nic none -kernel build/aether-aarch64.elf -semihosting
 ```
 
-QEMU loads the ELF at `0x40080000`. The trampoline identity-maps
+QEMU loads the ELF at `0x40200000` (2 MiB above RAM base, so QEMU can place its DTB at `0x40000000`; the kernel parses its `/memory` node). The trampoline identity-maps
 4 GiB (TTBR0, 1 GiB blocks), the same kernel self-check runs, then
 `eret` drops to EL0 `/init` at `0x42000000` (`svc` syscalls, own
 TTBR0). SoftNPU is the in-kernel virtqueue (path B), drained on the
