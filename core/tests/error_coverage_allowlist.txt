@@ -5,19 +5,18 @@
 # is now named, or no longer exists). Removing a line is the goal: add a test
 # that asserts the variant by name, then delete the line.
 #
-# Snapshot taken on main eef73d5 (2026-10-07, after PR #199): 141 variants, 111 named, 30 below.
+# Snapshot taken on boss/r31-cleanup-needles over main a832e67 (2026-10-16, Round 31): 152 variants, 143 named, 9 below.
+# None of the 9 is a tenant refuse path awaiting a test: kill-listed, boot tooling, kernel errno, or dead kept for ABI.
 
-# --- Never constructed (dead variants) ---
+# --- Dead or unreachable (kill-listed, or kept for ABI) ---
 CapError::GenerationMismatch | never constructed; CapError changes are on the kill list, so it stays as-is and is listed here instead
-SpaceError::SpaceMismatch | never constructed anywhere in the tree; candidate for removal or a real check in a later PR
-OpKernelError::Cap | constructed but unreachable: inject_as / sparsify require_authorized call require_opkernel_bind first, which maps every lookup failure (EmptySlot / InvalidCptr) to NotBound, so the later tab.lookup on the same &CapTable cannot fail; host test missing_or_out_of_range_cptr_is_not_bound pins the NotBound path. Removing or rewiring the wrapper is an owner call, not a needle
+OpKernelError::Cap | dead, kept for ABI: OpKernelError is a public aether_core return type and inject / sparsify still wrap tab.lookup with it, but require_opkernel_bind refuses every lookup failure as NotBound first, so it cannot fire; host test missing_or_out_of_range_cptr_is_not_bound pins that. Removing the wrapper is an API change, not a needle
 
 # --- Constructed, refuse path exists, no test names it yet (needle candidates) ---
 # (none left after Round 30)
 
 # --- Boot-time parsers and image tooling (not tenant refuse paths) ---
 BootFsError::NoRoom | AETHFS01 pack: output buffer too small; boot image tooling, not a tenant refuse path
-MmapError::Empty | Multiboot mmap parser: no usable region; boot-time parser
 RelocError::BadMagic | PIE reloc pack parser; RelocError is on the kill list, no needles
 RelocError::Truncated | PIE reloc pack parser; RelocError is on the kill list, no needles
 
