@@ -45,6 +45,9 @@ section is part of the scoreboard, not a footnote.
 - **Software SMMU / NoI.** Stream IDs, IOVA tables, NoI admission and green
   contexts are software models. MIG, MI300X and XDNA isolate in hardware
   [MIG][MI300X][XDNA]. #161 (raw unmap not tenant-checked) is still open.
+- **No customer contact.** No discovery interview has been recorded. The
+  plan (what the harness offers an NPU runtime team, questions, yes and kill
+  criteria) is [business/DISCOVERY.md](business/DISCOVERY.md).
 - **No UCIe transport** and no measured interference on real memory.
 - **No performance numbers.** This file makes no throughput, latency or
   silicon-schedule claims.
