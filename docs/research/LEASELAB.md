@@ -66,6 +66,18 @@ version, assumptions and the protocol trace if the experiment has been run.
 
 Run checks: `node --test scripts/test_leaselab.mjs`.
 
+The admission sketch rejects malformed grant/request records before checking
+authority. Tenant identifiers must be nonempty strings; permissions must be
+explicit booleans; grant/current epochs must be nonnegative safe integers;
+and grant byte counts must be positive safe integers. Request offsets and
+lengths must be safe integers with a nonnegative offset and positive length.
+The range check uses subtraction to avoid losing integer precision at the
+largest supported byte count. Invalid records return a refusal, not permission
+inferred from coercion or missing fields. The dedicated LeaseLab CI workflow
+runs the analytical tests, malformed-input regressions, and an exhaustive small
+range check against an exact-integer oracle. This is still only a protocol
+sketch: epochs do not implement quiescence, prevent wrap/reuse, or invalidate DMA.
+
 ## Validation and rejection plan
 
 1. Secure a runtime team's trace and environment; establish baseline copying,
