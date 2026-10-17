@@ -11,7 +11,6 @@ use aether_core::sysnr::{
     user_chunks, user_clone_pair_ok, user_mmap_ok, user_pages_ok, user_range_known, UserAccelJob,
     UserIpcMsg,
 };
-use aether_core::CPtr;
 
 use crate::arch::idt::InterruptFrame;
 #[cfg(target_arch = "x86_64")]
@@ -184,7 +183,6 @@ pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
         }
         SYS_SEND | SYS_RECV | SYS_MAP | SYS_UNMAP | SYS_ACCEL_SUBMIT | SYS_ACCEL_WAIT
         | SYS_ARENA_ALLOC => {
-            let _ = CPtr(a0 as u16);
             Err(SysError::Inval)
         }
         _ => Err(SysError::Inval),
