@@ -16,7 +16,6 @@ OpKernelError::Cap | dead, kept for ABI: OpKernelError is a public aether_core r
 # (none left after Round 30)
 
 # --- Boot-time parsers and image tooling (not tenant refuse paths) ---
-BootFsError::NoRoom | AETHFS01 pack: output buffer too small; boot image tooling, not a tenant refuse path
 RelocError::BadMagic | PIE reloc pack parser; RelocError is on the kill list, no needles
 RelocError::Truncated | PIE reloc pack parser; RelocError is on the kill list, no needles
 

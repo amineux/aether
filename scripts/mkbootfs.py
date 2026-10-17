@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import struct
 import sys
 
@@ -26,6 +27,7 @@ ENT = 24
 NAME = 16
 SECTOR = 512
 MAX_FILES = 8
+MAX_U32 = (1 << 32) - 1
 
 
 def pack(files: list[tuple[str, bytes]]) -> bytes:
@@ -36,9 +38,15 @@ def pack(files: list[tuple[str, bytes]]) -> bytes:
     dir_end = HDR + len(files) * ENT
     cursor = dir_end
     entries = []
+    names = set()
     for name, data in files:
-        if not name.startswith("/") or len(name) < 2 or len(name) > NAME:
+        if not isinstance(name, str) or not re.fullmatch(r"/[A-Za-z0-9._-]{1,15}", name):
             raise SystemExit(f"bad name {name!r}")
+        if name in names:
+            raise SystemExit(f"duplicate name {name!r}")
+        names.add(name)
+        if len(data) > MAX_U32 or cursor + len(data) > MAX_U32:
+            raise SystemExit("image exceeds AETHFS01 32-bit extents")
         entries.append((name, cursor, data))
         cursor += len(data)
     padded = (cursor + SECTOR - 1) & ~(SECTOR - 1)
