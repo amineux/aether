@@ -90,6 +90,7 @@ help:
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make mp-shim       - MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch; no QEMU)"
+	@echo "  make verify       - one-command reproduce: host tests + clips + error coverage vs SCOREBOARD"
 	@echo "  make clean"
 
 target:
@@ -883,6 +884,14 @@ clean:
 	cd $(USER_DIR) && cargo clean
 	cd $(PROBE_DIR) && cargo clean
 	cargo clean
+
+# One-command reproduce (host only, no QEMU): host tests, diligence and
+# red-team clips, error-coverage matrix. Prints the red-team stdout sha256 and
+# variants / named / allowlisted, and fails if they disagree with the
+# `verify` line in docs/SCOREBOARD.md. Same script: python3 scripts/verify.py
+.PHONY: verify
+verify:
+	python3 scripts/verify.py
 
 # Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
 # on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
