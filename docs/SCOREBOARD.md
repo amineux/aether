@@ -51,6 +51,7 @@ section is part of the scoreboard, not a footnote.
 - **9 error variants** are allowlisted rather than exercised by a test: kernel
   errno, kill-listed parsers, boot tooling and one dead ABI wrapper. The needle
   list is closed; new coverage needs new refuse paths, not more tests.
+  [business/ALLOWLIST.md](business/ALLOWLIST.md) explains each of the 9.
 
 ## Gated values
 
