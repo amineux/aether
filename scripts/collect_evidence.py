@@ -11,6 +11,9 @@ import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMMANDS = [
+    # Cheap (no cargo): SHAs cited in docs/business and docs/SCOREBOARD.md must be
+    # on main and within the allowed lag; see docs/business/INVESTOR_EVIDENCE.md.
+    ("evidence-freshness", [sys.executable, "scripts/check_evidence_freshness.py", "--self-test"]),
     ("host-tests", ["cargo", "test", "--workspace", "--locked"]),
     ("diligence", ["cargo", "run", "--locked", "--quiet", "-p", "aether-diligence-demo", "--bin", "diligence-demo"]),
     ("red-team", ["cargo", "run", "--locked", "--quiet", "-p", "aether-redteam"]),
@@ -55,6 +58,9 @@ def main():
                            ("cargo", ["cargo", "--version"])]:
         code, stdout, stderr = run(command, args.timeout)
         metadata["metadata"][label] = dict(exit_code=code, stdout=stdout, stderr=stderr)
+    # The commit this bundle measured; scripts/check_evidence_freshness.py
+    # compares the SHAs cited in docs/business and docs/SCOREBOARD.md to it.
+    metadata["commit_sha"] = metadata["metadata"]["commit"]["stdout"].strip()
     (output / "Cargo.lock").write_bytes((ROOT / "Cargo.lock").read_bytes())
     failed = any(item["exit_code"] != 0 for item in metadata["metadata"].values())
     # Write an initial manifest so an interrupted run cannot look complete.
