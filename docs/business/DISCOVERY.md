@@ -15,6 +15,8 @@ not hardware isolation, not a benchmark and not a partner result.
   implements it for their runtime and gets a per-class matrix over the 15
   attack classes (`refused` / `ACCEPTED` / `n/a`). The bundled weak sample
   scores `accepted=10`, so the kit can fail. Run: `make isolation-matrix`.
+  Starting point: `examples/isolation-kit/template` (all 15 classes `n/a`
+  until filled in), steps in [ISOLATION_KIT.md](ISOLATION_KIT.md).
 - **A named refusal catalogue.** `make red-team` prints 99 `result=refused`
   lines (98 named attacks plus one seeded tenant fuzz) against the software
   SMMU, NoI, fabric and capability model. Each line is a test case a team can

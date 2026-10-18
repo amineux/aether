@@ -275,6 +275,22 @@ impl IsolationBackend for WeakSampleBackend {
     }
 }
 
+/// Bring-your-own-backend starting point: every class scores `n/a` until a
+/// team fills in its arms. Lives in `template/backend.rs` so it can be copied
+/// as one file. Integrates no runtime.
+#[path = "../template/backend.rs"]
+pub mod template;
+pub use template::TemplateBackend;
+
+/// Look up an optional extra backend by the name `make isolation-matrix
+/// BACKEND=<name>` passes. Only `template` exists today.
+pub fn extra_backend(name: &str) -> Option<Box<dyn IsolationBackend>> {
+    match name {
+        "template" => Some(Box::new(TemplateBackend)),
+        _ => None,
+    }
+}
+
 /// Build the shipped adapters: the reference backend and the example-only weak
 /// one.
 pub fn shipped_backends() -> Vec<Box<dyn IsolationBackend>> {
@@ -303,6 +319,39 @@ mod tests {
         assert!(m.count(Outcome::NotApplicable) > 0, "weak sample has an n/a class");
         assert!(!m.conformant());
         assert!(m.summary_line().contains("result=NONCONFORMANT"));
+    }
+
+    #[test]
+    fn template_scores_every_class_not_applicable() {
+        let m = Matrix::run(&TemplateBackend);
+        assert_eq!(m.total(), 15);
+        assert_eq!(m.count(Outcome::NotApplicable), 15, "{}", m.table());
+        assert_eq!(m.count(Outcome::Refused), 0);
+        assert_eq!(m.count(Outcome::Accepted), 0);
+        assert!(!m.conformant(), "an untested template must not pass");
+        assert_eq!(
+            m.summary_line(),
+            "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT"
+        );
+    }
+
+    #[test]
+    fn template_has_a_commented_arm_for_every_class() {
+        let src = include_str!("../template/backend.rs");
+        for c in CLASSES {
+            assert!(src.contains(&format!("\"{}\" => Outcome::NotApplicable", c.name)), "template lacks {}", c.name);
+        }
+    }
+
+    #[test]
+    fn weak_sample_still_accepts_ten() {
+        assert_eq!(Matrix::run(&WeakSampleBackend).count(Outcome::Accepted), 10);
+    }
+
+    #[test]
+    fn extra_backend_lookup() {
+        assert!(extra_backend("template").is_some());
+        assert!(extra_backend("nope").is_none());
     }
 
     #[test]
