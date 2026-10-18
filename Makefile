@@ -904,6 +904,19 @@ verify:
 evidence-pack:
 	python3 scripts/evidence_pack.py
 
+# Machine-readable refusal catalogue: the red-team text clip turned into JSON
+# (attack, class, API, error variant, result, exact line). Generated from the
+# same clip `make red-team` prints; aether-redteam --json fails if the clip and
+# examples/red-team/refusal-catalogue.tsv differ in any attack or position.
+# Adds no attack; the text clip and its sha256 are unchanged.
+REDTEAM_JSON := $(BUILD)/redteam.json
+.PHONY: red-team-json
+red-team-json:
+	mkdir -p $(BUILD)
+	cargo run --locked --release --quiet -p aether-redteam > $(REDTEAM_LOG)
+	cargo run --locked --release --quiet -p aether-redteam -- --json < $(REDTEAM_LOG) > $(REDTEAM_JSON)
+	@echo "red-team-json: wrote $(REDTEAM_JSON)"
+
 # Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
 # on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
 # IOVAs; tenant C's named attacks run between layers and must all be refused.
