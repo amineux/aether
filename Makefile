@@ -961,12 +961,20 @@ kani:
 # see the DILIGENCE subsection for how the summary line would feed a report.
 ISOLATION_KIT := examples/isolation-kit/Cargo.toml
 ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
+# `make isolation-matrix BACKEND=template` adds the bring-your-own-backend
+# template (examples/isolation-kit/template): 15 rows of n/a, accepted=0
+# refused=0. Steps: docs/business/ISOLATION_KIT.md. Integrates no runtime.
+BACKEND ?=
 
 isolation-matrix:
 	mkdir -p $(BUILD)
 	rm -f $(ISOLATION_MATRIX_LOG)
-	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet > $(ISOLATION_MATRIX_LOG) 2>&1
+	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet -- $(BACKEND) > $(ISOLATION_MATRIX_LOG) 2>&1
 	cat $(ISOLATION_MATRIX_LOG)
+	if [ "$(BACKEND)" = "template" ]; then \
+		grep -qxF "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT" $(ISOLATION_MATRIX_LOG) && \
+		grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* accepted=10 .*" $(ISOLATION_MATRIX_LOG); \
+	fi
 	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
 	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
 	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"
