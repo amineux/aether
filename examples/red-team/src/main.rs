@@ -969,7 +969,14 @@ fn print_clip(r: &RedTeamReport) {
     }
 }
 
+mod catalogue;
+
 fn main() {
+    // `make red-team-json`: turn a clip read from stdin into JSON. The default
+    // (no argument) run below is the text clip and is unchanged.
+    if std::env::args().nth(1).as_deref() == Some("--json") {
+        std::process::exit(catalogue::json_main());
+    }
     let r = run_redteam();
     print_clip(&r);
     if !r.all_ok() {

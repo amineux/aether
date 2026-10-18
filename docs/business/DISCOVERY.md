@@ -20,7 +20,8 @@ not hardware isolation, not a benchmark and not a partner result.
 - **A named refusal catalogue.** `make red-team` prints 99 `result=refused`
   lines (98 named attacks plus one seeded tenant fuzz) against the software
   SMMU, NoI, fabric and capability model. Each line is a test case a team can
-  copy into its own suite.
+  copy into its own suite. `make red-team-json` writes the same 99 lines as JSON
+  (`build/redteam.json`: attack, class, API, error variant, result, line).
 - **Determinism and noninterference checks.** Red-team and diligence output is
   byte-identical across runs; `make noninterference` replays 512 seeds of a
   hostile third tenant and checks that two honest tenants get byte-identical
