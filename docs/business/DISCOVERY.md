@@ -34,6 +34,20 @@ not hardware isolation, not a benchmark and not a partner result.
 What it does **not** offer: real models, measured interference on real
 memory, a hardware SMMU, or any throughput number.
 
+## Leave-behind after the conversation
+
+`make evidence-pack` (or `python3 scripts/evidence_pack.py` without GNU make)
+writes `build/evidence-pack/aether-evidence-<date>-<sha12>.tar.gz`. It holds the
+red-team, noninterference, isolation-matrix and diligence-demo output from the
+current commit, the commit SHA, the rustc/cargo/python versions, the "does not
+offer" paragraph above as `NOT_PROVEN.md`, a short README saying how to re-run
+each clip, and `SHA256SUMS`. It prints
+`[evidence-pack] sha=<commit> files=9 not_proven=listed`. Only the file name
+carries the date: two runs on the same commit and toolchain produce
+byte-identical archives, so a team can rebuild it and compare hashes. Send it
+after the interview, not before. It is host software evidence, not a customer
+result, hardware data or a performance number.
+
 ## Kinds of teams to talk to
 
 - Runtime or driver teams at small NPU and AI-accelerator start-ups that plan
