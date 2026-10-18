@@ -893,6 +893,17 @@ clean:
 verify:
 	python3 scripts/verify.py
 
+# Leave-behind evidence pack (docs/business/DISCOVERY.md). Runs the red-team,
+# noninterference, isolation-matrix and diligence-demo clips on this checkout
+# and bundles their stdout with the commit SHA, toolchain versions and
+# DISCOVERY's "does not offer" block into one dated, deterministic tarball
+# under build/evidence-pack/ (never committed). Only the file name carries the
+# date; two runs on one commit give byte-identical archives. Host software
+# clips only: no customer validation, no hardware, no throughput numbers.
+.PHONY: evidence-pack
+evidence-pack:
+	python3 scripts/evidence_pack.py
+
 # Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
 # on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
 # IOVAs; tenant C's named attacks run between layers and must all be refused.
@@ -959,14 +970,3 @@ isolation-matrix:
 	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
 	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
 	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"
-
-# Leave-behind evidence pack (docs/business/DISCOVERY.md). Runs the red-team,
-# noninterference, isolation-matrix and diligence-demo clips on this checkout
-# and bundles their stdout with the commit SHA, toolchain versions and
-# DISCOVERY's "does not offer" block into one dated, deterministic tarball
-# under build/evidence-pack/ (never committed). Only the file name carries the
-# date; two runs on one commit give byte-identical archives. Host software
-# clips only: no customer validation, no hardware, no throughput numbers.
-.PHONY: evidence-pack
-evidence-pack:
-	python3 scripts/evidence_pack.py
