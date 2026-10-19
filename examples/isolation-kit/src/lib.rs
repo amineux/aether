@@ -349,6 +349,31 @@ mod tests {
     }
 
     #[test]
+    fn aether_soft_counts_are_pinned() {
+        let m = Matrix::run(&AetherSoftBackend);
+        assert_eq!(m.count(Outcome::Refused), 15, "{}", m.table());
+        assert_eq!(m.count(Outcome::NotApplicable), 0, "{}", m.table());
+        assert_eq!(m.count(Outcome::Accepted), 0, "{}", m.table());
+        assert_eq!(
+            m.summary_line(),
+            "[isolation-kit] backend=aether-soft classes=15 applicable=15 refused=15 accepted=0 n/a=0 result=conformant"
+        );
+    }
+
+    #[test]
+    fn every_aether_soft_refusal_is_an_existing_red_team_attack() {
+        // Same catalogue `make red-team-json` checks against the text clip.
+        let tsv = include_str!("../../red-team/refusal-catalogue.tsv");
+        let attacks: Vec<&str> = tsv.lines().filter_map(|l| l.split('\t').next()).collect();
+        assert_eq!(attacks.len(), 99);
+        let m = Matrix::run(&AetherSoftBackend);
+        assert_eq!(m.count(Outcome::Refused), CLASSES.len(), "every class must be a refusal");
+        for c in CLASSES {
+            assert!(attacks.contains(&c.name), "{} is not a red-team attack", c.name);
+        }
+    }
+
+    #[test]
     fn extra_backend_lookup() {
         assert!(extra_backend("template").is_some());
         assert!(extra_backend("nope").is_none());

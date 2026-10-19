@@ -15,10 +15,13 @@ fn main() {
     let mut backends = shipped_backends();
     let extra = std::env::args().nth(1).filter(|a| !a.is_empty());
     if let Some(name) = &extra {
+        // `aether-soft` is already a shipped row; naming it just runs the
+        // default three-way comparison (template + weak sample + aether-soft).
+        let name = if name == "aether-soft" { "template" } else { name.as_str() };
         match extra_backend(name) {
             Some(b) => backends.push(b),
             None => {
-                eprintln!("aether-isolation-kit: unknown backend {name:?} (known: template)");
+                eprintln!("aether-isolation-kit: unknown backend {name:?} (known: template, aether-soft)");
                 std::process::exit(2);
             }
         }
@@ -40,7 +43,7 @@ fn main() {
     println!("[isolation-kit] reference=aether-soft is the conformance baseline;");
     println!("[isolation-kit] weak-sample-example-only is a teaching stub whose accepts");
     println!("[isolation-kit] demonstrate the kit can fail. It is not a real backend.");
-    if extra.as_deref() == Some("template") {
+    if extra.is_some() {
         println!("[isolation-kit] template-unimplemented is the bring-your-own-backend starting");
         println!("[isolation-kit] point (examples/isolation-kit/template); every class is n/a until filled in.");
     }
