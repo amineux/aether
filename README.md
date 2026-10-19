@@ -12,10 +12,11 @@ Illustrative browser model, not a hardware benchmark or kernel integration.
 **Check every claim with one command:** `make verify` (or
 `python3 scripts/verify.py` where GNU make is missing) re-runs the host tests,
 the diligence and red-team clips and the error-coverage matrix, then prints the
-red-team stdout sha256 and the variant counts (`variants=152 named=143
-allowlisted=9`) and fails if any of them disagrees with
+red-team stdout sha256 and the variant counts (`variants=152 named=144
+allowlisted=8`) and fails if any of them disagrees with
 [`docs/SCOREBOARD.md`](docs/SCOREBOARD.md). Host software models only: no QEMU,
-no hardware, no performance numbers.
+no hardware, no performance numbers. Claim-by-claim commands, expected lines
+and what each does not prove: [`docs/business/PROVE_IT.md`](docs/business/PROVE_IT.md).
 
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.

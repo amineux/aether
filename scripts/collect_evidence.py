@@ -19,6 +19,8 @@ COMMANDS = [
     ("red-team", ["cargo", "run", "--locked", "--quiet", "-p", "aether-redteam"]),
     ("kv-fabric", ["cargo", "run", "--locked", "--quiet", "-p", "aether-kv-fabric"]),
     ("partner-hello", ["cargo", "run", "--locked", "--quiet", "-p", "aether-partner-hello"]),
+    # Every row of docs/business/PROVE_IT.md: run the command, grep its line.
+    ("prove-it", [sys.executable, "scripts/prove_it.py"]),
     ("design-win-standin", ["cargo", "run", "--locked", "--quiet", "-p", "aether-design-win-check", "--", "docs/design-win/iree-hal-standin.toml"]),
 ]
 
