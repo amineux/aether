@@ -257,33 +257,54 @@ pub fn parse_multiboot1(info: &[u8], mmap: &[u8]) -> Result<MemoryMap, MmapError
     Err(MmapError::NoMmap)
 }
 
-/// Parse a Multiboot2 info blob (`total_size` + reserved + tags).
+/// Parse a complete Multiboot2 info blob (`total_size` + reserved + tags).
+///
+/// The size includes the final type-0/size-8 tag. Do not return a map from
+/// a valid prefix if the terminator, a tag, or a memory-map entry is partial.
+/// Unknown tags and backward-compatible extended mmap entries are skipped.
 pub fn parse_multiboot2(info: &[u8]) -> Result<MemoryMap, MmapError> {
     if info.len() < MB2_INFO_MIN {
         return Err(MmapError::Truncated);
     }
     let total = r32(info, 0)? as usize;
-    if total < MB2_INFO_MIN || total > info.len() {
+    if total < MB2_INFO_MIN + 8 || total > info.len() {
         return Err(MmapError::Truncated);
     }
     let mut off = 8usize;
     let mut mmap: Option<MemoryMap> = None;
     let mut mem_upper: Option<u32> = None;
-    while off + 8 <= total {
+    let mut ended = false;
+    while off < total {
+        if total - off < 8 {
+            return Err(MmapError::Truncated);
+        }
         let ty = r32(info, off)?;
         let size = r32(info, off + 4)? as usize;
-        if size < 8 || off + size > total {
+        if size < 8 || size > total - off {
             return Err(MmapError::Truncated);
         }
         if ty == MB2_TAG_END {
+            if size != 8 || off + size != total {
+                return Err(MmapError::Truncated);
+            }
+            ended = true;
             break;
         }
         if ty == MB2_TAG_MMAP {
             mmap = Some(parse_mb2_mmap_tag(&info[off..off + size])?);
-        } else if ty == MB2_TAG_BASIC_MEM && size >= 16 {
+        } else if ty == MB2_TAG_BASIC_MEM {
+            if size < 16 {
+                return Err(MmapError::Truncated);
+            }
             mem_upper = Some(r32(info, off + 12)?);
         }
-        off = (off + size + 7) & !7;
+        off = (off + size).checked_add(7).ok_or(MmapError::Truncated)? & !7;
+        if off > total {
+            return Err(MmapError::Truncated);
+        }
+    }
+    if !ended {
+        return Err(MmapError::Truncated);
     }
     if let Some(m) = mmap {
         return Ok(m);
@@ -300,12 +321,15 @@ fn parse_mb2_mmap_tag(tag: &[u8]) -> Result<MemoryMap, MmapError> {
         return Err(MmapError::Truncated);
     }
     let entry_size = r32(tag, 8)? as usize;
-    if entry_size < 20 {
+    // The known record is 24 bytes including its reserved word. Future
+    // versions may extend it, but the stride remains a multiple of eight.
+    // entry_version and reserved fields are intentionally not restricted.
+    if entry_size < 24 || entry_size % 8 != 0 || (tag.len() - 16) % entry_size != 0 {
         return Err(MmapError::Truncated);
     }
     let mut map = MemoryMap::empty(MapSource::Multiboot2);
     let mut off = 16usize;
-    while off + entry_size <= tag.len() {
+    while off < tag.len() {
         let base = r64(tag, off)?;
         let len = r64(tag, off + 8)?;
         let ty = r32(tag, off + 16)?;
