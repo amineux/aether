@@ -20,6 +20,18 @@ You get two matrices: `aether-soft` (the reference adapter, `accepted=0`,
 teaching stub, `accepted=10`, `result=NONCONFORMANT`). The weak sample is
 there to show the kit can fail.
 
+`make isolation-matrix BACKEND=aether-soft` prints three rows side by side:
+`aether-soft` (refused=15, accepted=0, n/a=0), `weak-sample-example-only`
+(refused=4, accepted=10, n/a=1) and `template-unimplemented` (n/a=15). The
+`aether-soft` row runs each class against Aether's own software models (Soft
+SMMU windows and spaces, the on-package fabric model, tensor arenas, KV grants,
+op-kernel and accelerator admission). Every one of its 15 refusals is an
+existing named attack in `examples/red-team/refusal-catalogue.tsv`; a kit test
+pins the counts and checks each name, and no new error variant was added. This
+is a host software check of those models, not hardware isolation and not a
+measurement of any real runtime. A class Aether's models could not refuse would
+print `ACCEPTED`, and one that does not apply would print `n/a`.
+
 ## 2. Run the empty template
 
 ```

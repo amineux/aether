@@ -977,6 +977,8 @@ ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
 # `make isolation-matrix BACKEND=template` adds the bring-your-own-backend
 # template (examples/isolation-kit/template): 15 rows of n/a, accepted=0
 # refused=0. Steps: docs/business/ISOLATION_KIT.md. Integrates no runtime.
+# `make isolation-matrix BACKEND=aether-soft` prints the same three rows side
+# by side (aether-soft, weak sample, template).
 BACKEND ?=
 
 isolation-matrix:
@@ -984,7 +986,7 @@ isolation-matrix:
 	rm -f $(ISOLATION_MATRIX_LOG)
 	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet -- $(BACKEND) > $(ISOLATION_MATRIX_LOG) 2>&1
 	cat $(ISOLATION_MATRIX_LOG)
-	if [ "$(BACKEND)" = "template" ]; then \
+	if [ "$(BACKEND)" = "template" ] || [ "$(BACKEND)" = "aether-soft" ]; then \
 		grep -qxF "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT" $(ISOLATION_MATRIX_LOG) && \
 		grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* accepted=10 .*" $(ISOLATION_MATRIX_LOG); \
 	fi
