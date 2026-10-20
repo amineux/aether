@@ -22,6 +22,12 @@ a 96-node, three-table lineage. The oversized case verifies that the root,
 intermediate grants, destination descendants, and occupancy of all three
 tables remain unchanged after refusal.
 
+The 65-node boundary regression visits the grandchild table before the
+parent table, so overflow is detected only on a later fixed-point pass.
+Three repeated refusals preserve every capability field and each table's
+mint counter. Removing the single excess leaf then permits a clean 64-node
+retry while preserving 31 unrelated endpoint capabilities in the third table.
+
 This is a bounded software invariant, not a kernel-global CNode broadcast or
 formal verification. A caller that omits a table still gets the documented
 named-table behavior: descendants in that unnamed table are outside the walk.

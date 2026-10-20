@@ -745,6 +745,56 @@ pub fn run_cut_too_large_demo() -> CutTooLargeReport {
     }
 }
 
+
+/// Host red-team report for SpectralCut unknown-vertex refuse.
+///
+/// Sell line `[redteam] attack=cut-unknown-vertex` — existing
+/// [`SpectralCut::allow_place`] only. A tile or bank not in the affinity
+/// graph → [`CutError::UnknownVertex`]. A known tile+bank on the same side
+/// admits. **Not** CrossCut / EmptyPart / Unbalanced / ConductanceExceeded /
+/// NoCut / cut-not-bound rehash; cut-only path, no SoftNoI mixing; not an
+/// EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutUnknownVertexReport {
+    /// Known tile + bank on the same side admits.
+    pub known_ok: bool,
+    /// TileId outside the graph → `UnknownVertex`.
+    pub unknown_tile_refused: bool,
+    /// Known tile + BankId outside the graph → `UnknownVertex`.
+    pub unknown_bank_refused: bool,
+}
+
+impl CutUnknownVertexReport {
+    pub fn all_ok(&self) -> bool {
+        self.known_ok && self.unknown_tile_refused && self.unknown_bank_refused
+    }
+}
+
+/// SpectralCut place of a vertex outside the graph → [`CutError::UnknownVertex`].
+/// Reuses the existing [`SpectralCut::allow_place`] only; cut-only, no SoftNoI.
+pub fn run_cut_unknown_vertex_demo() -> CutUnknownVertexReport {
+    let (g, cut) = match SpectralCut::qemu_chiplet_cut(400) {
+        Ok(v) => v,
+        Err(_) => {
+            return CutUnknownVertexReport {
+                known_ok: false,
+                unknown_tile_refused: false,
+                unknown_bank_refused: false,
+            };
+        }
+    };
+    let known_ok = cut.allow_place(&g, TileId(2), Some(BankId(0))).is_ok();
+    let unknown_tile_refused =
+        cut.allow_place(&g, TileId(99), None) == Err(CutError::UnknownVertex);
+    let unknown_bank_refused =
+        cut.allow_place(&g, TileId(2), Some(BankId(99))) == Err(CutError::UnknownVertex);
+    CutUnknownVertexReport {
+        known_ok,
+        unknown_tile_refused,
+        unknown_bank_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -811,6 +861,16 @@ mod tests {
         assert!(r.placement_ok, "from_placement n=16 still admits");
         assert!(r.all_ok());
     }
+
+    #[test]
+    fn cut_unknown_vertex_demo_all_ok() {
+        let r = run_cut_unknown_vertex_demo();
+        assert!(r.known_ok, "known tile+bank admits: {r:?}");
+        assert!(r.unknown_tile_refused, "TileId(99) → CutError::UnknownVertex");
+        assert!(r.unknown_bank_refused, "BankId(99) → CutError::UnknownVertex");
+        assert!(r.all_ok());
+    }
+
 
     #[test]
     fn mint_refuses_tight_bound() {

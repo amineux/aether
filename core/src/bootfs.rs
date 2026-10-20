@@ -116,7 +116,7 @@ pub fn parse_bootfs(image: &[u8]) -> Result<BootFs<'_>, BootFsError> {
         let e = BOOTFS_HDR + i * BOOTFS_ENT;
         let raw_name = &image[e..e + BOOTFS_NAME];
         let name_len = raw_name.iter().position(|&b| b == 0).unwrap_or(BOOTFS_NAME);
-        if name_len < 2 {
+        if !valid_name(&raw_name[..name_len]) || raw_name[name_len..].iter().any(|&b| b != 0) {
             return Err(BootFsError::BadEntry);
         }
         let name = core::str::from_utf8(&raw_name[..name_len]).map_err(|_| BootFsError::BadEntry)?;
@@ -146,6 +146,8 @@ pub fn parse_bootfs(image: &[u8]) -> Result<BootFs<'_>, BootFsError> {
 
 /// Pack named files into `out`. Returns bytes written (padded to a
 /// sector so QEMU `-drive format=raw` has a whole number of blocks).
+/// Validate every name, duplicate and on-disk extent before touching `out`;
+/// every refusal leaves the complete output buffer unchanged.
 pub fn pack_bootfs(files: &[(&str, &[u8])], out: &mut [u8]) -> Result<usize, BootFsError> {
     if files.is_empty() {
         return Err(BootFsError::Empty);
@@ -155,12 +157,20 @@ pub fn pack_bootfs(files: &[(&str, &[u8])], out: &mut [u8]) -> Result<usize, Boo
     }
     let dir_end = BOOTFS_HDR + files.len() * BOOTFS_ENT;
     let mut cursor = dir_end;
-    for (_, data) in files {
+    for (i, (name, data)) in files.iter().enumerate() {
+        if !valid_name(name.as_bytes()) || files[..i].iter().any(|(prior, _)| prior == name) {
+            return Err(BootFsError::BadEntry);
+        }
+        u32::try_from(data.len()).map_err(|_| BootFsError::NoRoom)?;
         cursor = cursor
             .checked_add(data.len())
             .ok_or(BootFsError::NoRoom)?;
+        u32::try_from(cursor).map_err(|_| BootFsError::NoRoom)?;
     }
-    let padded = align_up(cursor, BOOTFS_SECTOR);
+    let padded = cursor
+        .checked_add(BOOTFS_SECTOR - 1)
+        .ok_or(BootFsError::NoRoom)?
+        & !(BOOTFS_SECTOR - 1);
     if out.len() < padded {
         return Err(BootFsError::NoRoom);
     }
@@ -170,9 +180,6 @@ pub fn pack_bootfs(files: &[(&str, &[u8])], out: &mut [u8]) -> Result<usize, Boo
     out[12..16].copy_from_slice(&0u32.to_le_bytes());
     let mut data_off = dir_end;
     for (i, (name, data)) in files.iter().enumerate() {
-        if name.len() < 2 || name.len() > BOOTFS_NAME || !name.starts_with('/') {
-            return Err(BootFsError::BadEntry);
-        }
         let e = BOOTFS_HDR + i * BOOTFS_ENT;
         let nb = name.as_bytes();
         out[e..e + nb.len()].copy_from_slice(nb);
@@ -184,8 +191,10 @@ pub fn pack_bootfs(files: &[(&str, &[u8])], out: &mut [u8]) -> Result<usize, Boo
     Ok(padded)
 }
 
-fn align_up(n: usize, a: usize) -> usize {
-    (n + a - 1) & !(a - 1)
+fn valid_name(name: &[u8]) -> bool {
+    (2..=BOOTFS_NAME).contains(&name.len())
+        && name[0] == b'/'
+        && name[1..].iter().all(|b| b.is_ascii_alphanumeric() || matches!(*b, b'.' | b'_' | b'-'))
 }
 
 fn ranges_overlap(a0: usize, a1: usize, b0: usize, b1: usize) -> bool {
@@ -269,11 +278,70 @@ mod tests {
     #[test]
     fn refuse_duplicate_names() {
         let mut img = [0u8; 512];
-        let n = pack_bootfs(&[(INIT_PATH, b"a"), (INIT_PATH, b"b")], &mut img).unwrap();
+        assert_eq!(
+            pack_bootfs(&[(INIT_PATH, b"a"), (INIT_PATH, b"b")], &mut img),
+            Err(BootFsError::BadEntry)
+        );
+        let n = pack_bootfs(&[(INIT_PATH, b"a"), (PROBE_PATH, b"b")], &mut img).unwrap();
+        let name = img[BOOTFS_HDR..BOOTFS_HDR + BOOTFS_NAME].to_vec();
+        img[BOOTFS_HDR + BOOTFS_ENT..BOOTFS_HDR + BOOTFS_ENT + BOOTFS_NAME].copy_from_slice(&name);
         assert_eq!(
             parse_bootfs(&img[..n]).unwrap_err(),
             BootFsError::BadEntry
         );
+    }
+
+    #[test]
+    fn pack_refusals_leave_every_output_byte_unchanged() {
+        let mut img = [0xa5; 512];
+        for bad in ["bad", "/", "/bad/name", "/bad name", "/bad\0tail", "/é", "/0123456789abcdef"] {
+            assert_eq!(pack_bootfs(&[(INIT_PATH, b"ok"), (bad, b"bad")], &mut img), Err(BootFsError::BadEntry));
+            assert_eq!(img, [0xa5; 512]);
+        }
+        assert_eq!(pack_bootfs(&[(INIT_PATH, b"a"), (INIT_PATH, b"b")], &mut img), Err(BootFsError::BadEntry));
+        assert_eq!(img, [0xa5; 512]);
+        assert_eq!(pack_bootfs(&[(INIT_PATH, &[0; 512])], &mut img), Err(BootFsError::NoRoom));
+        assert_eq!(img, [0xa5; 512]);
+        assert_eq!(pack_bootfs(&[], &mut img), Err(BootFsError::Empty));
+        assert_eq!(img, [0xa5; 512]);
+        assert_eq!(pack_bootfs(&[(INIT_PATH, b"x".as_slice()); BOOTFS_MAX_FILES + 1], &mut img), Err(BootFsError::TooMany));
+        assert_eq!(img, [0xa5; 512]);
+    }
+
+    #[test]
+    fn parser_refuses_noncanonical_names_and_nonzero_padding() {
+        for bad in [b"xinit".as_slice(), b"/a/b", b"/a b", b"/\xff", b"/a\0tail"] {
+            let mut img = [0; 512];
+            pack_bootfs(&[(INIT_PATH, b"ok")], &mut img).unwrap();
+            img[BOOTFS_HDR..BOOTFS_HDR + BOOTFS_NAME].fill(0);
+            img[BOOTFS_HDR..BOOTFS_HDR + bad.len()].copy_from_slice(bad);
+            assert_eq!(parse_bootfs(&img).unwrap_err(), BootFsError::BadEntry);
+        }
+    }
+
+    #[test]
+    fn full_width_and_punctuation_names_roundtrip_without_truncation() {
+        let mut img = [0; 512];
+        for name in ["/0123456789abcde", "/A_z-9.bin"] {
+            let n = pack_bootfs(&[(name, b"payload")], &mut img).unwrap();
+            assert_eq!(parse_bootfs(&img[..n]).unwrap().get(name), Some(b"payload".as_slice()));
+        }
+    }
+
+    #[test]
+    fn packer_matches_the_python_two_file_golden_layout() {
+        // Same independent byte assertions as scripts/test_mkbootfs.py.
+        // Keep the frozen producer contract aligned without a new dependency.
+        let mut img = [0xa5; 512];
+        assert_eq!(pack_bootfs(&[(INIT_PATH, b"abc"), (PROBE_PATH, b"defg")], &mut img), Ok(512));
+        assert_eq!(&img[..8], &BOOTFS_MAGIC);
+        assert_eq!(&img[8..16], &[2, 0, 0, 0, 0, 0, 0, 0]);
+        assert_eq!(&img[16..32], b"/init\0\0\0\0\0\0\0\0\0\0\0");
+        assert_eq!(&img[32..40], &[64, 0, 0, 0, 3, 0, 0, 0]);
+        assert_eq!(&img[40..56], b"/probe\0\0\0\0\0\0\0\0\0\0");
+        assert_eq!(&img[56..64], &[67, 0, 0, 0, 4, 0, 0, 0]);
+        assert_eq!(&img[64..71], b"abcdefg");
+        assert!(img[71..].iter().all(|&b| b == 0));
     }
 
     #[test]

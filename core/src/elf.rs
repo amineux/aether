@@ -314,6 +314,80 @@ mod tests {
     }
 
     #[test]
+    fn reject_bad_ident() {
+        let good = minimal_exec(0x1000, 0x1000, b"abcd");
+        let mut b = good;
+        b[EI_CLASS] = 1; // ELFCLASS32
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::Not64);
+        let mut b = good;
+        b[EI_DATA] = 2; // ELFDATA2MSB
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::NotLe);
+        let mut b = good;
+        b[EI_VERSION] = 0;
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadVersion);
+        let mut b = good;
+        write32(&mut b, 20, 2); // e_version
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadVersion);
+    }
+
+    #[test]
+    fn reject_bad_phdr_table() {
+        let good = minimal_exec(0x1000, 0x1000, b"abcd");
+        let mut b = good;
+        write16(&mut b, 52, 52); // e_ehsize
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadPhdr);
+        let mut b = good;
+        write16(&mut b, 54, 32); // e_phentsize
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadPhdr);
+        let mut b = good;
+        write16(&mut b, 56, 33); // e_phnum > 32
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadPhdr);
+    }
+
+    #[test]
+    fn reject_empty_image() {
+        let good = minimal_exec(0x1000, 0x1000, b"abcd");
+        let mut b = good;
+        write16(&mut b, 56, 0); // no program headers
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::Empty);
+        let mut b = good;
+        write32(&mut b, 64, 4); // only phdr is PT_NOTE, no PT_LOAD
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::Empty);
+    }
+
+    #[test]
+    fn reject_too_many_loads() {
+        let n = MAX_LOADS + 1;
+        let mut b = [0u8; EHDR_SIZE + PHDR_SIZE * (MAX_LOADS + 1)];
+        b[..EHDR_SIZE].copy_from_slice(&minimal_exec(0x1000, 0x1000, b"")[..EHDR_SIZE]);
+        write16(&mut b, 56, n as u16);
+        for i in 0..n {
+            // Empty PT_LOAD (filesz = memsz = 0) is otherwise accepted.
+            write32(&mut b, EHDR_SIZE + i * PHDR_SIZE, PT_LOAD);
+        }
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::TooManyLoads);
+        write16(&mut b, 56, MAX_LOADS as u16);
+        assert_eq!(parse_elf64(&b).unwrap().n_loads, MAX_LOADS);
+    }
+
+    #[test]
+    fn reject_bad_segment() {
+        let good = minimal_exec(0x1000, 0x1000, b"abcd");
+        let mut b = good;
+        write64(&mut b, 104, 2); // p_memsz < p_filesz
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadSegment);
+        let mut b = good;
+        write64(&mut b, 72, 254); // p_offset + p_filesz = 258 > 256-byte file
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadSegment);
+        let mut b = good;
+        write64(&mut b, 72, u64::MAX); // p_offset + p_filesz overflows
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadSegment);
+        let mut b = good;
+        write64(&mut b, 80, 0); // p_vaddr 0 with memsz > 0
+        assert_eq!(parse_elf64(&b).unwrap_err(), ElfError::BadSegment);
+    }
+
+    #[test]
     fn reject_other_machine() {
         let bytes = minimal_exec_machine(0x1000, 0x1000, b"abcd", 3); // EM_386
         assert_eq!(parse_elf64(&bytes).unwrap_err(), ElfError::BadMachine);

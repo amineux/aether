@@ -33,3 +33,25 @@ host evidence bundle, relevant QEMU CI links, evaluation records, private
 permissioned commercial evidence and an open-risk register with owners.
 Logs prove only the command and environment recorded. Failed runs stay visible.
 No repository artifact substitutes for external customer or hardware evidence.
+
+## Evidence freshness
+
+Every commit SHA cited in this folder or in
+[`docs/SCOREBOARD.md`](../SCOREBOARD.md) is checked by
+`python3 scripts/check_evidence_freshness.py`. CI runs it as the
+`evidence-freshness` check of `scripts/collect_evidence.py` in the
+host-evidence job (no cargo, a few seconds), so a stale SHA fails the evidence
+bundle. The rule:
+
+- The evidence commit is the `commit_sha` that
+  `scripts/collect_evidence.py` writes into `manifest.json`
+  (`--manifest <bundle>/manifest.json`), or HEAD in CI, which is the commit the
+  host-evidence job measures in the same run.
+- A cited SHA must exist and be on that commit's history. A typo, a
+  branch-only SHA or a rebased-away SHA fails.
+- Allowed lag: a cited SHA may be at most **20 first-parent commits** (merged
+  PRs on `main`) behind the evidence commit. A docs-only merge moves the count
+  by one and cannot fail by itself; past 20, re-measure and refresh the SHA.
+- A GitHub Actions run link must sit on a line that also cites its commit SHA.
+- A line marked `evidence-lag: historical` cites history, not the measured
+  state, and is exempt.

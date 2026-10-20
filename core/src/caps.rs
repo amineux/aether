@@ -706,6 +706,58 @@ mod tests {
             .is_ok());
         assert!(tc.holds(CapKind::Memory, 7));
     }
+
+    #[test]
+    fn one_over_kill_capacity_preserves_all_state_then_retries() {
+        let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let mut tc = CapTable::new(c);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        let b_caps = fill_descendants(&mut ta, root, &mut tb);
+        let leaf = tb
+            .transfer(
+                b_caps[CAP_SLOTS - 1],
+                &mut tc,
+                CapRights(CapRights::READ),
+                false,
+            )
+            .unwrap();
+        // Exactly 65 related nodes; unrelated occupancy must not be counted
+        // against the kill set and must survive both refusal and later success.
+        for i in 1..CAP_SLOTS {
+            tc.mint(ep_cap(i as u32, c)).unwrap();
+        }
+        let before = [ta.clone(), tb.clone(), tc.clone()];
+        for _ in 0..3 {
+            // Visit the grandchild table before its parent's table. Finding
+            // the 65th node requires a second fixed-point iteration.
+            assert_eq!(
+                ta.revoke_in(root, &mut [&mut tc, &mut tb]),
+                Err(CapError::RevokeTooLarge)
+            );
+            for (actual, saved) in [&ta, &tb, &tc].into_iter().zip(before.iter()) {
+                assert_eq!(actual.slots, saved.slots);
+                assert_eq!(actual.mint_gen, saved.mint_gen);
+                assert_eq!(actual.owner, saved.owner);
+            }
+        }
+        // Removing just the last leaf makes the root's lineage fit exactly.
+        tc.revoke(leaf).unwrap();
+        let unrelated = tc.slots;
+        assert_eq!(
+            ta.revoke_in(root, &mut [&mut tc, &mut tb]),
+            Ok(*before[0].lookup(root).unwrap())
+        );
+        assert_eq!(ta.occupied(), 0);
+        assert_eq!(tb.occupied(), 0);
+        assert_eq!(tc.occupied(), CAP_SLOTS - 1);
+        assert_eq!(tc.slots, unrelated);
+        assert_eq!(tc.mint_gen, before[2].mint_gen);
+    }
 }
 
 /// Property / exhaustive CDT tests. See `docs/SECURITY.md`.

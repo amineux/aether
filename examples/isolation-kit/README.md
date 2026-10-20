@@ -43,6 +43,12 @@ cargo run --manifest-path examples/isolation-kit/Cargo.toml
 
 ## Bringing your own backend
 
+Start from `template/backend.rs`: every class has a commented arm that
+returns `NotApplicable` until you wire it to your runtime.
+`make isolation-matrix BACKEND=template` (or `cargo run --manifest-path
+examples/isolation-kit/Cargo.toml -- template`) shows it as 15 rows of `n/a`.
+Step by step: [docs/business/ISOLATION_KIT.md](../../docs/business/ISOLATION_KIT.md).
+
 Implement `IsolationBackend` for your adapter, return `NotApplicable` from
 `applies` for surfaces you do not have, and call `Matrix::run(&your_backend)`.
 `Matrix::summary_line()` gives the stable `[isolation-kit] backend=… result=…`

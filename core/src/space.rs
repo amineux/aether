@@ -125,8 +125,6 @@ impl FabricAddr {
 pub enum SpaceError {
     /// Caller tried to treat a remote `(place, local)` as a coherent load.
     SilentRemoteLoad,
-    /// Buffer space does not match the job / arena binding.
-    SpaceMismatch,
     /// UNIFIED_MEMORY bit required and not present.
     UnifiedNotGranted,
     /// Streaming / scratch space cannot be randomly mapped.

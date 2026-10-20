@@ -90,6 +90,7 @@ help:
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make mp-shim       - MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch; no QEMU)"
+	@echo "  make verify       - one-command reproduce: host tests + clips + error coverage vs SCOREBOARD"
 	@echo "  make clean"
 
 target:
@@ -143,7 +144,7 @@ diligence-demo:
 	echo "diligence-demo: host Path B golden lines ok"
 
 # Host sell-path: named attacks the kernel already refuses. Reuses
-# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / accel-shape-overflow / accel-unsupported-dtype / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
+# blast / blast-hops / blast-nodes / bank-color / uncolored-compute / foreign-tenant-color / qos-credits / fence-not-ready / outside-slice / typed-window-sid / silent-remote / hbm-bw / xqueue-sid-override / set-sid-unbound / submit-sid / sid-budget / stage2-fault / softnoi-exhausted / softnoi-unbound / hodge-harmonic-tree / hodge-curl-tree / hodge-quota / hodge-class-unauthorized / SoftCmdFirewall / firewall-ident-pa / greenctx-overcommit / greenctx-unbound / greenctx-exhausted / greenctx-busy / smmu-overlap / smmu-not-mapped / smmu-wrong-stream / smmu-cross-tenant / smmu-stream-abort / set-sid-cross-tenant / softcct-incorrect-elision / softcct-credit-exhausted / chipsync-unbound / softnoi-ring-exhausted / opinject-stale-version / opinject-oob / opinject-not-running / opinject-busy / opinject-unknown-slot / opinject-bad-arg / smmu-bad-range / smmu-table-full / smmu-ssid-abort / smmu-window-full / cut-not-bound / cut-conductance / cut-empty-part / cut-unbalanced / cut-too-large / cut-no-cut / cut-unknown-vertex / accel-shape-overflow / accel-unsupported-dtype / accel-bad-op / accel-not-found / arena-bad-align / arena-unknown-bank / opkernel-fabric / tenant-fuzz / SoftSFI / SoftNoI-IS / PASID clips.
 # CI greps the [redteam] proof lines. Not a QEMU guest.
 REDTEAM_LOG := $(BUILD)/redteam.log
 
@@ -176,6 +177,10 @@ red-team:
 	grep -q "\\[redteam\\] attack=hbm-bw result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=xqueue-sid-override result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=set-sid-unbound result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=submit-sid result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=sid-budget result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=stage2-fault result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=softnoi-exhausted result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-insufficient-rights result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-seq-mismatch result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=kv-wrong-stream result=refused" $(REDTEAM_LOG)
@@ -207,6 +212,7 @@ red-team:
 	grep -q "\\[redteam\\] attack=fdt-too-many-regions result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=hodge-class-unauthorized result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=opkernel-class-mismatch result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=opkernel-fabric result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=firewall-ident-pa result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-overcommit result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=greenctx-unbound result=refused" $(REDTEAM_LOG)
@@ -239,6 +245,12 @@ red-team:
 	grep -q "\\[redteam\\] attack=cut-too-large result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=accel-shape-overflow result=refused" $(REDTEAM_LOG)
 	grep -q "\\[redteam\\] attack=accel-unsupported-dtype result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=accel-bad-op result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=accel-not-found result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=cut-no-cut result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=cut-unknown-vertex result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-bad-align result=refused" $(REDTEAM_LOG)
+	grep -q "\\[redteam\\] attack=arena-unknown-bank result=refused" $(REDTEAM_LOG)
 	grep -F -q "[redteam] attack=tenant-fuzz result=refused" $(REDTEAM_LOG)
 	grep -F -q " escapes=0 " $(REDTEAM_LOG)
 	grep -F -x -q "[redteam] fabric-class admit/refuse" $(REDTEAM_LOG)
@@ -873,6 +885,38 @@ clean:
 	cd $(PROBE_DIR) && cargo clean
 	cargo clean
 
+# One-command reproduce (host only, no QEMU): host tests, diligence and
+# red-team clips, error-coverage matrix. Prints the red-team stdout sha256 and
+# variants / named / allowlisted, and fails if they disagree with the
+# `verify` line in docs/SCOREBOARD.md. Same script: python3 scripts/verify.py
+.PHONY: verify
+verify:
+	python3 scripts/verify.py
+
+# Leave-behind evidence pack (docs/business/DISCOVERY.md). Runs the red-team,
+# noninterference, isolation-matrix and diligence-demo clips on this checkout
+# and bundles their stdout with the commit SHA, toolchain versions and
+# DISCOVERY's "does not offer" block into one dated, deterministic tarball
+# under build/evidence-pack/ (never committed). Only the file name carries the
+# date; two runs on one commit give byte-identical archives. Host software
+# clips only: no customer validation, no hardware, no throughput numbers.
+.PHONY: evidence-pack
+evidence-pack:
+	python3 scripts/evidence_pack.py
+
+# Machine-readable refusal catalogue: the red-team text clip turned into JSON
+# (attack, class, API, error variant, result, exact line). Generated from the
+# same clip `make red-team` prints; aether-redteam --json fails if the clip and
+# examples/red-team/refusal-catalogue.tsv differ in any attack or position.
+# Adds no attack; the text clip and its sha256 are unchanged.
+REDTEAM_JSON := $(BUILD)/redteam.json
+.PHONY: red-team-json
+red-team-json:
+	mkdir -p $(BUILD)
+	cargo run --locked --release --quiet -p aether-redteam > $(REDTEAM_LOG)
+	cargo run --locked --release --quiet -p aether-redteam -- --json < $(REDTEAM_LOG) > $(REDTEAM_JSON)
+	@echo "red-team-json: wrote $(REDTEAM_JSON)"
+
 # Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
 # on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
 # IOVAs; tenant C's named attacks run between layers and must all be refused.
@@ -930,12 +974,22 @@ kani:
 # see the DILIGENCE subsection for how the summary line would feed a report.
 ISOLATION_KIT := examples/isolation-kit/Cargo.toml
 ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
+# `make isolation-matrix BACKEND=template` adds the bring-your-own-backend
+# template (examples/isolation-kit/template): 15 rows of n/a, accepted=0
+# refused=0. Steps: docs/business/ISOLATION_KIT.md. Integrates no runtime.
+# `make isolation-matrix BACKEND=aether-soft` prints the same three rows side
+# by side (aether-soft, weak sample, template).
+BACKEND ?=
 
 isolation-matrix:
 	mkdir -p $(BUILD)
 	rm -f $(ISOLATION_MATRIX_LOG)
-	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet > $(ISOLATION_MATRIX_LOG) 2>&1
+	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet -- $(BACKEND) > $(ISOLATION_MATRIX_LOG) 2>&1
 	cat $(ISOLATION_MATRIX_LOG)
+	if [ "$(BACKEND)" = "template" ] || [ "$(BACKEND)" = "aether-soft" ]; then \
+		grep -qxF "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT" $(ISOLATION_MATRIX_LOG) && \
+		grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* accepted=10 .*" $(ISOLATION_MATRIX_LOG); \
+	fi
 	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
 	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
 	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"
