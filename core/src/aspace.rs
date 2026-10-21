@@ -113,8 +113,8 @@ pub const APIC_MMIO_END: u64 = APIC_MMIO_BASE + PAGE_2M;
 pub fn identity_keep_pa(pa: u64) -> bool {
     use crate::sysnr::{BLK_WINDOW_BASE, BLK_WINDOW_END};
     pa < IDENTITY_KEEP_LOW
-        || (pa >= BLK_WINDOW_BASE && pa < BLK_WINDOW_END)
-        || (pa >= APIC_MMIO_BASE && pa < APIC_MMIO_END)
+        || (BLK_WINDOW_BASE..BLK_WINDOW_END).contains(&pa)
+        || (APIC_MMIO_BASE..APIC_MMIO_END).contains(&pa)
 }
 
 /// True when the 2 MiB identity leaf at `page_pa` is a keep island.
