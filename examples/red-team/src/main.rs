@@ -5,7 +5,7 @@
 //! `run_bank_color_demo`, `run_uncolored_compute_demo`,
 //! `run_foreign_tenant_color_demo`, `run_qos_credits_demo`, `run_fence_not_ready_demo`, `run_outside_slice_demo`, `run_typed_window_sid_demo`,
 //! `run_silent_remote_demo`, `run_hbm_bw_demo`, `run_xqueue_sid_override_demo`,
-//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_cut_no_cut_demo`, `run_cut_unknown_vertex_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_accel_not_found_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
+//! `run_set_sid_unbound_demo`, `run_submit_sid_demo`, `run_sid_budget_demo`, `run_stage2_fault_demo`, `run_softnoi_exhausted_demo`, `run_softnoi_unbound_demo`, `run_softnoi_ring_exhausted_demo`, `run_opinject_stale_version_demo`, `run_opinject_oob_demo`, `run_opinject_not_running_demo`, `run_opinject_busy_demo`, `run_opinject_unknown_slot_demo`, `run_opinject_bad_arg_demo`, `run_smmu_bad_range_demo`, `run_smmu_table_full_demo`, `run_smmu_ssid_abort_demo`, `run_smmu_window_full_demo`, `run_cut_not_bound_demo`, `run_cut_conductance_demo`, `run_cut_empty_part_demo`, `run_cut_unbalanced_demo`, `run_cut_too_large_demo`, `run_cut_no_cut_demo`, `run_cut_unknown_vertex_demo`, `run_accel_shape_overflow_demo`, `run_accel_unsupported_dtype_demo`, `run_accel_bad_op_demo`, `run_accel_not_found_demo`, `run_opkernel_fabric_demo`, `run_hodge_harmonic_tree_demo`, `run_hodge_curl_tree_demo`, `run_hodge_quota_demo`, `run_hodge_class_unauthorized_demo`, `run_firewall_demo`, `run_firewall_ident_pa_demo`, `run_greenctx_overcommit_demo`, `run_greenctx_unbound_demo`, `run_greenctx_exhausted_demo`, `run_greenctx_busy_demo`, `run_smmu_overlap_demo`, `run_smmu_not_mapped_demo`, `run_smmu_wrong_stream_demo`, `run_smmu_cross_tenant_demo`, `run_smmu_stream_abort_demo`, `run_set_sid_cross_tenant_demo`, `run_softcct_incorrect_elision_demo`, `run_softcct_credit_exhausted_demo`,
 //! `run_softsfi_demo`, `run_softnoi_demo`, `run_sva_demo`).
 //! This crate does not invent a new isolation mechanism.
 //!
@@ -70,7 +70,8 @@
 //! `TileScheduler::bind_laplacian_cut` on a full cut table / `place_ok` unbound cut_id → `CutError::NoCut` (empty table binds; not EmptyPart/Unbalanced/ConductanceExceeded/UnknownVertex). Cut-unknown-vertex is
 //! `SpectralCut::allow_place` tile/bank outside the graph → `CutError::UnknownVertex` (known tile+bank admits; not CrossCut/NoCut/cut-not-bound). Arena-bad-align is
 //! `ArenaAllocator::alloc` non-power-of-two align above page floor → `ArenaError::BadAlign` (power-of-two / below-floor admit; not arena-not-owner / arena-limit-leak / UnknownBank). Arena-unknown-bank is
-//! `ArenaAllocator::new` empty or > `MAX_BANKS` → `ArenaError::UnknownBank` (one bank constructs; not arena-bad-align / arena-not-owner / arena-limit-leak). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
+//! `ArenaAllocator::new` empty or > `MAX_BANKS` → `ArenaError::UnknownBank` (one bank constructs; not arena-bad-align / arena-not-owner / arena-limit-leak). Opkernel-fabric is
+//! `OperatorKernelHandle::inject` with a bound handle and valid cap when the fabric step refuses (payload > `MAX_MSG_BYTES` / foreign endpoint without Endpoint+WRITE) → `OpKernelError::Fabric(PayloadTooLarge | NoSuchEndpoint)`, caller quota and queues untouched (own-endpoint inject admits; not fabric-queue-full / hodge-quota / opkernel-class-mismatch; no Fabric API change). Tenant-fuzz is a bounded seeded hostile-tenant fuzz (`seed=0x5AE7 ops=4096`; xorshift, no wall clock) over existing Soft SMMU / SoftGreenPool / SoftNoI / Timeline / `admit_wave` / OperatorInject APIs: bounded seeded fuzz, not a proof, not a hardware claim. `IommuMap::unmap_stream` / `unmap` are excluded as kernel-trust primitives (known open item: issue #161). Hodge harmonic-tree is
 //! `OperatorKernelHandle::bind(Tree, Harmonic)` → `HodgeError::HarmonicTreeReduce`
 //! (not SoftNoI fabric-class Curl ring). Hodge curl-tree is
 //! `OperatorKernelHandle::bind(Tree, Curl)` → `HodgeError::CurlOnTree`
@@ -120,7 +121,7 @@ use aether_core::space::{run_silent_remote_demo, run_space_not_mappable_demo};
 use aether_core::softsfi::run_softsfi_demo;
 use aether_core::sva::run_sva_demo;
 use aether_core::window::{run_smmu_bad_range_demo, run_typed_window_sid_demo};
-use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo};
+use aether_core::opkernel::{run_hodge_curl_tree_demo, run_hodge_harmonic_tree_demo, run_opkernel_class_mismatch_demo, run_opkernel_fabric_demo};
 use aether_core::hodge::{run_hodge_class_unauthorized_demo, run_hodge_quota_demo};
 use aether_core::greenctx::{run_greenctx_busy_demo, run_greenctx_exhausted_demo, run_greenctx_overcommit_demo, run_greenctx_unbound_demo};
 use aether_drivers::{
@@ -191,6 +192,7 @@ const LINE_FDT_NO_MEMORY: &str = "[redteam] attack=fdt-no-memory result=refused"
 const LINE_FDT_TOO_MANY_REGIONS: &str = "[redteam] attack=fdt-too-many-regions result=refused";
 const LINE_HODGE_CLASS_UNAUTHORIZED: &str = "[redteam] attack=hodge-class-unauthorized result=refused";
 const LINE_OPKERNEL_CLASS_MISMATCH: &str = "[redteam] attack=opkernel-class-mismatch result=refused";
+const LINE_OPKERNEL_FABRIC: &str = "[redteam] attack=opkernel-fabric result=refused";
 const LINE_FIREWALL_IDENT_PA: &str = "[redteam] attack=firewall-ident-pa result=refused";
 const LINE_GREENCTX_OVERCOMMIT: &str = "[redteam] attack=greenctx-overcommit result=refused";
 const LINE_GREENCTX_UNBOUND: &str = "[redteam] attack=greenctx-unbound result=refused";
@@ -302,6 +304,7 @@ struct RedTeamReport {
     fdt_too_many_regions: bool,
     hodge_class_unauthorized: bool,
     opkernel_class_mismatch: bool,
+    opkernel_fabric: bool,
     firewall_ident_pa: bool,
     greenctx_overcommit: bool,
     greenctx_unbound: bool,
@@ -410,6 +413,7 @@ impl RedTeamReport {
             && self.fdt_too_many_regions
             && self.hodge_class_unauthorized
             && self.opkernel_class_mismatch
+            && self.opkernel_fabric
             && self.firewall_ident_pa
             && self.greenctx_overcommit
             && self.greenctx_unbound
@@ -502,6 +506,7 @@ fn run_redteam() -> RedTeamReport {
     let fdt = aether_core::fdt::run_fdt_refusal_demo();
     let hodge_class_unauthorized = run_hodge_class_unauthorized_demo();
     let opkernel_class_mismatch = run_opkernel_class_mismatch_demo();
+    let opkernel_fabric = run_opkernel_fabric_demo();
     let firewall = run_firewall_demo();
     let firewall_ident = run_firewall_ident_pa_demo();
     let greenctx_over = run_greenctx_overcommit_demo();
@@ -704,6 +709,9 @@ fn run_redteam() -> RedTeamReport {
         // OperatorKernel admit_as/inject_as wrong class → ClassMismatch before quota/fabric.
         // Not CurlOnTree / HarmonicTreeReduce / ClassNotAuthorized; no new opcodes.
         opkernel_class_mismatch: opkernel_class_mismatch.all_ok(),
+        // Bound handle + valid cap; fabric refuse (oversized payload / foreign
+        // endpoint) surfaces as OpKernelError::Fabric, no quota charged. No Fabric API change.
+        opkernel_fabric: opkernel_fabric.all_ok(),
         // SoftCmdFirewall admit_packed: Soft-SMMU IOVA OK; identity guest PA → Fault.
         // Addr-cap path — not mutation-during-validate (softcmdfirewall stays separate).
         firewall_ident_pa: firewall_ident.all_ok(),
@@ -909,6 +917,7 @@ fn print_clip(r: &RedTeamReport) {
     emit(r.fdt_too_many_regions, LINE_FDT_TOO_MANY_REGIONS);
     emit(r.hodge_class_unauthorized, LINE_HODGE_CLASS_UNAUTHORIZED);
     emit(r.opkernel_class_mismatch, LINE_OPKERNEL_CLASS_MISMATCH);
+    emit(r.opkernel_fabric, LINE_OPKERNEL_FABRIC);
     emit(r.firewall_ident_pa, LINE_FIREWALL_IDENT_PA);
     emit(r.greenctx_overcommit, LINE_GREENCTX_OVERCOMMIT);
     emit(r.greenctx_unbound, LINE_GREENCTX_UNBOUND);
@@ -960,7 +969,14 @@ fn print_clip(r: &RedTeamReport) {
     }
 }
 
+mod catalogue;
+
 fn main() {
+    // `make red-team-json`: turn a clip read from stdin into JSON. The default
+    // (no argument) run below is the text clip and is unchanged.
+    if std::env::args().nth(1).as_deref() == Some("--json") {
+        std::process::exit(catalogue::json_main());
+    }
     let r = run_redteam();
     print_clip(&r);
     if !r.all_ok() {
@@ -1075,6 +1091,10 @@ mod tests {
         assert!(
             r.opkernel_class_mismatch,
             "admit_as/inject_as wrong class → ClassMismatch, quota + queue untouched"
+        );
+        assert!(
+            r.opkernel_fabric,
+            "inject oversized / foreign endpoint → OpKernelError::Fabric, quota + queues untouched"
         );
         assert!(
             r.firewall_ident_pa,
@@ -1356,6 +1376,10 @@ mod tests {
             "[redteam] attack=opkernel-class-mismatch result=refused"
         );
         assert_eq!(
+            LINE_OPKERNEL_FABRIC,
+            "[redteam] attack=opkernel-fabric result=refused"
+        );
+        assert_eq!(
             LINE_FIREWALL_IDENT_PA,
             "[redteam] attack=firewall-ident-pa result=refused"
         );
@@ -1563,6 +1587,7 @@ mod tests {
             LINE_FDT_TOO_MANY_REGIONS,
             LINE_HODGE_CLASS_UNAUTHORIZED,
             LINE_OPKERNEL_CLASS_MISMATCH,
+            LINE_OPKERNEL_FABRIC,
             LINE_FIREWALL_IDENT_PA,
             LINE_GREENCTX_OVERCOMMIT,
             LINE_GREENCTX_UNBOUND,
