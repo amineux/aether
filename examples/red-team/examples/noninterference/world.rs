@@ -76,8 +76,11 @@ const A: usize = 0;
 const B: usize = 1;
 const C: usize = 2;
 
+/// One honest model's weights, in the two-tenant demo's layout.
+type ModelWeights = ([i32; 8], [i32; 16], [i32; 4], [i32; 8], [i32; 2], i32);
+
 /// Honest models (same shapes as the two-tenant demo).
-const MODELS: [([i32; 8], [i32; 16], [i32; 4], [i32; 8], [i32; 2], i32); 2] = [
+const MODELS: [ModelWeights; 2] = [
     (
         [1, 2, 3, 4, -1, 0, 2, 1],
         [1, 0, -1, 2, 0, 1, 1, -1, 2, -1, 0, 1, -1, 2, 1, 0],
