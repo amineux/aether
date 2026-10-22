@@ -291,6 +291,29 @@ pub extern "C" fn _start() -> ! {
         debug_print(b"[init] arena_alloc FAIL\r\n");
         exit(1);
     }
+    // All cap-bearing syscalls must reject a wide argument before reading
+    // user pointers or performing work. The low bits deliberately name live
+    // endpoint, queue and memory slots; this is not merely an empty-slot test.
+    for (nr, slot) in [
+        (SYS_SEND, INIT_EP_CPTR as u64),
+        (SYS_RECV, INIT_EP_CPTR as u64),
+        (SYS_MAP, cap as u64),
+        (SYS_ACCEL_SUBMIT, INIT_QUEUE_CPTR as u64),
+        (SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64),
+    ] {
+        for high in [1u64 << 16, 1u64 << 63] {
+            if sys(nr, high | slot, 0, 0) != -2 {
+                debug_print(b"[init] wide cptr FAIL\r\n");
+                exit(1);
+            }
+        }
+    }
+    // This must not allocate from bank 0 through a narrowing conversion.
+    if sys(SYS_ARENA_ALLOC, 256, 0, 256) != -1 {
+        debug_print(b"[init] wide bank FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] wide syscall arguments refused\r\n");
     let mapped = sys(SYS_MAP, cap as u64, 0, 0);
     if mapped < 0 {
         debug_print(b"[init] map FAIL\r\n");
