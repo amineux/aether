@@ -208,7 +208,7 @@ impl AffinityGraph {
     /// `n` must be even and in `4..=MAX_VERTS`.
     pub fn two_chiplet_mesh(n: usize) -> Self {
         let mut g = Self::empty();
-        if n < 4 || n > MAX_VERTS || n % 2 != 0 {
+        if !(4..=MAX_VERTS).contains(&n) || n % 2 != 0 {
             return g;
         }
         let half = n / 2;

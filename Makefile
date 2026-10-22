@@ -90,6 +90,7 @@ help:
 	@echo "  make design-win-standin - admit the IREE HAL research stand-in (not a partner)"
 	@echo "  make partner-hello - host IreeHalCmd leave-behind (no QEMU rebuild)"
 	@echo "  make mp-shim       - MicroPerceptron-shaped thin IreeHalCmd consumer (research sketch; no QEMU)"
+	@echo "  make verify       - one-command reproduce: host tests + clips + error coverage vs SCOREBOARD"
 	@echo "  make clean"
 
 target:
@@ -898,6 +899,38 @@ clean:
 	cd $(PROBE_DIR) && cargo clean
 	cargo clean
 
+# One-command reproduce (host only, no QEMU): host tests, diligence and
+# red-team clips, error-coverage matrix. Prints the red-team stdout sha256 and
+# variants / named / allowlisted, and fails if they disagree with the
+# `verify` line in docs/SCOREBOARD.md. Same script: python3 scripts/verify.py
+.PHONY: verify
+verify:
+	python3 scripts/verify.py
+
+# Leave-behind evidence pack (docs/business/DISCOVERY.md). Runs the red-team,
+# noninterference, isolation-matrix and diligence-demo clips on this checkout
+# and bundles their stdout with the commit SHA, toolchain versions and
+# DISCOVERY's "does not offer" block into one dated, deterministic tarball
+# under build/evidence-pack/ (never committed). Only the file name carries the
+# date; two runs on one commit give byte-identical archives. Host software
+# clips only: no customer validation, no hardware, no throughput numbers.
+.PHONY: evidence-pack
+evidence-pack:
+	python3 scripts/evidence_pack.py
+
+# Machine-readable refusal catalogue: the red-team text clip turned into JSON
+# (attack, class, API, error variant, result, exact line). Generated from the
+# same clip `make red-team` prints; aether-redteam --json fails if the clip and
+# examples/red-team/refusal-catalogue.tsv differ in any attack or position.
+# Adds no attack; the text clip and its sha256 are unchanged.
+REDTEAM_JSON := $(BUILD)/redteam.json
+.PHONY: red-team-json
+red-team-json:
+	mkdir -p $(BUILD)
+	cargo run --locked --release --quiet -p aether-redteam > $(REDTEAM_LOG)
+	cargo run --locked --release --quiet -p aether-redteam -- --json < $(REDTEAM_LOG) > $(REDTEAM_JSON)
+	@echo "red-team-json: wrote $(REDTEAM_JSON)"
+
 # Two-tenant inference isolation (host). Tenants A and B run a tiny i32 MLP
 # on SoftNpu with existing ops (Wave/Relu/MatMul/Add/Max) behind Soft SMMU
 # IOVAs; tenant C's named attacks run between layers and must all be refused.
@@ -955,12 +988,22 @@ kani:
 # see the DILIGENCE subsection for how the summary line would feed a report.
 ISOLATION_KIT := examples/isolation-kit/Cargo.toml
 ISOLATION_MATRIX_LOG := $(BUILD)/isolation-matrix.log
+# `make isolation-matrix BACKEND=template` adds the bring-your-own-backend
+# template (examples/isolation-kit/template): 15 rows of n/a, accepted=0
+# refused=0. Steps: docs/business/ISOLATION_KIT.md. Integrates no runtime.
+# `make isolation-matrix BACKEND=aether-soft` prints the same three rows side
+# by side (aether-soft, weak sample, template).
+BACKEND ?=
 
 isolation-matrix:
 	mkdir -p $(BUILD)
 	rm -f $(ISOLATION_MATRIX_LOG)
-	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet > $(ISOLATION_MATRIX_LOG) 2>&1
+	cargo run --manifest-path $(ISOLATION_KIT) --release --quiet -- $(BACKEND) > $(ISOLATION_MATRIX_LOG) 2>&1
 	cat $(ISOLATION_MATRIX_LOG)
+	if [ "$(BACKEND)" = "template" ] || [ "$(BACKEND)" = "aether-soft" ]; then \
+		grep -qxF "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT" $(ISOLATION_MATRIX_LOG) && \
+		grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* accepted=10 .*" $(ISOLATION_MATRIX_LOG); \
+	fi
 	grep -Eq "^\[isolation-kit\] backend=aether-soft .* accepted=0 .* result=conformant$$" $(ISOLATION_MATRIX_LOG)
 	grep -Eq "^\[isolation-kit\] backend=weak-sample-example-only .* result=NONCONFORMANT$$" $(ISOLATION_MATRIX_LOG)
 	@echo "isolation-matrix: reference conformant; weak sample shows accepts (kit can fail)"

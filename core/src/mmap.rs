@@ -485,6 +485,50 @@ mod tests {
         );
     }
 
+    /// Round 31: every `MmapError::Empty` site (boot-time parser, not a
+    /// tenant refuse path). The kernel turns this into "mmap had no usable
+    /// RAM" and halts instead of building a frame allocator over nothing.
+    #[test]
+    fn mb1_empty_mmap_bytes_is_empty() {
+        assert_eq!(parse_multiboot1_mmap(&[]).unwrap_err(), MmapError::Empty);
+    }
+
+    #[test]
+    fn mb1_only_reserved_regions_is_empty() {
+        let mut mmap = [0u8; 48];
+        let mut o = 0;
+        o += mb1_entry(&mut mmap, o, 0, 0x9FC00, 2);
+        o += mb1_entry(&mut mmap, o, 0x0010_0000, 0x07F0_0000, 3);
+        assert_eq!(
+            parse_multiboot1_mmap(&mmap[..o]).unwrap_err(),
+            MmapError::Empty
+        );
+    }
+
+    #[test]
+    fn mb1_mem_upper_zero_is_empty() {
+        let mut info = [0u8; 64];
+        w32(&mut info, 0, MB1_FLAG_MEM);
+        w32(&mut info, 8, 0);
+        assert_eq!(parse_multiboot1(&info, &[]).unwrap_err(), MmapError::Empty);
+    }
+
+    #[test]
+    fn mb2_mmap_tag_only_reserved_is_empty() {
+        let mut b = [0u8; 56];
+        w32(&mut b, 0, 56);
+        w32(&mut b, 8, MB2_TAG_MMAP);
+        w32(&mut b, 12, 40); // 16 header + 1*24
+        w32(&mut b, 16, 24);
+        w32(&mut b, 20, 0);
+        w64(&mut b, 24, 0x0010_0000);
+        w64(&mut b, 32, 0x07F0_0000);
+        w32(&mut b, 40, 2); // reserved
+        w32(&mut b, 48, MB2_TAG_END);
+        w32(&mut b, 52, 8);
+        assert_eq!(parse_multiboot2(&b).unwrap_err(), MmapError::Empty);
+    }
+
     #[test]
     fn mb1_merges_adjacent() {
         let mut mmap = [0u8; 48];
