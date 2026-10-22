@@ -112,7 +112,7 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         exp += 1;
     }
 
-    if exp >= 255 - F32_BIAS + 1 {
+    if exp > 255 - F32_BIAS {
         return sign | F32_POS_INF;
     }
 
@@ -156,7 +156,7 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         if sig >= ((F32_HIDDEN as u64) << 1) {
             sig >>= 1;
             exp += 1;
-            if exp >= 255 - F32_BIAS + 1 {
+            if exp > 255 - F32_BIAS {
                 return sign | F32_POS_INF;
             }
         }
