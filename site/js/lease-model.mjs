@@ -22,10 +22,25 @@ export function simulate(input = {}) {
 }
 // Protocol sketch: tenant + epoch + range + permission are all required.
 export function authorize(grant, request, currentEpoch) {
+  // This sketch consumes JSON-like records, not trusted capabilities. Reject
+  // malformed authority before comparing identity or doing range arithmetic.
+  const record = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+  const tenant = value => typeof value === 'string' && value.trim().length > 0;
+  const epoch = value => Number.isSafeInteger(value) && value >= 0;
+  if(!record(grant) || !tenant(grant.tenant) || !epoch(grant.epoch) ||
+     !Number.isSafeInteger(grant.bytes) || grant.bytes <= 0 || typeof grant.write !== 'boolean') {
+    return {ok:false,reason:'malformed grant'};
+  }
+  if(!record(request) || !tenant(request.tenant) || typeof request.write !== 'boolean') {
+    return {ok:false,reason:'malformed request'};
+  }
+  if(!epoch(currentEpoch)) return {ok:false,reason:'invalid current epoch'};
   if(request.tenant!==grant.tenant) return {ok:false,reason:'wrong tenant'};
   if(grant.epoch!==currentEpoch) return {ok:false,reason:'stale epoch'};
   if(request.write && !grant.write) return {ok:false,reason:'read-only lease'};
-  if(!Number.isSafeInteger(request.offset)||!Number.isSafeInteger(request.length)||request.offset<0||request.length<=0||request.offset+request.length>grant.bytes) return {ok:false,reason:'outside lease range'};
+  // Subtraction keeps the bound exact at Number.MAX_SAFE_INTEGER; never add
+  // independently valid integers into an imprecise out-of-range endpoint.
+  if(!Number.isSafeInteger(request.offset)||!Number.isSafeInteger(request.length)||request.offset<0||request.length<=0||request.offset>grant.bytes||request.length>grant.bytes-request.offset) return {ok:false,reason:'outside lease range'};
   return {ok:true,reason:'authorized'};
 }
 export function epochTrace(){
