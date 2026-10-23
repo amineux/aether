@@ -66,7 +66,9 @@ Each `Capability` stores:
 10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
     `revoke(parent)` empties that lineage in the same table;
     `revoke_in(parent, others)` empties grant-children in the named
-    tables too. Unrelated caps stay.
+    tables too. A lineage larger than the 64-node walk bound returns
+    `RevokeTooLarge` before any slot changes. Unrelated caps stay.
+    See [bounded revocation](CAP_REVOCATION.md) for the named-table limits.
 
 This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim

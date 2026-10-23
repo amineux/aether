@@ -12,7 +12,7 @@ Illustrative browser model, not a hardware benchmark or kernel integration.
 **Check every claim with one command:** `make verify` (or
 `python3 scripts/verify.py` where GNU make is missing) re-runs the host tests,
 the diligence and red-team clips and the error-coverage matrix, then prints the
-red-team stdout sha256 and the variant counts (`variants=152 named=144
+red-team stdout sha256 and the variant counts (`variants=153 named=145
 allowlisted=8`) and fails if any of them disagrees with
 [`docs/SCOREBOARD.md`](docs/SCOREBOARD.md). Host software models only: no QEMU,
 no hardware, no performance numbers. Claim-by-claim commands, expected lines
