@@ -3,6 +3,7 @@ import contextlib
 import io
 import json
 import pathlib
+import re
 import subprocess
 import tempfile
 import unittest
@@ -10,6 +11,20 @@ from unittest.mock import patch
 
 import check_evidence_freshness as fresh
 import collect_evidence as evidence
+
+
+def cite(sha):
+    """Shortest prefix (7+ chars) the checker reads as a hash.
+
+    The checker ignores tokens without both a digit and a letter, so a
+    7-char prefix like `1234567` would be skipped. Real commit SHAs are
+    random, so cutting at a fixed 7 made these tests fail about 1 run in 25.
+    """
+    for n in range(7, len(sha) + 1):
+        p = sha[:n]
+        if re.search(r"\d", p) and re.search(r"[a-f]", p):
+            return p
+    return sha
 
 
 def git(repo, *args):
@@ -46,11 +61,11 @@ class FreshnessTests(unittest.TestCase):
             return fresh.check(self.commits[-1], max_lag, self.repo)
 
     def test_recent_sha_passes(self):
-        self.write(f"measured on `main` @ `{self.commits[-2][:7]}`\n")
+        self.write(f"measured on `main` @ `{cite(self.commits[-2])}`\n")
         self.assertEqual(self.run_check(), (1, []))
 
     def test_sha_beyond_allowed_lag_fails(self):
-        self.write(f"measured on `{self.commits[0][:7]}`\n")
+        self.write(f"measured on `{cite(self.commits[0])}`\n")
         seen, errors = self.run_check(max_lag=2)
         self.assertEqual(seen, 1)
         self.assertIn("merges behind", errors[0])
