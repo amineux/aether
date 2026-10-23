@@ -25,6 +25,8 @@ DILIGENCE = ["cargo", "run", "-q", "--locked", "-p", "aether-diligence-demo",
 COVERAGE = ["cargo", "test", "-q", "--locked", "-p", "aether-core",
             "--test", "error_coverage", "--", "--nocapture"]
 HOST_TESTS = ["cargo", "test", "--workspace", "--locked"]
+REQUIRED_KEYS = {"refused", "variants", "named", "allowlisted", "redteam_sha256"}
+OPTIONAL_KEYS = {"host_tests_passed"}
 
 
 def run(command):
@@ -35,12 +37,30 @@ def run(command):
 
 
 def expected():
-    """`verify key=value ...` from docs/SCOREBOARD.md (one line)."""
+    """Read a complete, unambiguous scoreboard contract before running commands."""
     lines = [l.strip() for l in SCOREBOARD.read_text(encoding="utf-8").splitlines()
-             if l.strip().startswith("verify ")]
+             if l.split() and l.split()[0] == "verify"]
     if len(lines) != 1:
-        raise SystemExit(f"[verify] FAIL docs/SCOREBOARD.md needs exactly one 'verify' line, found {len(lines)}")
-    return dict(kv.split("=", 1) for kv in lines[0].split()[1:])
+        raise ValueError(f"docs/SCOREBOARD.md needs exactly one 'verify' line, found {len(lines)}")
+    values = {}
+    for token in lines[0].split()[1:]:
+        key, separator, value = token.partition("=")
+        if not separator or not value:
+            raise ValueError(f"malformed verify field: {token}")
+        if key not in REQUIRED_KEYS | OPTIONAL_KEYS:
+            raise ValueError(f"unknown verify field: {key}")
+        if key in values:
+            raise ValueError(f"duplicate verify field: {key}")
+        pattern = r"[0-9a-f]{64}" if key == "redteam_sha256" else r"0|[1-9][0-9]*"
+        if not re.fullmatch(pattern, value):
+            raise ValueError(f"invalid verify value: {key}={value}")
+        values[key] = value
+    missing = REQUIRED_KEYS - values.keys()
+    if missing:
+        raise ValueError("missing verify fields: " + ", ".join(sorted(missing)))
+    if int(values["variants"]) != int(values["named"]) + int(values["allowlisted"]):
+        raise ValueError("verify variants must equal named + allowlisted")
+    return values
 
 
 def host_tests(measured, failures):
@@ -51,8 +71,8 @@ def host_tests(measured, failures):
         failed += int(m.group(2))
     measured["host_tests_passed"] = str(passed)
     print(f"[verify] host-tests passed={passed} failed={failed} exit={code}")
-    if code != 0 or failed:
-        failures.append("host tests failed")
+    if code != 0 or failed or not passed:
+        failures.append("host tests failed or no passing tests were reported")
 
 
 def diligence(failures):
@@ -93,7 +113,11 @@ def coverage(measured, failures):
 
 
 def main():
-    want = expected()
+    try:
+        want = expected()
+    except (OSError, ValueError) as error:
+        print(f"[verify] FAIL {error}", file=sys.stderr)
+        return 1
     measured, failures = {}, []
     host_tests(measured, failures)
     diligence(failures)
