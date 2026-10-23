@@ -5,8 +5,8 @@
 # is now named, or no longer exists). Removing a line is the goal: add a test
 # that asserts the variant by name, then delete the line.
 #
-# Snapshot taken on boss/r31-cleanup-needles over main a832e67 (2026-10-16, Round 31): 152 variants, 143 named, 9 below.
-# None of the 9 is a tenant refuse path awaiting a test: kill-listed, boot tooling, kernel errno, or dead kept for ABI.
+# Snapshot re-counted over main ddca394 (2026-10-23, `make verify`): 153 variants, 145 named, 8 below.
+# None of the 8 is a tenant refuse path awaiting a test: kill-listed, boot tooling, kernel errno, or dead kept for ABI.
 
 # --- Dead or unreachable (kill-listed, or kept for ABI) ---
 CapError::GenerationMismatch | never constructed; CapError changes are on the kill list, so it stays as-is and is listed here instead

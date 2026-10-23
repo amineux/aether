@@ -1,7 +1,7 @@
 //! Malformed boot metadata must not publish a valid-prefix memory map.
 use aether_core::mmap::{
-    parse_multiboot2, MapSource, MmapError, MB2_TAG_BASIC_MEM, MB2_TAG_END, MB2_TAG_MMAP,
-    REGION_AVAILABLE,
+    parse_boot_mmap, parse_multiboot2, MapSource, MmapError, MB2_BOOT_MAGIC, MB2_TAG_BASIC_MEM,
+    MB2_TAG_END, MB2_TAG_MMAP, REGION_AVAILABLE,
 };
 
 fn tag(kind: u32, payload: &[u8]) -> Vec<u8> {
@@ -141,4 +141,78 @@ fn every_truncated_prefix_of_complete_blob_is_rejected() {
             "len={len}"
         );
     }
+}
+
+fn basic_mem(mem_upper_kb: u32) -> Vec<u8> {
+    let mut payload = 640u32.to_le_bytes().to_vec();
+    payload.extend_from_slice(&mem_upper_kb.to_le_bytes());
+    tag(MB2_TAG_BASIC_MEM, &payload)
+}
+
+fn reserved_only_mmap_tag() -> Vec<u8> {
+    let mut payload = 24u32.to_le_bytes().to_vec();
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    payload.extend_from_slice(&0x0100_0000u64.to_le_bytes());
+    payload.extend_from_slice(&0x0200_0000u64.to_le_bytes());
+    payload.extend_from_slice(&2u32.to_le_bytes()); // reserved, not available
+    payload.extend_from_slice(&0u32.to_le_bytes());
+    tag(MB2_TAG_MMAP, &payload)
+}
+
+#[test]
+fn boot_dispatch_routes_multiboot2_magic_through_checked_parser() {
+    // The x86_64 kernel calls parse_boot_mmap, not parse_multiboot2 directly.
+    // The boundary checks above must hold on that entry point too.
+    let good = info(&[mmap_tag(24, 0, &[]), end()]);
+    assert_eq!(
+        parse_boot_mmap(MB2_BOOT_MAGIC, &good, &[]).unwrap().source,
+        MapSource::Multiboot2
+    );
+    let unterminated = info(&[mmap_tag(24, 0, &[])]);
+    assert_eq!(
+        parse_boot_mmap(MB2_BOOT_MAGIC, &unterminated, &[]),
+        Err(MmapError::Truncated)
+    );
+    // The Multiboot1 mmap slice is ignored for Multiboot2.
+    assert_eq!(
+        parse_boot_mmap(MB2_BOOT_MAGIC, &good, &[0xFF; 24])
+            .unwrap()
+            .n_entries,
+        1
+    );
+}
+
+#[test]
+fn terminated_blob_without_memory_tags_is_no_mmap() {
+    let bytes = info(&[tag(0xFFFF, &[1, 2, 3]), end()]);
+    assert_eq!(parse_multiboot2(&bytes), Err(MmapError::NoMmap));
+    assert_eq!(parse_multiboot2(&info(&[end()])), Err(MmapError::NoMmap));
+}
+
+#[test]
+fn mmap_tag_wins_over_basic_memory_in_either_order() {
+    for tags in [
+        [basic_mem(127 * 1024), mmap_tag(24, 0, &[]), end()],
+        [mmap_tag(24, 0, &[]), basic_mem(127 * 1024), end()],
+    ] {
+        let map = parse_multiboot2(&info(&tags)).unwrap();
+        assert_eq!(map.source, MapSource::Multiboot2);
+        assert_eq!(map.regions()[0].start, 0x0100_0000);
+    }
+}
+
+#[test]
+fn mmap_without_usable_ram_is_not_papered_over_by_basic_memory() {
+    // An explicit map that offers no RAM is refused; mem_upper is only a
+    // fallback when no mmap tag exists at all.
+    let bytes = info(&[basic_mem(127 * 1024), reserved_only_mmap_tag(), end()]);
+    assert_eq!(parse_multiboot2(&bytes), Err(MmapError::Empty));
+}
+
+#[test]
+fn basic_memory_fallback_with_zero_upper_is_empty() {
+    let bytes = info(&[basic_mem(0), end()]);
+    assert_eq!(parse_multiboot2(&bytes), Err(MmapError::Empty));
+    let map = parse_multiboot2(&info(&[basic_mem(127 * 1024), end()])).unwrap();
+    assert_eq!(map.source, MapSource::Multiboot2MemUpper);
 }
