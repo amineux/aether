@@ -1,0 +1,42 @@
+name: External runtime evaluation
+on:
+  pull_request:
+    paths:
+      - 'tools/runtime-eval/**'
+      - '.github/workflows/runtime-eval.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'tools/runtime-eval/**'
+      - '.github/workflows/runtime-eval.yml'
+permissions:
+  contents: read
+jobs:
+  iree-cpu:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install the actual runtime adapter
+        run: python -m pip install -c tools/runtime-eval/constraints.txt './tools/runtime-eval[iree]'
+      - name: Validate configuration and real compilation/execution/replay
+        env:
+          AETHER_IREE_TEST: '1'
+        run: python -m unittest discover -s tools/runtime-eval/tests -v
+      - name: Capture default external-runtime evaluation
+        run: |
+          aether-eval doctor
+          aether-eval init --output "${{ runner.temp }}/scenario.json"
+          aether-eval run "${{ runner.temp }}/scenario.json" --output "${{ runner.temp }}/iree-evidence"
+      - name: Retain measurements and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iree-cpu-${{ github.sha }}
+          path: ${{ runner.temp }}/iree-evidence
+          if-no-files-found: warn
