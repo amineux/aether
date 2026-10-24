@@ -811,7 +811,7 @@ impl FabricSlotExhaustReport {
 }
 
 fn free_slots(f: &Fabric) -> usize {
-    f.eps.iter().filter(|e| e.as_ref().map_or(true, |ep| ep.closed)).count()
+    f.eps.iter().filter(|e| e.as_ref().is_none_or(|ep| ep.closed)).count()
 }
 
 /// One tenant tries to take every endpoint slot → [`FabricError::EndpointLimit`]

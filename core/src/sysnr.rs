@@ -473,7 +473,7 @@ pub fn run_map_user_phys_demo() -> MapUserPhysReport {
     let never_returns_caller_addr = kernel_phys
         .iter()
         .chain(core::iter::once(&foreign_arena))
-        .all(|&pa| map_pin_addr(arena_base, pa).map_or(true, |got| got == arena_base));
+        .all(|&pa| map_pin_addr(arena_base, pa).is_none_or(|got| got == arena_base));
 
     MapUserPhysReport {
         default_uses_arena_base,

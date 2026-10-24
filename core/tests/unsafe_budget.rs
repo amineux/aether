@@ -148,7 +148,7 @@ fn count_unsafe(stripped: &str) -> usize {
     while i + kw.len() <= b.len() {
         if &b[i..i + kw.len()] == kw
             && (i == 0 || !is_ident(b[i - 1]))
-            && b.get(i + kw.len()).map_or(true, |&c| !is_ident(c))
+            && b.get(i + kw.len()).is_none_or(|&c| !is_ident(c))
         {
             n += 1;
             i += kw.len();
