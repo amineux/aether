@@ -374,7 +374,7 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
     let mut o = h.off_mem_rsvmap;
     let mut n_memreserve = 0usize;
     loop {
-        if o.checked_add(16).map_or(true, |end| end > rsv_end) {
+        if o.checked_add(16).is_none_or(|end| end > rsv_end) {
             return Err(FdtError::Truncated);
         }
         let base = be64(b, o)?;
@@ -404,7 +404,7 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
     let mut root_seen = false;
     let mut o = h.off_dt_struct;
     loop {
-        if o.checked_add(4).map_or(true, |e| e > s_end) {
+        if o.checked_add(4).is_none_or(|e| e > s_end) {
             return Err(FdtError::Truncated);
         }
         let tok = be32(b, o)?;
@@ -457,7 +457,7 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
                 if depth == 0 {
                     return Err(FdtError::BadToken);
                 }
-                if o.checked_add(8).map_or(true, |end| end > s_end) {
+                if o.checked_add(8).is_none_or(|end| end > s_end) {
                     return Err(FdtError::Truncated);
                 }
                 let len = be32(b, o)? as usize;
@@ -484,7 +484,7 @@ pub fn parse_fdt_memory(blob: &[u8]) -> Result<FdtMemory, FdtError> {
                         w.rsv_sc = Some(cells_value(b, val, len)?)
                     }
                     (2, b"device_type") => {
-                        node.device_memory = Some(b.get(val..val_end).map_or(false, |v| v == b"memory\0"))
+                        node.device_memory = Some(b.get(val..val_end).is_some_and(|v| v == b"memory\0"))
                     }
                     (2, b"reg") | (3, b"reg") => node.reg = Some((val, len)),
                     _ => {}
