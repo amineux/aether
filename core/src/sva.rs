@@ -71,7 +71,7 @@ pub fn run_sva_demo() -> SvaReport {
 
     // Stale ATC: fill TLB, drop S1 without invalidate, hit leftover PA.
     let _ = iommu.resolve_ats(sid.raw(), pin.iova).unwrap();
-    let _ = iommu.unmap_va_keep_atc(sid, pin.iova).unwrap();
+    let _ = iommu.unmap_va_keep_atc(&cap, sid, pin.iova).unwrap();
     let stale_hit = iommu.resolve_ats(sid.raw(), PhysAddr(SVA_VA)) == Ok(PhysAddr(SVA_PA));
     let _ = iommu.invalidate(InvCmd::CfgCd { sid }).unwrap();
     let after_inv = iommu.walk(sid, PhysAddr(SVA_VA)) == Err(MapError::NotMapped)
@@ -84,7 +84,7 @@ pub fn run_sva_demo() -> SvaReport {
         .unwrap();
     iommu.set_sid(&cap, sid).unwrap();
     let _ = iommu.resolve_ats(sid.raw(), pin.iova).unwrap();
-    let _ = iommu.unmap_va(sid, pin.iova).unwrap();
+    let _ = iommu.unmap_va(&cap, sid, pin.iova).unwrap();
     let unmap_inv = iommu.walk(sid, PhysAddr(SVA_VA)) == Err(MapError::NotMapped)
         && iommu.atc_len() == 0
         && iommu.resolve_ats(sid.raw(), PhysAddr(SVA_VA)) == Err(MapError::NotMapped);

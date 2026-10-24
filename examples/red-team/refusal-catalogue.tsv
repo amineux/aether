@@ -85,6 +85,7 @@ smmu-bad-range	smmu	IommuMap::map_window (zero / overflow) + bind_mm(MmId(0))	Ma
 smmu-table-full	smmu	IommuMap::map past MAX_MAPS / bind_stream past MAX_STES	MapError::TableFull
 smmu-ssid-abort	smmu	Soft-SMMU bind_stream / map / walk with SSID >= MAX_CDS	MapError::StreamAbort
 smmu-window-full	smmu	Soft-SMMU alloc_in_window past the per-CD IOVA window	MapError::TableFull
+smmu-unmap-cross-tenant	smmu	Soft-SMMU unmap with a foreign Memory+MAP capability	MapError::CrossTenant
 cut-not-bound	cut	bind_place / bind_window without BIND	CutError::NotBound
 cut-conductance	cut	SpectralCut::from_mask / min_balanced over the conductance bound	CutError::ConductanceExceeded
 cut-empty-part	cut	SpectralCut::from_mask (mask 0 / all ones)	CutError::EmptyPart

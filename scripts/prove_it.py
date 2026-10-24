@@ -17,6 +17,7 @@ KIT = "examples/isolation-kit/Cargo.toml"
 
 # make target -> shell recipe (mirrors the Makefile; build/ is gitignored).
 RECIPES = {
+    "make eval-run": "cargo run --locked --quiet -p aether-eval-run -- --json build/eval-run.json",
     "make verify": "python3 scripts/verify.py",
     "make red-team": "cargo run --locked --release --quiet -p aether-redteam",
     "make red-team-json": (

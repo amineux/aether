@@ -11,7 +11,7 @@ use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
     SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
-    SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_YIELD,
+    SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
 use aether_core::sysnr::{COW_PRIVATE_WORD, COW_TEMPLATE_WORD, USER_COW_BASE};
@@ -326,11 +326,21 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] arena_alloc + map ok\r\n");
-    if sys(SYS_MAP, newer_cap as u64, 0, 0) < 0 {
+    let newer_mapped = sys(SYS_MAP, newer_cap as u64, 0, 0);
+    if newer_mapped < 0 {
         debug_print(b"[init] second arena map FAIL\r\n");
         exit(1);
     }
     debug_print(b"[init] older arena capability survives allocation\r\n");
+    // Refusing an older address must retain the newer tracked pin's cap.
+    if sys(SYS_UNMAP, mapped as u64, 256, 0) != -3
+        || sys(SYS_UNMAP, newer_mapped as u64, 256, 0) != 0
+        || sys(SYS_UNMAP, newer_mapped as u64, 256, 0) != -2
+    {
+        debug_print(b"[init] tracked unmap FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] tracked unmap refusal preserves pin\r\n");
     if !map_user_phys_probe() {
         exit(1);
     }

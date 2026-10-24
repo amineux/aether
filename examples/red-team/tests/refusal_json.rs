@@ -1,5 +1,5 @@
 //! `make red-team-json` gate: the JSON refusal catalogue is generated from the
-//! same text clip `make red-team` prints, has exactly 99 entries, and matches
+//! same text clip `make red-team` prints, has exactly 100 entries, and matches
 //! the clip's `[redteam] attack=` lines one for one, in order. Every
 //! `Enum::Variant` it names must exist in the source tree. Measurement only:
 //! no attack is added and the text clip is not changed.
@@ -55,17 +55,17 @@ fn field(entry: &str, key: &str) -> String {
 }
 
 #[test]
-fn json_has_99_entries_matching_the_clip_line_for_line() {
+fn json_has_100_entries_matching_the_clip_line_for_line() {
     let text = clip();
     let (ok, json, stderr) = json_of(&text);
     assert!(ok, "--json failed: {stderr}");
-    assert!(stderr.contains("[red-team-json] entries=99 matches_clip=true"), "{stderr}");
-    assert!(json.contains("\"count\": 99,"));
+    assert!(stderr.contains("[red-team-json] entries=100 matches_clip=true"), "{stderr}");
+    assert!(json.contains("\"count\": 100,"));
 
     let clip_lines: Vec<&str> = text.lines().filter(|l| l.starts_with("[redteam] attack=")).collect();
     let entries: Vec<&str> = json.lines().filter(|l| l.trim_start().starts_with("{\"attack\":")).collect();
-    assert_eq!(clip_lines.len(), 99, "text clip attack lines");
-    assert_eq!(entries.len(), 99, "JSON entries");
+    assert_eq!(clip_lines.len(), 100, "text clip attack lines");
+    assert_eq!(entries.len(), 100, "JSON entries");
     for (i, (line, entry)) in clip_lines.iter().zip(&entries).enumerate() {
         assert_eq!(&field(entry, "line"), line, "entry {} line", i + 1);
         let attack = line["[redteam] attack=".len()..].split(' ').next().unwrap();
@@ -133,5 +133,5 @@ fn every_named_error_variant_exists_in_source() {
             checked += 1;
         }
     }
-    assert!(checked >= 99, "only {checked} variants checked");
+    assert!(checked >= 100, "only {checked} variants checked");
 }
