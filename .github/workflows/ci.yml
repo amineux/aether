@@ -60,6 +60,9 @@ jobs:
       - name: Red-team diligence clip (host stdout)
         run: make red-team
 
+      - name: Atomic workload admission and recovery
+        run: make atomic-pipeline
+
       - name: KV fabric grant clip (host stdout)
         run: make kv-fabric
 
