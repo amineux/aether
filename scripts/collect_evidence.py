@@ -22,6 +22,7 @@ COMMANDS = [
     # Every row of docs/business/PROVE_IT.md: run the command, grep its line.
     ("prove-it", [sys.executable, "scripts/prove_it.py"]),
     ("design-win-standin", ["cargo", "run", "--locked", "--quiet", "-p", "aether-design-win-check", "--", "docs/design-win/iree-hal-standin.toml"]),
+    ("eval-run", ["cargo", "run", "--locked", "--quiet", "-p", "aether-eval-run"]),
 ]
 
 

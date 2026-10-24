@@ -365,7 +365,7 @@ mod tests {
         // Same catalogue `make red-team-json` checks against the text clip.
         let tsv = include_str!("../../red-team/refusal-catalogue.tsv");
         let attacks: Vec<&str> = tsv.lines().filter_map(|l| l.split('\t').next()).collect();
-        assert_eq!(attacks.len(), 99);
+        assert_eq!(attacks.len(), 100);
         let m = Matrix::run(&AetherSoftBackend);
         assert_eq!(m.count(Outcome::Refused), CLASSES.len(), "every class must be a refusal");
         for c in CLASSES {

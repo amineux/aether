@@ -194,7 +194,8 @@ unbind_stage2(sid)                   // drop S2 only → Stage2Fault
 unbind_stream / flr(sid)             // STE-wide FLR analogue
 bind_mm(Memory+MAP, sid, MmId)       // PASID/SVA: mm ↔ SSID (this device)
 map_va(sid, va, guest_pa, len)       // S1 VA = process VA; DMA uses VA
-unmap_va(sid, va)                    // drop S1 + SSID ATC (TLB)
+unmap_va(Memory+MAP, sid, va)        // drop S1 + SSID ATC (TLB); tenant-checked
+unmap / unmap_stream(Memory+MAP, ..) // tenant-checked: foreign pin → CrossTenant (#161)
 ```
 
 Rules:
@@ -659,8 +660,8 @@ AccelDevice's `IommuMap`.
 IommuMap::bind_mm(Memory+MAP, sid, MmId)   // PASID = SSID on this device
 IommuMap::map_va(sid, va, guest_pa, len)   // S1 VA = process VA
 Soft-CP pack / service                     // DMA address is that VA
-IommuMap::unmap_va(sid, va)                // drop S1 + InvCmd::CfgCd
-IommuMap::unmap_va_keep_atc(...)           // fault injection; ATC stale
+IommuMap::unmap_va(Memory+MAP, sid, va)    // drop S1 + InvCmd::CfgCd; CrossTenant if foreign
+IommuMap::unmap_va_keep_atc(Memory+MAP, ..) // fault injection; ATC stale
 ```
 
 Each AccelDevice owns an `IommuMap`; that table *is* the PASID space
