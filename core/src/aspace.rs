@@ -164,7 +164,7 @@ pub fn kaslr_slide(index: u32) -> Option<u64> {
 
 /// True when `slide` is one of the three CI-legal offsets.
 pub fn kaslr_slide_valid(slide: u64) -> bool {
-    slide % KASLR_SLIDE_STRIDE == 0 && slide / KASLR_SLIDE_STRIDE < KASLR_SLIDE_COUNT as u64
+    slide.is_multiple_of(KASLR_SLIDE_STRIDE) && slide / KASLR_SLIDE_STRIDE < KASLR_SLIDE_COUNT as u64
 }
 
 /// `PA → KERNEL_VMA + slide + PA` when both fit the HH window.

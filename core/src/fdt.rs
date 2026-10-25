@@ -121,7 +121,7 @@ fn be64(b: &[u8], off: usize) -> Result<u64, FdtError> {
 }
 
 fn block_ok(off: usize, size: usize, align: usize, total: usize) -> Result<(), FdtError> {
-    if off < FDT_HEADER_LEN || off % align != 0 {
+    if off < FDT_HEADER_LEN || !off.is_multiple_of(align) {
         return Err(FdtError::BadOffset);
     }
     match off.checked_add(size) {
@@ -616,7 +616,7 @@ impl Writer<'_> {
         self.bytes(&v.to_be_bytes());
     }
     fn pad(&mut self) {
-        while self.sl % 4 != 0 && self.ok {
+        while !self.sl.is_multiple_of(4) && self.ok {
             self.bytes(&[0]);
         }
     }

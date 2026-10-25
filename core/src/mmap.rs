@@ -324,7 +324,7 @@ fn parse_mb2_mmap_tag(tag: &[u8]) -> Result<MemoryMap, MmapError> {
     // The known record is 24 bytes including its reserved word. Future
     // versions may extend it, but the stride remains a multiple of eight.
     // entry_version and reserved fields are intentionally not restricted.
-    if entry_size < 24 || entry_size % 8 != 0 || (tag.len() - 16) % entry_size != 0 {
+    if entry_size < 24 || !entry_size.is_multiple_of(8) || !(tag.len() - 16).is_multiple_of(entry_size) {
         return Err(MmapError::Truncated);
     }
     let mut map = MemoryMap::empty(MapSource::Multiboot2);
