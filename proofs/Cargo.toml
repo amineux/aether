@@ -1,0 +1,21 @@
+[package]
+name = "aether-proofs"
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Bounded model-checking (Kani) harnesses over Aether's pure core"
+publish = false
+
+[lib]
+name = "aether_proofs"
+path = "src/lib.rs"
+
+[dependencies]
+aether-core = { path = "../core" }
+
+# Own workspace root: the proofs crate stays out of the repo's virtual
+# workspace, so normal `cargo build` / `cargo test --workspace` and the root
+# Cargo.toml are unchanged. Run the proofs with `make kani` (or
+# `cargo kani --manifest-path proofs/Cargo.toml`). All harnesses are behind
+# `#[cfg(kani)]`, so a plain `cargo build` here compiles to an empty lib.
+[workspace]

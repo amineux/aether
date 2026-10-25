@@ -34,9 +34,12 @@ mapping/reset APIs safe for untrusted callers.
 
 ## Demonstrated behavior
 
-- Nine regression tests cover success ordering, failure at every prefix
+- Eleven regression tests cover success ordering, failure at every prefix
   position, invalid rights/kinds, foreign streams, overflow, overlapping
   buffers, capacity exhaustion, empty and oversized requests.
+- The exact `MAX_MAPS` boundary commits every output slot and reuses the same
+  IOVAs after authorized cleanup. A SID-budget refusal after a valid prefix
+  preserves the full table, including the attempted new stream capture.
 - A warm-cache test compares the complete table state before/after failure,
   including private fields, ATC counters and submit SID.
 - 256 seeded failure/retry/cleanup cycles preserve an unrelated tenant's live

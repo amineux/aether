@@ -21,6 +21,18 @@ pub const CAP_SLOTS: usize = 32;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct CPtr(pub u16);
 
+impl TryFrom<u64> for CPtr {
+    type Error = CapError;
+
+    /// Decode the full syscall argument before consulting a capability table.
+    /// A truncating cast would alias `(1 << 16) | slot` to `slot`.
+    fn try_from(raw: u64) -> Result<Self, Self::Error> {
+        u16::try_from(raw)
+            .map(Self)
+            .map_err(|_| CapError::InvalidCptr)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum CapKind {
@@ -172,6 +184,9 @@ pub enum CapError {
     GenerationMismatch,
     CrossTenant,
     WouldEscalate,
+    /// A named-table revoke has more descendants than the bounded walk can
+    /// represent. The revoke refuses before changing any table.
+    RevokeTooLarge,
 }
 
 /// Fixed-size kill set for revoke walks. `CAP_SLOTS` per table × two tables
@@ -195,16 +210,16 @@ impl KillSet {
         self.nodes.iter().take(self.len).any(|s| *s == Some(n))
     }
 
-    fn insert(&mut self, n: CdtNode) -> bool {
+    fn insert(&mut self, n: CdtNode) -> Result<bool, CapError> {
         if self.contains(n) {
-            return false;
+            return Ok(false);
         }
         if self.len >= CDT_KILL_CAP {
-            return false;
+            return Err(CapError::RevokeTooLarge);
         }
         self.nodes[self.len] = Some(n);
         self.len += 1;
-        true
+        Ok(true)
     }
 }
 
@@ -314,14 +329,18 @@ impl CapTable {
         cptr: CPtr,
         others: &mut [&mut CapTable],
     ) -> Result<Capability, CapError> {
-        let cap = self.take_slot(cptr)?;
+        // Plan the complete walk before mutating any table. The old walk
+        // removed the root first and silently ignored descendants once the
+        // fixed kill set filled, so a call naming three full tables could
+        // report success while leaving live children behind.
+        let cap = *self.lookup(cptr)?;
         let mut kill = KillSet::new();
-        kill.insert(cap.cdt());
+        kill.insert(cap.cdt())?;
         loop {
             let before = kill.len;
-            self.collect_into(&mut kill);
+            self.collect_into(&mut kill)?;
             for t in others.iter() {
-                t.collect_into(&mut kill);
+                t.collect_into(&mut kill)?;
             }
             if kill.len == before {
                 break;
@@ -334,14 +353,15 @@ impl CapTable {
         Ok(cap)
     }
 
-    fn collect_into(&self, kill: &mut KillSet) {
+    fn collect_into(&self, kill: &mut KillSet) -> Result<(), CapError> {
         for cap in self.slots.iter().flatten() {
             if let Some(parent) = cap.parent {
                 if kill.contains(parent) {
-                    kill.insert(cap.cdt());
+                    kill.insert(cap.cdt())?;
                 }
             }
         }
+        Ok(())
     }
 
     fn empty_killed(&mut self, kill: &KillSet) {
@@ -398,6 +418,14 @@ impl CapTable {
         self.mint(child)
     }
 
+    /// Does this table hold a cap of `kind` on `object` with at least `need`
+    /// rights, minted for this table's owner? Used by checked fabric send.
+    pub fn holds_rights(&self, kind: CapKind, object: u32, need: u16) -> bool {
+        self.slots.iter().flatten().any(|c| {
+            c.kind == kind && c.object == object && c.rights.contains(need) && c.tenant == self.owner
+        })
+    }
+
     /// Isolation helper: does this table hold any cap to `object` of `kind`?
     pub fn holds(&self, kind: CapKind, object: u32) -> bool {
         self.slots
@@ -409,6 +437,31 @@ impl CapTable {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn syscall_cptr_rejects_high_bits_without_aliasing_live_slots() {
+        let mut table = super::CapTable::new(crate::types::TenantId(1));
+        let slot = table.mint(super::Capability::new(
+            super::CapKind::Endpoint, super::CapRights::EP_FULL, 7,
+            crate::types::TenantId(1),
+        )).unwrap();
+        assert!(table.require(slot, super::CapKind::Endpoint, super::CapRights::WRITE).is_ok());
+        for shift in 16..64 {
+            let raw = (1u64 << shift) | u64::from(slot.0);
+            assert_eq!(super::CPtr::try_from(raw), Err(super::CapError::InvalidCptr));
+        }
+        assert_eq!(super::CPtr::try_from(u64::MAX), Err(super::CapError::InvalidCptr));
+        // Rejection did not revoke, consume or mutate the genuine capability.
+        assert!(table.require(slot, super::CapKind::Endpoint, super::CapRights::WRITE).is_ok());
+    }
+
+    #[test]
+    fn syscall_cptr_preserves_width_and_table_checks() {
+        assert_eq!(super::CPtr::try_from(0), Ok(super::CPtr(0)));
+        assert_eq!(super::CPtr::try_from(u16::MAX as u64), Ok(super::CPtr(u16::MAX)));
+        let table = super::CapTable::new(crate::types::TenantId(1));
+        assert_eq!(table.lookup(super::CPtr::try_from(u16::MAX as u64).unwrap()), Err(super::CapError::InvalidCptr));
+    }
+
     use super::*;
 
     fn mem_cap(obj: u32, tenant: TenantId) -> Capability {
@@ -628,6 +681,119 @@ mod tests {
         ta.revoke(parent).unwrap();
         assert_eq!(ta.lookup(parent).unwrap_err(), CapError::EmptySlot);
         assert!(tb.require(child, CapKind::Memory, CapRights::READ).is_ok());
+    }
+
+    fn fill_descendants(src: &mut CapTable, root: CPtr, dest: &mut CapTable) -> Vec<CPtr> {
+        let mut out = Vec::new();
+        while dest.occupied() < CAP_SLOTS {
+            out.push(
+                src.transfer(
+                    root,
+                    dest,
+                    CapRights(CapRights::READ | CapRights::GRANT),
+                    false,
+                )
+                .unwrap(),
+            );
+        }
+        out
+    }
+
+    #[test]
+    fn revoke_at_kill_capacity_removes_every_descendant() {
+        let a = TenantId(1);
+        let b = TenantId(2);
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        fill_descendants(&mut ta, root, &mut tb);
+        assert_eq!(ta.occupied() + tb.occupied(), CDT_KILL_CAP);
+
+        ta.revoke_in(root, &mut [&mut tb]).unwrap();
+        assert_eq!(ta.occupied(), 0);
+        assert_eq!(tb.occupied(), 0);
+    }
+
+    #[test]
+    fn oversized_revoke_is_atomic() {
+        let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let mut tc = CapTable::new(c);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        let b_caps = fill_descendants(&mut ta, root, &mut tb);
+        fill_descendants(&mut tb, b_caps[0], &mut tc);
+        let before = (ta.occupied(), tb.occupied(), tc.occupied());
+        assert!(before.0 + before.1 + before.2 > CDT_KILL_CAP);
+
+        assert_eq!(
+            ta.revoke_in(root, &mut [&mut tb, &mut tc]),
+            Err(CapError::RevokeTooLarge)
+        );
+        assert_eq!((ta.occupied(), tb.occupied(), tc.occupied()), before);
+        assert!(ta.require(root, CapKind::Memory, CapRights::READ).is_ok());
+        assert!(tb
+            .require(b_caps[0], CapKind::Memory, CapRights::READ)
+            .is_ok());
+        assert!(tc.holds(CapKind::Memory, 7));
+    }
+
+    #[test]
+    fn one_over_kill_capacity_preserves_all_state_then_retries() {
+        let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
+        let mut ta = CapTable::new(a);
+        let mut tb = CapTable::new(b);
+        let mut tc = CapTable::new(c);
+        let root = ta.mint(mem_cap(7, a)).unwrap();
+        for _ in 1..CAP_SLOTS {
+            ta.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        let b_caps = fill_descendants(&mut ta, root, &mut tb);
+        let leaf = tb
+            .transfer(
+                b_caps[CAP_SLOTS - 1],
+                &mut tc,
+                CapRights(CapRights::READ),
+                false,
+            )
+            .unwrap();
+        // Exactly 65 related nodes; unrelated occupancy must not be counted
+        // against the kill set and must survive both refusal and later success.
+        for i in 1..CAP_SLOTS {
+            tc.mint(ep_cap(i as u32, c)).unwrap();
+        }
+        let before = [ta.clone(), tb.clone(), tc.clone()];
+        for _ in 0..3 {
+            // Visit the grandchild table before its parent's table. Finding
+            // the 65th node requires a second fixed-point iteration.
+            assert_eq!(
+                ta.revoke_in(root, &mut [&mut tc, &mut tb]),
+                Err(CapError::RevokeTooLarge)
+            );
+            for (actual, saved) in [&ta, &tb, &tc].into_iter().zip(before.iter()) {
+                assert_eq!(actual.slots, saved.slots);
+                assert_eq!(actual.mint_gen, saved.mint_gen);
+                assert_eq!(actual.owner, saved.owner);
+            }
+        }
+        // Removing just the last leaf makes the root's lineage fit exactly.
+        tc.revoke(leaf).unwrap();
+        let unrelated = tc.slots;
+        assert_eq!(
+            ta.revoke_in(root, &mut [&mut tc, &mut tb]),
+            Ok(*before[0].lookup(root).unwrap())
+        );
+        assert_eq!(ta.occupied(), 0);
+        assert_eq!(tb.occupied(), 0);
+        assert_eq!(tc.occupied(), CAP_SLOTS - 1);
+        assert_eq!(tc.slots, unrelated);
+        assert_eq!(tc.mint_gen, before[2].mint_gen);
     }
 }
 

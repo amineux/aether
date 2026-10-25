@@ -187,6 +187,60 @@ fn empty_and_oversized_batches_do_not_touch_state() {
 }
 
 #[test]
+fn exact_capacity_batch_reclaims_every_slot_and_iova_on_retry() {
+    let a = cap(1);
+    let mut table = IommuMap::new();
+    let requests: [_; MAX_MAPS] =
+        core::array::from_fn(|i| request(&a, 0x100, 0x1000 + i as u64 * 0x2000));
+    let first = table.map_batch(&requests).unwrap();
+    assert_eq!(first.len(), MAX_MAPS);
+    assert_eq!(first.iter().count(), MAX_MAPS);
+    assert!(first.get(MAX_MAPS - 1).is_some());
+    assert_eq!(first.get(MAX_MAPS), None);
+    for (region, req) in first.iter().zip(&requests) {
+        assert_eq!(
+            table.resolve_stream(region.stream_id, region.iova),
+            Some(req.mapping.guest_pa)
+        );
+        table.unmap_for(&a, region.iova).unwrap();
+    }
+    assert!(table.is_empty());
+    let retried = table.map_batch(&requests).unwrap();
+    assert_eq!(
+        retried, first,
+        "cleanup must reclaim the full IOVA window prefix"
+    );
+}
+
+#[test]
+fn sid_budget_failure_rolls_back_a_valid_prefix_and_captured_stream() {
+    let a = cap(1);
+    let mut table = IommuMap::new();
+    for i in 1..=aether_core::iommu::SID_BUDGET_PER_TENANT {
+        table
+            .map(&a, request(&a, i as u32 * 0x100, i as u64 * 0x2000).mapping)
+            .unwrap();
+    }
+    table.set_sid(&a, StreamId::from_raw(0x100)).unwrap();
+    let before = snapshot(&table);
+    let mut requests = [request(&a, 0x100, 0x90000), request(&a, 0x500, 0xb0000)];
+    assert_eq!(
+        table.map_batch(&requests),
+        Err(MappingFailure {
+            request_index: 1,
+            cause: MapError::SidBudget,
+        })
+    );
+    assert_eq!(
+        snapshot(&table),
+        before,
+        "refusal must not capture a fifth stream or publish the first pin"
+    );
+    requests[1].mapping.stream_id = 0x100;
+    assert_eq!(table.map_batch(&requests).unwrap().len(), 2);
+}
+
+#[test]
 fn sequential_negative_control_exposes_partial_admission() {
     let a = cap(1);
     let requests = [request(&a, 0x100, 0x1000), request(&a, 0x100, u64::MAX)];

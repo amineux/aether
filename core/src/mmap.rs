@@ -2,8 +2,10 @@
 //!
 //! Host-tested, allocation-free. The kernel copies the bootloader
 //! structures into a byte slice and feeds them here. This is not a
-//! general physical-memory manager: no hotplug, no FDT, no 64-bit
-//! windows beyond the trampoline's 4 GiB identity map.
+//! general physical-memory manager: no hotplug, no 64-bit windows
+//! beyond the trampoline's 4 GiB identity map. Device-tree memory maps
+//! (riscv64 / aarch64) are parsed by [`crate::fdt`] into the same
+//! [`MemoryMap`] type.
 
 pub const MB1_BOOT_MAGIC: u32 = 0x2BADB002;
 pub const MB2_BOOT_MAGIC: u32 = 0x36D7_6289;
@@ -63,6 +65,9 @@ pub enum MapSource {
     Multiboot2,
     /// Multiboot2 basic memory tag (type 4) only.
     Multiboot2MemUpper,
+    /// Flattened device tree `/memory*` `reg`, minus memreserve and
+    /// `/reserved-memory` (see [`crate::fdt`]).
+    Fdt,
 }
 
 impl MapSource {
@@ -72,6 +77,7 @@ impl MapSource {
             MapSource::Multiboot1MemUpper => "multiboot1-mem_upper",
             MapSource::Multiboot2 => "multiboot2",
             MapSource::Multiboot2MemUpper => "multiboot2-mem_upper",
+            MapSource::Fdt => "fdt",
         }
     }
 }
@@ -137,7 +143,7 @@ fn r64(b: &[u8], off: usize) -> Result<u64, MmapError> {
     ]))
 }
 
-fn push_usable(map: &mut MemoryMap, start: u64, len: u64) {
+pub(crate) fn push_usable(map: &mut MemoryMap, start: u64, len: u64) {
     let Some(end) = start.checked_add(len) else {
         return;
     };
@@ -251,33 +257,54 @@ pub fn parse_multiboot1(info: &[u8], mmap: &[u8]) -> Result<MemoryMap, MmapError
     Err(MmapError::NoMmap)
 }
 
-/// Parse a Multiboot2 info blob (`total_size` + reserved + tags).
+/// Parse a complete Multiboot2 info blob (`total_size` + reserved + tags).
+///
+/// The size includes the final type-0/size-8 tag. Do not return a map from
+/// a valid prefix if the terminator, a tag, or a memory-map entry is partial.
+/// Unknown tags and backward-compatible extended mmap entries are skipped.
 pub fn parse_multiboot2(info: &[u8]) -> Result<MemoryMap, MmapError> {
     if info.len() < MB2_INFO_MIN {
         return Err(MmapError::Truncated);
     }
     let total = r32(info, 0)? as usize;
-    if total < MB2_INFO_MIN || total > info.len() {
+    if total < MB2_INFO_MIN + 8 || total > info.len() {
         return Err(MmapError::Truncated);
     }
     let mut off = 8usize;
     let mut mmap: Option<MemoryMap> = None;
     let mut mem_upper: Option<u32> = None;
-    while off + 8 <= total {
+    let mut ended = false;
+    while off < total {
+        if total - off < 8 {
+            return Err(MmapError::Truncated);
+        }
         let ty = r32(info, off)?;
         let size = r32(info, off + 4)? as usize;
-        if size < 8 || off + size > total {
+        if size < 8 || size > total - off {
             return Err(MmapError::Truncated);
         }
         if ty == MB2_TAG_END {
+            if size != 8 || off + size != total {
+                return Err(MmapError::Truncated);
+            }
+            ended = true;
             break;
         }
         if ty == MB2_TAG_MMAP {
             mmap = Some(parse_mb2_mmap_tag(&info[off..off + size])?);
-        } else if ty == MB2_TAG_BASIC_MEM && size >= 16 {
+        } else if ty == MB2_TAG_BASIC_MEM {
+            if size < 16 {
+                return Err(MmapError::Truncated);
+            }
             mem_upper = Some(r32(info, off + 12)?);
         }
-        off = (off + size + 7) & !7;
+        off = (off + size).checked_add(7).ok_or(MmapError::Truncated)? & !7;
+        if off > total {
+            return Err(MmapError::Truncated);
+        }
+    }
+    if !ended {
+        return Err(MmapError::Truncated);
     }
     if let Some(m) = mmap {
         return Ok(m);
@@ -294,12 +321,15 @@ fn parse_mb2_mmap_tag(tag: &[u8]) -> Result<MemoryMap, MmapError> {
         return Err(MmapError::Truncated);
     }
     let entry_size = r32(tag, 8)? as usize;
-    if entry_size < 20 {
+    // The known record is 24 bytes including its reserved word. Future
+    // versions may extend it, but the stride remains a multiple of eight.
+    // entry_version and reserved fields are intentionally not restricted.
+    if entry_size < 24 || entry_size % 8 != 0 || (tag.len() - 16) % entry_size != 0 {
         return Err(MmapError::Truncated);
     }
     let mut map = MemoryMap::empty(MapSource::Multiboot2);
     let mut off = 16usize;
-    while off + entry_size <= tag.len() {
+    while off < tag.len() {
         let base = r64(tag, off)?;
         let len = r64(tag, off + 8)?;
         let ty = r32(tag, off + 16)?;
@@ -374,6 +404,21 @@ pub fn plan_frames(map: &MemoryMap) -> MemoryMap {
 }
 
 /// Inclusive-start / exclusive-end span of a planned map, if any.
+/// Same allocator subset as [`plan_frames`], with an arch-chosen floor and
+/// limit instead of the x86 16 MiB floor / 4 GiB identity limit. riscv64 and
+/// aarch64 pass their boot-reserve floor (kernel image + firmware below it)
+/// and the top of the trampoline's Normal-memory identity map. The
+/// 128 MiB bitmap cap still applies from the lowest kept byte.
+pub fn plan_frames_window(map: &MemoryMap, floor: u64, limit: u64) -> MemoryMap {
+    let clipped = clip_window(map, floor, limit);
+    if clipped.is_empty() {
+        return clipped;
+    }
+    let lo = clipped.regions().iter().map(|r| r.start).min().unwrap_or(0);
+    let cap_end = lo.saturating_add(FRAME_CAP_BYTES);
+    clip_window(&clipped, lo, cap_end)
+}
+
 pub fn span(map: &MemoryMap) -> Option<(u64, u64)> {
     if map.is_empty() {
         return None;
@@ -462,6 +507,50 @@ mod tests {
             parse_multiboot1_mmap(&mmap).unwrap_err(),
             MmapError::Truncated
         );
+    }
+
+    /// Round 31: every `MmapError::Empty` site (boot-time parser, not a
+    /// tenant refuse path). The kernel turns this into "mmap had no usable
+    /// RAM" and halts instead of building a frame allocator over nothing.
+    #[test]
+    fn mb1_empty_mmap_bytes_is_empty() {
+        assert_eq!(parse_multiboot1_mmap(&[]).unwrap_err(), MmapError::Empty);
+    }
+
+    #[test]
+    fn mb1_only_reserved_regions_is_empty() {
+        let mut mmap = [0u8; 48];
+        let mut o = 0;
+        o += mb1_entry(&mut mmap, o, 0, 0x9FC00, 2);
+        o += mb1_entry(&mut mmap, o, 0x0010_0000, 0x07F0_0000, 3);
+        assert_eq!(
+            parse_multiboot1_mmap(&mmap[..o]).unwrap_err(),
+            MmapError::Empty
+        );
+    }
+
+    #[test]
+    fn mb1_mem_upper_zero_is_empty() {
+        let mut info = [0u8; 64];
+        w32(&mut info, 0, MB1_FLAG_MEM);
+        w32(&mut info, 8, 0);
+        assert_eq!(parse_multiboot1(&info, &[]).unwrap_err(), MmapError::Empty);
+    }
+
+    #[test]
+    fn mb2_mmap_tag_only_reserved_is_empty() {
+        let mut b = [0u8; 56];
+        w32(&mut b, 0, 56);
+        w32(&mut b, 8, MB2_TAG_MMAP);
+        w32(&mut b, 12, 40); // 16 header + 1*24
+        w32(&mut b, 16, 24);
+        w32(&mut b, 20, 0);
+        w64(&mut b, 24, 0x0010_0000);
+        w64(&mut b, 32, 0x07F0_0000);
+        w32(&mut b, 40, 2); // reserved
+        w32(&mut b, 48, MB2_TAG_END);
+        w32(&mut b, 52, 8);
+        assert_eq!(parse_multiboot2(&b).unwrap_err(), MmapError::Empty);
     }
 
     #[test]

@@ -161,7 +161,7 @@ mod tests {
         let mut caps = tab();
         let h = torus_harmonic();
         let cptr = h.mint(&mut caps).unwrap();
-        let remain = fabric.hodge.remain(FlowClass::Harmonic);
+        let remain = fabric.remain_for(TenantId(1), FlowClass::Harmonic);
         let s = SparsifiedCollective::wrap(h, 499, 500);
         assert_eq!(s.decide().unwrap(), SparsifyAction::Drop);
         assert_eq!(
@@ -169,8 +169,8 @@ mod tests {
                 .unwrap(),
             SparsifyAction::Drop
         );
-        assert_eq!(fabric.pending(ep).unwrap(), 0);
-        assert_eq!(fabric.hodge.remain(FlowClass::Harmonic), remain);
+        assert_eq!(fabric.pending_unchecked(ep).unwrap(), 0);
+        assert_eq!(fabric.remain_for(TenantId(1), FlowClass::Harmonic), remain);
     }
 
     #[test]
@@ -187,7 +187,7 @@ mod tests {
                 .unwrap(),
             SparsifyAction::Keep
         );
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.payload(), b"cycle");
         assert_eq!(got.header.flow, FlowClass::Harmonic);
         assert!(!got.header.flags.tree_offload());
@@ -207,7 +207,7 @@ mod tests {
         assert_eq!(g.decide().unwrap(), SparsifyAction::Keep);
         g.inject(&caps, tp, &mut fabric, ep, TenantId(1), b"tree")
             .unwrap();
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.header.flow, FlowClass::Gradient);
         assert!(got.header.flags.tree_offload());
 
@@ -218,7 +218,7 @@ mod tests {
         assert_eq!(c.decide().unwrap(), SparsifyAction::Keep);
         c.inject(&caps, rp, &mut fabric, ep, TenantId(1), b"ring")
             .unwrap();
-        let got = fabric.recv(ep).unwrap();
+        let got = fabric.recv_unchecked(ep).unwrap();
         assert_eq!(got.header.flow, FlowClass::Curl);
         assert!(got.header.flags.ring_reserve());
         assert!(!got.header.flags.tree_offload());
@@ -268,7 +268,7 @@ mod tests {
                 .unwrap_err(),
             OpKernelError::Hodge(HodgeError::HarmonicTreeReduce)
         );
-        assert_eq!(fabric.pending(ep).unwrap(), 0);
+        assert_eq!(fabric.pending_unchecked(ep).unwrap(), 0);
     }
 
     #[test]
@@ -302,7 +302,7 @@ mod tests {
                 .unwrap_err(),
             OpKernelError::NotBound
         );
-        assert_eq!(fabric.pending(ep).unwrap(), 0);
+        assert_eq!(fabric.pending_unchecked(ep).unwrap(), 0);
     }
 
     #[test]
