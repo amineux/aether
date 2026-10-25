@@ -400,7 +400,7 @@ impl SfiExec {
 
 fn span(base: u64, off: u64, size: u32) -> Result<(u64, u64), SfiError> {
     // Modeled access width is WORD; zero / non-word sizes are Unmodeled.
-    if size == 0 || size % WORD != 0 {
+    if size == 0 || !size.is_multiple_of(WORD) {
         return Err(SfiError::Unmodeled);
     }
     let start = base.checked_add(off).ok_or(SfiError::Oob)?;
@@ -485,7 +485,7 @@ fn step_verify(
             Ok(())
         }
         SoftOp::Dma => {
-            if insn.imm == 0 || insn.imm > u32::MAX as u64 || insn.imm % WORD as u64 != 0 {
+            if insn.imm == 0 || insn.imm > u32::MAX as u64 || !insn.imm.is_multiple_of(WORD as u64) {
                 return Err(SfiError::Unmodeled);
             }
             let dst = abs[rd].ok_or(SfiError::UnknownBase)?;
@@ -606,7 +606,7 @@ fn step_exec<M: SfiMem>(
             mem.store_u32(start, read_reg(regs, rd) as u32)
         }
         SoftOp::Dma => {
-            if insn.imm == 0 || insn.imm > u32::MAX as u64 || insn.imm % WORD as u64 != 0 {
+            if insn.imm == 0 || insn.imm > u32::MAX as u64 || !insn.imm.is_multiple_of(WORD as u64) {
                 return Err(SfiError::Unmodeled);
             }
             let dst = read_reg(regs, rd);

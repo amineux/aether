@@ -778,7 +778,7 @@ mod tests {
             } else {
                 let size = PAGE_4K * (1 + (x >> 8) % 300);
                 let mut req = ArenaRequest::tensor(size, Some(BankId(((x >> 20) % 2) as u8)));
-                if (x >> 24) % 3 == 0 {
+                if (x >> 24).is_multiple_of(3) {
                     req.align = PAGE_2M;
                 }
                 match a.alloc(req) {
