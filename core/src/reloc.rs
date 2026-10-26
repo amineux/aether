@@ -113,7 +113,7 @@ pub fn apply_rela_dyn(image: &mut [u8], slide: u64, relas: &[Rela64]) -> Result<
 
 /// Apply a raw `.rela.dyn` blob (array of `Elf64_Rela`).
 pub fn apply_rela_bytes(image: &mut [u8], slide: u64, rela: &[u8]) -> Result<u32, RelocError> {
-    if rela.len() % RELA64_SIZE != 0 {
+    if !rela.len().is_multiple_of(RELA64_SIZE) {
         return Err(RelocError::Truncated);
     }
     let mut n = 0u32;

@@ -40,7 +40,7 @@ pub const SAMPLE_TOML: &str = include_str!("../sample.toml");
 pub const STANDIN_TOML: &str = include_str!("../../../docs/design-win/iree-hal-standin.toml");
 
 /// Frozen `IreeHalCmd` v1 field offsets from `docs/ACCEL.md`. Do not change.
-pub const FROZEN_OFFSETS: &[(usize, &'static str)] = &[
+pub const FROZEN_OFFSETS: &[(usize, &str)] = &[
     (0x00, "magic"),
     (0x04, "command_categories"),
     (0x06, "binding_count"),

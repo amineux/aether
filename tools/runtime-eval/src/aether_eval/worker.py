@@ -21,14 +21,43 @@ LIMITS = [
 
 
 def stats(values):
-    if not values or any(not math.isfinite(x) or x <= 0 for x in values):
+    if not values or any(type(x) not in (int, float) or not math.isfinite(x) or x <= 0 for x in values):
         raise ValueError('Latency samples must be positive finite values')
     ordered = sorted(values)
     return {'count': len(values), 'min_ms': ordered[0], 'max_ms': ordered[-1],
             'mean_ms': sum(values) / len(values), 'p95_ms': ordered[math.ceil(.95 * len(values))-1]}
 
 
+def validate_samples(scenario, samples):
+    """Require one record for every workload/phase/round/sample cell.
+
+    Aggregate counts alone let duplicates hide missing measurements and let
+    unrecognized records disappear from the report. Order is unconstrained:
+    shared-worker completion and randomized phase order legitimately vary it.
+    """
+    names = {job['name'] for job in scenario['workloads']}
+    expected = len(names) * 2 * scenario['rounds'] * scenario['samples']
+    if not isinstance(samples, list) or len(samples) != expected:
+        raise ValueError(f'Expected exactly {expected} measurement records')
+    fields = {'workload', 'phase', 'round', 'sample', 'latency_ms'}
+    seen = set()
+    for record in samples:
+        if not isinstance(record, dict) or set(record) != fields:
+            raise ValueError('Invalid measurement record fields')
+        name, phase = record['workload'], record['phase']
+        if type(name) is not str or name not in names or phase not in ('solo', 'shared'):
+            raise ValueError('Unknown measurement workload or phase')
+        for key, limit in [('round', scenario['rounds']), ('sample', scenario['samples'])]:
+            if type(record[key]) is not int or not 0 <= record[key] < limit:
+                raise ValueError(f'Invalid measurement {key}')
+        identity = (name, phase, record['round'], record['sample'])
+        if identity in seen:
+            raise ValueError('Duplicate measurement identity')
+        seen.add(identity)
+
+
 def summarize(scenario, samples):
+    validate_samples(validate(scenario), samples)
     summary = {}
     for job in scenario['workloads']:
         name = job['name']

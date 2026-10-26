@@ -81,6 +81,11 @@ mean, minimum, maximum, counts and per-round ratios are recorded with all raw
 samples. CPU resources are not reserved; power state and other host workloads
 can affect the result. It is not a hardware throughput benchmark.
 
+Summaries require exactly one measurement for each workload, phase, round and
+sample index. Duplicate, missing, out-of-range or unrecognized records fail
+validation instead of contributing to a passing result. Latencies must be
+positive finite numbers; booleans and numeric strings are refused.
+
 Every measured output is compared with a NumPy reference (rtol/atol 1e-4).
 Each workload also checks malformed-shape rejection and a valid invocation after
 that refusal. Only the expected IREE invalid-argument shape error counts as a

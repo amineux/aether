@@ -17,18 +17,15 @@
 //! Scope, stated plainly: bounded, seeded, deterministic (no wall clock).
 //! Evidence, **not** a proof, **not** a hardware claim.
 //!
-//! **Excluded on purpose: `IommuMap::unmap_stream` and `IommuMap::unmap`.**
-//! They take no tenant or capability, so a caller that passes another
-//! tenant's StreamId + IOVA can drop that tenant's pin (first seen by this
-//! fuzz at op 101 of seed `0x5AE7`). They are treated here as kernel-trust
-//! primitives, not tenant-B entry points. That is an **open known gap**,
-//! tracked in <https://github.com/amineux/aether/issues/161>; the fix would
-//! be a core change that needs the owner's decision. The checked path,
-//! `unmap_for(&cap, iova)`, is exercised instead and must return
-//! `MapError::CrossTenant` for B against A's pin (op 8 below).
+//! **Unmap paths (issue #161, fixed):** `IommuMap::unmap_stream(&cap, sid,
+//! iova)`, `IommuMap::unmap(&cap, iova)` and `unmap_for(&cap, iova)` are all
+//! tenant-checked. B drives all three, including `unmap_stream` with A's raw
+//! StreamId + A's IOVA (the op-101 repro of seed `0x5AE7`); each must return
+//! `MapError::CrossTenant` for B against A's pin and leave it mapped (ops 7
+//! and 8 below). The unchecked helpers are no longer public.
 //!
 //! B only calls tenant-passing entry points (`resolve_result(.., Some(tenant))`,
-//! `unmap_for`, `translate_result(.., Some(tenant))`, `set_sid(cap, ..)`);
+//! `unmap_for` / `unmap` / `unmap_stream` (all cap-checked), `translate_result(.., Some(tenant))`, `set_sid(cap, ..)`);
 //! untenanted `walk` is only called on B's own SIDs.
 //! SoftGreenPool has no tenant identity, so B is confined to its own
 //! queue index. Soft SMMU `map` authorizes by Memory+MAP cap and does not
@@ -600,10 +597,32 @@ impl World {
         }
     }
 
+    /// One of the three cap-checked unmap forms (`unmap_for`, `unmap`,
+    /// `unmap_stream` with a B-pool SID or A's raw SID).
+    fn unmap_any(
+        &mut self,
+        rng: &mut Xs,
+        cap: &Capability,
+        iova: u64,
+    ) -> Result<aether_core::iommu::MappedRegion, MapError> {
+        match rng.below(3) {
+            0 => self.io.unmap_for(cap, PhysAddr(iova)),
+            1 => self.io.unmap(cap, PhysAddr(iova)),
+            _ => {
+                let raw = if rng.below(2) == 0 {
+                    self.sid_a.raw()
+                } else {
+                    rng.pick(&self.b_sid_pool()).raw()
+                };
+                self.io.unmap_stream(cap, raw, PhysAddr(iova))
+            }
+        }
+    }
+
     fn op_unmap_for(&mut self, rng: &mut Xs) {
         let cap = self.pick_cap(rng);
         let iova = self.pick_iova(rng);
-        match self.io.unmap_for(&cap, PhysAddr(iova)) {
+        match self.unmap_any(rng, &cap, iova) {
             Ok(r) => {
                 self.b_ok += 1;
                 if r.tenant != TENANT_B || StreamId(r.stream_id).stream_key() == self.a_key() {
@@ -616,11 +635,13 @@ impl World {
 
     /// Checked path against A's pin: `unmap_for(&cap_b, ..)` with the wrong
     /// tenant must be `CrossTenant` (or `NotMapped` if the offset misses A's
-    /// window). Anything else — notably `Ok` — is an escape. Excludes
-    /// `unmap_stream` / `unmap` (see header, issue #161).
+    /// window). Anything else — notably `Ok` — is an escape. Covers
+    /// `unmap_for`, `unmap` and `unmap_stream` (A's raw SID or a B SID;
+    /// issue #161).
     fn op_unmap_for_a(&mut self, rng: &mut Xs) {
         let off = rng.below(A_LEN);
-        match self.io.unmap_for(&self.cap_b, PhysAddr(self.iova_a + off)) {
+        let cap_b = self.cap_b;
+        match self.unmap_any(rng, &cap_b, self.iova_a + off) {
             Err(MapError::CrossTenant) => self.note("MapError::CrossTenant", SMMU_UNMAP_OK),
             Err(e) => {
                 // A's window covers iova_a..iova_a+A_LEN, so only CrossTenant is right.
@@ -942,23 +963,27 @@ mod tests {
         assert!(a.all_ok());
     }
 
-    /// Exclusion is real: no `unmap_stream` / `unmap` call is reachable from `step`,
-    /// and the checked `unmap_for` wrong-tenant path is `CrossTenant`.
+    /// Issue #161 repro: every unmap form with B's cap against A's pin is
+    /// `CrossTenant` (including `unmap_stream` with A's raw SID) and A stays
+    /// intact.
     #[test]
-    fn unmap_for_wrong_tenant_is_cross_tenant() {
+    fn unmap_forms_wrong_tenant_are_cross_tenant() {
         let mut w = World::new();
-        let (cap_b, iova) = (w.cap_b, w.iova_a);
+        let (cap_b, iova, sid_a) = (w.cap_b, w.iova_a, w.sid_a);
         assert_eq!(
             w.io.unmap_for(&cap_b, PhysAddr(iova)).map(|r| r.tenant),
             Err(MapError::CrossTenant)
         );
+        assert_eq!(
+            w.io.unmap(&cap_b, PhysAddr(iova)).map(|r| r.tenant),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(
+            w.io.unmap_stream(&cap_b, sid_a.raw(), PhysAddr(iova))
+                .map(|r| r.tenant),
+            Err(MapError::CrossTenant)
+        );
         assert!(w.a_intact());
-        let src = include_str!("fuzz.rs");
-        let call_unmap_stream = ["io.unmap", "_stream("].concat();
-        let call_unmap = ["io.unmap", "("].concat();
-        let code = src.split("#[cfg(test)]").next().unwrap();
-        assert!(!code.contains(&call_unmap_stream));
-        assert!(!code.contains(&call_unmap));
     }
 
     #[test]
@@ -976,7 +1001,8 @@ mod tests {
         let mut w = World::new();
         assert!(w.a_intact());
         let iova = w.iova_a;
-        w.io.unmap(PhysAddr(iova)).expect("raw unmap A");
+        let cap_a = mem_cap(1, TENANT_A, CapRights::MEM_FULL, CapKind::Memory);
+        w.io.unmap(&cap_a, PhysAddr(iova)).expect("owner unmap A");
         assert!(!w.a_intact(), "unmapped canary must be detected");
 
         let mut w = World::new();

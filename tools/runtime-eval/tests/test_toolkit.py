@@ -58,8 +58,8 @@ class MeasurementTests(unittest.TestCase):
     def samples(self):
         scenario = copy.deepcopy(DEFAULT)
         scenario.update(samples=3, rounds=1, max_p95_slowdown=1.5)
-        samples = [{'workload': j['name'], 'phase': p, 'round': 0, 'latency_ms': x}
-                   for j in scenario['workloads'] for p, vals in [('solo', [1, 2, 3]), ('shared', [2, 4, 6])] for x in vals]
+        samples = [{'workload': j['name'], 'phase': p, 'round': 0, 'sample': i, 'latency_ms': x}
+                   for j in scenario['workloads'] for p, vals in [('solo', [1, 2, 3]), ('shared', [2, 4, 6])] for i, x in enumerate(vals)]
         return scenario, samples
 
     def test_percentile_and_gate(self):
@@ -76,9 +76,55 @@ class MeasurementTests(unittest.TestCase):
             summarize(scenario, samples[:-1])
 
     def test_invalid_latencies(self):
-        for samples in ([], [0], [-1], [float('inf')]):
+        for samples in ([], [0], [-1], [float('inf')], [True], ['1'], [None]):
             with self.assertRaises(ValueError):
                 stats(samples)
+
+    def test_duplicate_measurement_identity_never_passes(self):
+        scenario, samples = self.samples()
+        samples[1]['sample'] = samples[0]['sample']
+        with self.assertRaises(ValueError):
+            summarize(scenario, samples)
+
+    def test_invalid_measurement_coordinates_never_pass(self):
+        for key, value in [('round', False), ('round', -1), ('round', 1),
+                           ('sample', True), ('sample', -1), ('sample', 3), ('sample', '0')]:
+            with self.subTest(key=key, value=value):
+                scenario, samples = self.samples()
+                samples[0][key] = value
+                with self.assertRaises(ValueError):
+                    summarize(scenario, samples)
+
+    def test_unaccounted_samples_never_pass(self):
+        for key, value in [('workload', 'unknown'), ('phase', 'warmup')]:
+            with self.subTest(key=key):
+                scenario, samples = self.samples()
+                extra = dict(samples[0], **{key: value})
+                with self.assertRaises(ValueError):
+                    summarize(scenario, samples + [extra])
+
+    def test_missing_and_unknown_sample_fields_never_pass(self):
+        for change in ('missing', 'unknown', 'not-a-record'):
+            with self.subTest(change=change):
+                scenario, samples = self.samples()
+                if change == 'missing':
+                    samples[0].pop('sample')
+                elif change == 'unknown':
+                    samples[0]['ignored'] = 1
+                else:
+                    samples[0] = None
+                with self.assertRaises(ValueError):
+                    summarize(scenario, samples)
+
+    def test_complete_multiround_grid_is_order_independent(self):
+        scenario, samples = self.samples()
+        scenario['rounds'] = 2
+        samples += [dict(record, round=1) for record in samples]
+        forward = summarize(scenario, samples)
+        self.assertEqual(forward, summarize(scenario, list(reversed(samples))))
+        for entry in forward.values():
+            self.assertEqual(6, entry['solo']['count'])
+            self.assertEqual([2, 2], entry['per_round_p95_slowdown'])
 
     def test_no_threshold_is_not_requested(self):
         scenario, samples = self.samples()

@@ -86,18 +86,10 @@ pub fn parse_worksheet(src: &str) -> Result<Worksheet, CheckError> {
         chiplet: doc.get_u8("sid.chiplet")?,
         tile: doc.get_u16("sid.tile")?,
         submit_sid: doc.get_u32("sid.submit_sid")?,
-        memory_spaces: doc
-            .get_strs("memory.kinds")?
-            .iter()
-            .map(|s| s.clone())
-            .collect(),
+        memory_spaces: doc.get_strs("memory.kinds")?.to_vec(),
         queue_count: doc.get_u16("queues.count")?,
         event_scope: doc.get_str("event.scope")?.to_string(),
-        chipsync_scopes: doc
-            .get_strs("event.optional_chipsync_scopes")?
-            .iter()
-            .map(|s| s.clone())
-            .collect(),
+        chipsync_scopes: doc.get_strs("event.optional_chipsync_scopes")?.to_vec(),
         frozen_packet_size: doc.get_u64("frozen.packet_size")? as usize,
         frozen_magic: doc.get_u32("frozen.magic")?,
     })

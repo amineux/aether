@@ -10,6 +10,22 @@ A task holds a `CapTable` of 32 slots. A `CPtr` is an index into *that*
 table. Slot `7` in tenant A's table is unrelated to slot `7` in tenant B's
 table. There is no global “handle namespace” to guess.
 
+The kernel decodes the complete 64-bit syscall capability argument before
+looking up the 16-bit slot. `SYS_SEND`, `SYS_RECV`, `SYS_MAP`, `SYS_ACCEL_SUBMIT`
+and `SYS_ACCEL_WAIT` reject nonzero upper bits with `NoCap`; a value such as
+`0x1_0001` cannot alias slot `1`. Width validation is followed by the existing
+slot, kind and rights checks. This closes an input-validation defect, not a
+claim that the alias granted a capability the caller did not already hold.
+`SYS_ARENA_ALLOC` likewise rejects bank IDs larger than 255 with `Inval`, before
+allocation, rather than wrapping them onto a lower bank. In-range IDs still go
+through the allocator's existing bank selection rules.
+
+Host regression tests cover high bits and valid handles. The userspace `/init`
+smoke tries oversized arguments against live slots through all five syscalls
+and checks the existing error channel, then continues through normal map/submit
+operations. Every QEMU CI variant requires `[init] wide syscall arguments refused`.
+Syscall numbers, structures and `IreeHalCmd` remain unchanged.
+
 Each `Capability` stores:
 
 - `kind` — Memory, Endpoint, AccelQueue, Notification, SpectralCut,
@@ -50,7 +66,9 @@ Each `Capability` stores:
 10. **Revoke descendants.** `derive` and GRANT-copy record a parent edge.
     `revoke(parent)` empties that lineage in the same table;
     `revoke_in(parent, others)` empties grant-children in the named
-    tables too. Unrelated caps stay.
+    tables too. A lineage larger than the 64-node walk bound returns
+    `RevokeTooLarge` before any slot changes. Unrelated caps stay.
+    See [bounded revocation](CAP_REVOCATION.md) for the named-table limits.
 
 This is a research-prototype capability machine (Helios / M3 / Barrelfish /
 Twizzler-shaped names, seL4-inspired CPtrs). It does **not** claim
@@ -98,7 +116,9 @@ not cross-read. Software only. Sell clip: `[softsfi] heap=refused`.
 
 PASID / SVA (`core/src/sva.rs`, `IommuMap::bind_mm` / `map_va` /
 `unmap_va`) binds a process mm to a Soft-SMMU SSID so Soft-CP DMA
-uses that process VA. Host unmap invalidates the SSID ATC. Skipping
+uses that process VA. Host unmap invalidates the SSID ATC. Unmap is
+tenant-checked (Memory+MAP cap; another tenant's pin is
+`MapError::CrossTenant` and stays mapped; issue #161). Skipping
 invalidate is a stale translate. Linux SVA / PASID inspiration. It
 is **not** ARM SVA, **not** PCIe PASID/PRI, **not** CUDA UVA, and
 **not** zero-copy SVA without invalidate. No new syscall.
@@ -148,6 +168,7 @@ These are marked so a security review does not assume them:
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
 | `SYS_MMAP` is a 64 KiB anon window | First-fit 4 KiB USER pages at `0x02C0_0000` (after virtio-blk); no file / no `MAP_SHARED` / no `munmap` | POSIX `mmap` / file-backed / `MAP_SHARED` |
+| `SYS_UNMAP` names one pin | Number 5 and `(vaddr, len)` are unchanged. The return is the existing negative `SysError` (`0`, `-NoCap`, or `-Fault`), not a silent success. World still stores only the last `sys_map` Memory+MAP cap, `len` is ignored, and `SYS_MMAP` pages are not individually unmapped | A multi-pin table would be a kernel object, not a new syscall |
 | SoftSFI tensor / heap | A kernel that used those ops would bypass the toy sandbox | Named refuse: `SfiError::Unmodeled` (`SoftOp::Tensor`, `SoftOp::Heap`). `atomic_add` is SID-proved (in-range accept, cross-tenant `Oob`) but is a sequential toy RMW, not full SFI. Heap is refused, not a modeled bump allocator. Not a GPU-AToLL port. Hardware SMMU / real SFI still need partner silicon |
 | No crypto / measured boot | Out of scope for v0.1 | — |
 
@@ -168,7 +189,13 @@ Ring-3 is live; each user *task* has its own PML4 with USER only on its
 threads share that PML4 — they are not a second isolation domain.
 CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates a
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
-unmap. Treat isolation as “the cap tables + Soft SMMU + task-local
+unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
+`-NoCap` when World has no stored pin cap, `-Fault` when the address
+does not match the tracked pin or unmap is refused/missing, `0` only when the last `sys_map` pin was
+dropped. `len` is ignored. It is not `munmap` of `SYS_MMAP` pages,
+and World still stores only that one cap
+(`TODO(sys_unmap)` in `kernel/src/world.rs` — do not add a syscall).
+Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel
 is linked at `0xffffffff80400000` and may run at a 16/32 MiB slide

@@ -681,9 +681,422 @@ pub fn run_kv_insufficient_rights_demo() -> KvInsufficientRightsReport {
     }
 }
 
+/// Host red-team report for a KV grant used against another sequence.
+///
+/// Sell line `[redteam] attack=kv-seq-mismatch` — existing [`attend`] only.
+/// A decode cap granted for one sequence's KV page cannot attend a token of
+/// a different sequence (same tenant, same bank): [`KvError::SeqMismatch`].
+/// The sequence gate runs before the rights checks, so a wrong-sequence
+/// write probe is also `SeqMismatch` (it learns nothing about WRITE). After
+/// `revoke`, the same cap is [`KvError::Revoked`] for every sequence, and
+/// the other sequence's own grant keeps working. **Not** kv
+/// `insufficient-rights` / `write` (`WouldWrite`) / `oob` (`WindowOob`) /
+/// `forge` (`CrossTenant`) / CapTable; Soft SMMU is software; no new opcodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KvSeqMismatchReport {
+    /// Control: seq-1 grant attends a seq-1 token.
+    pub own_seq_ok: bool,
+    /// Seq-1 grant naming seq 2 (read, write, `u32::MAX`) → `SeqMismatch`.
+    pub other_seq_refused: bool,
+    /// Seq-2 grant still attends seq 2; decode never holds the seq-2 page.
+    pub other_seq_untouched: bool,
+    /// After revoke: seq-1 cap → `Revoked` for seq 1 and seq 2 alike.
+    pub revoked_refused: bool,
+    /// Revoking the seq-1 grant leaves the seq-2 grant working.
+    pub revoke_scoped: bool,
+}
+
+impl KvSeqMismatchReport {
+    pub fn all_ok(&self) -> bool {
+        self.own_seq_ok
+            && self.other_seq_refused
+            && self.other_seq_untouched
+            && self.revoked_refused
+            && self.revoke_scoped
+    }
+}
+
+/// KV grant for sequence 1 attending sequence 2 → [`KvError::SeqMismatch`];
+/// after revoke → [`KvError::Revoked`].
+pub fn run_kv_seq_mismatch_demo() -> KvSeqMismatchReport {
+    let fail = KvSeqMismatchReport {
+        own_seq_ok: false,
+        other_seq_refused: false,
+        other_seq_untouched: false,
+        revoked_refused: false,
+        revoke_scoped: false,
+    };
+    let tenant = TenantId(1);
+    let (seq_1, seq_2) = (1u32, 2u32);
+    let Ok(mut arenas) =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x8000_0000), 32 * 1024 * 1024)])
+    else {
+        return fail;
+    };
+    let req = ArenaRequest::tensor(DEMO_KV_BYTES, Some(BankId(0)))
+        .in_space(MemorySpace::DeviceHbm)
+        .for_tenant(tenant);
+    let (Ok(kv_1), Ok(kv_2)) = (arenas.alloc(req), arenas.alloc(req)) else {
+        return fail;
+    };
+    let mut ledger = KvLedger::new();
+    for (a, seq) in [(&kv_1, seq_1), (&kv_2, seq_2)] {
+        if ledger
+            .insert(KvObject {
+                id: a.id.0,
+                seq,
+                base: a.base,
+                bytes: a.size,
+                kind: KvKind::Kv,
+                window: KvWindow::demo(),
+                tenant,
+            })
+            .is_err()
+        {
+            return fail;
+        }
+    }
+
+    let mut prefill = CapTable::new(tenant);
+    let mut decode = CapTable::new(tenant);
+    let mut decode_2 = CapTable::new(tenant);
+    let (Ok(root_1), Ok(root_2)) = (
+        prefill.mint(Capability::new(CapKind::Memory, CapRights::MEM_FULL, kv_1.id.0, tenant)),
+        prefill.mint(Capability::new(CapKind::Memory, CapRights::MEM_FULL, kv_2.id.0, tenant)),
+    ) else {
+        return fail;
+    };
+    let rights = CapRights(CapRights::READ | CapRights::MAP);
+    let (Ok(dec), Ok(dec_2)) = (
+        prefill.transfer(root_1, &mut decode, rights, false),
+        prefill.transfer(root_2, &mut decode_2, rights, false),
+    ) else {
+        return fail;
+    };
+    let at = |seq: u32, write: bool| AttendReq {
+        seq,
+        layer: 1,
+        token: 16,
+        write,
+    };
+
+    let own_seq_ok = attend(&decode, dec, &ledger, at(seq_1, false)).is_ok();
+    let other_seq_refused = attend(&decode, dec, &ledger, at(seq_2, false))
+        == Err(KvError::SeqMismatch)
+        && attend(&decode, dec, &ledger, at(seq_2, true)) == Err(KvError::SeqMismatch)
+        && attend(&decode, dec, &ledger, at(u32::MAX, false)) == Err(KvError::SeqMismatch);
+    let other_seq_untouched = attend(&decode_2, dec_2, &ledger, at(seq_2, false)).is_ok()
+        && !decode.holds(CapKind::Memory, kv_2.id.0);
+
+    if prefill.revoke_in(root_1, &mut [&mut decode]).is_err() {
+        return fail;
+    }
+    let revoked_refused = attend(&decode, dec, &ledger, at(seq_1, false)) == Err(KvError::Revoked)
+        && attend(&decode, dec, &ledger, at(seq_2, false)) == Err(KvError::Revoked)
+        && !decode.holds(CapKind::Memory, kv_1.id.0);
+    let revoke_scoped = attend(&decode_2, dec_2, &ledger, at(seq_2, false)).is_ok()
+        && decode_2.holds(CapKind::Memory, kv_2.id.0);
+
+    KvSeqMismatchReport {
+        own_seq_ok,
+        other_seq_refused,
+        other_seq_untouched,
+        revoked_refused,
+        revoke_scoped,
+    }
+}
+
+/// Host red-team report for a KV pin on an out-of-range Soft-SMMU substream.
+///
+/// Sell line `[redteam] attack=kv-wrong-stream`. It uses only the existing
+/// [`pin_kv`] path. A valid READ|MAP decode grant pinned on a stream whose
+/// SSID is past the Soft-SMMU context-descriptor range (`>= MAX_CDS`) is
+/// refused. The Soft SMMU aborts the stream (`MapError::StreamAbort`), and
+/// `pin_kv` reports that as [`KvError::WrongStream`]: the KV layer folds
+/// both `WrongStream` and `StreamAbort` into one variant. The refused pin
+/// creates no STE and installs no translation, and the grant's own pin on
+/// SSID 0 keeps walking to the KV page. **Not** kv `insufficient-rights` /
+/// `seq-mismatch` / `wrong-sid` (resolve on a neighbor SID) /
+/// smmu-ssid-abort (raw `MapError`, no KV grant); Soft SMMU is software;
+/// no new opcodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KvWrongStreamReport {
+    /// Control: the grant pins on SSID 0 (one translation, one STE).
+    pub pin_ok: bool,
+    /// Same grant on SSID `MAX_CDS` and `0xFF` → `WrongStream`.
+    pub bad_stream_refused: bool,
+    /// Refusals add no translation or STE; nothing covers the bad SIDs.
+    pub no_stray_state: bool,
+    /// The SSID-0 pin still walks to the KV page base.
+    pub own_pin_intact: bool,
+}
+
+impl KvWrongStreamReport {
+    pub fn all_ok(&self) -> bool {
+        self.pin_ok && self.bad_stream_refused && self.no_stray_state && self.own_pin_intact
+    }
+}
+
+/// KV pin on an out-of-range substream → [`KvError::WrongStream`].
+pub fn run_kv_wrong_stream_demo() -> KvWrongStreamReport {
+    let fail = KvWrongStreamReport {
+        pin_ok: false,
+        bad_stream_refused: false,
+        no_stray_state: false,
+        own_pin_intact: false,
+    };
+    let tenant = TenantId(1);
+    let Some((ledger, kv)) = demo_kv_ledger(tenant, 1) else {
+        return fail;
+    };
+    let mut prefill = CapTable::new(tenant);
+    let Ok(root) = prefill.mint(Capability::new(
+        CapKind::Memory,
+        CapRights::MEM_FULL,
+        kv.id.0,
+        tenant,
+    )) else {
+        return fail;
+    };
+    let Ok(rm) = prefill.derive(root, CapRights(CapRights::READ | CapRights::MAP)) else {
+        return fail;
+    };
+    let Ok(cap) = prefill.lookup(rm).copied() else {
+        return fail;
+    };
+    let sid_ok = StreamId::from_raw(SID_DECODE);
+    let bad = [
+        sid_ok.with_ssid(crate::iommu::MAX_CDS as u8),
+        sid_ok.with_ssid(0xFF),
+    ];
+
+    let mut iommu = IommuMap::new();
+    let pin = pin_kv(&mut iommu, &cap, &ledger, sid_ok);
+    let pin_ok = pin.is_ok() && iommu.len() == 1 && iommu.ste_count() == 1;
+
+    let bad_stream_refused = bad
+        .iter()
+        .all(|&sid| pin_kv(&mut iommu, &cap, &ledger, sid).err() == Some(KvError::WrongStream));
+
+    let no_stray_state = iommu.len() == 1
+        && iommu.ste_count() == 1
+        && bad.iter().all(|sid| !iommu.covers_stream(sid.raw(), kv.base, kv.size));
+
+    let own_pin_intact = match pin {
+        Ok(m) => iommu.walk(sid_ok, m.iova).map(|w| w.pa) == Ok(kv.base),
+        Err(_) => false,
+    };
+
+    KvWrongStreamReport {
+        pin_ok,
+        bad_stream_refused,
+        no_stray_state,
+        own_pin_intact,
+    }
+}
+
+/// Host red-team report for malformed / unregistered KV grants.
+///
+/// Sell line `[redteam] attack=kv-bad-grant`. It uses only the existing
+/// [`attend`] / [`pin_kv`] / [`KvLedger::insert`] gates. The cases:
+/// - a Memory cap naming an arena that is not a registered KV object
+///   (same tenant, real allocation) is [`KvError::BadGrant`] on attend
+///   and on pin, with no translation installed;
+/// - a non-Memory cap (an operator-kernel cap naming the KV object id) is
+///   `BadGrant` on attend;
+/// - registering a KV object in a full ledger is `BadGrant`, and the
+///   objects already in it stay readable.
+///
+/// The real grant keeps attending throughout. **Not** kv
+/// `insufficient-rights` (non-Memory `pin_kv` is `InsufficientRights`,
+/// named there) / `forge` (`CrossTenant`) / `seq-mismatch`; Soft SMMU is
+/// software; no new opcodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct KvBadGrantReport {
+    /// Control: the registered READ|MAP grant attends.
+    pub grant_ok: bool,
+    /// Cap on an unregistered arena → `BadGrant` (attend and pin), no pin.
+    pub unregistered_refused: bool,
+    /// Non-Memory cap naming the KV id → `BadGrant` on attend.
+    pub wrong_kind_refused: bool,
+    /// Insert into a full ledger → `BadGrant`; existing objects intact.
+    pub ledger_full_refused: bool,
+    /// The real grant still attends after every refusal.
+    pub grant_still_ok: bool,
+}
+
+impl KvBadGrantReport {
+    pub fn all_ok(&self) -> bool {
+        self.grant_ok
+            && self.unregistered_refused
+            && self.wrong_kind_refused
+            && self.ledger_full_refused
+            && self.grant_still_ok
+    }
+}
+
+/// Unregistered object / non-Memory cap / full ledger → [`KvError::BadGrant`].
+pub fn run_kv_bad_grant_demo() -> KvBadGrantReport {
+    let fail = KvBadGrantReport {
+        grant_ok: false,
+        unregistered_refused: false,
+        wrong_kind_refused: false,
+        ledger_full_refused: false,
+        grant_still_ok: false,
+    };
+    let tenant = TenantId(1);
+    let seq = 1u32;
+    let Ok(mut arenas) =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x8000_0000), 32 * 1024 * 1024)])
+    else {
+        return fail;
+    };
+    let req = ArenaRequest::tensor(DEMO_KV_BYTES, Some(BankId(0)))
+        .in_space(MemorySpace::DeviceHbm)
+        .for_tenant(tenant);
+    let (Ok(kv), Ok(stray)) = (arenas.alloc(req), arenas.alloc(req)) else {
+        return fail;
+    };
+    let obj = |id: u32, base: PhysAddr, bytes: u64| KvObject {
+        id,
+        seq,
+        base,
+        bytes,
+        kind: KvKind::Kv,
+        window: KvWindow::demo(),
+        tenant,
+    };
+    let mut ledger = KvLedger::new();
+    if ledger.insert(obj(kv.id.0, kv.base, kv.size)).is_err() {
+        return fail;
+    }
+
+    let mut table = CapTable::new(tenant);
+    let (Ok(good), Ok(unreg), Ok(opk)) = (
+        table.mint(Capability::new(
+            CapKind::Memory,
+            CapRights(CapRights::READ | CapRights::MAP),
+            kv.id.0,
+            tenant,
+        )),
+        table.mint(Capability::new(
+            CapKind::Memory,
+            CapRights(CapRights::READ | CapRights::MAP),
+            stray.id.0,
+            tenant,
+        )),
+        table.mint(Capability::new(
+            CapKind::OperatorKernel,
+            CapRights::MEM_FULL,
+            kv.id.0,
+            tenant,
+        )),
+    ) else {
+        return fail;
+    };
+    let read = AttendReq {
+        seq,
+        layer: 1,
+        token: 16,
+        write: false,
+    };
+
+    let grant_ok = attend(&table, good, &ledger, read).is_ok();
+
+    let mut iommu = IommuMap::new();
+    let unregistered_refused = attend(&table, unreg, &ledger, read) == Err(KvError::BadGrant)
+        && table
+            .lookup(unreg)
+            .map(|cap| pin_kv(&mut iommu, cap, &ledger, StreamId::from_raw(SID_DECODE)).err())
+            == Ok(Some(KvError::BadGrant))
+        && iommu.is_empty()
+        && !iommu.covers_stream(SID_DECODE, stray.base, stray.size);
+
+    let wrong_kind_refused = attend(&table, opk, &ledger, read) == Err(KvError::BadGrant);
+
+    let mut full = ledger.clone();
+    let mut filled = true;
+    for i in 1..LEDGER_CAP as u32 {
+        filled &= full.insert(obj(0x1000 + i, kv.base, kv.size)).is_ok();
+    }
+    let ledger_full_refused = filled
+        && full.insert(obj(0x2000, stray.base, stray.size)) == Err(KvError::BadGrant)
+        && full.get(0x2000).is_none()
+        && full.get(kv.id.0).is_some()
+        && attend(&table, good, &full, read).is_ok();
+
+    let grant_still_ok = attend(&table, good, &ledger, read).is_ok();
+
+    KvBadGrantReport {
+        grant_ok,
+        unregistered_refused,
+        wrong_kind_refused,
+        ledger_full_refused,
+        grant_still_ok,
+    }
+}
+
+/// One registered KV page for `tenant` / `seq` (demo helper).
+fn demo_kv_ledger(tenant: TenantId, seq: u32) -> Option<(KvLedger, crate::arena::Arena)> {
+    let mut arenas =
+        ArenaAllocator::new(&[(BankId(0), PhysAddr(0x8000_0000), 32 * 1024 * 1024)]).ok()?;
+    let kv = arenas
+        .alloc(
+            ArenaRequest::tensor(DEMO_KV_BYTES, Some(BankId(0)))
+                .in_space(MemorySpace::DeviceHbm)
+                .for_tenant(tenant),
+        )
+        .ok()?;
+    let mut ledger = KvLedger::new();
+    ledger
+        .insert(KvObject {
+            id: kv.id.0,
+            seq,
+            base: kv.base,
+            bytes: kv.size,
+            kind: KvKind::Kv,
+            window: KvWindow::demo(),
+            tenant,
+        })
+        .ok()?;
+    Some((ledger, kv))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kv_wrong_stream_demo_all_ok() {
+        let r = run_kv_wrong_stream_demo();
+        assert!(r.pin_ok, "grant pins on SSID 0: {r:?}");
+        assert!(r.bad_stream_refused, "SSID >= MAX_CDS → WrongStream");
+        assert!(r.no_stray_state, "refused pin adds no STE / translation");
+        assert!(r.own_pin_intact, "SSID-0 pin still walks to the KV page");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn kv_bad_grant_demo_all_ok() {
+        let r = run_kv_bad_grant_demo();
+        assert!(r.grant_ok, "registered grant attends: {r:?}");
+        assert!(r.unregistered_refused, "cap on unregistered arena → BadGrant, no pin");
+        assert!(r.wrong_kind_refused, "non-Memory cap → BadGrant on attend");
+        assert!(r.ledger_full_refused, "full ledger insert → BadGrant, existing intact");
+        assert!(r.grant_still_ok, "real grant still attends");
+        assert!(r.all_ok());
+    }
+
+    #[test]
+    fn kv_seq_mismatch_demo_all_ok() {
+        let r = run_kv_seq_mismatch_demo();
+        assert!(r.own_seq_ok, "seq-1 grant attends seq 1: {r:?}");
+        assert!(r.other_seq_refused, "seq-1 grant naming seq 2 → SeqMismatch");
+        assert!(r.other_seq_untouched, "seq-2 grant still attends; decode lacks seq-2 page");
+        assert!(r.revoked_refused, "revoked grant → Revoked for every seq");
+        assert!(r.revoke_scoped, "revoking seq 1 leaves seq 2 working");
+        assert!(r.all_ok());
+    }
 
     #[test]
     fn kv_insufficient_rights_demo_all_ok() {

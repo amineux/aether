@@ -69,6 +69,9 @@ pub const CLASSES: &[AttackClass] = &[
     AttackClass { name: "typed-window-sid", aspect: Aspect::Smmu, expected_error: "MapError::WrongStream" },
     AttackClass { name: "smmu-bad-range", aspect: Aspect::Smmu, expected_error: "MapError::BadRange" },
     AttackClass { name: "fabric-queue-full", aspect: Aspect::Fabric, expected_error: "FabricError::QueueFull" },
+    AttackClass { name: "fabric-recv-foreign", aspect: Aspect::Fabric, expected_error: "FabricError::NoSuchEndpoint" },
+    AttackClass { name: "fabric-send-no-cap", aspect: Aspect::Fabric, expected_error: "FabricError::NoSuchEndpoint" },
+    AttackClass { name: "fabric-quota-drain", aspect: Aspect::Fabric, expected_error: "HodgeError::QuotaExceeded" },
     AttackClass { name: "arena-not-owner", aspect: Aspect::Arena, expected_error: "ArenaError::NotOwner" },
     AttackClass { name: "arena-limit-leak", aspect: Aspect::Arena, expected_error: "ArenaError::ArenaLimit" },
     AttackClass { name: "kv-insufficient-rights", aspect: Aspect::Kv, expected_error: "KvError::InsufficientRights" },
@@ -221,6 +224,9 @@ impl IsolationBackend for AetherSoftBackend {
             "typed-window-sid" => window::run_typed_window_sid_demo().all_ok(),
             "smmu-bad-range" => window::run_smmu_bad_range_demo().all_ok(),
             "fabric-queue-full" => fabric::run_fabric_queue_full_demo().all_ok(),
+            "fabric-recv-foreign" => fabric::run_fabric_recv_foreign_demo().all_ok(),
+            "fabric-send-no-cap" => fabric::run_fabric_send_no_cap_demo().all_ok(),
+            "fabric-quota-drain" => fabric::run_fabric_quota_drain_demo().all_ok(),
             "arena-not-owner" => arena::run_arena_not_owner_demo().all_ok(),
             "arena-limit-leak" => arena::run_arena_limit_leak_demo().all_ok(),
             "kv-insufficient-rights" => kvfabric::run_kv_insufficient_rights_demo().all_ok(),
@@ -269,6 +275,22 @@ impl IsolationBackend for WeakSampleBackend {
     }
 }
 
+/// Bring-your-own-backend starting point: every class scores `n/a` until a
+/// team fills in its arms. Lives in `template/backend.rs` so it can be copied
+/// as one file. Integrates no runtime.
+#[path = "../template/backend.rs"]
+pub mod template;
+pub use template::TemplateBackend;
+
+/// Look up an optional extra backend by the name `make isolation-matrix
+/// BACKEND=<name>` passes. Only `template` exists today.
+pub fn extra_backend(name: &str) -> Option<Box<dyn IsolationBackend>> {
+    match name {
+        "template" => Some(Box::new(TemplateBackend)),
+        _ => None,
+    }
+}
+
 /// Build the shipped adapters: the reference backend and the example-only weak
 /// one.
 pub fn shipped_backends() -> Vec<Box<dyn IsolationBackend>> {
@@ -297,6 +319,64 @@ mod tests {
         assert!(m.count(Outcome::NotApplicable) > 0, "weak sample has an n/a class");
         assert!(!m.conformant());
         assert!(m.summary_line().contains("result=NONCONFORMANT"));
+    }
+
+    #[test]
+    fn template_scores_every_class_not_applicable() {
+        let m = Matrix::run(&TemplateBackend);
+        assert_eq!(m.total(), 15);
+        assert_eq!(m.count(Outcome::NotApplicable), 15, "{}", m.table());
+        assert_eq!(m.count(Outcome::Refused), 0);
+        assert_eq!(m.count(Outcome::Accepted), 0);
+        assert!(!m.conformant(), "an untested template must not pass");
+        assert_eq!(
+            m.summary_line(),
+            "[isolation-kit] backend=template-unimplemented classes=15 applicable=0 refused=0 accepted=0 n/a=15 result=NONCONFORMANT"
+        );
+    }
+
+    #[test]
+    fn template_has_a_commented_arm_for_every_class() {
+        let src = include_str!("../template/backend.rs");
+        for c in CLASSES {
+            assert!(src.contains(&format!("\"{}\" => Outcome::NotApplicable", c.name)), "template lacks {}", c.name);
+        }
+    }
+
+    #[test]
+    fn weak_sample_still_accepts_ten() {
+        assert_eq!(Matrix::run(&WeakSampleBackend).count(Outcome::Accepted), 10);
+    }
+
+    #[test]
+    fn aether_soft_counts_are_pinned() {
+        let m = Matrix::run(&AetherSoftBackend);
+        assert_eq!(m.count(Outcome::Refused), 15, "{}", m.table());
+        assert_eq!(m.count(Outcome::NotApplicable), 0, "{}", m.table());
+        assert_eq!(m.count(Outcome::Accepted), 0, "{}", m.table());
+        assert_eq!(
+            m.summary_line(),
+            "[isolation-kit] backend=aether-soft classes=15 applicable=15 refused=15 accepted=0 n/a=0 result=conformant"
+        );
+    }
+
+    #[test]
+    fn every_aether_soft_refusal_is_an_existing_red_team_attack() {
+        // Same catalogue `make red-team-json` checks against the text clip.
+        let tsv = include_str!("../../red-team/refusal-catalogue.tsv");
+        let attacks: Vec<&str> = tsv.lines().filter_map(|l| l.split('\t').next()).collect();
+        assert_eq!(attacks.len(), 100);
+        let m = Matrix::run(&AetherSoftBackend);
+        assert_eq!(m.count(Outcome::Refused), CLASSES.len(), "every class must be a refusal");
+        for c in CLASSES {
+            assert!(attacks.contains(&c.name), "{} is not a red-team attack", c.name);
+        }
+    }
+
+    #[test]
+    fn extra_backend_lookup() {
+        assert!(extra_backend("template").is_some());
+        assert!(extra_backend("nope").is_none());
     }
 
     #[test]

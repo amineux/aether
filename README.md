@@ -1,8 +1,24 @@
 # Aether
 
+Contributors and coding agents: follow [the shared branch and review workflow](CONTRIBUTING.md).
+
 **[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).
+
+**[LeaseLab interactive simulation](https://amineux.github.io/aether/simulation.html)** —
+explore a proposed locality-aware lease planner; adjustable assumptions, copy/local/remote
+comparison and epoch-replay sketch. [Model and validation plan](docs/research/LEASELAB.md).
+Illustrative browser model, not a hardware benchmark or kernel integration.
+
+**Check every claim with one command:** `make verify` (or
+`python3 scripts/verify.py` where GNU make is missing) re-runs the host tests,
+the diligence and red-team clips and the error-coverage matrix, then prints the
+red-team stdout sha256 and the variant counts (`variants=153 named=145
+allowlisted=8`) and fails if any of them disagrees with
+[`docs/SCOREBOARD.md`](docs/SCOREBOARD.md). Host software models only: no QEMU,
+no hardware, no performance numbers. Claim-by-claim commands, expected lines
+and what each does not prove: [`docs/business/PROVE_IT.md`](docs/business/PROVE_IT.md).
 
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
@@ -46,6 +62,7 @@ make red-team     # host diligence clip: named attacks refused (scripted stdout)
 make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 make design-win-standin # admit the IREE HAL research stand-in (not a partner)
+make eval-run     # host eval JSON: milli BW + named refusals (not a customer, not MIG)
 ```
 
 ## Why this exists
@@ -192,7 +209,7 @@ qemu-system-aarch64 \
   -no-reboot -nic none -kernel build/aether-aarch64.elf -semihosting
 ```
 
-QEMU loads the ELF at `0x40080000`. The trampoline identity-maps
+QEMU loads the ELF at `0x40200000` (2 MiB above RAM base, so QEMU can place its DTB at `0x40000000`; the kernel parses its `/memory` node). The trampoline identity-maps
 4 GiB (TTBR0, 1 GiB blocks), the same kernel self-check runs, then
 `eret` drops to EL0 `/init` at `0x42000000` (`svc` syscalls, own
 TTBR0). SoftNPU is the in-kernel virtqueue (path B), drained on the
@@ -270,6 +287,7 @@ examples/red-team        host red-team clip (`make red-team`; named attacks refu
 examples/kv-fabric      prefill→decode KV grant (`make kv-fabric`; 32-byte record, weights stay)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not a MicroPerceptron port)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
+examples/aether-eval-run host eval report (`make eval-run`; software milli BW + refusals; not a customer)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
