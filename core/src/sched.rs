@@ -58,18 +58,13 @@ impl ChipletTaskScope {
 /// Unscoped jobs are unrestricted under both modes. Strict is the default:
 /// scoped work stays on its die. Soft is the optional preference-only
 /// path (same-chiplet score + steal local-first, still allowed to cross).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChipletLocalPolicy {
     /// Score hint only. Steal may still cross chiplets (local pass first).
     Soft,
     /// Scoped jobs run only on that chiplet. Unscoped jobs are unrestricted.
+    #[default]
     Strict,
-}
-
-impl Default for ChipletLocalPolicy {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,11 +93,11 @@ pub struct Job {
 
 impl Job {
     pub fn compatible(kind: JobKind, tile: TileKind) -> bool {
-        match (kind, tile) {
-            (JobKind::Thread, TileKind::Cpu) => true,
-            (JobKind::AccelWave, TileKind::Npu | TileKind::Gpu | TileKind::Asic) => true,
-            _ => false,
-        }
+        matches!(
+            (kind, tile),
+            (JobKind::Thread, TileKind::Cpu)
+                | (JobKind::AccelWave, TileKind::Npu | TileKind::Gpu | TileKind::Asic)
+        )
     }
 
     /// Effective priority: deadline-imminent jobs sort ahead of their base prio.
