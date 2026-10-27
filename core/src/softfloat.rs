@@ -379,7 +379,7 @@ pub fn f32_to_f16(s: u32) -> u16 {
         };
         // f16 subnormal: 2^{-14} * (mant/2^10)
         // f32: 2^{unbiased} * (1.frac)
-        let shift = (14 + 13 - unbiased) as i32; // 23-bit → 10-bit + exp gap
+        let shift = 14 + 13 - unbiased; // 23-bit → 10-bit + exp gap
         if shift >= 32 {
             return sign;
         }

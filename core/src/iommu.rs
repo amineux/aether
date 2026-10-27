@@ -1444,10 +1444,8 @@ impl IommuMap {
         if self.atc_lookup(sid, iova).is_some() {
             return;
         }
-        let slot = match self.atc.iter().position(|l| l.is_none()) {
-            Some(s) => s,
-            None => 0,
-        };
+        // Free line if any; otherwise evict line 0.
+        let slot = self.atc.iter().position(|l| l.is_none()).unwrap_or(0);
         self.atc[slot] = Some(AtsLine { sid, iova, pa, len });
     }
 
