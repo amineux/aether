@@ -5,6 +5,7 @@ import pathlib
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 
@@ -134,7 +135,29 @@ class MeasurementTests(unittest.TestCase):
 
 class FailureTests(unittest.TestCase):
     def test_timeout_preserves_diagnostics(self):
-        code, out, err = run_process([sys.executable, '-c', 'import time; print("before",flush=True); time.sleep(30)'], .3)
+        # Start the deadline only after the child has emitted its diagnostic.
+        # Interpreter startup can exceed .3s on a loaded runner; timing out
+        # before the print does not test preservation of existing output.
+        with tempfile.TemporaryDirectory() as directory:
+            ready = pathlib.Path(directory) / 'ready'
+            popen = subprocess.Popen
+
+            def start_ready(*args, **kwargs):
+                proc = popen(*args, **kwargs)
+                deadline = time.monotonic() + 10
+                while not ready.exists():
+                    if proc.poll() is not None or time.monotonic() >= deadline:
+                        proc.kill()
+                        out, err = proc.communicate()
+                        self.fail(f'Child did not become ready: {out}{err}')
+                    time.sleep(.01)
+                return proc
+
+            command = [sys.executable, '-c',
+                       'import pathlib,sys,time; print("before",flush=True); '
+                       'pathlib.Path(sys.argv[1]).touch(); time.sleep(30)', str(ready)]
+            with patch('aether_eval.common.subprocess.Popen', side_effect=start_ready):
+                code, out, err = run_process(command, .3)
         self.assertEqual(124, code)
         self.assertIn('before', out)
         self.assertIn('timed out', err)
