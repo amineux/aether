@@ -236,7 +236,7 @@ impl ArenaAllocator {
             }
             // probe remaining banks in index order via free list
             for span in self.free.iter().flatten() {
-                if o.iter().any(|b| *b == Some(span.bank)) {
+                if o.contains(&Some(span.bank)) {
                     continue;
                 }
                 if n < MAX_BANKS {

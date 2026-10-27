@@ -88,7 +88,7 @@ impl SyncScope {
     /// Wire / historical values: `0`/`1` (Wave/Cu aliases) and `2` → Chiplet; `3` → Package.
     pub const fn from_u8(v: u8) -> Option<Self> {
         match v {
-            0 | 1 | 2 => Some(Self::Chiplet),
+            0..=2 => Some(Self::Chiplet),
             3 => Some(Self::Package),
             _ => None,
         }
