@@ -382,7 +382,7 @@ impl World {
 
     /// True if `pa` is inside A's canary PA window.
     fn in_a_pa(pa: u64) -> bool {
-        pa >= A_PA && pa < A_PA + A_LEN
+        (A_PA..A_PA + A_LEN).contains(&pa)
     }
 
     /// Invariant 2: everything A owns is unchanged. Real comparisons.
@@ -907,8 +907,9 @@ impl World {
                 // Independent span check: both spans inside B's sandbox.
                 let bytes = (n as u64).saturating_mul(4);
                 let inside = |base: u64| {
-                    base.checked_add(bytes)
-                        .is_some_and(|e| base >= OP_BASE && e <= OP_BASE + OP_B_SPAN)
+                    base.checked_add(bytes).is_some_and(|e| {
+                        (OP_BASE..=OP_BASE + OP_B_SPAN).contains(&base) && e <= OP_BASE + OP_B_SPAN
+                    })
                 };
                 if !(inside(src) && inside(dst)) {
                     self.escapes += 1;
