@@ -11,18 +11,44 @@ import platform
 import subprocess
 import sys
 import tempfile
+import re
 
 from evidence_io import atomic_write_text
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 COMMANDS = [
+    # Cheap (no cargo): SHAs cited in docs/business and docs/SCOREBOARD.md must be
+    # on main and within the allowed lag; see docs/business/INVESTOR_EVIDENCE.md.
+    ("evidence-freshness", [sys.executable, "scripts/check_evidence_freshness.py", "--self-test"]),
     ("host-tests", ["cargo", "test", "--workspace", "--locked"]),
     ("diligence", ["cargo", "run", "--locked", "--quiet", "-p", "aether-diligence-demo", "--bin", "diligence-demo"]),
     ("red-team", ["make", "red-team"]),
     ("kv-fabric", ["cargo", "run", "--locked", "--quiet", "-p", "aether-kv-fabric"]),
     ("partner-hello", ["cargo", "run", "--locked", "--quiet", "-p", "aether-partner-hello"]),
+    # Every row of docs/business/PROVE_IT.md: run the command, grep its line.
+    ("prove-it", [sys.executable, "scripts/prove_it.py"]),
     ("design-win-standin", ["cargo", "run", "--locked", "--quiet", "-p", "aether-design-win-check", "--", "docs/design-win/iree-hal-standin.toml"]),
+    ("eval-run", ["cargo", "run", "--locked", "--quiet", "-p", "aether-eval-run"]),
 ]
+
+
+def source_issues(metadata, commit_sha):
+    """One source identity shared by collection, freshness checks and reports."""
+    issues = []
+    for key in ('commit', 'commit_end', 'working_tree', 'working_tree_end'):
+        if metadata.get(key, {}).get('exit_code') != 0:
+            issues.append(f'Missing or failed provenance: {key}.')
+    sha = metadata.get('commit', {}).get('stdout', '').strip()
+    if not re.fullmatch(r'[0-9a-f]{40}', sha):
+        issues.append('Invalid source commit.')
+    if metadata.get('commit_end', {}).get('stdout', '').strip() != sha:
+        issues.append('Source commit changed during collection; recapture from a stable checkout.')
+    if commit_sha != sha:
+        issues.append('Freshness commit_sha does not match the measured source commit.')
+    for key in ('working_tree', 'working_tree_end'):
+        if metadata.get(key, {}).get('stdout', '').strip():
+            issues.append(f'Source tree was modified ({key}); commit and recapture.')
+    return issues
 
 
 def run(command, timeout):
@@ -75,6 +101,7 @@ def main():
         "captured_at_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "platform": platform.platform(),
         "python": sys.version,
+        "python_executable": sys.executable,
         "scope": "Host software models only; no hardware, QEMU or customer validation",
         "metadata": {}, "checks": [],
     }
@@ -87,6 +114,9 @@ def main():
                            ("cargo", ["cargo", "--version"])]:
         code, stdout, stderr = run(command, args.timeout)
         metadata["metadata"][label] = dict(exit_code=code, stdout=stdout, stderr=stderr)
+    # The commit this bundle measured; scripts/check_evidence_freshness.py
+    # compares the SHAs cited in docs/business and docs/SCOREBOARD.md to it.
+    metadata["commit_sha"] = metadata["metadata"]["commit"]["stdout"].strip()
     (output / "Cargo.lock").write_bytes((ROOT / "Cargo.lock").read_bytes())
     metadata["lockfile_sha256"] = hashlib.sha256((output / "Cargo.lock").read_bytes()).hexdigest()
     failed = any(item["exit_code"] != 0 for item in metadata["metadata"].values())
@@ -116,7 +146,8 @@ def main():
     failed |= code != 0
     code, stdout, stderr = run(["git", "rev-parse", "HEAD"], args.timeout)
     metadata["metadata"]["commit_end"] = dict(exit_code=code, stdout=stdout, stderr=stderr)
-    failed |= code != 0 or stdout.strip() != metadata["metadata"]["commit"]["stdout"].strip()
+    metadata["provenance_issues"] = source_issues(metadata["metadata"], metadata["commit_sha"])
+    failed |= bool(metadata["provenance_issues"])
     metadata["complete"] = True
     metadata["passed"] = not failed
     atomic_write_text(manifest, json.dumps(metadata, indent=2))

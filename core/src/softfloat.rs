@@ -112,7 +112,7 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         exp += 1;
     }
 
-    if exp >= 255 - F32_BIAS + 1 {
+    if exp > 255 - F32_BIAS {
         return sign | F32_POS_INF;
     }
 
@@ -156,7 +156,7 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         if sig >= ((F32_HIDDEN as u64) << 1) {
             sig >>= 1;
             exp += 1;
-            if exp >= 255 - F32_BIAS + 1 {
+            if exp > 255 - F32_BIAS {
                 return sign | F32_POS_INF;
             }
         }
@@ -379,7 +379,7 @@ pub fn f32_to_f16(s: u32) -> u16 {
         };
         // f16 subnormal: 2^{-14} * (mant/2^10)
         // f32: 2^{unbiased} * (1.frac)
-        let shift = (14 + 13 - unbiased) as i32; // 23-bit → 10-bit + exp gap
+        let shift = 14 + 13 - unbiased; // 23-bit → 10-bit + exp gap
         if shift >= 32 {
             return sign;
         }

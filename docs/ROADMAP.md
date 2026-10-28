@@ -220,11 +220,13 @@ Landed as a **documented subset**, not a general physical MM:
   map are ignored. Bitmap cap remains 128 MiB of frames.
 - Missing / empty mmap is an explicit serial fallback to the arch
   window — not a silent 128 MiB @ 16 MiB lie. RISC-V / aarch64 have
-  no Multiboot and take that fallback (no FDT parser).
+  no Multiboot; since Round 26 they parse the DTB (`core/src/fdt.rs`,
+  host-tested, 12 named refusals) and fall back to the window only
+  when it is refused.
 - Host tests in `core/src/mmap.rs`. QEMU: `[mm] mmap: multiboot1` plus
   the planned window. `make qemu-ci` greps the parse line.
 
-Still stubbed: hotplug, FDT, managing RAM past the identity
+Still stubbed: hotplug, FDT `status` / dynamic reserved pools, managing RAM past the identity
 4 GiB (HH is only a 2 GiB alias of low PA). KASLR + PIE reloc is a
 later documented subset (does not grow the physical window).
 
@@ -853,7 +855,8 @@ Search for `// STUB:` / `STUB` :
 | Item | Where | Intent |
 | --- | --- | --- |
 | F16/F32 dtypes | `core/src/accel.rs` | **done** (software IEEE F16/F32 on SoftNPU; not a tensor ISA; `UserAccelJob` still I32) |
-| Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap; no FDT) |
+| Multiboot mmap | `kernel/src/mm/mod.rs` | **done** (Multiboot1 mmap → frames; Multiboot2 parser host-tested; documented 16 MiB clip + 128 MiB cap) |
+| FDT mmap (riscv64 / aarch64) | `core/src/fdt.rs`, `kernel/src/mm/mod.rs` | **done** as a subset (Round 26): header + memreserve + `/memory*` + `/reserved-memory` `reg`; every malformed blob refuses with a named `FdtError`; `[mm] fdt mmap ok` greped on both QEMU CI boots; fixed window only on refusal. No `status`, no dynamic pools, no hotplug |
 | Higher-half + KASLR / KPTI / PCID / COW / mmap | linker / `kernel/src/mm/paging.rs` | **done** as HH + KASLR + PIE-reloc (`.rela.dyn` + unused alias unmapped) + KPTI + PCID + one-page COW subset (`USER_COW_BASE` RO until write fault) + growable anon `SYS_MMAP=11`. `fork` still stub |
 | Hardware SMMU | `core/src/iommu.rs` | Soft SMMU deepened (STE→CD→S1/S2 + ATS invalidate); program a real SMMU |
 | VirtIO-Accel QEMU device | `docs/ACCEL.md` | Path B landed (in-kernel BAR + golden MMIO trace). Path A optional later |

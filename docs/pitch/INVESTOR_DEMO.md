@@ -35,8 +35,11 @@ status. The command packet is frozen; no vendor integration is implied.
 These are deterministic software-model demonstrations. They do not measure
 accelerator performance or prove isolation on silicon. Review the security
 issues for the exact source revision before describing its security posture.
-As of 5 October 2026, PR #183 remains a separate proposed unmap security fix;
-this evaluation work does not merge it or represent it as landed on main.
+Tenant-checked unmap was integrated through [PR #250](https://github.com/amineux/aether/pull/250).
+That software fix does not establish hardware enforcement. The separate
+[real IREE CPU toolkit](../../tools/runtime-eval/README.md) runs synthetic
+workloads through IREE, outside the Aether kernel path; it is not evidence of
+production integration.
 
 ## 3:00 — Explain the commercial test
 
@@ -102,3 +105,7 @@ Renderer exit codes: 0 = consistent host evidence, 1 = failed verification,
 2 = unreadable/malformed evidence or output failure. If output cannot be
 replaced (for example, directory permissions), the CLI warns not to use an
 existing report. Checksums remain consistency checks, not attestation.
+
+The collector and report require clean start/end working trees, matching
+start/end commits and the same top-level `commit_sha` used by the freshness
+checker. A dirty or contradictory capture preserves its logs and exits nonzero.

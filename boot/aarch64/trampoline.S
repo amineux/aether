@@ -1,10 +1,16 @@
 /* Aether aarch64 trampoline: QEMU virt EL1/EL2 -> TTBR identity map -> kmain.
  *
  * QEMU -machine virt,gic-version=2 -cpu cortex-a72 -kernel ELF loads us at
- * 0x40080000 (x0=dtb). We drop to EL1 if needed, park extra PEs, identity-map
- * 4 GiB (1 GiB blocks), and call Rust kmain. PL011 UART is at 0x09000000.
+ * 0x40200000. For an ELF (non-Linux) image QEMU sets no boot registers, so
+ * x0 is 0; it places the DTB at the RAM base 0x40000000 only if the blob
+ * fits below the image (virt's DTB is 1 MiB unpacked, which is why we are
+ * not at 0x40080000 any more). We stash x0 in BOOT_DTB_PA anyway (a Linux-
+ * style loader would pass the DTB there); kernel/src/mm falls back to the
+ * RAM base when it is 0. We drop to EL1 if needed, park extra PEs,
+ * identity-map 4 GiB (1 GiB blocks), and call Rust kmain. PL011 UART is at
+ * 0x09000000.
  *
- * EL0 /init is entered later from kmain via eret. No GICv3, no FDT.
+ * EL0 /init is entered later from kmain via eret. No GICv3.
  */
     .section .text.boot, "ax"
     .align 2
@@ -14,6 +20,10 @@ _start:
     mrs     x1, mpidr_el1
     and     x1, x1, #0xff
     cbnz    x1, .park
+
+    /* Boot PE only: keep x0 (DTB pointer from a Linux-style loader, else 0). */
+    ldr     x2, =BOOT_DTB_PA
+    str     x0, [x2]
 
     /* EL2 -> EL1 if QEMU handed us the hypervisor. */
     mrs     x1, CurrentEL

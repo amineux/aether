@@ -1,0 +1,100 @@
+wrong-sid-crosscut	cut+smmu	bind_place (SpectralCut) + IommuMap::walk / resolve_result	CutError::CrossCut + MapError::StreamAbort + MapError::WrongStream
+softcmdfirewall	command	SoftCmdFirewall::ingest (copy-then-validate)	none: mutated command is not executed (validated copy runs)
+softsfi-oob	sfi	SoftSFI verify (load outside the SID window)	SfiError::Oob
+softsfi-bad-insn	sfi	SoftSFI verify (malformed program / sandbox range)	SfiError::BadInsn
+softnoi-is	noi	SoftNoI::admit (projected interference > 1.5)	NoiError::OverBudget
+pasid-stale	smmu	IommuMap::resolve_ats after unmap without invalidate, then flush	MapError::NotMapped
+blast-hops	partition	PartitionProfile::admit_hops	PartitionError::BlastRadius
+blast-nodes	partition	PartitionProfile::admit_nodes	PartitionError::BlastRadius
+bank-color	color	admit_wave (foreign bank)	ColorError::ForeignBank
+uncolored-compute	color	admit_wave (color=None)	ColorError::Uncolored
+foreign-tenant-color	color	admit_wave (foreign tenant)	ColorError::ForeignTenant
+qos-credits	fence	Timeline::submit (in_flight >= credits)	PartitionError::CreditExhausted
+fence-not-ready	fence	Timeline::wait (issued, not retired)	PartitionError::FenceNotReady
+outside-slice	partition	PartitionProfile::admit_chiplet	PartitionError::OutsideSlice
+arena-not-owner	arena	ArenaAllocator handoff by a non-owner	ArenaError::NotOwner
+arena-limit-leak	arena	ArenaAllocator::alloc on a full arena table	ArenaError::ArenaLimit
+arena-bad-align	arena	ArenaAllocator::alloc (non-power-of-two align)	ArenaError::BadAlign
+arena-unknown-bank	arena	ArenaAllocator::new (empty or > MAX_BANKS)	ArenaError::UnknownBank
+user-copy-straddle	syscall	sysnr::user_pages_ok (tail page unmapped)	none: Err(first unmapped page address), no byte copied
+map-user-phys	syscall	sysnr::map_pin_addr (kernel / foreign-arena address)	SysError::Inval
+silent-remote	space	map_place / map_fabric (remote memory)	SpaceError::SilentRemoteLoad
+space-not-mappable	space	map_place (local Streaming / Scratch)	SpaceError::NotMappable
+typed-window-sid	smmu	IommuMap::map_window_sid (stream mismatch)	MapError::WrongStream
+hbm-bw	partition	SoftHbmBwMeter::charge (over bw_mbps)	PartitionError::QosExceeded
+xqueue-sid-override	command	Soft-CP stamp_queue_sid (second SID while pending)	HalError::Busy
+set-sid-unbound	command	Soft-CP set_sid / submit without a Bound SID	HalError::Fault
+kv-insufficient-rights	kv	KV attend / pin_kv without READ / MAP	KvError::InsufficientRights
+kv-seq-mismatch	kv	KV attend on another sequence / after revoke	KvError::SeqMismatch + KvError::Revoked
+kv-wrong-stream	kv	pin_kv on SSID >= MAX_CDS	KvError::WrongStream
+kv-bad-grant	kv	KV grant on unregistered arena / non-Memory cap / full ledger	KvError::BadGrant
+submit-sid	smmu	IommuMap::resolve_submit without SET_SID	MapError::SubmitSid
+sid-budget	smmu	IommuMap::bind_stream over SID_BUDGET_PER_TENANT	MapError::SidBudget
+stage2-fault	smmu	IommuMap::unbind_stage2 then nested walk	MapError::Stage2Fault
+softnoi-exhausted	noi	SoftNoI::admit past MAX_NOI_TENANTS	NoiError::Exhausted
+softnoi-unbound	noi	SoftNoI::release (unknown / already released)	NoiError::Unbound
+softnoi-ring-exhausted	noi	SoftNoI::admit_class (Curl / Ring)	NoiError::RingExhausted
+hodge-harmonic-tree	hodge	OperatorKernelHandle::bind(Tree, Harmonic)	HodgeError::HarmonicTreeReduce
+hodge-curl-tree	hodge	OperatorKernelHandle::bind(Tree, Curl)	HodgeError::CurlOnTree
+hodge-quota	hodge	HodgeQuota::admit (empty quota)	HodgeError::QuotaExceeded
+fabric-queue-full	fabric	Fabric::send_as past MAX_QUEUE / to a closed endpoint	FabricError::QueueFull + FabricError::Closed
+fabric-payload-too-large	fabric	Message::new past MAX_MSG_BYTES	FabricError::PayloadTooLarge
+fabric-too-many-caps	fabric	Message::attach_cap past MAX_MSG_CAPS	FabricError::TooManyCaps
+fabric-endpoint-limit	fabric	Fabric::create_endpoint on a full table	FabricError::EndpointLimit
+fabric-slot-exhaust	fabric	Fabric::create_endpoint past MAX_ENDPOINTS_PER_TENANT	FabricError::EndpointLimit
+fabric-stale-endpoint	fabric	Fabric::send_as / recv_as / close_for on a reused EndpointId	FabricError::NoSuchEndpoint
+fabric-recv-foreign	fabric	Fabric::recv_as / pending_as by a non-owner	FabricError::NoSuchEndpoint
+fabric-send-no-cap	fabric	Fabric::send_as without owner or Endpoint+WRITE cap	FabricError::NoSuchEndpoint
+fabric-quota-drain	fabric	Fabric::send_as after the sender's Hodge budget is spent	FabricError::Hodge(HodgeError::QuotaExceeded)
+fdt-bad-magic	boot	DTB memory-map parser (header magic flipped)	FdtError::BadMagic
+fdt-truncated	boot	DTB memory-map parser (blob shorter than totalsize)	FdtError::Truncated
+fdt-bad-version	boot	DTB memory-map parser (version 16)	FdtError::BadVersion
+fdt-too-large	boot	DTB memory-map parser (totalsize past 2 MiB)	FdtError::TooLarge
+fdt-bad-offset	boot	DTB memory-map parser (strings block past totalsize)	FdtError::BadOffset
+fdt-bad-token	boot	DTB memory-map parser (undefined token)	FdtError::BadToken
+fdt-bad-string	boot	DTB memory-map parser (name offset past strings block)	FdtError::BadString
+fdt-too-deep	boot	DTB memory-map parser (nesting past FDT_MAX_DEPTH)	FdtError::TooDeep
+fdt-bad-cells	boot	DTB memory-map parser (#address-cells = 3)	FdtError::BadCells
+fdt-bad-region	boot	DTB memory-map parser (base + size overflows u64)	FdtError::BadRegion
+fdt-no-memory	boot	DTB memory-map parser (no /memory node)	FdtError::NoMemory
+fdt-too-many-regions	boot	DTB memory-map parser (17 ranges, MAX_REGIONS = 16)	FdtError::TooManyRegions
+hodge-class-unauthorized	hodge	authorize (FlowQuota badge / kind / WRITE)	HodgeError::ClassNotAuthorized
+opkernel-class-mismatch	opkernel	OperatorKernel admit_as / inject_as (wrong class)	OpKernelError::ClassMismatch
+opkernel-fabric	opkernel	OperatorKernelHandle::inject (fabric step refuses)	OpKernelError::Fabric(FabricError::PayloadTooLarge | FabricError::NoSuchEndpoint)
+firewall-ident-pa	command	SoftCmdFirewall::admit_packed (identity guest PA)	HalError::Fault
+greenctx-overcommit	greenctx	SoftGreenPool::create past the SM / WQ pool	GreenCtxError::Overcommit
+greenctx-unbound	greenctx	SoftGreenPool::migrate_to_yield (unbound queue)	GreenCtxError::Unbound
+greenctx-exhausted	greenctx	SoftGreenPool::create past MAX_GREEN_CTX	GreenCtxError::Exhausted
+greenctx-busy	greenctx	SoftGreenPool::migrate_to_yield (dest bound elsewhere)	GreenCtxError::Busy
+smmu-overlap	smmu	IommuMap::map (same-SID overlapping guest PA)	MapError::Overlap
+smmu-not-mapped	smmu	IommuMap::walk (hole in a Bound stream)	MapError::NotMapped
+smmu-wrong-stream	smmu	IommuMap::resolve_submit (armed SID != packet SID)	MapError::WrongStream
+smmu-cross-tenant	smmu	IommuMap::bind_stream (foreign tenant on a Bound STE)	MapError::CrossTenant
+smmu-stream-abort	smmu	IommuMap::walk (unbound stream)	MapError::StreamAbort
+set-sid-cross-tenant	smmu	Soft-SMMU set_sid (foreign tenant on a Bound SID)	MapError::CrossTenant
+softcct-incorrect-elision	chipsync	SoftCCT should_elide (cross-chiplet consume)	none: elision refused (should_elide returns false, fence kept)
+softcct-credit-exhausted	chipsync	SoftCCT record past MAX_CCT_ENTRIES	PartitionError::CreditExhausted
+chipsync-unbound	chipsync	SoftChipletSync::arrive (arrived >= expected)	PartitionError::Unbound
+opinject-stale-version	opinject	OperatorInject::submit (wrong OpCall version)	InjectError::StaleVersion
+opinject-oob	opinject	OperatorInject::submit (span outside SidSandbox)	InjectError::Oob
+opinject-not-running	opinject	OperatorInject::submit (worker not running)	InjectError::NotRunning
+opinject-busy	opinject	OperatorInject::start (already running)	InjectError::Busy
+opinject-unknown-slot	opinject	OperatorInject::submit (empty / mismatched slot)	InjectError::UnknownSlot
+opinject-bad-arg	opinject	OpTable::publish / decode / submit (bad slot or n == 0)	InjectError::BadArg
+smmu-bad-range	smmu	IommuMap::map_window (zero / overflow) + bind_mm(MmId(0))	MapError::BadRange
+smmu-table-full	smmu	IommuMap::map past MAX_MAPS / bind_stream past MAX_STES	MapError::TableFull
+smmu-ssid-abort	smmu	Soft-SMMU bind_stream / map / walk with SSID >= MAX_CDS	MapError::StreamAbort
+smmu-window-full	smmu	Soft-SMMU alloc_in_window past the per-CD IOVA window	MapError::TableFull
+smmu-unmap-cross-tenant	smmu	Soft-SMMU unmap with a foreign Memory+MAP capability	MapError::CrossTenant
+cut-not-bound	cut	bind_place / bind_window without BIND	CutError::NotBound
+cut-conductance	cut	SpectralCut::from_mask / min_balanced over the conductance bound	CutError::ConductanceExceeded
+cut-empty-part	cut	SpectralCut::from_mask (mask 0 / all ones)	CutError::EmptyPart
+cut-unbalanced	cut	SpectralCut::from_mask (unbalanced partition)	CutError::Unbalanced
+cut-too-large	cut	SpectralCut::min_balanced (n > ENUM_MAX)	CutError::TooLarge
+cut-no-cut	cut	TileScheduler::bind_laplacian_cut (full table) / place_ok (unbound cut_id)	CutError::NoCut
+cut-unknown-vertex	cut	SpectralCut::allow_place (tile / bank outside the graph)	CutError::UnknownVertex
+accel-shape-overflow	accelerator	SoftNpu execute (m/n/k 0 or > 64; i32 overflow)	AccelError::BadShape + AccelError::Overflow
+accel-unsupported-dtype	accelerator	SoftNpu execute (F16 without u16 view)	AccelError::UnsupportedDType
+accel-bad-op	accelerator	SoftNpu elementwise (MatMul on the elementwise path)	AccelError::BadOp
+accel-not-found	accelerator	SoftNpuDevice probe (bad MMIO magic / qsize)	HalError::NotFound
+tenant-fuzz	fuzz	seeded fuzz over Soft SMMU / SoftGreenPool / SoftNoI / Timeline / admit_wave / OperatorInject	named variants across the fuzzed APIs (escapes= / unnamed= counted in the line)

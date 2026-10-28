@@ -58,18 +58,13 @@ impl ChipletTaskScope {
 /// Unscoped jobs are unrestricted under both modes. Strict is the default:
 /// scoped work stays on its die. Soft is the optional preference-only
 /// path (same-chiplet score + steal local-first, still allowed to cross).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum ChipletLocalPolicy {
     /// Score hint only. Steal may still cross chiplets (local pass first).
     Soft,
     /// Scoped jobs run only on that chiplet. Unscoped jobs are unrestricted.
+    #[default]
     Strict,
-}
-
-impl Default for ChipletLocalPolicy {
-    fn default() -> Self {
-        Self::Strict
-    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,11 +93,11 @@ pub struct Job {
 
 impl Job {
     pub fn compatible(kind: JobKind, tile: TileKind) -> bool {
-        match (kind, tile) {
-            (JobKind::Thread, TileKind::Cpu) => true,
-            (JobKind::AccelWave, TileKind::Npu | TileKind::Gpu | TileKind::Asic) => true,
-            _ => false,
-        }
+        matches!(
+            (kind, tile),
+            (JobKind::Thread, TileKind::Cpu)
+                | (JobKind::AccelWave, TileKind::Npu | TileKind::Gpu | TileKind::Asic)
+        )
     }
 
     /// Effective priority: deadline-imminent jobs sort ahead of their base prio.
@@ -616,6 +611,90 @@ pub fn run_chiplet_scope_demo() -> ChipletScopeReport {
     }
 }
 
+
+/// Host red-team report for scheduler NoCut refuse.
+///
+/// Sell line `[redteam] attack=cut-no-cut` — existing
+/// [`TileScheduler::bind_laplacian_cut`] / [`TileScheduler::place_ok`] only.
+/// Filling all [`MAX_CUTS_SCHED`] slots then binding again → [`CutError::NoCut`];
+/// `place_ok` with a cut_id that was never installed → [`CutError::NoCut`].
+/// An empty table still binds a laplacian cut. **Not** EmptyPart / Unbalanced /
+/// ConductanceExceeded / UnknownVertex / CrossCut / cut-not-bound; cut-only
+/// path, no SoftNoI mixing; not an EDA package solver.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CutNoCutReport {
+    /// Empty cut table: `bind_laplacian_cut` admits.
+    pub bind_ok: bool,
+    /// Full cut table: further `bind_laplacian_cut` → `NoCut`.
+    pub table_full_refused: bool,
+    /// `place_ok` with unbound cut_id → `NoCut`.
+    pub unbound_place_refused: bool,
+}
+
+impl CutNoCutReport {
+    pub fn all_ok(&self) -> bool {
+        self.bind_ok && self.table_full_refused && self.unbound_place_refused
+    }
+}
+
+/// Scheduler cut-table full / unbound cut_id → [`CutError::NoCut`].
+/// Reuses existing [`TileScheduler`] refuse paths only; no SoftNoI.
+pub fn run_cut_no_cut_demo() -> CutNoCutReport {
+    let g = AffinityGraph::qemu_package();
+    let mut empty = TileScheduler::new();
+    empty.set_graph(g);
+    let bind_ok = empty.bind_laplacian_cut(CutId(1), 400).is_ok();
+
+    let mut full = TileScheduler::new();
+    full.set_graph(AffinityGraph::qemu_package());
+    let g_fill = AffinityGraph::qemu_package();
+    let chiplet0 = 0b000111;
+    let mut filled = 0usize;
+    for i in 0..MAX_CUTS_SCHED {
+        let cut = match SpectralCut::from_mask(CutId((i as u32) + 10), &g_fill, chiplet0, 400) {
+            Ok(c) => c,
+            Err(_) => {
+                return CutNoCutReport {
+                    bind_ok: false,
+                    table_full_refused: false,
+                    unbound_place_refused: false,
+                };
+            }
+        };
+        if full.install_cut(cut) {
+            filled += 1;
+        }
+    }
+    let table_full_refused = filled == MAX_CUTS_SCHED
+        && full.bind_laplacian_cut(CutId(99), 400) == Err(CutError::NoCut);
+
+    let mut place = TileScheduler::new();
+    place.set_graph(AffinityGraph::qemu_package());
+    place.add_tile(TileId(0), TileKind::Cpu, BankId(0));
+    let job = Job {
+        id: 1,
+        kind: JobKind::Thread,
+        tile_hint: None,
+        bank_affinity: None,
+        priority: 0,
+        deadline_ticks: None,
+        tenant: 1,
+        cut_id: Some(42),
+        phase: Phase::Compute,
+        partition_id: None,
+        fence_id: None,
+        arena_color: None,
+        chiplet_scope: None,
+    };
+    let unbound_place_refused = place.place_ok(&job, TileId(0)) == Err(CutError::NoCut);
+
+    CutNoCutReport {
+        bind_ok,
+        table_full_refused,
+        unbound_place_refused,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,6 +705,16 @@ mod tests {
         s.add_tile(TileId(1), TileKind::Cpu, BankId(1));
         s.add_tile(TileId(2), TileKind::Npu, BankId(0));
         s
+    }
+
+
+    #[test]
+    fn cut_no_cut_demo_all_ok() {
+        let r = run_cut_no_cut_demo();
+        assert!(r.bind_ok, "empty table bind_laplacian_cut admits: {r:?}");
+        assert!(r.table_full_refused, "full cut table → CutError::NoCut");
+        assert!(r.unbound_place_refused, "unbound cut_id place_ok → CutError::NoCut");
+        assert!(r.all_ok());
     }
 
     #[test]

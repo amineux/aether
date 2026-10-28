@@ -353,13 +353,11 @@ impl SoftNoI {
     }
 
     fn place(&mut self, tenant: TenantId, demand: u32, class: FlowClass) -> Result<(), NoiError> {
-        for slot in &mut self.slots {
-            if let Some(occ) = slot {
-                if occ.tenant == tenant {
-                    occ.demand = demand;
-                    occ.class = class;
-                    return Ok(());
-                }
+        for occ in self.slots.iter_mut().flatten() {
+            if occ.tenant == tenant {
+                occ.demand = demand;
+                occ.class = class;
+                return Ok(());
             }
         }
         for slot in &mut self.slots {
@@ -426,15 +424,13 @@ fn projected_sum(noi: &SoftNoI, tenant: TenantId, demand: u32) -> Result<u32, No
     let mut sum = 0u32;
     let mut found = false;
     let mut used = 0u32;
-    for slot in &noi.slots {
-        if let Some(occ) = slot {
-            used += 1;
-            if occ.tenant == tenant {
-                sum = sum.saturating_add(demand);
-                found = true;
-            } else {
-                sum = sum.saturating_add(occ.demand);
-            }
+    for occ in noi.slots.iter().flatten() {
+        used += 1;
+        if occ.tenant == tenant {
+            sum = sum.saturating_add(demand);
+            found = true;
+        } else {
+            sum = sum.saturating_add(occ.demand);
         }
     }
     if !found {
@@ -455,17 +451,15 @@ fn projected_ring(
     let mut sum = 0u32;
     let mut found = false;
     let mut used = 0u32;
-    for slot in &noi.slots {
-        if let Some(occ) = slot {
-            used += 1;
-            if occ.tenant == tenant {
-                found = true;
-                if class == FlowClass::Curl {
-                    sum = sum.saturating_add(demand);
-                }
-            } else if occ.class == FlowClass::Curl {
-                sum = sum.saturating_add(occ.demand);
+    for occ in noi.slots.iter().flatten() {
+        used += 1;
+        if occ.tenant == tenant {
+            found = true;
+            if class == FlowClass::Curl {
+                sum = sum.saturating_add(demand);
             }
+        } else if occ.class == FlowClass::Curl {
+            sum = sum.saturating_add(occ.demand);
         }
     }
     if !found {

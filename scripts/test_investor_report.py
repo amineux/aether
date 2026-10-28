@@ -5,6 +5,7 @@ import io
 from unittest.mock import patch
 import json
 import pathlib
+import sys
 import tempfile
 import unittest
 
@@ -18,6 +19,8 @@ class ReportTests(unittest.TestCase):
         self.bundle = pathlib.Path(self.tmp.name)
         (self.bundle / 'Cargo.lock').write_bytes(b'lock')
         self.data = dict(schema_version=3, complete=True, passed=True,
+                         commit_sha='a' * 40,
+                         python_executable=sys.executable,
                          lockfile_sha256=hashlib.sha256(b'lock').hexdigest(),
                          metadata={key: dict(exit_code=0, stdout='', stderr='') for key in
                                    ('commit', 'commit_end', 'working_tree', 'working_tree_end', 'cargo', 'rustc')}, checks=[])
@@ -71,7 +74,17 @@ class ReportTests(unittest.TestCase):
         self.assertTrue(self.validate())
 
     def test_unvalidated_redteam_command_rejected(self):
-        self.data['checks'][2]['command'] = ['true']
+        next(c for c in self.data['checks'] if c['name'] == 'red-team')['command'] = ['true']
+        self.assertTrue(self.validate())
+
+    def test_capture_interpreter_path_is_portable_but_arguments_are_exact(self):
+        self.data['python_executable'] = '/capture-host/venv/bin/python3'
+        for check in self.data['checks']:
+            if check['command'][0] == sys.executable:
+                check['command'] = [self.data['python_executable'], *check['command'][1:]]
+        self.assertEqual([], self.validate())
+        check = next(c for c in self.data['checks'] if c['name'] == 'prove-it')
+        check['command'] = [self.data['python_executable'], '-c', 'print("PASS")']
         self.assertTrue(self.validate())
 
     def test_lockfile_integrity(self):
@@ -131,6 +144,13 @@ class ReportTests(unittest.TestCase):
     def test_clean_commit_change_is_not_verified(self):
         self.data['metadata']['commit_end']['stdout'] = 'b' * 40
         self.assertTrue(self.validate())
+
+    def test_freshness_source_must_match_measured_source(self):
+        for value in (None, '', 'b' * 40, False, ['a' * 40]):
+            with self.subTest(value=value):
+                self.data['commit_sha'] = value
+                issues = self.validate()
+                self.assertTrue(any('commit_sha' in issue for issue in issues))
 
     def test_old_schema_requires_recapture(self):
         self.data['schema_version'] = 2

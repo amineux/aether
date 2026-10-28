@@ -9,10 +9,9 @@ import hashlib
 import html
 import json
 import pathlib
-import re
 import sys
 
-from collect_evidence import COMMANDS
+from collect_evidence import COMMANDS, source_issues
 from evidence_io import atomic_write_text
 
 
@@ -68,26 +67,27 @@ def validate(bundle):
     if data.get('complete') is not True or data.get('passed') is not True:
         issues.append('Evidence collection failed or is incomplete.')
     meta = data.get('metadata', {})
-    for key in ('commit', 'commit_end', 'working_tree', 'working_tree_end', 'rustc', 'cargo'):
+    issues.extend(source_issues(meta, data.get('commit_sha')))
+    for key in ('rustc', 'cargo'):
         record = meta.get(key, {})
         if record.get('exit_code') != 0:
             issues.append(f'Missing or failed provenance: {key}.')
-    sha = meta.get('commit', {}).get('stdout', '').strip()
-    if not re.fullmatch(r'[0-9a-f]{40}', sha):
-        issues.append('Invalid source commit.')
-    if meta.get('commit_end', {}).get('stdout', '').strip() != sha:
-        issues.append('Source commit changed during collection; recapture from a stable checkout.')
     for key in ('rustc', 'cargo'):
         if not meta.get(key, {}).get('stdout', '').strip():
             issues.append(f'Missing toolchain version: {key}.')
-    for key in ('working_tree', 'working_tree_end'):
-        if meta.get(key, {}).get('stdout', '').strip():
-            issues.append(f'Source tree was modified ({key}); commit and recapture.')
     lock = bundle / 'Cargo.lock'
     if not lock.is_file() or hashlib.sha256(lock.read_bytes()).hexdigest() != data.get('lockfile_sha256'):
         issues.append('Cargo.lock is missing or changed.')
     checks = data.get('checks', [])
     expected = dict(COMMANDS)
+    # The interpreter path belongs to the capture host, not the rendering host.
+    # Keep every script and argument exact while validating against that path.
+    executable = data.get('python_executable')
+    if not isinstance(executable, str) or not pathlib.PurePosixPath(executable).is_absolute():
+        issues.append('Missing or invalid capture Python executable; recapture the bundle.')
+    else:
+        expected = {name: [executable, *command[1:]] if command[0] == sys.executable else command
+                    for name, command in COMMANDS}
     if [c.get('name') for c in checks] != list(expected):
         issues.append('Required checks are missing, duplicated or out of order.')
     for check in checks:

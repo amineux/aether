@@ -1,12 +1,14 @@
 # Aether
 
+Contributors and coding agents: follow [the shared branch and review workflow](CONTRIBUTING.md).
+
 **[Marketing site](https://amineux.github.io/aether/)** — vision, architecture
 visuals, two-year roadmap. Static HTML from [`site/`](site/); published by
 GitHub Actions to Pages (kernel `docs/` are untouched).
 
 **A capability-based isolation prototype for shared AI accelerators.**
 
-The initial buyer is a small accelerator/NPU company building a runtime that
+The initial buyer hypothesis is a small accelerator/NPU company building a runtime that
 must contain workload faults and protect tenant memory. Aether provides
 executable software models, named refusal tests and a frozen command interface
 for evaluating those boundaries.
@@ -26,7 +28,7 @@ revenue, hardware enforcement and production readiness are unverified.
 ## Run the investor evaluation
 
 Requires Git, Python 3, GNU Make and a Rust toolchain compatible with the
-workspace (Rust 1.83+ on x86_64 Linux). No accelerator hardware or QEMU is
+workspace (current stable Rust on x86_64 Linux). No accelerator hardware or QEMU is
 required for this host evaluation.
 
 ```bash
@@ -64,6 +66,19 @@ coordinated specification/implementation update.
 
 <details>
 <summary><strong>Technical reference, research demos and historical roadmaps</strong></summary>
+**[LeaseLab interactive simulation](https://amineux.github.io/aether/simulation.html)** —
+explore a proposed locality-aware lease planner; adjustable assumptions, copy/local/remote
+comparison and epoch-replay sketch. [Model and validation plan](docs/research/LEASELAB.md).
+Illustrative browser model, not a hardware benchmark or kernel integration.
+
+**Check every claim with one command:** `make verify` (or
+`python3 scripts/verify.py` where GNU make is missing) re-runs the host tests,
+the diligence and red-team clips and the error-coverage matrix, then prints the
+red-team stdout sha256 and the variant counts (`variants=153 named=145
+allowlisted=8`) and fails if any of them disagrees with
+[`docs/SCOREBOARD.md`](docs/SCOREBOARD.md). Host software models only: no QEMU,
+no hardware, no performance numbers. Claim-by-claim commands, expected lines
+and what each does not prove: [`docs/business/PROVE_IT.md`](docs/business/PROVE_IT.md).
 
 **Sell pack (one page):** [`docs/SELL_PACK.md`](docs/SELL_PACK.md) —
 what you get today. Commands that exist. Ask: bring your opcode table.
@@ -107,6 +122,7 @@ make red-team     # host diligence clip: named attacks refused (scripted stdout)
 make kv-fabric    # prefill → decode KV grant (32B on the fabric; weights stay)
 make design-win-check # admit a filled DESIGN_WIN worksheet (no QEMU)
 make design-win-standin # admit the IREE HAL research stand-in (not a partner)
+make eval-run     # host eval JSON: milli BW + named refusals (not a customer, not MIG)
 ```
 
 ## Why this exists
@@ -253,7 +269,7 @@ qemu-system-aarch64 \
   -no-reboot -nic none -kernel build/aether-aarch64.elf -semihosting
 ```
 
-QEMU loads the ELF at `0x40080000`. The trampoline identity-maps
+QEMU loads the ELF at `0x40200000` (2 MiB above RAM base, so QEMU can place its DTB at `0x40000000`; the kernel parses its `/memory` node). The trampoline identity-maps
 4 GiB (TTBR0, 1 GiB blocks), the same kernel self-check runs, then
 `eret` drops to EL0 `/init` at `0x42000000` (`svc` syscalls, own
 TTBR0). SoftNPU is the in-kernel virtqueue (path B), drained on the
@@ -331,6 +347,7 @@ examples/red-team        host red-team clip (`make red-team`; named attacks refu
 examples/kv-fabric      prefill→decode KV grant (`make kv-fabric`; 32-byte record, weights stay)
 examples/accel-client    doorbell client: same frozen IreeHalCmd (second caller; not a MicroPerceptron port)
 examples/design-win-check filled DESIGN_WIN worksheet checker (`make design-win-check`)
+examples/aether-eval-run host eval report (`make eval-run`; software milli BW + refusals; not a customer)
 examples/partner-hello  clone-and-run frozen IreeHalCmd (host; no QEMU rebuild)
 kernel/          freestanding kernel (x86_64 ring-3 + riscv64 U-mode /init + aarch64 EL0 /init)
 user/init/       `/init` (static ELF64; x86 @ 0x2000000, riscv @ 0x82000000, aarch64 @ 0x42000000)
@@ -455,6 +472,15 @@ Sep 2026 → Mar 2027 record (M0–M6 landed). Horizon:
 - [docs/TWO_YEAR_PLAN.md](docs/TWO_YEAR_PLAN.md) — Kernel horizon Sep 2026 → Sep 2028
 - [docs/bringup/BRINGUP.md](docs/bringup/BRINGUP.md) — Soft SMMU dump/replay kit (software tables)
 - [docs/YEAR2_PLAN.md](docs/YEAR2_PLAN.md) — historical Falsifier track through PR #37 + SpecForge appendix
+
+## External runtime evaluation
+
+The [installable evaluation toolkit](tools/runtime-eval/README.md) compiles and
+runs two workloads through the real IREE CPU runtime, measures them alone and
+together, checks correctness and input rejection, and saves exact binaries and
+inputs for replay. It runs on Linux with Python 3.12+ and needs no Rust, QEMU or
+accelerator hardware. This is an external-runtime measurement adapter; it does
+not connect IREE to the Aether kernel or establish hardware isolation.
 
 ## Website
 

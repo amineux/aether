@@ -41,10 +41,45 @@ class EvidenceTests(unittest.TestCase):
         self.assertTrue(manifest["checks"][0]["missing_expected_lines"])
 
     def test_success_is_marked_complete(self):
-        code, manifest = self.capture(lambda command, timeout: (0, "ok", ""))
+        code, manifest = self.capture(self.clean_result)
         self.assertEqual(code, 0)
         self.assertTrue(manifest["complete"])
         self.assertTrue(manifest["passed"])
+
+    @staticmethod
+    def clean_result(command, timeout):
+        if command == ['git', 'rev-parse', 'HEAD']:
+            return 0, 'a' * 40, ''
+        if command == ['git', 'status', '--porcelain']:
+            return 0, '', ''
+        return 0, 'ok', ''
+
+    def test_dirty_start_or_end_refuses_without_losing_logs(self):
+        for dirty_call in (1, 2):
+            calls = 0
+            def result(command, timeout):
+                nonlocal calls
+                if command == ['git', 'status', '--porcelain']:
+                    calls += 1
+                    return 0, ' M core/src/lib.rs' if calls == dirty_call else '', ''
+                return self.clean_result(command, timeout)
+            with self.subTest(dirty_call=dirty_call):
+                code, manifest = self.capture(result)
+                self.assertEqual(1, code)
+                self.assertTrue(manifest['complete'])
+                self.assertFalse(manifest['passed'])
+                self.assertTrue(manifest['checks'][0]['passed'])
+                self.assertIn('logs', manifest['checks'][0])
+                self.assertTrue(manifest['provenance_issues'])
+
+    def test_invalid_commit_refuses_even_when_git_exits_zero(self):
+        def result(command, timeout):
+            if command == ['git', 'rev-parse', 'HEAD']:
+                return 0, 'not-a-commit', ''
+            return self.clean_result(command, timeout)
+        code, manifest = self.capture(result)
+        self.assertEqual(1, code)
+        self.assertFalse(manifest['passed'])
 
     def test_missing_metadata_fails_bundle(self):
         code, manifest = self.capture(lambda command, timeout:
@@ -52,6 +87,14 @@ class EvidenceTests(unittest.TestCase):
                                       else (0, "ok", ""))
         self.assertEqual(code, 1)
         self.assertFalse(manifest["passed"])
+
+    def test_eval_run_command_is_collected(self):
+        names = [name for name, _command in evidence.COMMANDS]
+        self.assertIn("eval-run", names)
+        command = dict(evidence.COMMANDS)["eval-run"]
+        self.assertEqual(command[0], "cargo")
+        self.assertIn("--locked", command)
+        self.assertIn("aether-eval-run", command)
 
     def test_missing_executable_is_recorded(self):
         with patch("subprocess.Popen", side_effect=FileNotFoundError("missing cargo")):

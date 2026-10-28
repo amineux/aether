@@ -1,7 +1,7 @@
 //! Kernel objects the syscall gate touches: caps, fabric, arenas, SoftNPU.
 
 use aether_core::accel::{AccelJobDesc, AccelOp};
-use aether_core::arena::{Arena, ArenaAllocator, ArenaRequest};
+use aether_core::arena::{Arena, ArenaAllocator, ArenaId, ArenaRequest};
 use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
 use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
@@ -45,6 +45,9 @@ struct Inner {
     completion: Option<UserCompletion>,
     last_arena: Option<Arena>,
     mapped_va: u64,
+    /// Memory+MAP cap used for the last `sys_map` pin; `sys_unmap` presents
+    /// it so unmap is tenant-checked (issue #161). Not a new syscall field.
+    mapped_cap: Option<Capability>,
     part: PartitionProfile,
     timeline: Timeline,
 }
@@ -125,6 +128,7 @@ pub fn init() {
         completion: None,
         last_arena: None,
         mapped_va: 0,
+        mapped_cap: None,
         part,
         timeline,
     });
@@ -156,7 +160,8 @@ pub fn kernel_send_ping() -> bool {
         Ok(m) => m,
         Err(_) => return false,
     };
-    let ok = with(|w| w.fabric.send(msg).is_ok());
+    // Kernel ping on tenant 1's own endpoint, through the checked path.
+    let ok = with(|w| w.fabric.send_as(&w.caps, msg).is_ok());
     if ok {
         if let Some(tid) = task::blocked_recv_thread(ep.0) {
             let buf = task::take_user_buf(tid);
@@ -275,24 +280,29 @@ fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Endpoint, CapRights::WRITE)
+            .require(cptr, CapKind::Endpoint, CapRights::WRITE)
             .map(|c| (c.object, c.badge))
             .map_err(|_| SysError::NoCap)
     })?;
     let m = crate::syscall::copy_user_ipc(msg_ptr)?;
     let dest = EndpointId(cap.0);
+    // Sender tag is the calling table's owner, never caller-chosen.
+    let caller = with(|w| w.caps.owner());
     let msg = Message::new(
         dest,
         if m.badge != 0 { m.badge } else { cap.1 },
         MsgFlags(m.flags),
         ChipletRoute::LOCAL,
-        TenantId(1),
+        caller,
         m.payload(),
     )
     .map_err(|_| SysError::Inval)?;
-    with(|w| w.fabric.send(msg)).map_err(|e| match e {
+    // Checked send: caller owns `dest` or holds Endpoint+WRITE on it;
+    // Hodge quota is charged to the caller's own per-tenant budget.
+    with(|w| w.fabric.send_as(&w.caps, msg)).map_err(|e| match e {
         FabricError::QueueFull => SysError::Again,
         _ => SysError::Inval,
     })?;
@@ -312,14 +322,16 @@ pub fn sys_recv(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let object = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Endpoint, CapRights::READ)
+            .require(cptr, CapKind::Endpoint, CapRights::READ)
             .map(|c| c.object)
             .map_err(|_| SysError::NoCap)
     })?;
     crate::syscall::copy_to_user(out_ptr, core::mem::size_of::<UserIpcMsg>() as u64)?;
-    match with(|w| w.fabric.recv(EndpointId(object))) {
+    // Checked recv: only the endpoint's owner dequeues.
+    match with(|w| w.fabric.recv_as(w.caps.owner(), EndpointId(object))) {
         Ok(got) => {
             copy_ipc_out(out_ptr, got.header.badge, got.header.flags.0, got.payload())?;
             Ok(0)
@@ -334,17 +346,22 @@ pub fn sys_recv(
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::Memory, CapRights::MAP)
+            .require(cptr, CapKind::Memory, CapRights::MAP)
             .copied()
             .map_err(|_| SysError::NoCap)
     })?;
     let arena = with(|w| {
-        w.last_arena
-            .filter(|a| a.id.0 == cap.object)
-            .ok_or(SysError::Inval)
+        w.arenas
+            .get(ArenaId(cap.object))
+            .copied()
+            .map_err(|_| SysError::Inval)
     })?;
+    if arena.owner_tenant != Some(cap.tenant.0) {
+        return Err(SysError::NoCap);
+    }
     // The pinned physical address is derived only from the caller's own
     // arena capability. A caller-supplied address other than the arena's
     // own base is refused (would otherwise pin — and on x86 user-map —
@@ -356,7 +373,10 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
             .map_err(|_| SysError::Fault)
     })?;
     paging::allow_user_2m(va);
-    with(|w| w.mapped_va = iova.0);
+    with(|w| {
+        w.mapped_va = iova.0;
+        w.mapped_cap = Some(cap);
+    });
     write_str("[mm] iommu map mem cptr pa=");
     write_hex(va);
     write_str(" iova=");
@@ -367,36 +387,41 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
+    // this is not munmap of `SYS_MMAP` pages. The Result is the existing
+    // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
+    // TODO(sys_unmap): World stores only the last `sys_map` Memory+MAP cap.
+    // A second pin cannot be named. Do not add a syscall for that.
     with(|w| {
-        let _ = w.npu.unmap(PhysAddr(vaddr));
-    });
-    Ok(0)
+        let cap = w.mapped_cap.ok_or(SysError::NoCap)?;
+        // A cap authorizes this tenant's pins, not just its arena object.
+        // Keep the one-pin syscall contract: refusing another address must
+        // not clear the stored authority for the tracked pin.
+        if vaddr != w.mapped_va {
+            return Err(SysError::Fault);
+        }
+        w.npu
+            .unmap_with_cap(&cap, PhysAddr(vaddr))
+            .map_err(|_| SysError::Fault)?;
+        w.mapped_va = 0;
+        w.mapped_cap = None;
+        Ok(0)
+    })
 }
 
 pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysError> {
     if size == 0 || size > 64 * 1024 {
         return Err(SysError::Inval);
     }
-    let pref = if bank == 0 {
-        Some(BankId(0))
-    } else {
-        Some(BankId(bank as u8))
-    };
-    let arena = with(|w| {
-        w.arenas
-            .alloc(ArenaRequest::tensor(size, pref).for_tenant(TenantId(1)))
-            .map_err(|_| SysError::Inval)
-    })?;
-    let cptr = with(|w| {
+    // Reject out-of-width values rather than silently selecting bank 0 for 256.
+    let bank = u8::try_from(bank).map_err(|_| SysError::Inval)?;
+    let pref = Some(BankId(bank));
+    let (arena, cptr) = with(|w| {
+        let (arena, cptr) = w.arenas
+            .alloc_with_cap(&mut w.caps, ArenaRequest::tensor(size, pref))
+            .map_err(|_| SysError::Inval)?;
         w.last_arena = Some(arena);
-        w.caps
-            .mint(Capability::new(
-                CapKind::Memory,
-                CapRights::MEM_FULL,
-                arena.id.0,
-                TenantId(1),
-            ))
-            .map_err(|_| SysError::Inval)
+        Ok::<_, SysError>((arena, cptr))
     })?;
     write_str("[mm] arena_alloc cptr=");
     write_u64(cptr.0 as u64);
@@ -413,9 +438,10 @@ fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::AccelQueue, CapRights::SUBMIT)
+            .require(cptr, CapKind::AccelQueue, CapRights::SUBMIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
     })?;
@@ -478,9 +504,10 @@ pub fn sys_accel_wait(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps
-            .require(CPtr(cptr as u16), CapKind::AccelQueue, CapRights::WAIT)
+            .require(cptr, CapKind::AccelQueue, CapRights::WAIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
     })?;

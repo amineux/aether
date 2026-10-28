@@ -95,6 +95,16 @@ impl<M: DmaView> PathABar<M> {
         Ok(region.iova)
     }
 
+    /// Tenant-checked unmap on the path-A SID (Memory+MAP). Another
+    /// tenant's pin is refused (`MapError::CrossTenant` → `HalError::Fault`)
+    /// and left mapped.
+    pub fn unmap_with_cap(&mut self, cap: &Capability, iova: PhysAddr) -> Result<(), HalError> {
+        self.iommu
+            .unmap_stream(cap, self.sid.raw(), iova)
+            .map(|_| ())
+            .map_err(map_hal_error)
+    }
+
     /// Fault injection: next `service` DMA walks `sid` instead of the
     /// bound path-A SID. Not a public submit path.
     pub fn inject_dma_sid(&mut self, sid: StreamId) {
@@ -233,10 +243,9 @@ impl<M: DmaView> AccelDevice for PathABar<M> {
     }
 
     fn unmap(&mut self, iova: PhysAddr) -> Result<(), HalError> {
-        self.iommu
-            .unmap_stream(self.sid.raw(), iova)
-            .map(|_| ())
-            .map_err(map_hal_error)
+        // Tenant-less unmap is refused (issue #161). Use [`Self::unmap_with_cap`].
+        let _ = iova;
+        Err(HalError::NoMemoryCap)
     }
 
     fn translate(&self, guest_pa: PhysAddr) -> Option<PhysAddr> {
