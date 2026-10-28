@@ -100,7 +100,8 @@ class CollectRecordsShaTests(unittest.TestCase):
             output = pathlib.Path(directory) / "bundle"
             with patch("sys.argv", ["collect_evidence", "--output", str(output)]), \
                  patch.object(evidence, "run", side_effect=lambda c, t:
-                              (0, sha + "\n" if c[:2] == ["git", "rev-parse"] else "ok", "")), \
+                              (0, sha + "\n" if c[:2] == ["git", "rev-parse"] else
+                               "" if c[:2] == ["git", "status"] else "ok", "")), \
                  patch.object(evidence, "COMMANDS", [("host-tests", ["cargo", "test"])]), \
                  contextlib.redirect_stdout(io.StringIO()):
                 self.assertEqual(evidence.main(), 0)
