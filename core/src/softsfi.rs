@@ -188,6 +188,12 @@ pub struct Program {
     len: u8,
 }
 
+impl Default for Program {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Program {
     pub const fn new() -> Self {
         Self {

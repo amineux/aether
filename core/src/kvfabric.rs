@@ -108,6 +108,12 @@ pub struct KvLedger {
     objs: [Option<KvObject>; LEDGER_CAP],
 }
 
+impl Default for KvLedger {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl KvLedger {
     pub const fn new() -> Self {
         Self {
