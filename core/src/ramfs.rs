@@ -78,6 +78,12 @@ pub struct RamFs<'a> {
     n: usize,
 }
 
+impl Default for RamFs<'_> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<'a> RamFs<'a> {
     pub const fn new() -> Self {
         Self {

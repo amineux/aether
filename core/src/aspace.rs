@@ -275,6 +275,12 @@ pub struct PcidAlloc {
     n: usize,
 }
 
+impl Default for PcidAlloc {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PcidAlloc {
     pub fn new() -> Self {
         Self {

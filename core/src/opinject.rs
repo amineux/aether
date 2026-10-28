@@ -104,6 +104,12 @@ pub struct OpTable {
     pub table_version: u32,
 }
 
+impl Default for OpTable {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl OpTable {
     pub const fn new() -> Self {
         Self {
@@ -155,6 +161,12 @@ pub struct ResidentWorker {
     pub running: bool,
     pub table_seen: u32,
     pub calls: u32,
+}
+
+impl Default for ResidentWorker {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ResidentWorker {
@@ -348,6 +360,12 @@ impl OpMem for FlatOpMem<'_> {
 pub struct OperatorInject {
     pub table: OpTable,
     pub worker: ResidentWorker,
+}
+
+impl Default for OperatorInject {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl OperatorInject {
