@@ -49,6 +49,39 @@ impl MappingBatch {
 }
 
 impl IommuMap {
+    /// Atomic admission using caller-owned staging storage. Every nonempty
+    /// bounded call replaces scratch's previous contents before staging, so
+    /// scratch can be reused after success or refusal. On failure only scratch
+    /// may contain a partial plan; the live table remains unchanged. Empty or
+    /// oversized calls do not touch either table.
+    ///
+    /// The caller controls storage placement (e.g. a preallocated host buffer).
+    /// Constructing scratch as a local still consumes a full table on that
+    /// caller's stack. This reduces the admission frame's staging requirement;
+    /// it is not a bound on the entire call chain or a hardware transaction.
+    pub fn map_batch_with_scratch(
+        &mut self,
+        requests: &[MappingRequest<'_>],
+        scratch: &mut Self,
+    ) -> Result<MappingBatch, MappingFailure> {
+        if requests.len() > MAX_MAPS {
+            return Err(MappingFailure {
+                request_index: MAX_MAPS,
+                cause: MapError::TableFull,
+            });
+        }
+        if requests.is_empty() {
+            return Ok(MappingBatch {
+                regions: [None; MAX_MAPS],
+                len: 0,
+            });
+        }
+        scratch.copy_state_from(self);
+        let result = scratch.apply_batch(requests)?;
+        self.copy_state_from(scratch);
+        Ok(result)
+    }
+
     /// Pin all buffers, publishing the staged table only after every request
     /// passes the existing `map` checks. Returns regions in request order.
     ///
@@ -67,23 +100,34 @@ impl IommuMap {
                 cause: MapError::TableFull,
             });
         }
+        if requests.is_empty() {
+            return Ok(MappingBatch {
+                regions: [None; MAX_MAPS],
+                len: 0,
+            });
+        }
+        let mut staged = self.clone();
+        let result = staged.apply_batch(requests)?;
+        *self = staged;
+        Ok(result)
+    }
+
+    fn apply_batch(
+        &mut self,
+        requests: &[MappingRequest<'_>],
+    ) -> Result<MappingBatch, MappingFailure> {
         let mut result = MappingBatch {
             regions: [None; MAX_MAPS],
             len: requests.len(),
         };
-        if requests.is_empty() {
-            return Ok(result);
-        }
-        let mut staged = self.clone();
         for (index, request) in requests.iter().enumerate() {
-            result.regions[index] = Some(staged.map(request.cap, request.mapping).map_err(
+            result.regions[index] = Some(self.map(request.cap, request.mapping).map_err(
                 |cause| MappingFailure {
                     request_index: index,
                     cause,
                 },
             )?);
         }
-        *self = staged;
         Ok(result)
     }
 }

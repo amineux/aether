@@ -58,6 +58,39 @@ That is bounded, but it is not a measured performance improvement. The example
 prints `size_of::<IommuMap>()` so a changed layout is visible. Account for stack
 headroom and measure admission latency before enabling it on a kernel hot path.
 
+`map_batch_with_scratch(requests, &mut scratch)` provides the same commit/refuse
+semantics with caller-owned staging storage. It copies into existing arrays,
+without constructing a full-table temporary in the admission frame. The caller
+must arrange scratch placement: declaring another local `IommuMap` simply moves
+the large allocation into the caller's stack. Exclusive Rust borrows keep live
+and scratch tables disjoint. Scratch may hold a partial plan after refusal;
+every subsequent nonempty bounded call overwrites it from the live state.
+Empty and oversized calls leave both tables untouched. Scratch is not authority
+or a deferred transaction token; do not publish its contents after a refusal.
+
+On Linux x86-64 with GNU `nm`/`objcopy` and Rust 1.88.0 on PATH:
+
+```bash
+python3 scripts/admission_profile.py --output /tmp/aether-admission-profile
+```
+
+The opt-in profiling build enables LLVM stack-size metadata through
+`RUSTC_BOOTSTRAP=1` and `-Z emit-stack-sizes`; production builds do not need either.
+It records compiler/version/flags, source revision/changes, binary hash, raw
+stack metadata and raw monotonic-clock samples for three-buffer success and
+refusal at request 2, with owned staging and caller scratch. Initialization,
+100 warmups and cleanup are excluded. API order is fixed, host load is
+uncontrolled, and timings include host call/timer overhead. These measurements
+are descriptive, not a worst-case latency bound or a performance comparison.
+
+The compiler reports **individual static function frames**, not peak call-chain
+stack, interrupt nesting, the caller's scratch storage, return storage or kernel
+stack headroom. CI pins the profiling compiler, retains JSON evidence, and gates
+only that the scratch API frame is smaller than the owned API frame and below
+one quarter of the table size. There is no noisy-runner latency gate. Kernel
+integration still requires call-chain/interrupt stack accounting and latency
+measurements in the actual kernel context.
+
 This API is consumed by a host example through `SoftCommandProcessor.iommu`.
 It is not wired into kernel syscalls, a real IREE HAL driver, hardware SMMU
 registers, or accelerator queue submission. It atomically admits mappings;

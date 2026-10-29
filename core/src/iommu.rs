@@ -444,6 +444,25 @@ pub struct IommuMap {
 }
 
 impl IommuMap {
+    /// Copy into existing storage without constructing a full table temporary.
+    /// Exhaustive destructuring makes added state a compile-time obligation.
+    pub(crate) fn copy_state_from(&mut self, source: &Self) {
+        let Self {
+            stes,
+            regions,
+            atc,
+            atc_hits,
+            atc_misses,
+            submit_sid,
+        } = self;
+        stes.copy_from_slice(&source.stes);
+        regions.copy_from_slice(&source.regions);
+        atc.copy_from_slice(&source.atc);
+        *atc_hits = source.atc_hits;
+        *atc_misses = source.atc_misses;
+        *submit_sid = source.submit_sid;
+    }
+
     pub const fn new() -> Self {
         Self {
             stes: [None; MAX_STES],

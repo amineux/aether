@@ -27,6 +27,116 @@ fn snapshot(table: &IommuMap) -> String {
 }
 
 #[test]
+fn scratch_reuse_refuses_every_prefix_and_matches_owned_staging() {
+    let a = cap(1);
+    let b = cap(2);
+    let mut scratch = IommuMap::new();
+    // Scratch is deliberately unrelated state, not an assumed empty table.
+    scratch.map(&b, request(&b, 0x300, 0x1000).mapping).unwrap();
+    for failed_index in 0..4 {
+        let mut table = IommuMap::new();
+        let live = table.map(&a, request(&a, 0x100, 0x1000).mapping).unwrap();
+        table.set_sid(&a, StreamId::from_raw(0x100)).unwrap();
+        table.resolve_ats(live.stream_id, live.iova).unwrap();
+        table.resolve_ats(live.stream_id, live.iova).unwrap();
+        let mut reference = table.clone();
+        let before = snapshot(&table);
+        let mut requests = [
+            request(&b, 0x200, 0x9000),
+            request(&b, 0x200, 0xb000),
+            request(&b, 0x300, 0xd000),
+            request(&b, 0x300, 0xf000),
+        ];
+        requests[failed_index].mapping.len = 0;
+        assert_eq!(
+            table.map_batch_with_scratch(&requests, &mut scratch),
+            reference.map_batch(&requests)
+        );
+        assert_eq!(snapshot(&table), before);
+        requests[failed_index].mapping.len = 4096;
+        assert_eq!(
+            table.map_batch_with_scratch(&requests, &mut scratch),
+            reference.map_batch(&requests)
+        );
+        assert_eq!(snapshot(&table), snapshot(&reference));
+        assert_eq!(
+            table.resolve_submit(live.stream_id, live.iova, Some(a.tenant)),
+            Ok(live.guest_pa)
+        );
+    }
+}
+
+#[test]
+fn scratch_empty_and_oversized_leave_both_tables_unchanged() {
+    let a = cap(1);
+    let mut table = IommuMap::new();
+    let mut scratch = IommuMap::new();
+    scratch.map(&a, request(&a, 0x100, 0x1000).mapping).unwrap();
+    let before = (snapshot(&table), snapshot(&scratch));
+    assert!(table
+        .map_batch_with_scratch(&[], &mut scratch)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        table.map_batch_with_scratch(&[request(&a, 0x100, 0x1000); MAX_MAPS + 1], &mut scratch),
+        Err(MappingFailure {
+            request_index: MAX_MAPS,
+            cause: MapError::TableFull
+        })
+    );
+    assert_eq!((snapshot(&table), snapshot(&scratch)), before);
+}
+
+#[test]
+fn scratch_exact_capacity_reuses_all_slots_after_cleanup() {
+    let a = cap(1);
+    let mut table = IommuMap::new();
+    let mut scratch = IommuMap::new();
+    let requests: [_; MAX_MAPS] =
+        core::array::from_fn(|i| request(&a, 0x100, 0x1000 + i as u64 * 0x2000));
+    for _ in 0..2 {
+        let batch = table
+            .map_batch_with_scratch(&requests, &mut scratch)
+            .unwrap();
+        assert_eq!(batch.len(), MAX_MAPS);
+        assert_eq!(table.len(), MAX_MAPS);
+        for (region, req) in batch.iter().zip(requests) {
+            assert_eq!(
+                table.resolve_stream(region.stream_id, region.iova),
+                Some(req.mapping.guest_pa)
+            );
+            table.unmap_for(&a, region.iova).unwrap();
+        }
+        assert!(table.is_empty());
+    }
+}
+
+#[test]
+fn scratch_budget_refusal_does_not_publish_new_stream() {
+    let a = cap(1);
+    let mut table = IommuMap::new();
+    let mut scratch = IommuMap::new();
+    for sid in 0..4 {
+        table
+            .map(
+                &a,
+                request(&a, 0x100 + sid, 0x1000 + u64::from(sid) * 0x2000).mapping,
+            )
+            .unwrap();
+    }
+    let before = snapshot(&table);
+    let requests = [request(&a, 0x100, 0x11000), request(&a, 0x200, 0x13000)];
+    assert_eq!(
+        table.map_batch_with_scratch(&requests, &mut scratch),
+        Err(MappingFailure {
+            request_index: 1,
+            cause: MapError::SidBudget
+        })
+    );
+    assert_eq!(snapshot(&table), before);
+}
+
+#[test]
 fn admits_complete_pipeline_in_request_order() {
     let a = cap(1);
     let b = cap(2);
