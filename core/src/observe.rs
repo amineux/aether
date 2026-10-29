@@ -82,6 +82,11 @@ impl EventRing {
         self.len
     }
 
+    /// True when no events are buffered.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn last(&self) -> Option<KernelEvent> {
         if self.len == 0 {
             return None;
@@ -108,6 +113,16 @@ impl Default for EventRing {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn is_empty_tracks_len() {
+        let mut r = EventRing::new();
+        assert!(r.is_empty());
+        assert_eq!(r.len(), 0);
+        r.emit(EventKind::Boot, 0, 0);
+        assert!(!r.is_empty());
+        assert_eq!(r.len(), 1);
+    }
 
     #[test]
     fn wrap_preserves_newest() {

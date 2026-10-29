@@ -101,6 +101,11 @@ impl PhysRegion {
     pub fn len(self) -> u64 {
         self.end.saturating_sub(self.start)
     }
+
+    /// True when the region covers no bytes (`len() == 0`).
+    pub fn is_empty(self) -> bool {
+        self.len() == 0
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -431,6 +436,15 @@ pub fn span(map: &MemoryMap) -> Option<(u64, u64)> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn phys_region_new_is_never_empty() {
+        let r = PhysRegion::new(0x1000, 0x2000).unwrap();
+        assert_eq!(r.len(), 0x1000);
+        assert!(!r.is_empty());
+        assert!(PhysRegion::new(0x2000, 0x2000).is_none());
+        assert!(PhysRegion::new(0x3000, 0x2000).is_none());
+    }
 
     fn w32(buf: &mut [u8], off: usize, v: u32) {
         buf[off..off + 4].copy_from_slice(&v.to_le_bytes());
