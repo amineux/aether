@@ -14,6 +14,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  admission-profile:
+    name: Admission stack and host latency evidence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Install the profiling compiler
+        run: rustup toolchain install 1.88.0 --profile minimal
+      - name: Test metadata parser and capture admission costs
+        env:
+          RUSTUP_TOOLCHAIN: 1.88.0
+        run: |
+          python3 -m unittest discover -s scripts -p test_admission_profile.py
+          python3 scripts/admission_profile.py --output "${{ runner.temp }}/admission-profile"
+      - name: Retain measurements including failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: admission-profile-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/admission-profile/profile.json
+            ${{ runner.temp }}/admission-profile/measurements.json
+            ${{ runner.temp }}/admission-profile/stack-sizes.bin
+            ${{ runner.temp }}/admission-profile/symbols.txt
+          if-no-files-found: error
+          retention-days: 30
+
   host-evidence:
     name: Locked host evidence
     runs-on: ubuntu-latest
