@@ -278,6 +278,11 @@ impl SidSandbox {
         self.n as usize
     }
 
+    /// True when the sandbox holds no ranges.
+    pub const fn is_empty(self) -> bool {
+        self.n == 0
+    }
+
     pub fn push(&mut self, range: SidRange) -> Result<(), SfiError> {
         if range.bound == 0 || range.base.checked_add(range.bound).is_none() {
             return Err(SfiError::BadInsn);
@@ -988,6 +993,21 @@ pub fn run_softsfi_bad_insn_demo() -> SoftSfiBadInsnReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sid_sandbox_is_empty_tracks_len() {
+        let mut s = SidSandbox::new(StreamId::from_raw(SFI_SID_A));
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+        assert_eq!(
+            s.push(SidRange::new(SFI_BASE_A, 0, true)),
+            Err(SfiError::BadInsn)
+        );
+        assert!(s.is_empty());
+        assert!(s.push(SidRange::new(SFI_BASE_A, SFI_SPAN, true)).is_ok());
+        assert!(!s.is_empty());
+        assert_eq!(s.len(), 1);
+    }
 
     fn mem_with_secret() -> ([u8; 128], SidSandbox, SidSandbox) {
         let mut bytes = [0u8; 128];
