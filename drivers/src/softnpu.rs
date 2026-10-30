@@ -195,18 +195,18 @@ impl<M: DmaView> SoftNpuDevice<M> {
         if self.iommu.is_empty() {
             return wired;
         }
-        if let Some(a) = self.iommu.translate_stream(DEFAULT_STREAM, job.a) {
-            wired.a = a;
-        }
-        if let Some(b) = self.iommu.translate_stream(DEFAULT_STREAM, job.b) {
-            wired.b = b;
-        }
-        if let Some(c) = self.iommu.translate_stream(DEFAULT_STREAM, job.c) {
-            wired.c = c;
-        }
-        if job.bias.0 != 0 {
-            if let Some(bias) = self.iommu.translate_stream(DEFAULT_STREAM, job.bias) {
-                wired.bias = bias;
+        // Invalid descriptors still complete asynchronously with status -2.
+        let Ok(spans) = job.dma_spans() else {
+            return wired;
+        };
+        for (address, span) in [&mut wired.a, &mut wired.b, &mut wired.c, &mut wired.bias]
+            .into_iter()
+            .zip(spans)
+        {
+            if span.is_some() {
+                if let Some(iova) = self.iommu.translate_stream(DEFAULT_STREAM, *address) {
+                    *address = iova;
+                }
             }
         }
         wired
@@ -217,11 +217,14 @@ impl<M: DmaView> SoftNpuDevice<M> {
             return Some(job);
         }
         let mut pa = job;
-        pa.a = self.dma_guest_pa(job.a)?;
-        pa.b = self.dma_guest_pa(job.b)?;
-        pa.c = self.dma_guest_pa(job.c)?;
-        if job.bias.0 != 0 {
-            pa.bias = self.dma_guest_pa(job.bias)?;
+        let spans = job.dma_spans().ok()?;
+        for (address, span) in [&mut pa.a, &mut pa.b, &mut pa.c, &mut pa.bias]
+            .into_iter()
+            .zip(spans)
+        {
+            if span.is_some() {
+                *address = self.dma_guest_pa(*address)?;
+            }
         }
         Some(pa)
     }
@@ -285,17 +288,17 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     fn buffers_mapped(&self, job: &AccelJobDesc) -> bool {
+        let Ok(spans) = job.dma_spans() else {
+            return false;
+        };
         if self.iommu.is_empty() {
             // Host unit tests that only exercise the ring may skip pin.
             return true;
         }
-        let es = job.elem_bytes().max(1);
-        let a_bytes = job.bytes_a();
-        let b_bytes = job.bytes_b();
-        let c_bytes = job.bytes_c();
-        self.dma_range_ok(job.a, a_bytes.max(es))
-            && self.dma_range_ok(job.b, b_bytes.max(es))
-            && self.dma_range_ok(job.c, c_bytes.max(es))
+        spans
+            .into_iter()
+            .flatten()
+            .all(|span| self.dma_range_ok(span.base, span.len))
     }
 
     fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {
