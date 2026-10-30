@@ -113,7 +113,67 @@ pub struct AccelJobDesc {
     pub flow: FlowClass,
 }
 
+/// Conservative contiguous byte extent of one operand, including row padding.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DmaSpan {
+    pub base: PhysAddr,
+    pub len: u64,
+}
+
 impl AccelJobDesc {
+    /// Validate descriptor address arithmetic before any DMA. Slots are A, B,
+    /// C and optional Wave bias; unused operands are absent. This checks shape,
+    /// natural element alignment and full strided extents, not authorization
+    /// or backing-memory availability. The driver must admit every span.
+    pub fn dma_spans(&self) -> Result<[Option<DmaSpan>; 4], AccelError> {
+        if self.op == AccelOp::Nop {
+            return Ok([None; 4]);
+        }
+        let ew = self.op.is_elementwise();
+        if ew {
+            SoftNpu::check_ew_shape(self)?;
+        } else {
+            SoftNpu::check_shape(self)?;
+        }
+        let width = self.elem_bytes();
+        let span = |base: PhysAddr, rows: u32, cols: u32, stride: u32| {
+            if base.0 % width != 0 {
+                return Err(AccelError::BadShape);
+            }
+            let len = u64::from(rows - 1)
+                .checked_mul(u64::from(stride))
+                .and_then(|n| n.checked_add(u64::from(cols)))
+                .and_then(|n| n.checked_mul(width))
+                .ok_or(AccelError::Overflow)?;
+            base.0.checked_add(len).ok_or(AccelError::Overflow)?;
+            Ok(DmaSpan { base, len })
+        };
+        Ok([
+            Some(span(
+                self.a,
+                self.m,
+                if ew { self.n } else { self.k },
+                self.a_stride,
+            )?),
+            if self.op == AccelOp::Relu {
+                None
+            } else {
+                Some(span(
+                    self.b,
+                    if ew { self.m } else { self.k },
+                    self.n,
+                    self.b_stride,
+                )?)
+            },
+            Some(span(self.c, self.m, self.n, self.c_stride)?),
+            if self.op == AccelOp::Wave && self.bias.0 != 0 {
+                Some(span(self.bias, 1, self.n, self.n)?)
+            } else {
+                None
+            },
+        ])
+    }
+
     pub fn matmul_i32(
         m: u32,
         n: u32,
@@ -381,6 +441,7 @@ impl SoftNpu {
         job: &AccelJobDesc,
         mem: &mut M,
     ) -> Result<Completion, AccelError> {
+        job.dma_spans()?;
         match job.op {
             AccelOp::Nop => {}
             AccelOp::MatMul | AccelOp::Wave => match job.dtype {
@@ -443,6 +504,10 @@ impl SoftNpu {
         }
     }
 
+    fn elem_index(row: u32, stride: u32, col: u32) -> u64 {
+        u64::from(row) * u64::from(stride) + u64::from(col)
+    }
+
     fn elem_addr(base: PhysAddr, elem_bytes: u64, index: u64) -> Result<PhysAddr, AccelError> {
         let off = elem_bytes.checked_mul(index).ok_or(AccelError::Overflow)?;
         Ok(PhysAddr(
@@ -462,8 +527,8 @@ impl SoftNpu {
             for j in 0..job.n {
                 let mut acc: i64 = 0;
                 for kk in 0..job.k {
-                    let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + kk) as u64)?;
-                    let b_addr = Self::elem_addr(job.b, es, (kk * job.b_stride + j) as u64)?;
+                    let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, kk))?;
+                    let b_addr = Self::elem_addr(job.b, es, Self::elem_index(kk, job.b_stride, j))?;
                     let av = mem.load_i32(a_addr)? as i64;
                     let bv = mem.load_i32(b_addr)? as i64;
                     acc = acc.checked_add(av * bv).ok_or(AccelError::Overflow)?;
@@ -473,7 +538,7 @@ impl SoftNpu {
                     acc = acc.checked_add(bias).ok_or(AccelError::Overflow)?;
                 }
                 let cv: i32 = acc.try_into().map_err(|_| AccelError::Overflow)?;
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_i32(c_addr, cv)?;
             }
         }
@@ -492,8 +557,8 @@ impl SoftNpu {
             for j in 0..job.n {
                 let mut acc: u32 = 0;
                 for kk in 0..job.k {
-                    let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + kk) as u64)?;
-                    let b_addr = Self::elem_addr(job.b, es, (kk * job.b_stride + j) as u64)?;
+                    let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, kk))?;
+                    let b_addr = Self::elem_addr(job.b, es, Self::elem_index(kk, job.b_stride, j))?;
                     let av = mem.load_i32(a_addr)? as u32;
                     let bv = mem.load_i32(b_addr)? as u32;
                     let prod = mul_f32(av, bv);
@@ -503,7 +568,7 @@ impl SoftNpu {
                     let bias = mem.load_i32(Self::elem_addr(job.bias, es, j as u64)?)? as u32;
                     acc = add_f32(acc, bias);
                 }
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_i32(c_addr, acc as i32)?;
             }
         }
@@ -522,8 +587,8 @@ impl SoftNpu {
             for j in 0..job.n {
                 let mut acc: u16 = 0;
                 for kk in 0..job.k {
-                    let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + kk) as u64)?;
-                    let b_addr = Self::elem_addr(job.b, es, (kk * job.b_stride + j) as u64)?;
+                    let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, kk))?;
+                    let b_addr = Self::elem_addr(job.b, es, Self::elem_index(kk, job.b_stride, j))?;
                     let av = mem.load_u16(a_addr)?;
                     let bv = mem.load_u16(b_addr)?;
                     acc = add_f16(acc, mul_f16(av, bv));
@@ -532,7 +597,7 @@ impl SoftNpu {
                     let bias = mem.load_u16(Self::elem_addr(job.bias, es, j as u64)?)?;
                     acc = add_f16(acc, bias);
                 }
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_u16(c_addr, acc)?;
             }
         }
@@ -548,27 +613,30 @@ impl SoftNpu {
         let es = job.elem_bytes();
         for i in 0..job.m {
             for j in 0..job.n {
-                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, j))?;
                 let av = mem.load_i32(a_addr)?;
                 let cv = match job.op {
                     AccelOp::Add => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         av.checked_add(mem.load_i32(b_addr)?)
                             .ok_or(AccelError::Overflow)?
                     }
                     AccelOp::Mul => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         av.checked_mul(mem.load_i32(b_addr)?)
                             .ok_or(AccelError::Overflow)?
                     }
                     AccelOp::Max => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         av.max(mem.load_i32(b_addr)?)
                     }
                     AccelOp::Relu => av.max(0),
                     _ => return Err(AccelError::BadOp),
                 };
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_i32(c_addr, cv)?;
             }
         }
@@ -584,19 +652,22 @@ impl SoftNpu {
         let es = job.elem_bytes();
         for i in 0..job.m {
             for j in 0..job.n {
-                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, j))?;
                 let av = mem.load_i32(a_addr)? as u32;
                 let cv = match job.op {
                     AccelOp::Add => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         add_f32(av, mem.load_i32(b_addr)? as u32)
                     }
                     AccelOp::Mul => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         mul_f32(av, mem.load_i32(b_addr)? as u32)
                     }
                     AccelOp::Max => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         max_f32(av, mem.load_i32(b_addr)? as u32)
                     }
                     // Sign bit → +0. Research FTZ; not a vendor FLOP.
@@ -609,7 +680,7 @@ impl SoftNpu {
                     }
                     _ => return Err(AccelError::BadOp),
                 };
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_i32(c_addr, cv as i32)?;
             }
         }
@@ -625,19 +696,22 @@ impl SoftNpu {
         let es = job.elem_bytes();
         for i in 0..job.m {
             for j in 0..job.n {
-                let a_addr = Self::elem_addr(job.a, es, (i * job.a_stride + j) as u64)?;
+                let a_addr = Self::elem_addr(job.a, es, Self::elem_index(i, job.a_stride, j))?;
                 let av = mem.load_u16(a_addr)?;
                 let cv = match job.op {
                     AccelOp::Add => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         add_f16(av, mem.load_u16(b_addr)?)
                     }
                     AccelOp::Mul => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         mul_f16(av, mem.load_u16(b_addr)?)
                     }
                     AccelOp::Max => {
-                        let b_addr = Self::elem_addr(job.b, es, (i * job.b_stride + j) as u64)?;
+                        let b_addr =
+                            Self::elem_addr(job.b, es, Self::elem_index(i, job.b_stride, j))?;
                         max_f16(av, mem.load_u16(b_addr)?)
                     }
                     AccelOp::Relu => {
@@ -649,7 +723,7 @@ impl SoftNpu {
                     }
                     _ => return Err(AccelError::BadOp),
                 };
-                let c_addr = Self::elem_addr(job.c, es, (i * job.c_stride + j) as u64)?;
+                let c_addr = Self::elem_addr(job.c, es, Self::elem_index(i, job.c_stride, j))?;
                 mem.store_u16(c_addr, cv)?;
             }
         }
