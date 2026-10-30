@@ -507,9 +507,7 @@ impl IdentityAs {
             return None;
         }
         let i3 = ((va >> 30) & 0x1FF) as usize;
-        let Some(pd) = self.pd_leaf(i4, i3) else {
-            return None;
-        };
+        let pd = self.pd_leaf(i4, i3)?;
         let pdpte = self.pdpt[i3];
         if pdpte & PTE_P == 0 {
             return None;
