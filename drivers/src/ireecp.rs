@@ -555,13 +555,9 @@ impl<M: DmaView> IreeShapedCp<M> {
         let cmd = IreeHalCmd::from_le_bytes(cmd.to_le_bytes())?;
         let op = cmd.decode_op()?;
         if op != AccelOp::Nop {
-            if let Err(e) = self
-                .iommu
+            self.iommu
                 .set_sid_bound(StreamId::from_raw(cmd.stream_id))
-                .map_err(map_hal_error)
-            {
-                return Err(e);
-            }
+                .map_err(map_hal_error)?;
         }
         self.last_cmd = Some(cmd);
         self.mailbox = Some(cmd);

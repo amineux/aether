@@ -962,7 +962,7 @@ pub fn run_softsfi_bad_insn_demo() -> SoftSfiBadInsnReport {
     let mut s = SidSandbox::new(StreamId::from_raw(SFI_SID_A));
     let bad_range_refused = s.push(SidRange::new(SFI_BASE_A, 0, true)) == Err(SfiError::BadInsn)
         && s.push(SidRange::new(u64::MAX - 3, 8, true)) == Err(SfiError::BadInsn)
-        && s.len() == 0;
+        && s.is_empty();
 
     let mut store_bad = Program::new();
     let _ = store_bad.push(Insn::add_imm(1, 0, SFI_BASE_A));
