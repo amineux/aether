@@ -164,17 +164,24 @@ impl<M: DmaView> PathABar<M> {
     }
 
     fn job_to_iova(&self, job: &AccelJobDesc) -> Result<AccelJobDesc, MapError> {
-        if self.iommu.is_empty() {
-            return Err(MapError::StreamAbort);
-        }
+        let spans = job.dma_spans().map_err(|_| MapError::BadRange)?;
         let sid = self.sid.raw();
         let mut wired = *job;
         wired.flags = sid;
-        wired.a = self.iommu.translate_result(sid, job.a, None)?;
-        wired.b = self.iommu.translate_result(sid, job.b, None)?;
-        wired.c = self.iommu.translate_result(sid, job.c, None)?;
-        if job.bias.0 != 0 {
-            wired.bias = self.iommu.translate_result(sid, job.bias, None)?;
+        // Nop has no DMA operands and needs no pinned memory.
+        if job.op == AccelOp::Nop {
+            return Ok(wired);
+        }
+        if self.iommu.is_empty() {
+            return Err(MapError::StreamAbort);
+        }
+        for (address, span) in [&mut wired.a, &mut wired.b, &mut wired.c, &mut wired.bias]
+            .into_iter()
+            .zip(spans)
+        {
+            if span.is_some() {
+                *address = self.iommu.translate_result(sid, *address, None)?;
+            }
         }
         Ok(wired)
     }
@@ -185,24 +192,30 @@ impl<M: DmaView> PathABar<M> {
         }
         let sid = self.dma_sid.raw();
         let mut pa = job;
-        pa.a = self.iommu.resolve_result(sid, job.a, None)?;
-        pa.b = self.iommu.resolve_result(sid, job.b, None)?;
-        pa.c = self.iommu.resolve_result(sid, job.c, None)?;
-        if job.bias.0 != 0 {
-            pa.bias = self.iommu.resolve_result(sid, job.bias, None)?;
+        let spans = job.dma_spans().map_err(|_| MapError::BadRange)?;
+        for (address, span) in [&mut pa.a, &mut pa.b, &mut pa.c, &mut pa.bias]
+            .into_iter()
+            .zip(spans)
+        {
+            if span.is_some() {
+                *address = self.iommu.resolve_result(sid, *address, None)?;
+            }
         }
         Ok(pa)
     }
 
     fn buffers_mapped(&self, job: &AccelJobDesc) -> bool {
+        let Ok(spans) = job.dma_spans() else {
+            return false;
+        };
         if self.iommu.is_empty() {
             return false;
         }
-        let es = job.elem_bytes().max(1);
         let sid = self.dma_sid.raw();
-        self.iommu.covers_iova(sid, job.a, job.bytes_a().max(es))
-            && self.iommu.covers_iova(sid, job.b, job.bytes_b().max(es))
-            && self.iommu.covers_iova(sid, job.c, job.bytes_c().max(es))
+        spans
+            .into_iter()
+            .flatten()
+            .all(|span| self.iommu.covers_iova(sid, span.base, span.len))
     }
 }
 

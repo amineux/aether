@@ -29,7 +29,7 @@ wide stride indices and unused operands.
 The descriptor layout, frozen packets, syscall numbers and SMMU policy do not
 change. These are software checks, not hardware isolation or a complete tenant
 security argument. Other backends have independent admission/packet contracts;
-this change validates the SoftNPU device and direct reference executor. It does
+this validates the SoftNPU device and direct reference executor. It does
 not make arithmetic-fault execution transactional or roll back already-written
 results after a runtime computation error. Kernel atomic batch integration still
 requires call-chain and interrupt stack accounting.
@@ -38,3 +38,24 @@ requires call-chain and interrupt stack accounting.
 cargo test --locked -p aether-core --test accel_dma
 cargo test --locked -p aether-drivers --test softnpu_dma
 ```
+
+## Path A Rust host contract
+
+`PathABar` also uses `dma_spans` for operand selection during PA/IOVA translation
+and full-extent admission on its own SID at service time. Malformed descriptors
+fail submit with `HalError::BadArg` before a doorbell or queue entry. A queued
+job with a short or removed pin completes with status `-2` before any memory-view
+call; remapping and retry remain possible. Wrong-SID DMA still refuses. Relu's
+unused B/bias are ignored, and Nop needs no memory pins while retaining the
+path-A wire SID stamp.
+
+Counting-memory tests reproduce the former packed-length hole, then check zero
+DMA on every short A/B/C stride or bias tail for I32/F32/F16. Valid padded spans,
+padding preservation, recovery, malformed addresses, unused operands and queued
+bias removal are covered. Run `cargo test --locked -p aether-drivers --test
+path_a_dma`.
+
+This is the Rust **host contract** for the optional Path A backend. It does not
+modify or execute the optional QEMU C accelerator, install a PCI driver or
+establish hardware isolation. The C backend's supported operations and dtypes
+remain a separate contract; passing these host tests does not extend them.
