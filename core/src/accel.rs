@@ -137,7 +137,7 @@ impl AccelJobDesc {
         }
         let width = self.elem_bytes();
         let span = |base: PhysAddr, rows: u32, cols: u32, stride: u32| {
-            if base.0 % width != 0 {
+            if !base.0.is_multiple_of(width) {
                 return Err(AccelError::BadShape);
             }
             let len = u64::from(rows - 1)
@@ -1487,9 +1487,9 @@ mod tests {
         let job = AccelJobDesc::max_i32(2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
         SoftNpu::new().execute(&job, &mut mem).unwrap();
         let mut out = [0i32; 4];
-        for i in 0..4 {
+        for (i, o) in out.iter_mut().enumerate() {
             let off = 32 + i * 4;
-            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            *o = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [5, 8, -1, 9]);
     }
