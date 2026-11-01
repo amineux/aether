@@ -18,6 +18,8 @@
 
 struct GuestRam {
     uint8_t bytes[GUEST_RAM];
+    unsigned reads;
+    unsigned writes;
 };
 
 static int g_irq;
@@ -25,7 +27,8 @@ static int g_irq;
 static int ram_read(void *ctx, uint64_t gpa, void *buf, size_t len)
 {
     struct GuestRam *ram = ctx;
-    if (gpa + len > GUEST_RAM) {
+    ram->reads++;
+    if (gpa > GUEST_RAM || len > GUEST_RAM - gpa) {
         return -1;
     }
     memcpy(buf, ram->bytes + (size_t)gpa, len);
@@ -35,7 +38,8 @@ static int ram_read(void *ctx, uint64_t gpa, void *buf, size_t len)
 static int ram_write(void *ctx, uint64_t gpa, const void *buf, size_t len)
 {
     struct GuestRam *ram = ctx;
-    if (gpa + len > GUEST_RAM) {
+    ram->writes++;
+    if (gpa > GUEST_RAM || len > GUEST_RAM - gpa) {
         return -1;
     }
     memcpy(ram->bytes + (size_t)gpa, buf, len);
@@ -501,6 +505,178 @@ static int test_wave_bias(void)
     return 0;
 }
 
+static AetherUsedWire run_job(AetherAccelDev *d, const AetherJobWire *job,
+                             uint32_t token)
+{
+    poke_job(d, token % AETHER_ACCEL_QSIZE, job);
+    aether_accel_write32(d, AETHER_REG_AVAIL_IDX, token + 1);
+    aether_accel_write32(d, AETHER_REG_DOORBELL, 1);
+    return peek_used(d, token % AETHER_ACCEL_QSIZE);
+}
+
+static int test_bad_extents_do_no_dma_and_retry(void)
+{
+    unsigned operand, overflow;
+    int rc = 0;
+    for (operand = 0; operand < 4; operand++) {
+        for (overflow = 0; overflow < 2; overflow++) {
+            AetherAccelDev d;
+            struct GuestRam ram;
+            AetherJobWire job = matmul_2x2();
+            AetherUsedWire used;
+            uint8_t before[GUEST_RAM];
+            uint64_t bad = overflow ? UINT64_MAX - 3 : 1;
+            memset(&d, 0, sizeof(d));
+            memset(&ram, 0, sizeof(ram));
+            fill_2x2(ram.bytes);
+            memcpy(before, ram.bytes, sizeof(before));
+            d.dma_ctx = &ram; d.dma_read = ram_read; d.dma_write = ram_write;
+            aether_accel_init(&d);
+            job.op = AETHER_OP_WAVE; job.bias = 64;
+            switch (operand) {
+            case 0: job.a = bad; break;
+            case 1: job.b = bad; break;
+            case 2: job.c = bad; break;
+            default: job.bias = bad; break;
+            }
+            used = run_job(&d, &job, 0);
+            if (used.status != AETHER_CPL_EXEC || ram.reads != 0 || ram.writes != 0
+                || memcmp(before, ram.bytes, sizeof(before)) != 0) {
+                fprintf(stderr, "operand=%u overflow=%u\n", operand, overflow);
+                rc |= fail("bad operand extent must refuse before any DMA");
+                continue;
+            }
+            job = matmul_2x2();
+            used = run_job(&d, &job, 1);
+            if (used.status != AETHER_CPL_OK || ram.reads != 16 || ram.writes != 4) {
+                return fail("valid retry after bad extent");
+            }
+        }
+    }
+    return rc;
+}
+
+struct SparseRam {
+    uint64_t read_addr[6], write_addr[3];
+    int32_t read_value[6], write_value[3];
+    unsigned read_count, write_count, reads, writes, seen;
+};
+
+static int sparse_read(void *ctx, uint64_t addr, void *buf, size_t len)
+{
+    struct SparseRam *ram = ctx;
+    unsigned i;
+    ram->reads++;
+    for (i = 0; i < ram->read_count; i++) {
+        if (addr == ram->read_addr[i] && len == 4) {
+            memcpy(buf, &ram->read_value[i], 4);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int sparse_write(void *ctx, uint64_t addr, const void *buf, size_t len)
+{
+    struct SparseRam *ram = ctx;
+    unsigned i;
+    int32_t value;
+    ram->writes++;
+    if (len != 4) { return -1; }
+    memcpy(&value, buf, 4);
+    for (i = 0; i < ram->write_count; i++) {
+        if (addr == ram->write_addr[i] && value == ram->write_value[i]) {
+            ram->seen |= 1u << i;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+static int test_wide_stride_and_near_limit_addresses(void)
+{
+    unsigned which, i;
+    int rc = 0;
+    for (which = 0; which < 4; which++) {
+        AetherAccelDev d;
+        struct SparseRam ram;
+        AetherJobWire job = matmul_2x2();
+        AetherUsedWire used;
+        memset(&d, 0, sizeof(d)); memset(&ram, 0, sizeof(ram));
+        job.a = 0x100; job.b = 0x200; job.c = 0x300;
+        job.m = 3; job.n = 1; job.k = 1;
+        job.a_stride = 1; job.b_stride = 1; job.c_stride = 1;
+        if (which == 0) { job.a = UINT64_C(0x100000000); job.a_stride = UINT32_MAX; }
+        if (which == 1) { job.m = 1; job.k = 3; job.a_stride = 3;
+                         job.b = UINT64_C(0x100000000); job.b_stride = UINT32_MAX; }
+        if (which == 2) { job.c = UINT64_C(0x100000000); job.c_stride = UINT32_MAX; }
+        if (which == 3) { job.c = UINT64_MAX - 15; }
+        for (i = 0; i < 3; i++) {
+            ram.read_addr[i] = job.a + (which == 0 ? UINT64_C(0x3fffffffc) : 4) * i;
+            ram.read_value[i] = (int32_t)i + 2;
+        }
+        ram.read_count = 4;
+        ram.read_addr[3] = job.b; ram.read_value[3] = 5;
+        if (which == 1) {
+            for (i = 1; i < 3; i++) {
+                ram.read_addr[3 + i] = job.b + UINT64_C(0x3fffffffc) * i;
+                ram.read_value[3 + i] = 5;
+            }
+            ram.read_count = 6;
+        }
+        ram.write_count = which == 1 ? 1 : 3;
+        for (i = 0; i < ram.write_count; i++) {
+            ram.write_addr[i] = job.c + (which == 2 ? UINT64_C(0x3fffffffc) : 4) * i;
+            ram.write_value[i] = which == 1 ? 45 : ((int32_t)i + 2) * 5;
+        }
+        d.dma_ctx = &ram; d.dma_read = sparse_read; d.dma_write = sparse_write;
+        aether_accel_init(&d);
+        used = run_job(&d, &job, 0);
+        if (used.status != AETHER_CPL_OK || ram.reads != 6 || ram.writes != ram.write_count
+            || ram.seen != (1u << ram.write_count) - 1) {
+            fprintf(stderr, "wide/near-limit case=%u\n", which);
+            rc |= fail("wide stride or valid near-limit address must not wrap/refuse");
+        }
+    }
+    return rc;
+}
+
+static int test_padded_matmul_and_wave_preserve_gaps(void)
+{
+    unsigned wave;
+    for (wave = 0; wave < 2; wave++) {
+        AetherAccelDev d;
+        struct GuestRam ram;
+        AetherJobWire job = matmul_2x2();
+        int32_t values[] = {1, 0, 0, 1, 5, 6, 7, 8, 10, 20};
+        unsigned offsets[] = {0, 4, 16, 20, 32, 36, 48, 52, 112, 116};
+        unsigned outputs[] = {64, 68, 80, 84};
+        int32_t expected[] = {5, 6, 7, 8};
+        unsigned i;
+        memset(&d, 0, sizeof(d)); memset(&ram, 0, sizeof(ram));
+        for (i = 0; i < 10; i++) { memcpy(ram.bytes + offsets[i], &values[i], 4); }
+        memset(ram.bytes + 64, 0xa5, 24);
+        job.op = wave ? AETHER_OP_WAVE : AETHER_OP_MATMUL;
+        job.a = 0; job.b = 32; job.c = 64;
+        job.bias = wave ? 112 : UINT64_MAX; /* Unused bias is ignored. */
+        job.a_stride = 4; job.b_stride = 4; job.c_stride = 4;
+        d.dma_ctx = &ram; d.dma_read = ram_read; d.dma_write = ram_write;
+        aether_accel_init(&d);
+        if (run_job(&d, &job, 0).status != AETHER_CPL_OK) { return fail("padded job"); }
+        for (i = 0; i < 4; i++) {
+            int32_t got;
+            memcpy(&got, ram.bytes + outputs[i], 4);
+            if (got != expected[i] + (wave ? values[8 + i % 2] : 0)) {
+                return fail("padded job output");
+            }
+        }
+        for (i = 72; i < 80; i++) {
+            if (ram.bytes[i] != 0xa5) { return fail("output padding changed"); }
+        }
+    }
+    return 0;
+}
+
 int main(void)
 {
     int rc = 0;
@@ -511,6 +687,9 @@ int main(void)
     rc |= test_f32_refused();
     rc |= test_wave_bias();
     rc |= test_iova_not_identity_and_wrong_sid();
+    rc |= test_bad_extents_do_no_dma_and_retry();
+    rc |= test_wide_stride_and_near_limit_addresses();
+    rc |= test_padded_matmul_and_wave_preserve_gaps();
     if (rc == 0) {
         printf("aether-accel: path-A device model ok "
                "(BAR + SoftNPU I32 DMA + used-ring IRQ; "

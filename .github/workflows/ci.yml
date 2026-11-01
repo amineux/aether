@@ -125,6 +125,13 @@ jobs:
       - name: Path-A virtio-accel device model
         run: make accel-test
 
+      - name: Path-A C address and undefined-behavior sanitizer checks
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -O1 -g -fno-omit-frame-pointer \
+            -fsanitize=address,undefined -fno-sanitize-recover=all -I qemu \
+            -o "${{ runner.temp }}/aether-accel-sanitized" qemu/aether_accel.c qemu/aether_accel_test.c
+          "${{ runner.temp }}/aether-accel-sanitized"
+
       - name: QEMU demo (isa-debug-exit success)
         run: make qemu-ci
 
