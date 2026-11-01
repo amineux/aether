@@ -103,14 +103,28 @@ static int check_shape(const AetherJobWire *job)
     return 0;
 }
 
-static int elem_addr(uint64_t base, uint32_t index, uint64_t *out)
+static int elem_addr(uint64_t base, uint64_t index, uint64_t *out)
 {
-    uint64_t off = (uint64_t)index * 4u;
-    if (base > UINT64_MAX - off) {
+    uint64_t off;
+    if (index > UINT64_MAX / 4u) {
+        return -1;
+    }
+    off = index * 4u;
+    /* Require the complete element and a representable exclusive end. */
+    if (base > UINT64_MAX - off || base + off > UINT64_MAX - 4u) {
         return -1;
     }
     *out = base + off;
     return 0;
+}
+
+/* check_shape ran first: rows/cols are 1..64, so this index fits u64. */
+static int check_extent(uint64_t base, uint32_t rows, uint32_t cols,
+                        uint32_t stride)
+{
+    uint64_t last = (uint64_t)(rows - 1u) * stride + (cols - 1u);
+    uint64_t end_element;
+    return base % 4u == 0 && elem_addr(base, last, &end_element) == 0 ? 0 : -1;
 }
 
 /* SoftNPU I32 matmul / wave. Overflow and DMA faults become used-ring errors. */
@@ -119,7 +133,12 @@ static int softnpu_i32(AetherAccelDev *d, const AetherJobWire *job)
     uint32_t i, j, kk;
     int wave = job->op == AETHER_OP_WAVE;
 
-    if (check_shape(job) != 0) {
+    if (check_shape(job) != 0
+        || check_extent(job->a, job->m, job->k, job->a_stride) != 0
+        || check_extent(job->b, job->k, job->n, job->b_stride) != 0
+        || check_extent(job->c, job->m, job->n, job->c_stride) != 0
+        || (wave && job->bias != 0
+            && check_extent(job->bias, 1, job->n, job->n) != 0)) {
         return AETHER_CPL_EXEC;
     }
     for (i = 0; i < job->m; i++) {
@@ -131,8 +150,8 @@ static int softnpu_i32(AetherAccelDev *d, const AetherJobWire *job)
                 uint64_t a_addr, b_addr;
                 int32_t av, bv;
                 int64_t prod;
-                if (elem_addr(job->a, i * job->a_stride + kk, &a_addr) != 0
-                    || elem_addr(job->b, kk * job->b_stride + j, &b_addr) != 0) {
+                if (elem_addr(job->a, (uint64_t)i * job->a_stride + kk, &a_addr) != 0
+                    || elem_addr(job->b, (uint64_t)kk * job->b_stride + j, &b_addr) != 0) {
                     return AETHER_CPL_EXEC;
                 }
                 if (dma_load_i32(d, a_addr, &av) != 0
@@ -161,7 +180,7 @@ static int softnpu_i32(AetherAccelDev *d, const AetherJobWire *job)
                 return AETHER_CPL_EXEC;
             }
             cv = (int32_t)acc;
-            if (elem_addr(job->c, i * job->c_stride + j, &c_addr) != 0) {
+            if (elem_addr(job->c, (uint64_t)i * job->c_stride + j, &c_addr) != 0) {
                 return AETHER_CPL_EXEC;
             }
             if (dma_store_i32(d, c_addr, cv) != 0) {

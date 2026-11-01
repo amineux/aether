@@ -1,8 +1,8 @@
 # Path A: QEMU `aether-accel` device
 
 Optional custom QEMU device that exposes the **frozen** virtqueue BAR
-from [docs/ACCEL.md](../docs/ACCEL.md). SoftNPU (I32 Nop / MatMul / Wave;
-Add / Relu / Mul / Max additive on the same engine) sits behind the doorbell and
+from [docs/ACCEL.md](../docs/ACCEL.md). The portable C executor supports
+I32 Nop / MatMul / Wave behind the doorbell and
 DMA-reads tensor addresses from
 `AccelJobWire`.
 
@@ -107,3 +107,25 @@ F16 / F32 jobs complete with status `-1` on this device. Software IEEE
 stays the in-kernel SoftNPU (path B). Host tests put Soft-SMMU IOVAs
 in the job wire and translate under DMA. The QEMU `-device` still
 `pci_dma`s the published address — not a QEMU IOMMU.
+## C executor address validation
+
+The portable `aether_accel.c` I32 MatMul/Wave executor widens row indices to
+64 bits before multiplying by element strides. It validates all used A/B/C
+extents and optional Wave bias before the first DMA callback: shapes are bounded
+to 1..64, bases must be naturally aligned, and every complete element must have
+a representable exclusive end address. Padded and overlapping rows remain
+supported; an unused MatMul bias does not require an address range.
+
+Malformed descriptor addresses complete with the existing `AETHER_CPL_EXEC`
+status without any DMA call. This is arithmetic/descriptor validation, not pin
+authorization: DMA callbacks still own translation, backing-memory bounds and
+access policy. Callback faults and data-dependent arithmetic failures are not
+transactional and may follow earlier output writes.
+
+`make accel-test` includes counting-memory regressions for all bad operand
+extents and valid retry, sparse-address tests for A/B/C strides above the u32
+index range, a valid near-u64-limit extent, and padded MatMul/Wave with gap
+preservation. CI also runs this portable suite with AddressSanitizer and UBSan.
+The frozen 88-byte job, BAR offsets, opcodes and supported I32 subset are
+unchanged. These are host tests of the actual portable C model; they do not
+establish a patched QEMU PCI integration or hardware isolation.
