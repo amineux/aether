@@ -154,7 +154,6 @@ mod tests {
         assert!(d.verify_sfi(sid_a, &ok).is_ok());
         let exec = d.submit_sfi(sid_a, &ok).unwrap();
         assert_eq!(exec.regs[2], 4);
-        drop(d);
         let stored = u32::from_le_bytes(backing[0..4].try_into().unwrap());
         assert_eq!(stored, 4);
 
@@ -184,7 +183,6 @@ mod tests {
         let tens = tensor_prog(1, 0, 32);
         assert_eq!(d.verify_sfi(sid_a, &tens), Err(SfiError::Unmodeled));
         assert_eq!(d.submit_sfi(sid_a, &tens).unwrap_err(), HalError::Fault);
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
@@ -203,7 +201,6 @@ mod tests {
         assert_eq!(d.verify_sfi(sid_a, &heap), Err(SfiError::Unmodeled));
         assert_eq!(d.verify_sfi(sid_a, &alloc), Err(SfiError::Unmodeled));
         assert_eq!(d.submit_sfi(sid_a, &heap).unwrap_err(), HalError::Fault);
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
@@ -222,7 +219,6 @@ mod tests {
         let bad_w = illegal_width_prog(SFI_BASE_A);
         assert_eq!(d.verify_sfi(sid_a, &bad_w), Err(SfiError::Unmodeled));
         assert_eq!(d.submit_sfi(sid_a, &bad_w).unwrap_err(), HalError::Fault);
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
@@ -241,7 +237,6 @@ mod tests {
         let store = unknown_base_store_prog();
         assert_eq!(d.verify_sfi(sid_a, &store), Err(SfiError::UnknownBase));
         assert_eq!(d.submit_sfi(sid_a, &store).unwrap_err(), HalError::Fault);
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
@@ -261,7 +256,6 @@ mod tests {
         assert!(d.verify_sfi(sid_a, &ok).is_ok());
         let exec = d.submit_sfi(sid_a, &ok).unwrap();
         assert_eq!(exec.regs[2], 3);
-        drop(d);
         let stored = u32::from_le_bytes(backing[0..4].try_into().unwrap());
         assert_eq!(stored, 8);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
@@ -274,7 +268,6 @@ mod tests {
         let steal = oob_atomic_prog(iova_b.0);
         assert_eq!(d.verify_sfi(sid_a, &steal), Err(SfiError::Oob));
         assert_eq!(d.submit_sfi(sid_a, &steal).unwrap_err(), HalError::Fault);
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
@@ -293,7 +286,6 @@ mod tests {
             d.inject_sfi_skip_verify(sid_a, &steal).unwrap_err(),
             HalError::Fault
         );
-        drop(d);
         let secret = u32::from_le_bytes(backing[256..260].try_into().unwrap());
         assert_eq!(secret, SFI_SECRET_B);
         let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
