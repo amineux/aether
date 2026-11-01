@@ -533,11 +533,11 @@ mod tests {
         assert!(!user_range_ok(USER_COW_BASE, 8));
         assert!(!user_range_known(USER_COW_END, 1));
         assert!(!user_clone_pair_ok(USER_COW_BASE, USER_COW_END));
-        assert!(BLK_WINDOW_BASE >= USER_COW_END);
+        const { assert!(BLK_WINDOW_BASE >= USER_COW_END) };
         assert_eq!(BLK_WINDOW_END - BLK_WINDOW_BASE, 0x20_0000);
-        assert!(BLK_WINDOW_BASE >= USER_PROBE_END);
+        const { assert!(BLK_WINDOW_BASE >= USER_PROBE_END) };
         assert!(!user_range_known(BLK_WINDOW_BASE, 8));
-        assert!(USER_MMAP_BASE >= BLK_WINDOW_END);
+        const { assert!(USER_MMAP_BASE >= BLK_WINDOW_END) };
         assert_eq!(USER_MMAP_END - USER_MMAP_BASE, 0x1_0000);
         assert!(user_range_known(USER_MMAP_BASE, 8));
         assert!(!user_range_ok(USER_MMAP_BASE, 8));

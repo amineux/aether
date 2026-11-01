@@ -213,7 +213,6 @@ mod tests {
         d.submit_injected(sid, &OpCall::memcpy(mv, DEMO_WORDS, src.0, dst.0))
             .unwrap();
         assert!(d.last_inject_firewall());
-        drop(d);
         assert_eq!(i32::from_le_bytes(backing[16..20].try_into().unwrap()), 1);
         assert_eq!(i32::from_le_bytes(backing[28..32].try_into().unwrap()), 4);
 
@@ -227,7 +226,6 @@ mod tests {
         let sv = d.slot_version(SLOT_SAXPY).unwrap();
         d.submit_injected(sid, &OpCall::saxpy(sv, DEMO_WORDS, 2, src.0, dst.0))
             .unwrap();
-        drop(d);
         // dst started as copy of src; saxpy α=2 → 3×src
         assert_eq!(i32::from_le_bytes(backing[16..20].try_into().unwrap()), 3);
 
@@ -248,7 +246,6 @@ mod tests {
         d.submit_injected(sid, &OpCall::scale(scv, DEMO_WORDS, 10, src.0, dst.0))
             .unwrap();
         assert!(d.last_inject_firewall());
-        drop(d);
         assert_eq!(i32::from_le_bytes(backing[16..20].try_into().unwrap()), 10);
     }
 
