@@ -305,6 +305,7 @@ impl CpCmd {
         if job.op == AccelOp::Nop {
             return Ok(Self::empty_from(job, sid));
         }
+        crate::packet_layout::check(job)?;
         let a = iommu
             .translate_result(sid.raw(), job.a, None)
             .map_err(map_hal_error)?;
@@ -1445,6 +1446,69 @@ mod tests {
         let sid = stream_for_job(job);
         dev.map_with_cap(&mem_cap(), MapRequest::pin_accel(PhysAddr(0), 256, sid))
             .unwrap()
+    }
+
+    #[test]
+    fn frozen_packet_refuses_hidden_strides_before_enqueue() {
+        let (mut backing, job) = matmul_backing();
+        let before = backing;
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        pin_job(&mut d, &job);
+        // Includes an extent past the 256-byte pin (stride 64), overlapping
+        // rows (0/1), padding (3), and the u32 boundary. All are unencodable.
+        for op in [
+            AccelOp::MatMul,
+            AccelOp::Wave,
+            AccelOp::Add,
+            AccelOp::Relu,
+            AccelOp::Mul,
+            AccelOp::Max,
+        ] {
+            for dtype in [
+                aether_core::accel::DType::I32,
+                aether_core::accel::DType::F16,
+                aether_core::accel::DType::F32,
+            ] {
+                let mut valid = job;
+                valid.op = op;
+                valid.dtype = dtype;
+                assert!(CpCmd::pack(&valid, &d.iommu).is_ok());
+                for operand in 0..3 {
+                    if op == AccelOp::Relu && operand == 1 {
+                        continue;
+                    }
+                    for stride in [0, 1, 3, 64, u32::MAX] {
+                        let mut bad = valid;
+                        match operand {
+                            0 => bad.a_stride = stride,
+                            1 => bad.b_stride = stride,
+                            _ => bad.c_stride = stride,
+                        }
+                        assert_eq!(CpCmd::pack(&bad, &d.iommu), Err(HalError::Unsupported));
+                        assert_eq!(d.submit(&bad), Err(HalError::Unsupported));
+                        assert!(d.xqueue(0).unwrap().is_empty());
+                        assert!(d.xqueue(0).unwrap().sid.is_none());
+                        assert!(d.iommu.submit_sid().is_none());
+                        assert!(d.last_cmd().is_none());
+                        assert!(d.service().is_none());
+                        assert_eq!(d.npu.seq, 1);
+                        assert_eq!(d.mem.bytes, &before);
+                    }
+                }
+            }
+        }
+
+        // Refusal leaves the queue/mailbox and DMA state usable.
+        d.submit(&job).unwrap();
+        assert_eq!(d.service().unwrap().status, 0);
+        assert_eq!(
+            i32::from_le_bytes(d.mem.bytes[32..36].try_into().unwrap()),
+            19
+        );
     }
 
     #[test]
