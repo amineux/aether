@@ -554,7 +554,6 @@ pub fn run_opinject_demo() -> OpInjectReport {
                 &mut mem,
             )
             .is_ok();
-        drop(mem);
         let memcpy_ok = memcpy_ok
             && read_i32(&bytes, OPINJECT_DST as usize) == 1
             && read_i32(&bytes, OPINJECT_DST as usize + 12) == 4;

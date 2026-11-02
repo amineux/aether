@@ -845,9 +845,9 @@ mod tests {
 
     #[test]
     fn windows_do_not_overlap() {
-        assert!(USER_IMAGE_END <= USER_PROBE_BASE);
-        assert!(USER_IMAGE_END - USER_IMAGE_BASE == PAGE_2M);
-        assert!(USER_PROBE_END - USER_PROBE_BASE == PAGE_2M);
+        const { assert!(USER_IMAGE_END <= USER_PROBE_BASE) };
+        const { assert!(USER_IMAGE_END - USER_IMAGE_BASE == PAGE_2M) };
+        const { assert!(USER_PROBE_END - USER_PROBE_BASE == PAGE_2M) };
     }
 
     #[test]
@@ -949,7 +949,7 @@ mod tests {
         use crate::sysnr::{USER_COW_BASE, USER_COW_END};
 
         assert_eq!(USER_COW_END - USER_COW_BASE, PAGE_4K);
-        assert!(USER_COW_BASE >= USER_PROBE_END);
+        const { assert!(USER_COW_BASE >= USER_PROBE_END) };
         assert_ne!((USER_COW_BASE >> 21) & 0x1FF, 0);
 
         let k = IdentityAs::kernel();
@@ -1007,7 +1007,7 @@ mod tests {
         use crate::sysnr::{USER_COW_BASE, USER_MMAP_BASE, USER_MMAP_END};
 
         assert_eq!(USER_MMAP_END - USER_MMAP_BASE, 16 * PAGE_4K);
-        assert!(USER_MMAP_BASE >= crate::sysnr::BLK_WINDOW_END);
+        const { assert!(USER_MMAP_BASE >= crate::sysnr::BLK_WINDOW_END) };
         assert_ne!((USER_MMAP_BASE >> 21) & 0x1FF, 0);
         assert_ne!((USER_MMAP_BASE >> 21) & 0x1FF, (USER_COW_BASE >> 21) & 0x1FF);
 
@@ -1265,8 +1265,8 @@ mod sv39_tests {
     #[test]
     fn rv_window_is_2m_in_ram() {
         assert_eq!(USER_RV_IMAGE_END - USER_RV_IMAGE_BASE, PAGE_2M);
-        assert!(USER_RV_IMAGE_BASE >= 0x8000_0000);
-        assert!(USER_RV_IMAGE_BASE < 0x8800_0000);
+        const { assert!(USER_RV_IMAGE_BASE >= 0x8000_0000) };
+        const { assert!(USER_RV_IMAGE_BASE < 0x8800_0000) };
     }
 
     #[test]
@@ -1535,8 +1535,8 @@ mod ttbr0_tests {
     #[test]
     fn aa_window_is_2m_in_ram() {
         assert_eq!(USER_AA_IMAGE_END - USER_AA_IMAGE_BASE, PAGE_2M);
-        assert!(USER_AA_IMAGE_BASE >= 0x4000_0000);
-        assert!(USER_AA_IMAGE_BASE < 0x4800_0000);
+        const { assert!(USER_AA_IMAGE_BASE >= 0x4000_0000) };
+        const { assert!(USER_AA_IMAGE_BASE < 0x4800_0000) };
     }
 
     #[test]
