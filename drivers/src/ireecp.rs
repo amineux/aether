@@ -1584,7 +1584,6 @@ mod tests {
 
         d.set_sid(&cap_b, sid_b).unwrap();
         assert_eq!(d.submit(&job_a).unwrap_err(), HalError::Fault);
-        drop(d);
         assert_eq!(i32::from_le_bytes(backing[32..36].try_into().unwrap()), 19);
         assert_eq!(i32::from_le_bytes(backing[288..292].try_into().unwrap()), 9);
     }
@@ -1676,7 +1675,6 @@ mod tests {
         assert!(d.chipsync.cct().incorrect_elide(buf));
         assert!(!d.chipsync.softcct().should_elide(buf, ChipletId(1)));
         assert_eq!(d.last_cmd().unwrap().stream_id, sid_b.raw());
-        drop(d);
         assert_eq!(i32::from_le_bytes(backing[32..36].try_into().unwrap()), 19);
         assert_eq!(i32::from_le_bytes(backing[288..292].try_into().unwrap()), 9);
     }

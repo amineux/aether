@@ -1913,7 +1913,6 @@ mod tests {
         assert_eq!(d.submit(&job_a).unwrap_err(), HalError::Fault);
         assert_eq!(d.iommu.submit_sid(), None);
         assert_eq!(d.xqueue(0).unwrap().sid, Some(sid_b));
-        drop(d);
         let out_a = i32::from_le_bytes(backing[32..36].try_into().unwrap());
         let out_b = i32::from_le_bytes(backing[288..292].try_into().unwrap());
         assert_eq!(out_a, 19);
