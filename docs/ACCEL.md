@@ -30,6 +30,18 @@ tenant, completion endpoint. `flow` is a **software** fabric-class tag
 (`Gradient` / `Curl` / `Harmonic`) used by SoftNoI admit — not a
 `CpCmd` field, not `AccelJobWire`, not a vendor header.
 
+The frozen 64-byte `CpCmd` and 96-byte `IreeHalCmd` packets have no row-stride
+fields. Their packers refuse non-packed active rows with `HalError::Unsupported`
+before DMA or enqueue, rather than retain hidden strides in the host execution
+template beyond the packed lengths validated for the packet. A uses K elements
+per row for MatMul/Wave and N for elementwise operations; B and C use N.
+Strides for one-row operands, unused Relu B, and Nop do not affect this gate.
+Direct `IreeShapedCp::submit_hal` applies the same check using the packet's decoded
+operation. Soft-CP command-buffer ingestion already reconstructs packed strides
+from its copied image. This is a representability restriction on these two
+software adapters; SoftNPU and Path A retain their strided-layout support.
+No packet ABI or hardware-isolation claim changes.
+
 Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
 refuses a silent coherent load across places. `UNIFIED_MEMORY` is a
 capability bit (`CapRights::UNIFIED`), never implied by `MEM_FULL`.

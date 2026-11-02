@@ -21,6 +21,7 @@
 
 #![cfg_attr(not(test), no_std)]
 
+mod packet_layout;
 pub mod fakecp;
 pub mod firewall;
 pub mod ireecp;
