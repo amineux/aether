@@ -545,6 +545,32 @@ impl<M: DmaView> IreeShapedCp<M> {
             .map_err(map_hal_error)
     }
 
+    /// Validate the copied image against its execution template and current pins.
+    /// The image chooses the operation and semaphore payload; tensor metadata,
+    /// bindings and packed lengths must describe exactly the same dispatch.
+    fn validate_dispatch(&self, cmd: &IreeHalCmd, job: &AccelJobDesc) -> Result<(), HalError> {
+        let op = cmd.decode_op()?;
+        if op == AccelOp::Nop {
+            return Ok(());
+        }
+        let mut effective = *job;
+        effective.op = op;
+        crate::packet_layout::check(&effective)?;
+        effective.dma_spans().map_err(|_| HalError::BadArg)?;
+        let mut nouns = IreeHalNouns::from_job(&effective);
+        nouns.event.fence = FenceId(cmd.signal_payload);
+        let expected = IreeHalCmd::pack_on(
+            &effective,
+            &self.iommu,
+            &nouns,
+            StreamId::from_raw(cmd.stream_id),
+        )?;
+        if *cmd != expected {
+            return Err(HalError::Fault);
+        }
+        Ok(())
+    }
+
     /// Consume a frozen `IreeHalCmd` image (PJRT / IREE HAL path).
     /// `AccelDevice::submit` packs then calls this; the job record is
     /// kept for guest-PA DMA after IOVA resolve.
@@ -555,9 +581,7 @@ impl<M: DmaView> IreeShapedCp<M> {
         // Copy-then-validate the frozen image (same Host1x lesson as Soft-CP).
         let cmd = IreeHalCmd::from_le_bytes(cmd.to_le_bytes())?;
         let op = cmd.decode_op()?;
-        let mut effective_job = *job;
-        effective_job.op = op;
-        crate::packet_layout::check(&effective_job)?;
+        self.validate_dispatch(&cmd, job)?;
         if op != AccelOp::Nop {
             self.iommu
                 .set_sid_bound(StreamId::from_raw(cmd.stream_id))
@@ -570,8 +594,8 @@ impl<M: DmaView> IreeShapedCp<M> {
         self.irq = false;
         self.last_cpl = None;
         self.fence_done = false;
-        self.last_fence = if job.fence_id != 0 {
-            Some(job.fence_id)
+        self.last_fence = if cmd.signal_payload != 0 {
+            Some(cmd.signal_payload)
         } else {
             None
         };
@@ -644,7 +668,9 @@ impl<M: DmaView> IreeShapedCp<M> {
                 return Some(self.complete(cmd.signal_payload, cpl));
             }
         };
-        if op != AccelOp::Nop && self.smmu_walk(&cmd).is_err() {
+        if op != AccelOp::Nop
+            && (self.validate_dispatch(&cmd, &job).is_err() || self.smmu_walk(&cmd).is_err())
+        {
             self.iommu.clear_submit_sid();
             let cpl = Completion {
                 job_seq: self.npu.seq,
@@ -683,7 +709,7 @@ impl<M: DmaView> IreeShapedCp<M> {
     /// IOVA → guest PA. No identity shortcut: tensors come from Soft SMMU.
     fn job_from_cmd(&self, cmd: &IreeHalCmd, job: AccelJobDesc) -> Option<AccelJobDesc> {
         let op = cmd.decode_op().ok()?;
-        if self.iommu.is_empty() || op == AccelOp::Nop {
+        if op == AccelOp::Nop {
             let mut pa = job;
             pa.op = op;
             return Some(pa);
@@ -764,6 +790,9 @@ impl<M: DmaView> AccelDevice for IreeShapedCp<M> {
     }
 
     fn submit(&mut self, job: &AccelJobDesc) -> Result<u32, HalError> {
+        if self.doorbell || self.mailbox.is_some() {
+            return Err(HalError::Busy);
+        }
         let sid = self.arm_set_sid(job)?;
         let nouns = IreeHalNouns::from_job(job);
         let cmd = match IreeHalCmd::pack_on(job, &self.iommu, &nouns, sid) {
@@ -773,7 +802,11 @@ impl<M: DmaView> AccelDevice for IreeShapedCp<M> {
                 return Err(e);
             }
         };
-        self.submit_hal(cmd, job)
+        let result = self.submit_hal(cmd, job);
+        if result.is_err() {
+            self.iommu.clear_submit_sid();
+        }
+        result
     }
 
     fn poll(&mut self) -> Option<Completion> {

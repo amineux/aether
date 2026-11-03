@@ -42,6 +42,21 @@ from its copied image. This is a representability restriction on these two
 software adapters; SoftNPU and Path A retain their strided-layout support.
 No packet ABI or hardware-isolation claim changes.
 
+IREE-shaped direct submission validates its copied packet against the execution
+template and current pins: workgroup shape, dtype, queue affinity, binding count,
+IOVA offsets and exact packed byte lengths must agree with a canonical repack.
+The packet's decoded operation and semaphore payload remain authoritative; a
+custom event payload is supported. Invalid shape/address arithmetic returns
+`BadArg`, unrepresentable active strides return `Unsupported`, and inconsistent
+packet fields or missing pin coverage refuse with `Fault` before enqueue/DMA.
+The driver repeats this validation immediately before execution. A queued unmap
+or changed/shorter pin completes with status `-2`, zero DMA callbacks and no
+sequence advance; valid resubmission after restoring pins succeeds. A Busy
+submit preserves the pending dispatch's SID latch. These checks validate the
+software map at dispatch time; they are not hardware isolation, generation-based
+pin revocation, or a concurrent SMMU/DMA transaction.
+
+
 Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
 refuses a silent coherent load across places. `UNIFIED_MEMORY` is a
 capability bit (`CapRights::UNIFIED`), never implied by `MEM_FULL`.
