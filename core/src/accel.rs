@@ -1086,9 +1086,9 @@ mod tests {
         assert_eq!(cpl.status, 0);
         assert_eq!(npu.jobs_retired, 1);
         let mut out = [0i32; 4];
-        for i in 0..4 {
+        for (i, o) in out.iter_mut().enumerate() {
             let off = 128 + i * 4;
-            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            *o = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [19, 22, 43, 50]);
     }
@@ -1371,9 +1371,9 @@ mod tests {
         assert_eq!(job.bytes_c(), 16);
         SoftNpu::new().execute(&job, &mut mem).unwrap();
         let mut out = [0i32; 4];
-        for i in 0..4 {
+        for (i, o) in out.iter_mut().enumerate() {
             let off = 32 + i * 4;
-            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            *o = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [6, 8, 10, 12]);
     }
@@ -1391,9 +1391,9 @@ mod tests {
         let job = AccelJobDesc::relu_i32(2, 2, PhysAddr(0), PhysAddr(16), 1);
         SoftNpu::new().execute(&job, &mut mem).unwrap();
         let mut out = [0i32; 4];
-        for i in 0..4 {
+        for (i, o) in out.iter_mut().enumerate() {
             let off = 16 + i * 4;
-            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            *o = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [0, 2, 0, 4]);
     }
@@ -1416,9 +1416,9 @@ mod tests {
         let job = AccelJobDesc::mul_i32(2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
         SoftNpu::new().execute(&job, &mut mem).unwrap();
         let mut out = [0i32; 4];
-        for i in 0..4 {
+        for (i, o) in out.iter_mut().enumerate() {
             let off = 32 + i * 4;
-            out[i] = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
+            *o = i32::from_le_bytes(buf[off..off + 4].try_into().unwrap());
         }
         assert_eq!(out, [12, 21, 32, 45]);
     }
