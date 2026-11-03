@@ -68,10 +68,11 @@ impl AffinityLaplacian {
         let n = self.n.min(x.len());
         let mut acc = 0i64;
         for i in 0..n {
-            let mut row = 0i64;
-            for j in 0..n {
-                row += self.l[i][j] as i64 * x[j] as i64;
-            }
+            let row: i64 = self.l[i][..n]
+                .iter()
+                .zip(&x[..n])
+                .map(|(&lij, &xj)| lij as i64 * xj as i64)
+                .sum();
             acc += x[i] as i64 * row;
         }
         acc
@@ -130,8 +131,8 @@ impl AffinityLaplacian {
             return x;
         }
         let mid = (self.n as i32 - 1) / 2;
-        for i in 0..self.n {
-            x[i] = i as i32 - mid;
+        for (i, xi) in x.iter_mut().enumerate().take(self.n) {
+            *xi = i as i32 - mid;
         }
         self.center(&mut x);
         let sigma = self.max_degree().saturating_mul(2).saturating_add(1) as i64;
@@ -143,10 +144,11 @@ impl AffinityLaplacian {
         for _ in 0..steps {
             let mut y = [0i32; MAX_VERTS];
             for i in 0..self.n {
-                let mut lu = 0i64;
-                for j in 0..self.n {
-                    lu += self.l[i][j] as i64 * x[j] as i64;
-                }
+                let lu: i64 = self.l[i][..self.n]
+                    .iter()
+                    .zip(&x[..self.n])
+                    .map(|(&lij, &xj)| lij as i64 * xj as i64)
+                    .sum();
                 y[i] = (sigma * x[i] as i64 - lu).clamp(i32::MIN as i64, i32::MAX as i64) as i32;
             }
             self.center(&mut y);
@@ -168,8 +170,8 @@ impl AffinityLaplacian {
         }
         let x = self.fiedler_iterate(0);
         let mut idx = [0usize; MAX_VERTS];
-        for i in 0..self.n {
-            idx[i] = i;
+        for (i, slot) in idx.iter_mut().enumerate().take(self.n) {
+            *slot = i;
         }
         for i in 1..self.n {
             let key = idx[i];
@@ -183,8 +185,8 @@ impl AffinityLaplacian {
         }
         let half = self.n / 2;
         let mut mask = 0u32;
-        for k in 0..half {
-            mask |= vert_bit(idx[k]);
+        for &v in &idx[..half] {
+            mask |= vert_bit(v);
         }
         if mask == 0 {
             mask = vert_mask(half.max(1).min(self.n));
