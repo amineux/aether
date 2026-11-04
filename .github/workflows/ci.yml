@@ -72,7 +72,8 @@ jobs:
 
   test-and-qemu:
     name: cargo test + make qemu
-    runs-on: ubuntu-latest
+    # Match the known QEMU/isa-debug-exit environment instead of a moving image.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -85,6 +86,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             qemu-system-x86 binutils gcc
+          command -v qemu-system-x86_64
+          qemu-system-x86_64 --version
 
       - name: Host tests
         run: cargo test --workspace --locked
@@ -149,7 +152,8 @@ jobs:
 
   qemu-riscv:
     name: make qemu-riscv-ci
-    runs-on: ubuntu-latest
+    # Keep the qemu-system-misc packaging used by this job reproducible.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -161,6 +165,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-misc
+          command -v qemu-system-riscv64
+          qemu-system-riscv64 --version
 
       - name: RISC-V virt demo
         run: make qemu-riscv-ci

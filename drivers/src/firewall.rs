@@ -327,8 +327,11 @@ pub fn validate_cp_cmd(
     }
 
     let es = dtype.size_bytes() as u64;
-    let a_len = es.saturating_mul(cmd.m as u64).saturating_mul(cmd.k as u64);
-    let b_len = es.saturating_mul(cmd.k as u64).saturating_mul(cmd.n as u64);
+    let ew = op.is_elementwise();
+    let a_cols = if ew { cmd.n } else { cmd.k };
+    let b_rows = if ew { cmd.m } else { cmd.k };
+    let a_len = es.saturating_mul(cmd.m as u64).saturating_mul(a_cols as u64);
+    let b_len = es.saturating_mul(b_rows as u64).saturating_mul(cmd.n as u64);
     let c_len = es.saturating_mul(cmd.m as u64).saturating_mul(cmd.n as u64);
     let bias_len = if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
         es.saturating_mul(cmd.n as u64)
@@ -480,7 +483,7 @@ pub fn job_template_from_cmd(cmd: &CpCmd) -> Result<AccelJobDesc, HalError> {
         b: PhysAddr(0),
         c: PhysAddr(0),
         bias: PhysAddr(0),
-        a_stride: cmd.k as u32,
+        a_stride: if op.is_elementwise() { cmd.n } else { cmd.k } as u32,
         b_stride: cmd.n as u32,
         c_stride: cmd.n as u32,
         dtype,
