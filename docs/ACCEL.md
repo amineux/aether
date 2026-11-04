@@ -56,6 +56,23 @@ submit preserves the pending dispatch's SID latch. These checks validate the
 software map at dispatch time; they are not hardware isolation, generation-based
 pin revocation, or a concurrent SMMU/DMA transaction.
 
+Soft-CP repeats its copied-command firewall validation at execution for standard
+IOVA queues, so every packet binding must still be fully pinned. A queued unmap
+or shorter current pin refuses with status `-2` before DMA, without advancing
+the execution sequence; a valid retry after restoring pins succeeds. Elementwise
+packet A/B lengths use M×N rather than MatMul's M×K and K×N, and command-buffer
+reconstruction uses N as the A row stride. Wave execution clears a host-template
+bias when the copied packet has no bias flag. The 64-byte packet ABI is unchanged.
+
+This execution-time firewall recheck is limited to the standard IOVA path.
+SVA retains its separate ATS/ATC invalidation model, including the explicit
+`unmap_va_keep_atc` fault injection that demonstrates stale translation when
+invalidation is skipped. The shorter-same-IOVA regression replaces the public
+software map table to keep bases resolvable; ordinary unmap/map allocates new
+IOVAs. These are software map checks, not hardware isolation, mapping-generation
+revocation or a concurrent pin/DMA transaction.
+
+
 
 Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
 refuses a silent coherent load across places. `UNIFIED_MEMORY` is a

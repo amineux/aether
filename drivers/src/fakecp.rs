@@ -1041,7 +1041,16 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         if job.op != AccelOp::Nop {
             let sid = StreamId::from_raw(cmd.stream_id);
             let stamped = cmd.flags & CP_FLAG_SET_SID != 0;
-            if !stamped || self.iommu.set_sid_bound(sid).is_err() || self.smmu_walk(&cmd).is_err() {
+            // A queued standard-IOVA dispatch must still cover every operand,
+            // not just its base. SVA keeps its separate ATC/invalidation model,
+            // including the explicit skipped-invalidate fault-injection test.
+            let standard_iova = self.iommu.mm_of(sid).is_none();
+            if !stamped
+                || self.iommu.set_sid_bound(sid).is_err()
+                || (standard_iova
+                    && crate::firewall::validate_cp_cmd(&cmd, &self.iommu, Some(sid)).is_err())
+                || self.smmu_walk(&cmd).is_err()
+            {
                 self.iommu.clear_submit_sid();
                 let cpl = Completion {
                     job_seq: self.npu.seq,
@@ -1102,17 +1111,15 @@ impl<M: DmaView> SoftCommandProcessor<M> {
         if job.op == AccelOp::Nop {
             return Some(job);
         }
-        let sid = StreamId::from_raw(cmd.stream_id);
-        let sva = self.iommu.mm_of(sid).is_some();
-        if self.iommu.is_empty() && !sva {
-            return Some(job);
-        }
         let mut pa = job;
         pa.a = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_a))?;
         pa.b = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_b))?;
         pa.c = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_c))?;
         if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
             pa.bias = self.resolve_dma(cmd.stream_id, PhysAddr(cmd.iova_bias))?;
+        } else {
+            // A cmdbuf template cannot add a bias absent from the copied image.
+            pa.bias = PhysAddr(0);
         }
         Some(pa)
     }
