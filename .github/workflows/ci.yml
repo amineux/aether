@@ -149,7 +149,8 @@ jobs:
 
   qemu-riscv:
     name: make qemu-riscv-ci
-    runs-on: ubuntu-latest
+    # Keep the qemu-system-misc packaging used by this job reproducible.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -161,6 +162,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends qemu-system-misc
+          command -v qemu-system-riscv64
+          qemu-system-riscv64 --version
 
       - name: RISC-V virt demo
         run: make qemu-riscv-ci
