@@ -4,7 +4,7 @@
 //! It shows where opcode / dtype / route fields land in a command
 //! packet, and leaves every hardware step as an explicit TODO.
 
-use aether_core::accel::{AccelJobDesc, AccelOp, Completion, DType};
+use aether_core::accel::{AccelJobDesc, Completion, DType};
 use aether_core::caps::Capability;
 use aether_core::iommu::{IommuMap, MapRequest};
 use aether_core::space::Place;
@@ -133,8 +133,9 @@ impl AccelDevice for PartnerNpuStub {
         self.last_cmd = Some(cmd);
         let token = self.seq;
         self.seq += 1;
-        // No-op complete: Nop always "succeeds". Real work is TODO.
-        let status = if job.op == AccelOp::Nop { 0 } else { 0 };
+        // No-op complete: the stub reports success (status 0) for every op,
+        // Nop included. Real work is TODO.
+        let status = 0;
         self.last_cpl = Some(Completion {
             job_seq: token,
             status,
@@ -174,6 +175,7 @@ impl AccelDevice for PartnerNpuStub {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aether_core::accel::AccelOp;
     use aether_core::caps::{CapKind, CapRights};
     use aether_core::types::TenantId;
     use aether_hal::AccelDevice;
