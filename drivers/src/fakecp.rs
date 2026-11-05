@@ -1125,6 +1125,25 @@ impl<M: DmaView> SoftCommandProcessor<M> {
     }
 
     fn smmu_walk(&mut self, cmd: &CpCmd) -> Result<(), HalError> {
+        if self.iommu.mm_of(StreamId::from_raw(cmd.stream_id)).is_some() {
+            let mut template = job_template_from_cmd(cmd)?;
+            template.a = PhysAddr(cmd.iova_a);
+            template.b = PhysAddr(cmd.iova_b);
+            template.c = PhysAddr(cmd.iova_c);
+            if cmd.flags & CP_FLAG_HAS_BIAS != 0 {
+                template.bias = PhysAddr(cmd.iova_bias);
+            }
+            for span in template
+                .dma_spans()
+                .map_err(|_| HalError::BadArg)?
+                .into_iter()
+                .flatten()
+            {
+                self.iommu
+                    .resolve_submit_ats_range(cmd.stream_id, span.base, span.len, None)
+                    .map_err(map_hal_error)?;
+            }
+        }
         let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_a))?;
         let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_b))?;
         let _ = self.resolve_dma_submit(cmd.stream_id, PhysAddr(cmd.iova_c))?;

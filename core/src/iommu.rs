@@ -233,7 +233,8 @@ pub struct WalkResult {
     /// Final guest PA.
     pub pa: PhysAddr,
     pub config: SteConfig,
-    /// Covering leaf length (bytes from the Stage-1 block).
+    /// Contiguous bytes remaining from `iova` before either translation
+    /// stage ends. A cached translation must not extend past this boundary.
     pub len: u64,
 }
 
@@ -1036,12 +1037,12 @@ impl IommuMap {
         if config == SteConfig::Abort {
             return Err(MapError::StreamAbort);
         }
-        let (s1_va, ipa, leaf_len) = if config == SteConfig::Stage2 {
-            (addr.0, addr.0, 0)
+        let (ipa, leaf_len) = if config == SteConfig::Stage2 {
+            (addr.0, 0)
         } else {
             let pte = Self::pte_hit(&cd.s1, addr.0).ok_or(MapError::NotMapped)?;
             let off = addr.0 - pte.va;
-            (pte.va, pte.out + off, pte.len)
+            (pte.out + off, pte.len - off)
         };
         if config == SteConfig::Stage1 {
             return Ok(WalkResult {
@@ -1055,8 +1056,12 @@ impl IommuMap {
         let s2 = Self::pte_hit(&ste.s2, ipa).ok_or(MapError::Stage2Fault)?;
         let off = ipa - s2.va;
         let pa = s2.out + off;
-        let len = if leaf_len == 0 { s2.len } else { leaf_len };
-        let _ = s1_va;
+        let remaining = s2.len - off;
+        let len = if leaf_len == 0 {
+            remaining
+        } else {
+            leaf_len.min(remaining)
+        };
         Ok(WalkResult {
             iova: addr,
             ipa: PhysAddr(ipa),
@@ -1076,13 +1081,59 @@ impl IommuMap {
         }
         self.atc_misses = self.atc_misses.saturating_add(1);
         let w = self.walk(sid, iova)?;
-        let base_off = iova
-            .0
-            .saturating_sub(self.s1_base(sid, iova.0).unwrap_or(iova.0));
-        let iova_base = iova.0.saturating_sub(base_off);
-        let pa_base = w.pa.0.saturating_sub(base_off);
-        self.atc_insert(stream_id, iova_base, pa_base, w.len);
+        self.atc_insert(stream_id, iova.0, w.pa.0, w.len);
         Ok(w.pa)
+    }
+
+    /// Resolve a nonempty contiguous DMA extent through the software ATC.
+    /// Every cached/walked segment must exist and map to consecutive guest PAs.
+    /// This deliberately retains stale hits after skipped-invalidate injection;
+    /// callers must pair unmap with invalidation, as for `resolve_ats`.
+    pub fn resolve_ats_range(
+        &mut self,
+        stream_id: u32,
+        iova: PhysAddr,
+        len: u64,
+    ) -> Result<PhysAddr, MapError> {
+        if len == 0 {
+            return Err(MapError::BadRange);
+        }
+        let end = iova.0.checked_add(len).ok_or(MapError::BadRange)?;
+        let mut cursor = iova.0;
+        let mut first: Option<PhysAddr> = None;
+        while cursor < end {
+            let pa = self.resolve_ats(stream_id, PhysAddr(cursor))?;
+            let base = *first.get_or_insert(pa);
+            base.0.checked_add(len).ok_or(MapError::BadRange)?;
+            if pa.0 != base.0 + (cursor - iova.0) {
+                return Err(MapError::BadRange);
+            }
+            let (_, remaining) = self
+                .atc_extent(stream_id, cursor)
+                .ok_or(MapError::NotMapped)?;
+            cursor += remaining.min(end - cursor);
+        }
+        first.ok_or(MapError::BadRange)
+    }
+
+    /// SET_SID/tenant-checked form of `resolve_ats_range` for queued DMA.
+    pub fn resolve_submit_ats_range(
+        &mut self,
+        stream_id: u32,
+        iova: PhysAddr,
+        len: u64,
+        tenant: Option<TenantId>,
+    ) -> Result<PhysAddr, MapError> {
+        let armed = self.submit_sid.ok_or(MapError::SubmitSid)?;
+        if armed != stream_id {
+            return Err(MapError::WrongStream);
+        }
+        if let Some(t) = tenant {
+            if self.ste(StreamId(stream_id)).is_some_and(|s| s.tenant != t) {
+                return Err(MapError::CrossTenant);
+            }
+        }
+        self.resolve_ats_range(stream_id, iova, len)
     }
 
     fn ste_index(&self, sid: StreamId) -> Option<usize> {
@@ -1410,13 +1461,6 @@ impl IommuMap {
         }
     }
 
-    fn s1_base(&self, sid: StreamId, iova: u64) -> Option<u64> {
-        let ste = self.ste(sid)?;
-        let cd_i = self.cd_slot_of(sid)?;
-        let cd = ste.cds[cd_i].as_ref()?;
-        Self::pte_hit(&cd.s1, iova).map(|p| p.va)
-    }
-
     fn s1_hit_any(&self, iova: u64) -> bool {
         self.stes.iter().flatten().any(|ste| {
             ste.cds
@@ -1447,12 +1491,19 @@ impl IommuMap {
     }
 
     fn atc_lookup(&self, sid: u32, iova: u64) -> Option<PhysAddr> {
+        self.atc_extent(sid, iova).map(|(pa, _)| pa)
+    }
+
+    fn atc_extent(&self, sid: u32, iova: u64) -> Option<(PhysAddr, u64)> {
         self.atc.iter().flatten().find_map(|l| {
-            if l.sid == sid && iova >= l.iova && iova < l.iova + l.len {
-                Some(PhysAddr(l.pa + (iova - l.iova)))
-            } else {
-                None
+            if l.sid != sid {
+                return None;
             }
+            let off = iova.checked_sub(l.iova)?;
+            if off >= l.len {
+                return None;
+            }
+            Some((PhysAddr(l.pa.checked_add(off)?), l.len - off))
         })
     }
 
@@ -2901,6 +2952,114 @@ mod tests {
         assert_eq!(
             iommu.walk(bad, PhysAddr(SOFT_SMMU_IOVA_BASE)),
             Err(MapError::StreamAbort)
+        );
+    }
+
+    #[test]
+    fn ats_cache_fill_stops_at_both_translation_boundaries() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let sid = StreamId::accel(ChipletId(0), TileId(3), 1);
+        iommu.bind_nested(&cap, sid).unwrap();
+        let r = iommu
+            .map(&cap, MapRequest::pin_accel(PhysAddr(0x5000), 64, sid))
+            .unwrap();
+        let ste_i = iommu.ste_index(sid).unwrap();
+        // Stage 1 still spans 64 bytes, but the stage-2 leaf ends after 8.
+        let s2 = iommu.stes[ste_i]
+            .as_mut()
+            .unwrap()
+            .s2
+            .iter_mut()
+            .flatten()
+            .find(|p| p.out == 0x5000)
+            .unwrap();
+        s2.len = 8;
+        let middle = PhysAddr(r.iova.0 + 4);
+        assert_eq!(iommu.walk(sid, middle).unwrap().len, 4);
+        assert_eq!(iommu.resolve_ats(sid.raw(), middle), Ok(PhysAddr(0x5004)));
+        assert_eq!(iommu.atc.iter().flatten().next().unwrap().len, 4);
+        assert_eq!(
+            iommu.resolve_ats(sid.raw(), PhysAddr(r.iova.0 + 8)),
+            Err(MapError::Stage2Fault)
+        );
+        assert_eq!(
+            iommu.resolve_ats_range(sid.raw(), middle, 5),
+            Err(MapError::Stage2Fault)
+        );
+    }
+
+    #[test]
+    fn ats_ranges_require_complete_contiguous_guest_pa_translations() {
+        for second_pa in [0x1008, 0x2000] {
+            let mut iommu = IommuMap::new();
+            let cap = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+            let sid = StreamId::accel(ChipletId(0), TileId(0), 1);
+            iommu.bind_mm(&cap, sid, MmId(7)).unwrap();
+            iommu
+                .map_va(&cap, sid, PhysAddr(0x10000), PhysAddr(0x1000), 8)
+                .unwrap();
+            iommu
+                .map_va(&cap, sid, PhysAddr(0x10008), PhysAddr(second_pa), 8)
+                .unwrap();
+            let result = iommu.resolve_ats_range(sid.raw(), PhysAddr(0x10000), 16);
+            if second_pa == 0x1008 {
+                assert_eq!(result, Ok(PhysAddr(0x1000)));
+            } else {
+                assert_eq!(result, Err(MapError::BadRange));
+            }
+            assert!(iommu
+                .resolve_ats_range(sid.raw(), PhysAddr(0x10000), 17)
+                .is_err());
+            assert_eq!(
+                iommu.resolve_ats_range(sid.raw(), PhysAddr(0x10000), 0),
+                Err(MapError::BadRange)
+            );
+            assert_eq!(
+                iommu.resolve_ats_range(sid.raw(), PhysAddr(u64::MAX), 2),
+                Err(MapError::BadRange)
+            );
+        }
+    }
+
+    #[test]
+    fn ats_range_submit_checks_and_invalidation_keep_stale_control_explicit() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, CapRights::MEM_FULL.0, TenantId(1));
+        let sid = StreamId::accel(ChipletId(0), TileId(0), 1);
+        let other = StreamId::accel(ChipletId(0), TileId(1), 1);
+        let va = PhysAddr(0x10000);
+        iommu.bind_mm(&cap, sid, MmId(7)).unwrap();
+        iommu.map_va(&cap, sid, va, PhysAddr(0x1000), 16).unwrap();
+        assert_eq!(
+            iommu.resolve_submit_ats_range(sid.raw(), va, 16, None),
+            Err(MapError::SubmitSid)
+        );
+        iommu.set_sid_bound(sid).unwrap();
+        assert_eq!(
+            iommu.resolve_submit_ats_range(other.raw(), va, 16, None),
+            Err(MapError::WrongStream)
+        );
+        assert_eq!(
+            iommu.resolve_submit_ats_range(sid.raw(), va, 16, Some(TenantId(2))),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(
+            iommu.resolve_submit_ats_range(sid.raw(), va, 16, Some(TenantId(1))),
+            Ok(PhysAddr(0x1000))
+        );
+        iommu.unmap_va_keep_atc(&cap, sid, va).unwrap();
+        assert_eq!(
+            iommu.resolve_ats_range(sid.raw(), va, 16),
+            Ok(PhysAddr(0x1000)),
+            "explicit skipped invalidate still exposes stale cache"
+        );
+        iommu.invalidate(InvCmd::CfgCd { sid }).unwrap();
+        assert!(iommu.resolve_ats_range(sid.raw(), va, 16).is_err());
+        iommu.map_va(&cap, sid, va, PhysAddr(0x1000), 16).unwrap();
+        assert_eq!(
+            iommu.resolve_ats_range(sid.raw(), va, 16),
+            Ok(PhysAddr(0x1000))
         );
     }
 

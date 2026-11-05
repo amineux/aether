@@ -72,6 +72,23 @@ software map table to keep bases resolvable; ordinary unmap/map allocates new
 IOVAs. These are software map checks, not hardware isolation, mapping-generation
 revocation or a concurrent pin/DMA transaction.
 
+SVA dispatch now preflights every active operand through
+`resolve_submit_ats_range` before any DMA callback. Each full VA span must
+translate to consecutive guest PAs, because SoftNPU executes on a contiguous PA
+base. Adjacent VA leaves with adjacent guest PAs remain valid; gaps, short tails
+and noncontiguous guest mappings refuse with status `-2` and no sequence advance.
+The resolver checks the job-head SID latch and optional tenant, and walks bounded
+ATC segments rather than trusting a resolved base alone.
+
+`WalkResult.len` is the contiguous byte count remaining from the queried address,
+bounded by both translation stages. ATC fills begin at that queried address and
+cannot extend past either leaf. Normal unmap invalidates cached translations;
+the explicit skipped-invalidation control still demonstrates stale cached access
+within the cached range. This is software range validation, not physical SMMU
+isolation, a cache-coherence protocol or a concurrent map/DMA transaction. The
+frozen command packet and syscall ABIs are unchanged.
+
+
 
 
 Remote access is an explicit DMA/NoC Exchange. `aether_hal::map_fabric`
