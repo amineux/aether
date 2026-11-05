@@ -47,6 +47,10 @@ pub const FIREWALL_SLOTS: usize = 2;
 /// [`ClientCmdStream::read_at`] calls (the Host1x race).
 pub trait ClientCmdStream {
     fn len(&self) -> usize;
+    /// True when the client image has no bytes (`len() == 0`).
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
     fn read_at(&mut self, off: usize, dst: &mut [u8]) -> Result<(), HalError>;
 }
 
@@ -685,5 +689,19 @@ mod tests {
         assert!(r.ident_refused, "identity guest PA in packet → Fault");
         assert!(r.sim_noted, "admit path records firewall sim note");
         assert!(r.all_ok());
+    }
+
+    #[test]
+    fn client_cmd_stream_is_empty_tracks_len() {
+        let empty = SliceCmdStream { bytes: &[] };
+        assert!(empty.is_empty());
+        assert_eq!(empty.len(), 0);
+        let bytes = [0u8; CP_CMD_SIZE];
+        let full = SliceCmdStream { bytes: &bytes };
+        assert!(!full.is_empty());
+        assert_eq!(full.len(), CP_CMD_SIZE);
+        let race = RacingCmdStream::new(bytes, bytes, 1);
+        assert!(!race.is_empty());
+        assert_eq!(race.len(), CP_CMD_SIZE);
     }
 }

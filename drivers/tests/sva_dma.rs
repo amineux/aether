@@ -4,7 +4,7 @@ use aether_core::caps::{CapKind, CapRights, Capability};
 use aether_core::iommu::MmId;
 use aether_core::types::{PhysAddr, TenantId};
 use aether_drivers::fakecp::{stream_for_job, SoftCommandProcessor};
-use aether_hal::{AccelDevice, HalError};
+use aether_hal::AccelDevice;
 use core::cell::Cell;
 
 struct Counted<'a> {
