@@ -162,9 +162,10 @@ jobs:
         run: rustup target add riscv64gc-unknown-none-elf
 
       - name: Install QEMU (RISC-V)
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-misc
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends qemu-system-misc
           command -v qemu-system-riscv64
           qemu-system-riscv64 --version
 
