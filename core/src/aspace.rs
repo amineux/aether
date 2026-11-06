@@ -204,7 +204,7 @@ pub fn parse_kaslr_cmdline(cmd: &[u8]) -> Option<u32> {
             }
             if let Some(&b) = rest.first() {
                 if (b == b'0' || b == b'1' || b == b'2')
-                    && rest.get(1).map(|c| !c.is_ascii_digit()).unwrap_or(true)
+                    && rest.get(1).is_none_or(|c| !c.is_ascii_digit())
                 {
                     return Some((b - b'0') as u32);
                 }
@@ -641,7 +641,7 @@ impl IdentityAs {
         if i4 != 0 || i3 != 0 || i2 == 0 {
             return false;
         }
-        if self.walk(va).map(|w| w.present).unwrap_or(false) {
+        if self.walk(va).is_some_and(|w| w.present) {
             return false;
         }
         self.pml4[0] |= PTE_P | PTE_RW | PTE_US;
@@ -661,7 +661,7 @@ impl IdentityAs {
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
-        self.walk(va).map(|w| w.present && w.user).unwrap_or(false)
+        self.walk(va).is_some_and(|w| w.present && w.user)
     }
 }
 
@@ -1209,7 +1209,7 @@ impl Sv39As {
         if self.mmap_vpn1 != usize::MAX && self.mmap_vpn1 != vpn1 {
             return false;
         }
-        if self.walk(va).map(|w| w.user).unwrap_or(false) {
+        if self.walk(va).is_some_and(|w| w.user) {
             return false;
         }
         let pte1 = self.l1[vpn1];
@@ -1226,7 +1226,7 @@ impl Sv39As {
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
-        self.walk(va).map(|w| w.present && w.user).unwrap_or(false)
+        self.walk(va).is_some_and(|w| w.present && w.user)
     }
 }
 
@@ -1479,7 +1479,7 @@ impl Ttbr0As {
         if self.mmap_i2 != usize::MAX && self.mmap_i2 != i2 {
             return false;
         }
-        if self.walk(va).map(|w| w.user).unwrap_or(false) {
+        if self.walk(va).is_some_and(|w| w.user) {
             return false;
         }
         let pte2 = self.l2[i2];
@@ -1496,7 +1496,7 @@ impl Ttbr0As {
     }
 
     pub fn user_mapped(&self, va: u64) -> bool {
-        self.walk(va).map(|w| w.present && w.user).unwrap_or(false)
+        self.walk(va).is_some_and(|w| w.present && w.user)
     }
 }
 
