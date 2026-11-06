@@ -230,3 +230,124 @@ fn elementwise_single_row_does_not_require_matmul_sized_pins() {
         6
     );
 }
+
+fn split_iova_fixture(
+    backing: &mut [u8],
+    dtype: DType,
+    operand: usize,
+    second_pa: u64,
+) -> (SoftCommandProcessor<Counted<'_>>, AccelJobDesc, CpCmd) {
+    backing.fill(0);
+    backing[0x200..0x210].fill(0x55);
+    let mem = Counted {
+        inner: SliceMem {
+            base: PhysAddr(0),
+            bytes: backing,
+        },
+        reads: Cell::new(0),
+        writes: 0,
+    };
+    let mut d = SoftCommandProcessor::new(mem);
+    let mut job = AccelJobDesc::matmul_i32(
+        2,
+        2,
+        2,
+        PhysAddr(0x100),
+        PhysAddr(0x140),
+        PhysAddr(0x200),
+        1,
+    );
+    job.op = AccelOp::Wave;
+    job.bias = PhysAddr(0x180);
+    job.dtype = dtype;
+    let sid = stream_for_job(&job);
+    let first = d
+        .map_with_cap(&cap(), MapRequest::pin_accel(PhysAddr(0), 4096, sid))
+        .unwrap();
+    let second = d
+        .map_with_cap(
+            &cap(),
+            MapRequest::pin_accel(PhysAddr(second_pa), 4096, sid),
+        )
+        .unwrap();
+    assert_eq!(second.0, first.0 + 4096);
+    d.iommu.set_sid_bound(sid).unwrap();
+    let mut cmd = CpCmd::pack(&job, &d.iommu).unwrap();
+    let crossing = first.0 + 4096 - job.elem_bytes();
+    match operand {
+        0 => cmd.iova_a = crossing,
+        1 => cmd.iova_b = crossing,
+        2 => {
+            cmd.iova_c = crossing;
+            d.mem.inner.bytes[4092..4112].fill(0x55);
+        }
+        _ => cmd.iova_bias = crossing,
+    }
+    d.iommu.clear_submit_sid();
+    (d, job, cmd)
+}
+
+#[test]
+fn copied_iova_split_operand_requires_guest_pa_continuity_at_admission() {
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        for operand in 0..4 {
+            for second_pa in [4096, 8192] {
+                let mut backing = vec![0u8; 12288];
+                let (mut d, job, cmd) = split_iova_fixture(&mut backing, dtype, operand, second_pa);
+                let before = d.mem.inner.bytes.to_vec();
+                let bytes = cmd.to_le_bytes();
+                let result = d.submit_cmdbuf(0, &mut SliceCmdStream { bytes: &bytes }, &job);
+                if second_pa == 4096 {
+                    result.unwrap();
+                    assert_eq!(d.service().unwrap().status, 0);
+                    assert!(d.mem.writes > 0);
+                    let width = job.elem_bytes() as usize;
+                    let dest = if operand == 2 { 4096 - width } else { 0x200 };
+                    assert!(d.mem.inner.bytes[dest..dest + 4 * width]
+                        .iter()
+                        .all(|byte| *byte == 0));
+                } else {
+                    assert_eq!(result, Err(HalError::Fault));
+                    assert!(d.xqueue(0).unwrap().is_empty());
+                    assert!(d.iommu.submit_sid().is_none());
+                    assert!(d.service().is_none());
+                    no_dma(&d);
+                    assert_eq!(d.mem.inner.bytes, &before);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn queued_iova_split_operand_is_revalidated_before_dma_and_recovers() {
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        for operand in 0..4 {
+            let mut backing = vec![0u8; 12288];
+            let (mut d, job, cmd) = split_iova_fixture(&mut backing, dtype, operand, 4096);
+            let before = d.mem.inner.bytes.to_vec();
+            let sid = stream_for_job(&job);
+            let full = d.iommu.clone();
+            let bytes = cmd.to_le_bytes();
+            d.submit_cmdbuf(0, &mut SliceCmdStream { bytes: &bytes }, &job)
+                .unwrap();
+            // Replace the public software map table, preserving IOVAs while
+            // changing the second leaf's guest PA (normal re-map gets a new IOVA).
+            d.iommu = aether_core::iommu::IommuMap::new();
+            d.map_with_cap(&cap(), MapRequest::pin_accel(PhysAddr(0), 4096, sid))
+                .unwrap();
+            d.map_with_cap(&cap(), MapRequest::pin_accel(PhysAddr(8192), 4096, sid))
+                .unwrap();
+            let cpl = d.service().unwrap();
+            assert_eq!((cpl.status, cpl.job_seq), (-2, 1));
+            assert!(d.iommu.submit_sid().is_none());
+            no_dma(&d);
+            assert_eq!(d.mem.inner.bytes, &before);
+            d.iommu = full;
+            d.submit_cmdbuf(0, &mut SliceCmdStream { bytes: &bytes }, &job)
+                .unwrap();
+            let retry = d.service().unwrap();
+            assert_eq!((retry.status, retry.job_seq), (0, 1));
+        }
+    }
+}

@@ -88,6 +88,19 @@ within the cached range. This is software range validation, not physical SMMU
 isolation, a cache-coherence protocol or a concurrent map/DMA transaction. The
 frozen command packet and syscall ABIs are unchanged.
 
+Standard-IOVA Soft-CP relocations now use the table-walking `resolve_range` API
+at both copied-command admission and execution-time revalidation. `covers_iova`
+continues to mean pinned IOVA coverage; it does not guarantee that adjacent IOVA
+leaves map to adjacent guest PAs. The range resolver additionally checks that
+continuity across every S1/S2 leaf boundary before this executor uses a single
+contiguous guest-PA base. Valid contiguous splits remain supported. Discontinuous
+splits refuse before enqueue, or complete with status `-2` and zero DMA callbacks
+if the mappings changed after enqueue. The range walk does not use/populate the
+ATC or change SVA's explicit invalidation controls. Other drivers' use of the
+coverage predicate is unchanged; this is a Soft-CP contract, not a claim of
+system-wide scatter/gather support or hardware DMA isolation.
+
+
 
 
 

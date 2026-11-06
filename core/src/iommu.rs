@@ -1579,6 +1579,36 @@ impl IommuMap {
         self.resolve_result(stream_id, iova, None).ok()
     }
 
+    /// Resolve a fully pinned, nonempty IOVA extent to consecutive guest PAs.
+    /// Unlike `covers_iova`, this also checks physical continuity across every
+    /// S1/S2 leaf boundary. It walks current tables without using the ATC.
+    pub fn resolve_range(
+        &self,
+        stream_id: u32,
+        iova: PhysAddr,
+        len: u64,
+        tenant: Option<TenantId>,
+    ) -> Result<PhysAddr, MapError> {
+        if len == 0 {
+            return Err(MapError::BadRange);
+        }
+        let end = iova.0.checked_add(len).ok_or(MapError::BadRange)?;
+        let base = self.resolve_result(stream_id, iova, tenant)?;
+        base.0.checked_add(len).ok_or(MapError::BadRange)?;
+        if !self.covers_iova(stream_id, iova, len) {
+            return Err(MapError::NotMapped);
+        }
+        let mut cursor = iova.0;
+        while cursor < end {
+            let w = self.walk(StreamId(stream_id), PhysAddr(cursor))?;
+            if w.len == 0 || w.pa.0 != base.0 + (cursor - iova.0) {
+                return Err(MapError::BadRange);
+            }
+            cursor += w.len.min(end - cursor);
+        }
+        Ok(base)
+    }
+
     /// IOVA → guest PA via the STE → CD → S1 → S2 walk.
     pub fn resolve_result(
         &self,
@@ -2977,6 +3007,14 @@ mod tests {
         s2.len = 8;
         let middle = PhysAddr(r.iova.0 + 4);
         assert_eq!(iommu.walk(sid, middle).unwrap().len, 4);
+        assert_eq!(
+            iommu.resolve_range(sid.raw(), middle, 4, None),
+            Ok(PhysAddr(0x5004))
+        );
+        assert_eq!(
+            iommu.resolve_range(sid.raw(), middle, 5, None),
+            Err(MapError::Stage2Fault)
+        );
         assert_eq!(iommu.resolve_ats(sid.raw(), middle), Ok(PhysAddr(0x5004)));
         assert_eq!(iommu.atc.iter().flatten().next().unwrap().len, 4);
         assert_eq!(
