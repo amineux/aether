@@ -82,9 +82,10 @@ jobs:
         run: rustup target add x86_64-unknown-none
 
       - name: Install QEMU and binutils
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
             qemu-system-x86 binutils gcc
           command -v qemu-system-x86_64
           qemu-system-x86_64 --version
@@ -183,9 +184,10 @@ jobs:
         run: rustup target add aarch64-unknown-none
 
       - name: Install QEMU (aarch64)
+        timeout-minutes: 5
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends qemu-system-arm
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends qemu-system-arm
 
       - name: aarch64 virt demo
         run: make qemu-aarch64-ci
