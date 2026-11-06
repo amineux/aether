@@ -368,6 +368,12 @@ fn validate_reloc(iommu: &IommuMap, sid: StreamId, iova: u64, len: u64) -> Resul
     if !sva && iova < SOFT_SMMU_IOVA_BASE {
         return Err(HalError::Fault);
     }
+    if !sva {
+        return iommu
+            .resolve_range(sid.raw(), PhysAddr(iova), len, None)
+            .map(|_| ())
+            .map_err(|_| HalError::Fault);
+    }
     if !iommu.covers_iova(sid.raw(), PhysAddr(iova), len) {
         return Err(HalError::Fault);
     }
