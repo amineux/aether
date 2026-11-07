@@ -168,6 +168,75 @@ mod tests {
         assert_eq!(q.status, STATUS_FAILED);
     }
 
+    fn job(seq: u32) -> AccelJobDesc {
+        AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(0), PhysAddr(0), seq)
+    }
+
+    #[test]
+    fn submit_refused_after_failed_negotiate() {
+        let mut q = VirtioAccelQueue::new();
+        q.version = VIRTIO_ACCEL_VERSION + 1;
+        assert!(!q.negotiate());
+        assert!(q.submit(job(1)).is_err());
+        assert_eq!(q.avail_idx, 0);
+        assert!(!q.kicked);
+        assert!(q.take_avail().is_none());
+    }
+
+    #[test]
+    fn full_ring_refuses_then_accepts_after_drain() {
+        let mut q = VirtioAccelQueue::new();
+        assert!(q.negotiate());
+        for i in 0..VIRTQ_SIZE {
+            assert_eq!(q.submit(job(i as u32)).unwrap(), i as u32);
+        }
+        assert!(q.kicked);
+        // Ring full: the next slot (0 mod VIRTQ_SIZE) is still occupied.
+        assert!(q.submit(job(99)).is_err());
+        assert_eq!(q.avail_idx, VIRTQ_SIZE);
+        // Draining slot 0 frees exactly that slot; the slot number keeps counting.
+        let (slot, _) = q.take_avail().unwrap();
+        assert_eq!(slot, 0);
+        assert_eq!(q.submit(job(8)).unwrap(), VIRTQ_SIZE as u32);
+        assert!(q.submit(job(9)).is_err());
+    }
+
+    #[test]
+    fn take_avail_on_empty_ring_clears_kick() {
+        let mut q = VirtioAccelQueue::new();
+        assert!(q.negotiate());
+        q.submit(job(1)).unwrap();
+        assert!(q.kicked);
+        assert!(q.take_avail().is_some());
+        assert!(q.kicked);
+        assert!(q.take_avail().is_none());
+        assert!(!q.kicked);
+    }
+
+    #[test]
+    fn used_ring_returns_each_completion_once() {
+        let mut q = VirtioAccelQueue::new();
+        assert!(q.poll_used().is_none());
+        for seq in 1..=3u32 {
+            q.complete(
+                0,
+                Completion {
+                    job_seq: seq,
+                    status: 0,
+                    cycles: seq * 10,
+                },
+            );
+        }
+        let mut seen = [false; 4];
+        while let Some(c) = q.poll_used() {
+            assert_eq!(c.cycles, c.job_seq * 10);
+            assert!(!seen[c.job_seq as usize]);
+            seen[c.job_seq as usize] = true;
+        }
+        assert_eq!(seen, [false, true, true, true]);
+        assert!(q.poll_used().is_none());
+    }
+
     #[test]
     fn frozen_bar_constants_match_mmio() {
         use crate::mmio::{
