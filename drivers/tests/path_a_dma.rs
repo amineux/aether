@@ -215,3 +215,142 @@ fn queued_bias_is_rechecked_after_unmap_and_wrong_sid_is_preserved() {
     assert_eq!(dev.npu.jobs_retired, 1);
     assert_eq!(dev.mem.writes, 4);
 }
+
+// Two adjacent IOVA leaves need not represent adjacent guest pages. Keep all
+// ordinary operands in the first leaf and move one operand across its end.
+fn split_device(backing: &mut [u8], second_pa: u64) -> PathABar<Tracked<'_>> {
+    let mut dev = PathABar::new(Tracked {
+        mem: SliceMem {
+            base: PhysAddr(0),
+            bytes: backing,
+        },
+        reads: Cell::new(0),
+        writes: 0,
+    });
+    dev.probe().unwrap();
+    let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1));
+    let first = dev
+        .map_with_cap(&cap, MapRequest::pin(PhysAddr(0), 4096))
+        .unwrap();
+    let second = dev
+        .map_with_cap(&cap, MapRequest::pin(PhysAddr(second_pa), 4096))
+        .unwrap();
+    assert_eq!(second.0, first.0 + 4096);
+    dev
+}
+
+fn split_job(dtype: DType, operand: usize, padded: bool) -> AccelJobDesc {
+    let mut job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(256), PhysAddr(320), PhysAddr(512), 1);
+    job.dtype = dtype;
+    job.op = AccelOp::Wave;
+    job.bias = PhysAddr(384);
+    if padded {
+        job.a_stride = 8;
+        job.b_stride = 8;
+        job.c_stride = 8;
+    }
+    *[&mut job.a, &mut job.b, &mut job.c, &mut job.bias][operand] =
+        PhysAddr(4096 - u64::from(dtype.size_bytes()));
+    job
+}
+
+#[test]
+fn split_iova_operands_require_contiguous_guest_pages_before_dma() {
+    for dtype in [DType::I32, DType::F32, DType::F16] {
+        for operand in 0..4 {
+            for padded in [false, true] {
+                for second_pa in [4096, 8192] {
+                    let mut backing = vec![0u8; 12288];
+                    if operand == 2 {
+                        backing[4096..4160].fill(0xa5);
+                    }
+                    let mut dev = split_device(&mut backing, second_pa);
+                    let job = split_job(dtype, operand, padded);
+                    let seq = dev.npu.seq;
+                    dev.submit(&job).unwrap();
+                    let wire = dev.peek_job_wire(0);
+                    let iova = [wire.a, wire.b, wire.c, wire.bias][operand];
+                    let span = job.dma_spans().unwrap()[operand].unwrap();
+                    assert!(dev
+                        .iommu
+                        .covers_iova(dev.stream_id().raw(), PhysAddr(iova), span.len));
+                    let before = dev.mem.mem.bytes.to_vec();
+                    let cpl = dev.service().unwrap();
+                    assert_eq!(
+                        cpl.status,
+                        if second_pa == 4096 { 0 } else { -2 },
+                        "{dtype:?} operand={operand} padded={padded} second_pa={second_pa}"
+                    );
+                    assert_eq!(dev.poll().unwrap(), cpl);
+                    if second_pa == 4096 {
+                        // Only tensor output elements may change, including
+                        // when a padded C span crosses the page boundary.
+                        let es = dtype.size_bytes() as usize;
+                        for (i, old) in before.iter().enumerate() {
+                            let output = (0..2).any(|row| {
+                                (0..2).any(|col| {
+                                    let start =
+                                        job.c.0 as usize + (row * job.c_stride as usize + col) * es;
+                                    (start..start + es).contains(&i)
+                                })
+                            });
+                            assert_eq!(dev.mem.mem.bytes[i], if output { 0 } else { *old });
+                        }
+                    } else {
+                        assert_eq!(dev.mem.reads.get(), 0);
+                        assert_eq!(dev.mem.writes, 0);
+                        assert_eq!(dev.mem.mem.bytes, before);
+                        assert_eq!(dev.npu.seq, seq);
+                        assert_eq!(dev.npu.jobs_retired, 0);
+                        // A refused ring entry must not poison subsequent work.
+                        let valid = AccelJobDesc::matmul_i32(
+                            2,
+                            2,
+                            2,
+                            PhysAddr(256),
+                            PhysAddr(320),
+                            PhysAddr(512),
+                            2,
+                        );
+                        dev.submit(&valid).unwrap();
+                        assert_eq!(dev.service().unwrap().status, 0);
+                        assert_eq!(dev.poll().unwrap().status, 0);
+                    }
+                    assert!(dev.mem.reads.get() > 0);
+                    assert_eq!(dev.mem.writes, 4);
+                    assert_eq!(dev.npu.jobs_retired, 1);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn queued_split_mapping_is_revalidated_at_service() {
+    for dtype in [DType::I32, DType::F32, DType::F16] {
+        for operand in 0..4 {
+            let mut backing = vec![0u8; 12288];
+            let mut dev = split_device(&mut backing, 4096);
+            let job = split_job(dtype, operand, true);
+            let seq = dev.npu.seq;
+            dev.submit(&job).unwrap();
+            // Replace the public software table at identical IOVA bases. Normal
+            // unmap/map allocates new IOVAs; this is a table-replacement control.
+            let mut other_backing = vec![0u8; 12288];
+            let replacement = split_device(&mut other_backing, 8192);
+            let valid_map = std::mem::replace(&mut dev.iommu, replacement.iommu);
+            assert_eq!(dev.service().unwrap().status, -2);
+            assert_eq!(dev.poll().unwrap().status, -2);
+            assert_eq!(dev.mem.reads.get(), 0);
+            assert_eq!(dev.mem.writes, 0);
+            assert_eq!(dev.npu.seq, seq);
+            assert_eq!(dev.npu.jobs_retired, 0);
+            dev.iommu = valid_map;
+            dev.submit(&job).unwrap();
+            assert_eq!(dev.service().unwrap().status, 0);
+            assert_eq!(dev.poll().unwrap().status, 0);
+            assert_eq!(dev.mem.writes, 4);
+            assert_eq!(dev.npu.jobs_retired, 1);
+        }
+    }
+}

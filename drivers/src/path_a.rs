@@ -126,12 +126,10 @@ impl<M: DmaView> PathABar<M> {
 
     /// Device-side: drain one kicked job. Avail-ring addresses are
     /// Soft-SMMU IOVAs on [`Self::stream_id`]; resolve to guest PA for DMA.
-    /// Wrong SID / unbound / identity GPA → used-ring status `-2`.
+    /// Preflight each full strided span before any DMA. Wrong SID, unbound,
+    /// identity GPA or discontinuous guest translation → used-ring status `-2`.
     pub fn service(&mut self) -> Option<Completion> {
         let (token, job) = self.mmio.device_take_avail()?;
-        if job.op != AccelOp::Nop && !self.buffers_mapped(&job) {
-            return Some(self.complete_dma_fault(token));
-        }
         let job = match self.job_from_iova(job) {
             Ok(j) => j,
             Err(_) => return Some(self.complete_dma_fault(token)),
@@ -197,25 +195,13 @@ impl<M: DmaView> PathABar<M> {
             .into_iter()
             .zip(spans)
         {
-            if span.is_some() {
-                *address = self.iommu.resolve_result(sid, *address, None)?;
+            if let Some(span) = span {
+                // SoftNPU uses one guest-PA base per operand. Coverage alone
+                // cannot authorize a split that jumps to another guest page.
+                *address = self.iommu.resolve_range(sid, span.base, span.len, None)?;
             }
         }
         Ok(pa)
-    }
-
-    fn buffers_mapped(&self, job: &AccelJobDesc) -> bool {
-        let Ok(spans) = job.dma_spans() else {
-            return false;
-        };
-        if self.iommu.is_empty() {
-            return false;
-        }
-        let sid = self.dma_sid.raw();
-        spans
-            .into_iter()
-            .flatten()
-            .all(|span| self.iommu.covers_iova(sid, span.base, span.len))
     }
 }
 

@@ -96,9 +96,18 @@ continuity across every S1/S2 leaf boundary before this executor uses a single
 contiguous guest-PA base. Valid contiguous splits remain supported. Discontinuous
 splits refuse before enqueue, or complete with status `-2` and zero DMA callbacks
 if the mappings changed after enqueue. The range walk does not use/populate the
-ATC or change SVA's explicit invalidation controls. Other drivers' use of the
-coverage predicate is unchanged; this is a Soft-CP contract, not a claim of
-system-wide scatter/gather support or hardware DMA isolation.
+ATC or change SVA's explicit invalidation controls.
+
+The host `PathABar` also resolves every full strided operand with `resolve_range`
+at service time, before the first DMA callback. Adjacent IOVA leaves must map to
+consecutive guest PAs; a discontinuous split completes with status `-2`, zero DMA
+callbacks and no execution sequence advance. Contiguous splits, padded layouts,
+unused operands and Nop retain their existing behavior. This gate rechecks queued
+work against the current software table. Its table-replacement regression keeps
+IOVA bases fixed explicitly; normal unmap/map allocates new IOVAs. This is the
+Rust host Path-A contract, not a change to the optional QEMU C device or physical
+SMMU isolation. Other adapters are unchanged; no system-wide scatter/gather or
+concurrent pin/DMA transaction is claimed.
 
 
 
