@@ -225,4 +225,48 @@ mod tests {
         let cpl = d.poll().unwrap();
         assert_eq!(cpl.status, 0);
     }
+
+    #[test]
+    fn submit_refuses_unmapped_iovas() {
+        let mut d = PartnerNpuStub::new();
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        assert_eq!(d.submit(&job).unwrap_err(), HalError::Fault);
+        assert!(d.last_cmd().is_none());
+        assert!(d.poll().is_none());
+    }
+
+    #[test]
+    fn tenantless_unmap_is_refused_and_leaves_pin() {
+        let mut d = PartnerNpuStub::new();
+        let iova = d
+            .map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0x1000), 0x1000))
+            .unwrap();
+        assert_eq!(d.unmap(iova).unwrap_err(), HalError::NoMemoryCap);
+        assert_eq!(d.translate(PhysAddr(0x1400)).unwrap().0, iova.0 + 0x400);
+    }
+
+    #[test]
+    fn unmap_with_cap_drops_own_pin() {
+        let mut d = PartnerNpuStub::new();
+        let cap = mem_cap();
+        let iova = d
+            .map_with_cap(&cap, MapRequest::pin(PhysAddr(0x1000), 0x1000))
+            .unwrap();
+        d.unmap_with_cap(&cap, iova).unwrap();
+        assert!(d.translate(PhysAddr(0x1000)).is_none());
+        assert!(d.translate(PhysAddr(0x1400)).is_none());
+    }
+
+    #[test]
+    fn missing_tile_routes_as_zero() {
+        let mut d = PartnerNpuStub::new();
+        d.map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        let job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(16), PhysAddr(32), 1);
+        assert!(job.place.tile.is_none());
+        d.submit(&job).unwrap();
+        let cmd = d.last_cmd().unwrap();
+        assert_eq!(cmd.route_tile, 0);
+        assert_eq!(cmd.route_chiplet, job.place.chiplet.0);
+    }
 }
