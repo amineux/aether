@@ -179,15 +179,11 @@ impl<M: DmaView> SoftNpuDevice<M> {
         self.iommu.map_window(cap, win).map_err(map_hal_error)
     }
 
-    /// IOVA → guest PA only. No guest-PA identity shortcut when Soft SMMU
-    /// is populated — tensors must arrive as Soft-SMMU IOVAs.
-    fn dma_guest_pa(&self, addr: PhysAddr) -> Option<PhysAddr> {
-        if self.iommu.is_empty() {
-            return Some(addr);
-        }
-        self.iommu
-            .resolve_stream(DEFAULT_STREAM, addr)
-            .or_else(|| self.iommu.resolve(addr))
+    /// Resolve one complete operand on its bound stream (IOVAs are disjoint).
+    /// A single guest-PA base is safe only if the entire span is contiguous.
+    fn dma_guest_pa(&self, addr: PhysAddr, len: u64) -> Option<PhysAddr> {
+        let sid = self.iommu.region_at_iova(addr)?.stream_id;
+        self.iommu.resolve_range(sid, addr, len, None).ok()
     }
 
     fn job_to_iova(&self, job: &AccelJobDesc) -> AccelJobDesc {
@@ -213,17 +209,18 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     fn job_from_iova(&self, job: AccelJobDesc) -> Option<AccelJobDesc> {
+        // Validate layouts even in the existing unpinned ring-test mode.
+        let spans = job.dma_spans().ok()?;
         if self.iommu.is_empty() {
             return Some(job);
         }
         let mut pa = job;
-        let spans = job.dma_spans().ok()?;
         for (address, span) in [&mut pa.a, &mut pa.b, &mut pa.c, &mut pa.bias]
             .into_iter()
             .zip(spans)
         {
-            if span.is_some() {
-                *address = self.dma_guest_pa(*address)?;
+            if let Some(span) = span {
+                *address = self.dma_guest_pa(span.base, span.len)?;
             }
         }
         Some(pa)
@@ -238,21 +235,13 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     /// Device-side: drain one kicked job into SoftNPU and raise used-ring IRQ.
-    /// Avail-ring addresses are Soft-SMMU IOVAs; resolve to guest PA for DMA.
+    /// Avail-ring addresses are Soft-SMMU IOVAs. Preflight every full operand
+    /// before DMA; short or discontinuous spans complete with status -2.
     pub fn service(&mut self) -> Option<Completion> {
         let (token, job) = self.mmio.device_take_avail()?;
         let fence_id = job.fence_id;
         self.fence_done = false;
         self.last_fence = if fence_id != 0 { Some(fence_id) } else { None };
-        if !self.buffers_mapped(&job) {
-            let cpl = Completion {
-                job_seq: self.npu.seq,
-                status: -2,
-                cycles: 0,
-            };
-            self.mmio.device_complete(token, cpl);
-            return Some(self.note_fence(fence_id, cpl));
-        }
         let Some(job) = self.job_from_iova(job) else {
             let cpl = Completion {
                 job_seq: self.npu.seq,
@@ -285,24 +274,6 @@ impl<M: DmaView> SoftNpuDevice<M> {
             self.fence_done = true;
         }
         cpl
-    }
-
-    fn buffers_mapped(&self, job: &AccelJobDesc) -> bool {
-        let Ok(spans) = job.dma_spans() else {
-            return false;
-        };
-        if self.iommu.is_empty() {
-            // Host unit tests that only exercise the ring may skip pin.
-            return true;
-        }
-        spans
-            .into_iter()
-            .flatten()
-            .all(|span| self.dma_range_ok(span.base, span.len))
-    }
-
-    fn dma_range_ok(&self, addr: PhysAddr, len: u64) -> bool {
-        self.iommu.covers_iova(DEFAULT_STREAM, addr, len) || self.iommu.covers_iova_any(addr, len)
     }
 }
 
