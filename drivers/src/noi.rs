@@ -98,7 +98,7 @@ pub fn tagged_nop(tenant: u32, chiplet: u8, tile: u16, kind: CollectiveKind) -> 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::fakecp::{SoftCommandProcessor, CP_SSID};
+    use crate::fakecp::{SoftCommandProcessor, CP_SSID, SOFT_CP_XQUEUES, XQUEUE_DEPTH};
     use aether_core::accel::SliceMem;
     use aether_core::iommu::StreamId;
     use aether_core::noi::{
@@ -269,5 +269,53 @@ mod tests {
             HalError::Busy
         );
         assert_eq!(d.noi().refused_class(FlowClass::Curl), 2);
+    }
+
+    #[test]
+    fn submit_xqueue_noi_releases_admit_when_queue_missing() {
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        two_queues(&mut d);
+        d.enable_noi(true);
+        let job = two_tenant_nop(1, 0, 2);
+        assert_eq!(
+            d.submit_xqueue_noi(SOFT_CP_XQUEUES as u16, &job, DEMO_LIGHT_DEMAND)
+                .unwrap_err(),
+            HalError::BadArg
+        );
+        // Admit succeeded; XQueue then failed. Occupancy must not leak.
+        assert_eq!(d.noi().occupancy(), 0);
+        assert_eq!(d.advertised_is_milli(TenantId(1)), None);
+        assert_eq!(d.noi().refused(), 0);
+    }
+
+    #[test]
+    fn submit_xqueue_noi_releases_admit_when_queue_full() {
+        let mut backing = [0u8; 16];
+        let mem = SliceMem {
+            base: PhysAddr(0),
+            bytes: &mut backing,
+        };
+        let mut d = SoftCommandProcessor::new(mem);
+        two_queues(&mut d);
+        d.enable_noi(true);
+        let job = two_tenant_nop(1, 0, 2);
+        for _ in 0..XQUEUE_DEPTH {
+            d.submit_xqueue(0, &job).unwrap();
+        }
+        assert!(d.xqueue(0).unwrap().is_full());
+        assert_eq!(d.noi().occupancy(), 0);
+        assert_eq!(
+            d.submit_xqueue_noi(0, &job, DEMO_LIGHT_DEMAND).unwrap_err(),
+            HalError::Busy
+        );
+        assert_eq!(d.noi().occupancy(), 0);
+        assert_eq!(d.advertised_is_milli(TenantId(1)), None);
+        assert_eq!(d.xqueue(0).unwrap().pending(), XQUEUE_DEPTH as u8);
+        assert_eq!(d.noi().refused(), 0);
     }
 }
