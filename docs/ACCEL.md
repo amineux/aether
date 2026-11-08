@@ -109,6 +109,15 @@ Rust host Path-A contract, not a change to the optional QEMU C device or physica
 SMMU isolation. Other adapters are unchanged; no system-wide scatter/gather or
 concurrent pin/DMA transaction is claimed.
 
+Path-B `SoftNpuDevice` applies the same full-span continuity gate before any DMA
+callback. It selects the bound stream owning each operand's disjoint IOVA base
+and requires that entire operand to resolve on that stream. Valid nondefault
+stream descriptors remain supported. Different operands may still belong to
+different bound streams. Refusals preserve memory and execution sequence while completing the used-ring entry and its named fence;
+restoring valid mappings permits retry. The existing empty-table ring-test mode
+is retained, including layout validation. These are software-model checks; they
+do not establish tenant authentication of the submitter or hardware isolation.
+
 
 
 
