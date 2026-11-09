@@ -118,6 +118,21 @@ restoring valid mappings permits retry. The existing empty-table ring-test mode
 is retained, including layout validation. These are software-model checks; they
 do not establish tenant authentication of the submitter or hardware isolation.
 
+IREE-shaped packet bindings must now resolve their complete advertised IOVA
+lengths to the template's consecutive guest PAs. This is checked during packing,
+copied-image admission and service-time revalidation, with full-range resolution
+before execution. Guest-PA coverage alone is insufficient: pinning guest pages
+in a different IOVA order can make a linear packet binding describe a different
+tensor from the host template, even when both guest ranges are pinned. Such
+bindings refuse with `HalError::Fault` before enqueue, or status `-2` and zero DMA
+if the table changed after enqueue. Ordered contiguous splits remain valid, and
+refused queued work still signals its named fence and clears the submit SID.
+The table-replacement control preserves bases explicitly; normal unmap/map
+allocates new IOVAs. The 96-byte packet, existing guest-pin checks and SID latch
+remain unchanged. This is a software packet-consistency check, not a newly
+established physical isolation guarantee.
+
+
 
 
 

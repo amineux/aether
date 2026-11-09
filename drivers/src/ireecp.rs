@@ -329,6 +329,24 @@ impl IreeHalCmd {
         if job.bias.0 != 0 && !iommu.covers_stream(sid.raw(), job.bias, bias_bytes) {
             return Err(HalError::Fault);
         }
+        // A frozen binding is one linear IOVA span. Guest-PA coverage alone
+        // does not prove that span describes the template's contiguous tensor:
+        // separately pinned guest pages can be allocated out of IOVA order.
+        for (guest, iova, len) in [
+            (job.a, a, a_bytes),
+            (job.b, b, b_bytes),
+            (job.c, c, c_bytes),
+            (job.bias, bias, if job.bias.0 != 0 { bias_bytes } else { 0 }),
+        ] {
+            if len != 0
+                && iommu
+                    .resolve_range(sid.raw(), iova, len, None)
+                    .map_err(|_| HalError::Fault)?
+                    != guest
+            {
+                return Err(HalError::Fault);
+            }
+        }
         if a_bytes > u32::MAX as u64 || b_bytes > u32::MAX as u64 || c_bytes > u32::MAX as u64 {
             return Err(HalError::BadArg);
         }
@@ -716,19 +734,18 @@ impl<M: DmaView> IreeShapedCp<M> {
         }
         let mut pa = job;
         pa.op = op;
-        pa.a = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.binding0_offset))?;
-        pa.b = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.binding1_offset))?;
-        pa.c = self
-            .iommu
-            .resolve_stream(cmd.stream_id, PhysAddr(cmd.binding2_offset))?;
+        // validate_dispatch has bound the image to this template. Resolve
+        // every advertised byte again before using a single guest-PA base.
+        let resolve = |offset: u64, length: u32| {
+            self.iommu
+                .resolve_range(cmd.stream_id, PhysAddr(offset), u64::from(length), None)
+                .ok()
+        };
+        pa.a = resolve(cmd.binding0_offset, cmd.binding0_length)?;
+        pa.b = resolve(cmd.binding1_offset, cmd.binding1_length)?;
+        pa.c = resolve(cmd.binding2_offset, cmd.binding2_length)?;
         if cmd.binding_count >= 4 && cmd.binding3_offset != 0 {
-            pa.bias = self
-                .iommu
-                .resolve_stream(cmd.stream_id, PhysAddr(cmd.binding3_offset))?;
+            pa.bias = resolve(cmd.binding3_offset, cmd.binding3_length)?;
         }
         Some(pa)
     }
