@@ -62,4 +62,30 @@ mod tests {
         job.c_stride = 0;
         assert_eq!(check(&job), Ok(()));
     }
+
+    #[test]
+    fn output_stride_alone_must_be_packed_once_c_has_two_rows() {
+        let mut job = AccelJobDesc::matmul_i32(2, 3, 4, PhysAddr(0), PhysAddr(32), PhysAddr(80), 1);
+        job.c_stride = job.n + 1;
+        assert_eq!(check(&job), Err(HalError::Unsupported)); // A and B still packed
+        job.m = 1;
+        assert_eq!(check(&job), Ok(())); // single-row C: stride unused
+    }
+
+    #[test]
+    fn elementwise_b_stride_checked_except_for_relu() {
+        let mut job = AccelJobDesc::add_i32(2, 3, PhysAddr(0), PhysAddr(32), PhysAddr(64), 1);
+        assert_eq!(check(&job), Ok(()));
+        job.b_stride = job.n + 1;
+        assert_eq!(check(&job), Err(HalError::Unsupported)); // B has M=2 rows
+        for op in [AccelOp::Mul, AccelOp::Max] {
+            job.op = op;
+            assert_eq!(check(&job), Err(HalError::Unsupported));
+        }
+        let mut relu = AccelJobDesc::relu_i32(2, 3, PhysAddr(0), PhysAddr(64), 1);
+        relu.b_stride = u32::MAX;
+        assert_eq!(check(&relu), Ok(())); // B unused
+        relu.a_stride = relu.n + 1;
+        assert_eq!(check(&relu), Err(HalError::Unsupported));
+    }
 }
