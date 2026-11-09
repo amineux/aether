@@ -223,3 +223,114 @@ fn invalid_shape_clears_latch_and_busy_submit_preserves_pending_dispatch() {
     assert_eq!(d.iommu.submit_sid(), latched);
     assert_eq!(d.service().unwrap().status, 0);
 }
+
+// Guest pages are all pinned in either order. Only the IOVA layout changes:
+// 0 -> 4096 -> 8192 is contiguous; 0 -> 8192 -> 4096 is not.
+fn split_fixture(
+    backing: &mut [u8],
+    dtype: DType,
+    operand: usize,
+    ordered: bool,
+) -> (IreeShapedCp<Counted<'_>>, AccelJobDesc) {
+    let mut job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(256), PhysAddr(320), PhysAddr(512), 1);
+    job.op = aether_core::accel::AccelOp::Wave;
+    job.dtype = dtype;
+    job.bias = PhysAddr(384);
+    job.fence_id = 77;
+    *[&mut job.a, &mut job.b, &mut job.c, &mut job.bias][operand] =
+        PhysAddr(4096 - u64::from(dtype.size_bytes()));
+    let mut d = IreeShapedCp::new(Counted {
+        inner: SliceMem {
+            base: PhysAddr(0),
+            bytes: backing,
+        },
+        reads: Cell::new(0),
+        writes: 0,
+    });
+    for pa in if ordered {
+        [0, 4096, 8192]
+    } else {
+        [0, 8192, 4096]
+    } {
+        d.map_with_cap(
+            &cap(),
+            MapRequest::pin_accel(PhysAddr(pa), 4096, stream_for_job(&job)),
+        )
+        .unwrap();
+    }
+    (d, job)
+}
+
+#[test]
+fn discontinuous_iova_bindings_refuse_pack_and_both_submit_paths() {
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        for operand in 0..4 {
+            let mut backing = vec![0u8; 12288];
+            let (mut d, job) = split_fixture(&mut backing, dtype, operand, false);
+            let sid = stream_for_job(&job);
+            let span = job.dma_spans().unwrap()[operand].unwrap();
+            let iova = d.iommu.translate_stream(sid.raw(), span.base).unwrap();
+            assert!(d.iommu.covers_stream(sid.raw(), span.base, span.len));
+            assert!(d.iommu.covers_iova(sid.raw(), iova, span.len));
+            assert_eq!(
+                d.iommu
+                    .resolve_stream(sid.raw(), PhysAddr(iova.0 + u64::from(dtype.size_bytes()))),
+                Some(PhysAddr(8192))
+            );
+            let before = d.mem.inner.bytes.to_vec();
+            assert_eq!(IreeHalCmd::pack(&job, &d.iommu), Err(HalError::Fault));
+            assert_eq!(d.submit(&job), Err(HalError::Fault));
+            assert!(d.iommu.submit_sid().is_none());
+            // The same base offsets and lengths form a valid copied image
+            // against the ordered table; reject it against the current table.
+            let mut other = vec![0u8; 12288];
+            let (good, _) = split_fixture(&mut other, dtype, operand, true);
+            let cmd = IreeHalCmd::pack(&job, &good.iommu).unwrap();
+            assert_eq!(d.submit_hal(cmd, &job), Err(HalError::Fault));
+            assert!(!d.doorbell_pending());
+            assert!(!d.irq_pending());
+            assert!(d.last_cmd().is_none());
+            assert!(d.completed_fence().is_none());
+            assert!(d.service().is_none());
+            assert!(d.poll().is_none());
+            no_dma(&d);
+            assert_eq!(d.mem.inner.bytes, before);
+            d.iommu = good.iommu;
+            d.submit(&job).unwrap();
+            assert_eq!(d.service().unwrap().status, 0);
+            assert_eq!(d.mem.writes, 4);
+            assert_eq!(d.completed_fence(), Some(77));
+        }
+    }
+}
+
+#[test]
+fn queued_binding_rechecks_iova_continuity_and_recovers() {
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        for operand in 0..4 {
+            let mut backing = vec![0u8; 12288];
+            let (mut d, job) = split_fixture(&mut backing, dtype, operand, true);
+            let seq = d.submit(&job).unwrap();
+            let before = d.mem.inner.bytes.to_vec();
+            let mut other = vec![0u8; 12288];
+            let (replacement, _) = split_fixture(&mut other, dtype, operand, false);
+            // Public software-table replacement preserves IOVA bases. Normal
+            // unmap/map allocates new IOVAs and does not model this control.
+            let good = core::mem::replace(&mut d.iommu, replacement.iommu);
+            d.iommu.set_sid_bound(stream_for_job(&job)).unwrap();
+            let cpl = d.service().unwrap();
+            assert_eq!((cpl.status, cpl.job_seq), (-2, seq));
+            assert_eq!(d.poll().unwrap(), cpl);
+            assert_eq!(d.completed_fence(), Some(77));
+            assert!(d.iommu.submit_sid().is_none());
+            no_dma(&d);
+            assert_eq!(d.mem.inner.bytes, before);
+            d.iommu = good;
+            assert_eq!(d.submit(&job).unwrap(), seq);
+            let retry = d.service().unwrap();
+            assert_eq!((retry.status, retry.job_seq), (0, seq));
+            assert_eq!(d.mem.writes, 4);
+            assert!(d.iommu.submit_sid().is_none());
+        }
+    }
+}
