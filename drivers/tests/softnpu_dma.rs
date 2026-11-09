@@ -357,7 +357,6 @@ fn unused_operands_and_empty_table_layout_validation_are_preserved() {
     dev.submit(&job).unwrap();
     assert_eq!(dev.service().unwrap().status, 0);
     assert_eq!(dev.mem.writes, 4);
-    drop(dev);
     let mut empty = SoftNpuDevice::new(Tracked {
         mem: SliceMem {
             base: PhysAddr(0),

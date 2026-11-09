@@ -110,7 +110,8 @@ mod tests {
     use aether_core::softsfi::{
         heap_alloc_prog, illegal_width_prog, in_bounds_atomic_prog, in_bounds_prog,
         oob_atomic_prog, oob_load_prog, tensor_prog, unknown_base_load_prog,
-        unknown_base_store_prog, unknown_opcode_prog, Insn, Program, SFI_SECRET_B, SFI_BASE_A,
+        unknown_base_store_prog, unknown_opcode_prog, Insn, Program, MAX_REGS, SFI_BASE_A,
+        SFI_SECRET_B,
     };
     use aether_core::types::{ChipletId, TenantId, TileId};
 
@@ -243,7 +244,60 @@ mod tests {
         assert_eq!(a_word, 3);
     }
 
+    #[test]
+    fn softsfi_malformed_program_is_bad_arg_not_fault() {
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        let (mut d, sid_a, _sid_b, iova_a, _iova_b) = two_tenant_cp(&mut backing);
+        let empty = Program::new();
+        assert_eq!(d.verify_sfi(sid_a, &empty), Err(SfiError::BadInsn));
+        assert_eq!(d.submit_sfi(sid_a, &empty).unwrap_err(), HalError::BadArg);
+        assert_eq!(
+            d.inject_sfi_skip_verify(sid_a, &empty).unwrap_err(),
+            HalError::BadArg
+        );
+        // Bad base register on a store: BadInsn at verify and at runtime.
+        let mut bad = Program::new();
+        let _ = bad.push(Insn::add_imm(1, 0, iova_a.0));
+        let _ = bad.push(Insn::add_imm(2, 0, 99));
+        let _ = bad.push(Insn::store(2, MAX_REGS as u8, 0));
+        assert_eq!(d.verify_sfi(sid_a, &bad), Err(SfiError::BadInsn));
+        assert_eq!(d.submit_sfi(sid_a, &bad).unwrap_err(), HalError::BadArg);
+        assert_eq!(
+            d.inject_sfi_skip_verify(sid_a, &bad).unwrap_err(),
+            HalError::BadArg
+        );
+        let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(a_word, 3);
+    }
 
+    #[test]
+    fn softsfi_sandbox_is_per_sid_both_directions() {
+        let mut backing = [0u8; 512];
+        backing[0..4].copy_from_slice(&3u32.to_le_bytes());
+        backing[256..260].copy_from_slice(&7u32.to_le_bytes());
+        let (mut d, _sid_a, sid_b, iova_a, iova_b) = two_tenant_cp(&mut backing);
+        // Tenant B runs on its own pin; tenant A's word is untouched.
+        let own_b = in_bounds_prog(iova_b.0);
+        assert!(d.verify_sfi(sid_b, &own_b).is_ok());
+        assert_eq!(d.submit_sfi(sid_b, &own_b).unwrap().regs[2], 8);
+        // The same program shape aimed at A's IOVA is refused on SID B.
+        let into_a = in_bounds_prog(iova_a.0);
+        assert_eq!(d.verify_sfi(sid_b, &into_a), Err(SfiError::Oob));
+        assert_eq!(d.submit_sfi(sid_b, &into_a).unwrap_err(), HalError::Fault);
+        // A SID with no pins has an empty sandbox: nothing verifies.
+        let sid_none = StreamId::accel(ChipletId(2), TileId(4), CP_SSID);
+        assert!(d.sfi_sandbox(sid_none).is_empty());
+        assert_eq!(d.verify_sfi(sid_none, &into_a), Err(SfiError::Oob));
+        assert_eq!(
+            d.submit_sfi(sid_none, &into_a).unwrap_err(),
+            HalError::Fault
+        );
+        let a_word = u32::from_le_bytes(backing[0..4].try_into().unwrap());
+        assert_eq!(a_word, 3);
+        let b_word = u32::from_le_bytes(backing[256..260].try_into().unwrap());
+        assert_eq!(b_word, 8);
+    }
 
     #[test]
     fn softsfi_atomic_in_range_accept_cross_tenant_reject() {
