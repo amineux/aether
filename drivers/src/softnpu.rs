@@ -209,11 +209,9 @@ impl<M: DmaView> SoftNpuDevice<M> {
     }
 
     fn job_from_iova(&self, job: AccelJobDesc) -> Option<AccelJobDesc> {
-        // Validate layouts even in the existing unpinned ring-test mode.
+        // An empty table never authorizes identity DMA. Nop has no spans,
+        // so it remains legal without pins; every data operand must resolve.
         let spans = job.dma_spans().ok()?;
-        if self.iommu.is_empty() {
-            return Some(job);
-        }
         let mut pa = job;
         for (address, span) in [&mut pa.a, &mut pa.b, &mut pa.c, &mut pa.bias]
             .into_iter()
@@ -524,6 +522,8 @@ mod tests {
             bytes: &mut backing,
         };
         let mut dev = SoftNpuDevice::new(mem);
+        dev.map_with_cap(&mem_cap(), MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
         // Map does not poke the BAR; leave extra observers out of the
         // golden so the sequence is probe → submit → service → poll
         // against the frozen layout.
