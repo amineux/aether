@@ -366,7 +366,7 @@ fn unused_operands_and_empty_table_layout_validation_are_preserved() {
         writes: 0,
     });
     empty.probe().unwrap();
-    job.a = PhysAddr(1); // Misaligned even in unpinned ring-test mode.
+    job.a = PhysAddr(1); // Misaligned, independently of missing pins.
     empty.submit(&job).unwrap();
     assert_eq!(empty.service().unwrap().status, -2);
     assert_eq!(empty.poll().unwrap().status, -2);
@@ -379,4 +379,105 @@ fn unused_operands_and_empty_table_layout_validation_are_preserved() {
     assert_eq!(empty.poll().unwrap().status, 0);
     assert_eq!(empty.mem.reads.get(), 0);
     assert_eq!(empty.mem.writes, 0);
+}
+
+fn empty_device(backing: &mut [u8]) -> SoftNpuDevice<Tracked<'_>> {
+    let mut dev = SoftNpuDevice::new(Tracked {
+        mem: SliceMem {
+            base: PhysAddr(0),
+            bytes: backing,
+        },
+        reads: Cell::new(0),
+        writes: 0,
+    });
+    dev.probe().unwrap();
+    dev
+}
+
+fn wave_job(dtype: DType) -> AccelJobDesc {
+    let mut job = AccelJobDesc::matmul_i32(2, 2, 2, PhysAddr(0), PhysAddr(64), PhysAddr(128), 1);
+    job.op = AccelOp::Wave;
+    job.dtype = dtype;
+    job.bias = PhysAddr(192);
+    job.fence_id = 77;
+    job
+}
+
+fn refuse_without_dma(dev: &mut SoftNpuDevice<Tracked<'_>>, seq: u32) {
+    let before = dev.mem.mem.bytes.to_vec();
+    assert!(dev.iommu.is_empty());
+    let cpl = dev.service().unwrap();
+    assert_eq!((cpl.status, cpl.job_seq), (-2, seq));
+    assert!(dev.irq_pending());
+    assert_eq!(dev.poll().unwrap(), cpl);
+    assert!(!dev.irq_pending());
+    assert_eq!(dev.completed_fence(), Some(77));
+    assert_eq!(dev.npu.seq, seq);
+    assert_eq!(dev.npu.jobs_retired, 0);
+    assert_eq!(dev.mem.reads.get(), 0);
+    assert_eq!(dev.mem.writes, 0);
+    assert_eq!(dev.mem.mem.bytes, before);
+}
+
+#[test]
+fn fresh_empty_table_refuses_data_dma_and_pin_allows_retry() {
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        let mut backing = [0u8; 256];
+        backing[128..144].fill(0xa5);
+        let mut dev = empty_device(&mut backing);
+        let job = wave_job(dtype);
+        let seq = dev.npu.seq;
+        dev.submit(&job).unwrap();
+        refuse_without_dma(&mut dev, seq);
+        let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1));
+        dev.map_with_cap(&cap, MapRequest::pin(PhysAddr(0), 256))
+            .unwrap();
+        dev.submit(&job).unwrap();
+        let cpl = dev.service().unwrap();
+        assert_eq!((cpl.status, cpl.job_seq), (0, seq));
+        assert_eq!(dev.poll().unwrap(), cpl);
+        assert_eq!(dev.mem.writes, 4);
+        assert_eq!(dev.npu.jobs_retired, 1);
+    }
+}
+
+#[test]
+fn losing_the_last_pin_never_restores_identity_dma() {
+    use aether_core::iommu::{IommuMap, StreamId, DEFAULT_STREAM};
+    for dtype in [DType::I32, DType::F16, DType::F32] {
+        for revoke in 0..4 {
+            let mut backing = [0u8; 256];
+            backing[128..144].fill(0xa5);
+            let mut dev = empty_device(&mut backing);
+            let cap = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, TenantId(1));
+            let iova = dev
+                .map_with_cap(&cap, MapRequest::pin(PhysAddr(0), 256))
+                .unwrap();
+            let job = wave_job(dtype);
+            let seq = dev.npu.seq;
+            if revoke != 0 {
+                dev.submit(&job).unwrap();
+            }
+            match revoke {
+                0 | 1 => dev.unmap_with_cap(&cap, iova).unwrap(),
+                2 => dev.iommu.flr(StreamId::from_raw(DEFAULT_STREAM)).unwrap(),
+                _ => dev.iommu = IommuMap::new(),
+            }
+            // Mode 0 submits a fresh guest-PA descriptor after the last unmap;
+            // the other modes leave the previously queued IOVA image intact.
+            if revoke == 0 {
+                dev.submit(&job).unwrap();
+            }
+            refuse_without_dma(&mut dev, seq);
+            dev.map_with_cap(&cap, MapRequest::pin(PhysAddr(0), 256))
+                .unwrap();
+            dev.submit(&job).unwrap();
+            let cpl = dev.service().unwrap();
+            assert_eq!((cpl.status, cpl.job_seq), (0, seq));
+            assert_eq!(dev.poll().unwrap(), cpl);
+            assert_eq!(dev.completed_fence(), Some(77));
+            assert_eq!(dev.mem.writes, 4);
+            assert_eq!(dev.npu.jobs_retired, 1);
+        }
+    }
 }

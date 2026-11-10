@@ -114,9 +114,17 @@ callback. It selects the bound stream owning each operand's disjoint IOVA base
 and requires that entire operand to resolve on that stream. Valid nondefault
 stream descriptors remain supported. Different operands may still belong to
 different bound streams. Refusals preserve memory and execution sequence while completing the used-ring entry and its named fence;
-restoring valid mappings permits retry. The existing empty-table ring-test mode
-is retained, including layout validation. These are software-model checks; they
-do not establish tenant authentication of the submitter or hardware isolation.
+restoring valid mappings permits retry. Layout validation also applies when the
+table is empty. These software-model checks do not establish tenant authentication of the submitter or hardware isolation.
+
+An empty Path-B mapping table no longer enables identity DMA. Fresh devices,
+last-pin unmaps, FLR and public software-table replacement all require every
+active data operand to resolve before any DMA callback. A refused job completes
+with status `-2`, unchanged memory and execution sequence, and the usual used-ring
+IRQ and named fence. Re-pinning allows retry. Nop has no data operands and remains
+legal without pins. The golden MMIO trace test now pins its backing memory; no
+unprotected ring-test mode or opt-out constructor is provided. This is software
+DMA validation, not physical isolation or a concurrent revocation protocol.
 
 IREE-shaped packet bindings must now resolve their complete advertised IOVA
 lengths to the template's consecutive guest PAs. This is checked during packing,
