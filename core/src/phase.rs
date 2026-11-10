@@ -44,4 +44,18 @@ mod tests {
         assert_eq!(Phase::Exchange as u8, 1);
         assert_eq!(Phase::Barrier as u8, 2);
     }
+
+    #[test]
+    fn from_u8_round_trips_every_named_phase() {
+        for p in [Phase::Compute, Phase::Exchange, Phase::Barrier] {
+            assert_eq!(Phase::from_u8(p as u8), Some(p));
+        }
+    }
+
+    #[test]
+    fn from_u8_refuses_unknown_tags() {
+        for v in [3u8, 4, 0x7f, 0x80, u8::MAX] {
+            assert_eq!(Phase::from_u8(v), None);
+        }
+    }
 }
