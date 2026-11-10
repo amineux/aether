@@ -87,4 +87,30 @@ mod tests {
         assert!(got.rights.contains(CapRights::SUBMIT));
         assert_eq!(a.kind.name(), "VIRT_ACCEL");
     }
+
+    #[test]
+    fn bind_partition_keeps_identity_and_kind() {
+        let a = Activity::new(ActivityId(3), ActivityKind::SoftNpu, EndpointId(9));
+        assert_eq!(a.partition, None);
+        let b = a.bind_partition(PartitionId(2));
+        assert_eq!(b.partition, Some(PartitionId(2)));
+        assert_eq!(b.id, ActivityId(3));
+        assert_eq!(b.kind, ActivityKind::SoftNpu);
+        assert_eq!(b.endpoint, EndpointId(9));
+        assert_eq!(ActivityKind::CpuTile.name(), "CPU_TILE");
+        assert_eq!(ActivityKind::SoftNpu.name(), "SOFT_NPU");
+        assert_eq!(ActivityKind::DeviceAccel.name(), "DEVICE_ACCEL");
+    }
+
+    #[test]
+    fn publish_into_full_table_is_refused() {
+        let mut t = CapTable::new(TenantId(1));
+        for i in 0..crate::caps::CAP_SLOTS as u32 {
+            Activity::new(ActivityId(i), ActivityKind::CpuTile, EndpointId(i))
+                .publish(&mut t)
+                .unwrap();
+        }
+        let extra = Activity::new(ActivityId(99), ActivityKind::VirtAccel, EndpointId(99));
+        assert_eq!(extra.publish(&mut t), Err(CapError::TableFull));
+    }
 }
