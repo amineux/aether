@@ -145,4 +145,41 @@ mod tests {
         assert_eq!(r.count_kind(EventKind::IpcSend), 2);
         assert_eq!(r.count_kind(EventKind::AccelComplete), 1);
     }
+
+    #[test]
+    fn empty_ring_has_no_last_and_wrap_keeps_order_and_timestamps() {
+        let mut r = EventRing::default();
+        assert_eq!(r.last(), None);
+        assert_eq!(r.iter().count(), 0);
+        let total = 2 * RING_CAP as u64 + 3;
+        for i in 0..total {
+            r.emit(EventKind::SchedPick, i, i + 1);
+        }
+        let evs: Vec<KernelEvent> = r.iter().collect();
+        assert_eq!(evs.len(), RING_CAP);
+        // Oldest survivor first; timestamps are 1-based and strictly consecutive.
+        assert_eq!(evs[0].ts, total - RING_CAP as u64 + 1);
+        for w in evs.windows(2) {
+            assert_eq!(w[1].ts, w[0].ts + 1);
+            assert_eq!(w[1].a, w[0].a + 1);
+        }
+        assert_eq!(r.last().unwrap().ts, total);
+        assert_eq!(r.last(), evs.last().copied());
+    }
+
+    #[test]
+    fn count_kind_drops_evicted_events_after_wrap() {
+        let mut r = EventRing::new();
+        r.emit(EventKind::IsolationDeny, 0, 0);
+        r.emit(EventKind::IsolationDeny, 1, 0);
+        for i in 0..(RING_CAP as u64 - 1) {
+            r.emit(EventKind::AccelSubmit, i, 0);
+        }
+        // One IsolationDeny was overwritten by the wrap; the other survives.
+        assert_eq!(r.len(), RING_CAP);
+        assert_eq!(r.count_kind(EventKind::IsolationDeny), 1);
+        assert_eq!(r.count_kind(EventKind::AccelSubmit), RING_CAP - 1);
+        assert_eq!(r.iter().next().unwrap().a, 1);
+        assert_eq!(r.count_kind(EventKind::Boot), 0);
+    }
 }

@@ -196,4 +196,34 @@ mod tests {
         assert!(r.events >= 3);
         assert_ne!(SID_A, SID_B);
     }
+
+    #[test]
+    fn all_ok_requires_every_axis() {
+        let ok = BlastReport {
+            mem_ok: true,
+            activity_ok: true,
+            cut_ok: true,
+            smmu_ok: true,
+            events: 0,
+        };
+        assert!(ok.all_ok());
+        for k in 0..4 {
+            let mut r = ok;
+            match k {
+                0 => r.mem_ok = false,
+                1 => r.activity_ok = false,
+                2 => r.cut_ok = false,
+                _ => r.smmu_ok = false,
+            }
+            assert!(!r.all_ok(), "axis {k} must gate all_ok");
+        }
+    }
+
+    #[test]
+    fn blast_demo_is_deterministic_with_one_event_per_axis() {
+        let first = run_blast_demo();
+        assert_eq!(first, run_blast_demo());
+        // Each passing axis emits exactly one event.
+        assert_eq!(first.events, 4);
+    }
 }
