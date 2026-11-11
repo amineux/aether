@@ -126,6 +126,16 @@ legal without pins. The golden MMIO trace test now pins its backing memory; no
 unprotected ring-test mode or opt-out constructor is provided. This is software
 DMA validation, not physical isolation or a concurrent revocation protocol.
 
+Kernel World initialization now requires successful SoftNPU negotiation and a
+full initial user-image pin before publishing the device to syscalls. The shared
+boot preparation function checks the complete nonidentity IOVA translation back
+to the image's guest-PA base and tenant. A probe, pin or coverage failure emits a
+boot diagnostic and stops initialization. The readiness marker is
+required by the x86, RISC-V and AArch64 QEMU gates. Host tests exercise the same
+preparation function with malformed MMIO, missing MAP rights, invalid ranges and
+the three architecture image extents; boot failure injection is not claimed.
+
+
 IREE-shaped packet bindings must now resolve their complete advertised IOVA
 lengths to the template's consecutive guest PAs. This is checked during packing,
 copied-image admission and service-time revalidation, with full-range resolution

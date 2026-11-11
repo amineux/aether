@@ -5,6 +5,7 @@
 #![no_main]
 #![deny(unsafe_op_in_unsafe_fn)]
 
+mod accel_boot;
 mod arch;
 mod console;
 mod elfload;
