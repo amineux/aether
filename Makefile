@@ -500,6 +500,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[boot] init DMA ready (probe + full user-image pin)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sid\\] SET_SID-at-submit two tenants" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[sid\\] Soft SMMU refuse until submit SID" $(BUILD)/qemu-serial.log \
@@ -799,6 +800,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[boot] init DMA ready (probe + full user-image pin)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sid\\] SET_SID-at-submit two tenants" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/riscv-serial.log \
@@ -878,6 +880,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[blast\\] tenant A=1 B=2" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] SpectralCut CrossCut refuse" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] Soft SMMU wrong SID abort" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[boot] init DMA ready (probe + full user-image pin)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sid\\] SET_SID-at-submit two tenants" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/aarch64-serial.log \

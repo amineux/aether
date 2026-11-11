@@ -87,7 +87,6 @@ pub fn init() {
     .expect("arenas");
 
     let mut npu = SoftNpuDevice::new(KernelDma);
-    let _ = npu.probe();
     // Soft-SMMU pin the /init image so stack tensors remain legal DMA targets.
     let user_mem = caps
         .mint(Capability::new(
@@ -98,10 +97,16 @@ pub fn init() {
         ))
         .expect("user-image mem cap");
     let user_cap = *caps.lookup(user_mem).expect("user mem");
-    let _ = npu.map_with_cap(
+    crate::accel_boot::prepare(
+        &mut npu,
         &user_cap,
-        MapRequest::pin(PhysAddr(USER_IMAGE_BASE), USER_IMAGE_END - USER_IMAGE_BASE),
-    );
+        PhysAddr(USER_IMAGE_BASE),
+        USER_IMAGE_END - USER_IMAGE_BASE,
+    )
+    .unwrap_or_else(|_| {
+        println!("[boot] SoftNPU preparation failed (probe or user-image DMA pin)");
+        panic!("required accelerator initialization failed");
+    });
 
     // Software timeline the used-ring IRQ retires. Not a silicon fence.
     let part = PartitionProfile::new(
@@ -140,6 +145,7 @@ pub fn init() {
     write_u64(ep.0 as u64);
     console::nl();
     println!("[boot] virtqueue MMIO negotiated (SoftNPU backend, Soft SMMU)");
+    println!("[boot] init DMA ready (probe + full user-image pin)");
 }
 
 fn with<T>(f: impl FnOnce(&mut Inner) -> T) -> T {
