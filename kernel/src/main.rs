@@ -8,6 +8,7 @@
 mod accel_boot;
 mod arch;
 mod console;
+mod dma_pins;
 mod elfload;
 mod init;
 mod mm;
