@@ -6,7 +6,6 @@ use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
 use aether_core::color::admit_arena_wave;
 use aether_core::fabric::{ChipletRoute, EndpointId, Fabric, FabricError, Message, MsgFlags};
 use aether_core::fence::Timeline;
-use aether_core::iommu::MapRequest;
 use aether_core::partition::{BlastRadius, PartitionId, PartitionProfile, QosBudget, SpatialSlice};
 use aether_core::phase::Phase;
 use aether_core::preempt::WaitWhy;
@@ -44,10 +43,8 @@ struct Inner {
     pending: bool,
     completion: Option<UserCompletion>,
     last_arena: Option<Arena>,
-    mapped_va: u64,
-    /// Memory+MAP cap used for the last `sys_map` pin; `sys_unmap` presents
-    /// it so unmap is tenant-checked (issue #161). Not a new syscall field.
-    mapped_cap: Option<Capability>,
+    /// Authority for every live SYS_MAP pin; boot pins are not syscall-owned.
+    dma_pins: crate::dma_pins::DmaPins,
     part: PartitionProfile,
     timeline: Timeline,
 }
@@ -132,8 +129,7 @@ pub fn init() {
         pending: false,
         completion: None,
         last_arena: None,
-        mapped_va: 0,
-        mapped_cap: None,
+        dma_pins: crate::dma_pins::DmaPins::new(),
         part,
         timeline,
     });
@@ -374,15 +370,11 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
     // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
     let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
     let iova = with(|w| {
-        w.npu
-            .map_with_cap(&cap, MapRequest::pin(PhysAddr(va), arena.size))
+        w.dma_pins
+            .map(&mut w.npu, &cap, PhysAddr(va), arena.size)
             .map_err(|_| SysError::Fault)
     })?;
     paging::allow_user_2m(va);
-    with(|w| {
-        w.mapped_va = iova.0;
-        w.mapped_cap = Some(cap);
-    });
     write_str("[mm] iommu map mem cptr pa=");
     write_hex(va);
     write_str(" iova=");
@@ -396,21 +388,15 @@ pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
     // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
     // this is not munmap of `SYS_MMAP` pages. The Result is the existing
     // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
-    // TODO(sys_unmap): World stores only the last `sys_map` Memory+MAP cap.
-    // A second pin cannot be named. Do not add a syscall for that.
     with(|w| {
-        let cap = w.mapped_cap.ok_or(SysError::NoCap)?;
-        // A cap authorizes this tenant's pins, not just its arena object.
-        // Keep the one-pin syscall contract: refusing another address must
-        // not clear the stored authority for the tracked pin.
-        if vaddr != w.mapped_va {
-            return Err(SysError::Fault);
+        if w.dma_pins.is_empty() {
+            return Err(SysError::NoCap);
         }
-        w.npu
-            .unmap_with_cap(&cap, PhysAddr(vaddr))
+        // Stored per-pin authority is removed only after tenant-checked unmap
+        // succeeds. Refusing an unknown address cannot lose another live pin.
+        w.dma_pins
+            .unmap(&mut w.npu, PhysAddr(vaddr))
             .map_err(|_| SysError::Fault)?;
-        w.mapped_va = 0;
-        w.mapped_cap = None;
         Ok(0)
     })
 }

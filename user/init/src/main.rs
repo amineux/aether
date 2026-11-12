@@ -332,8 +332,12 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] older arena capability survives allocation\r\n");
-    // Refusing an older address must retain the newer tracked pin's cap.
-    if sys(SYS_UNMAP, mapped as u64, 256, 0) != -3
+    // An unknown/interior address cannot consume either pin's authority.
+    // Both pins must remain independently removable, including the older one.
+    if sys(SYS_UNMAP, mapped as u64 + 4, 256, 0) != -3
+        || sys(SYS_UNMAP, 0, 256, 0) != -3
+        || sys(SYS_UNMAP, mapped as u64, 256, 0) != 0
+        || sys(SYS_UNMAP, mapped as u64, 256, 0) != -3
         || sys(SYS_UNMAP, newer_mapped as u64, 256, 0) != 0
         || sys(SYS_UNMAP, newer_mapped as u64, 256, 0) != -2
     {
@@ -341,6 +345,13 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] tracked unmap refusal preserves pin\r\n");
+    // Reuse a released arena pin slot through the unchanged syscall ABI.
+    let remapped = sys(SYS_MAP, cap as u64, 0, 0);
+    if remapped < 0 || sys(SYS_UNMAP, remapped as u64, 256, 0) != 0 {
+        debug_print(b"[init] pin reuse FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] multiple DMA pins independently unmapped\r\n");
     if !map_user_phys_probe() {
         exit(1);
     }
