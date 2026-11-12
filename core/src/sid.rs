@@ -101,7 +101,6 @@ pub fn run_sid_submit_demo() -> SidSubmitReport {
     }
 }
 
-
 /// Host red-team report for Soft-SMMU SET_SID-at-submit refuse.
 ///
 /// Sell line `[redteam] attack=submit-sid` — existing [`IommuMap::resolve_submit`]
@@ -144,8 +143,7 @@ pub fn run_submit_sid_demo() -> SubmitSidReport {
     let walk_without_set_ok = iommu.walk(sid, pin.iova).is_ok();
 
     iommu.set_sid(&cap, sid).unwrap();
-    let after_set_ok =
-        iommu.resolve_submit(sid.raw(), pin.iova, None) == Ok(PhysAddr(0x0100_0000));
+    let after_set_ok = iommu.resolve_submit(sid.raw(), pin.iova, None) == Ok(PhysAddr(0x0100_0000));
 
     SubmitSidReport {
         abort_until_set,
@@ -153,7 +151,6 @@ pub fn run_submit_sid_demo() -> SubmitSidReport {
         after_set_ok,
     }
 }
-
 
 /// Host red-team report for Soft-SMMU per-tenant SID pool refuse.
 ///
@@ -196,8 +193,8 @@ pub fn run_sid_budget_demo() -> SidBudgetReport {
         == Err(MapError::SidBudget);
 
     let peer = iommu.bind_stream(&cap_b, StreamId::accel(ChipletId(2), TileId(0), 1));
-    let peer_budget_left = peer.is_ok()
-        && iommu.sid_budget_left(TenantId(2)) == SID_BUDGET_PER_TENANT - 1;
+    let peer_budget_left =
+        peer.is_ok() && iommu.sid_budget_left(TenantId(2)) == SID_BUDGET_PER_TENANT - 1;
 
     SidBudgetReport {
         fill_ok,
@@ -224,7 +221,10 @@ mod tests {
     #[test]
     fn submit_sid_demo_refuses_until_set() {
         let r = run_submit_sid_demo();
-        assert!(r.abort_until_set, "resolve_submit before SET_SID → SubmitSid");
+        assert!(
+            r.abort_until_set,
+            "resolve_submit before SET_SID → SubmitSid"
+        );
         assert!(r.walk_without_set_ok, "walk without SET_SID still admits");
         assert!(r.after_set_ok, "after set_sid resolve_submit admits");
         assert!(r.all_ok());
@@ -239,4 +239,105 @@ mod tests {
         assert!(r.all_ok());
     }
 
+    #[test]
+    fn rebinding_held_sid_at_full_budget_is_not_charged_again() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, TenantId(1));
+        let first = StreamId::accel(ChipletId(0), TileId(0), 1);
+        for i in 0..SID_BUDGET_PER_TENANT {
+            let sid = StreamId::accel(ChipletId(0), TileId(i as u16), 1);
+            assert!(iommu.bind_stream(&cap, sid).is_ok());
+        }
+        assert_eq!(iommu.sid_budget_left(TenantId(1)), 0);
+        // Re-binding a SID the tenant already holds is idempotent, not a new charge.
+        assert!(iommu.bind_stream(&cap, first).is_ok());
+        assert_eq!(iommu.tenant_sid_count(TenantId(1)), SID_BUDGET_PER_TENANT);
+        // A genuinely new SID is still refused.
+        assert_eq!(
+            iommu.bind_stream(&cap, StreamId::accel(ChipletId(1), TileId(0), 1)),
+            Err(MapError::SidBudget)
+        );
+    }
+
+    #[test]
+    fn clearing_submit_latch_refuses_resolve_again() {
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(1, TenantId(1));
+        let sid = StreamId::from_raw(SID_SUBMIT_A);
+        let pin = iommu
+            .map(
+                &cap,
+                MapRequest::pin_accel(PhysAddr(0x0100_0000), 0x1000, sid),
+            )
+            .unwrap();
+        iommu.set_sid(&cap, sid).unwrap();
+        assert_eq!(iommu.submit_sid(), Some(sid));
+        assert_eq!(
+            iommu.resolve_submit(sid.raw(), pin.iova, None),
+            Ok(PhysAddr(0x0100_0000))
+        );
+        iommu.clear_submit_sid();
+        assert_eq!(iommu.submit_sid(), None);
+        assert_eq!(
+            iommu.resolve_submit(sid.raw(), pin.iova, None),
+            Err(MapError::SubmitSid)
+        );
+        // The mapping itself survives the end-of-job latch drop.
+        assert!(iommu.walk(sid, pin.iova).is_ok());
+    }
+
+    #[test]
+    fn every_report_field_gates_all_ok() {
+        let full = SidSubmitReport {
+            abort_until_set: true,
+            two_sids: true,
+            wrong_sid: true,
+            cross_tenant: true,
+            budget_ok: true,
+        };
+        assert!(full.all_ok());
+        for i in 0..5 {
+            let mut r = full;
+            match i {
+                0 => r.abort_until_set = false,
+                1 => r.two_sids = false,
+                2 => r.wrong_sid = false,
+                3 => r.cross_tenant = false,
+                _ => r.budget_ok = false,
+            }
+            assert!(!r.all_ok(), "SidSubmitReport field {i}");
+        }
+
+        let full = SubmitSidReport {
+            abort_until_set: true,
+            walk_without_set_ok: true,
+            after_set_ok: true,
+        };
+        assert!(full.all_ok());
+        for i in 0..3 {
+            let mut r = full;
+            match i {
+                0 => r.abort_until_set = false,
+                1 => r.walk_without_set_ok = false,
+                _ => r.after_set_ok = false,
+            }
+            assert!(!r.all_ok(), "SubmitSidReport field {i}");
+        }
+
+        let full = SidBudgetReport {
+            fill_ok: true,
+            over_budget: true,
+            peer_budget_left: true,
+        };
+        assert!(full.all_ok());
+        for i in 0..3 {
+            let mut r = full;
+            match i {
+                0 => r.fill_ok = false,
+                1 => r.over_budget = false,
+                _ => r.peer_budget_left = false,
+            }
+            assert!(!r.all_ok(), "SidBudgetReport field {i}");
+        }
+    }
 }
