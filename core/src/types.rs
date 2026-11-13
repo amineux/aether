@@ -40,3 +40,30 @@ pub const MAX_TENANTS: usize = 8;
 pub const MAX_TILES: usize = 8;
 pub const MAX_BANKS: usize = 4;
 pub const MAX_TASKS: usize = 8;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn phys_addr_alignment_refuses_zero_and_checks_low_bits() {
+        assert!(!PhysAddr(0).is_aligned(0), "align 0 is never satisfied");
+        assert!(!PhysAddr(PAGE_4K).is_aligned(0));
+        assert!(PhysAddr(0).is_aligned(PAGE_4K));
+        assert!(PhysAddr(PAGE_2M).is_aligned(PAGE_2M));
+        assert!(PhysAddr(PAGE_2M).is_aligned(PAGE_4K));
+        assert!(!PhysAddr(PAGE_4K).is_aligned(PAGE_2M));
+        assert!(!PhysAddr(PAGE_4K + 8).is_aligned(PAGE_4K));
+        assert!(PhysAddr(0x1234).is_aligned(1));
+    }
+
+    #[test]
+    fn phys_addr_off_adds_bytes_and_preserves_order() {
+        let base = PhysAddr(PAGE_2M);
+        assert_eq!(base.off(0), base);
+        assert_eq!(base.off(PAGE_4K), PhysAddr(PAGE_2M + PAGE_4K));
+        assert!(base.off(1) > base);
+        assert!(base.off(PAGE_4K).is_aligned(PAGE_4K));
+        assert!(!base.off(PAGE_4K).is_aligned(PAGE_2M));
+    }
+}

@@ -119,4 +119,26 @@ mod tests {
         assert_eq!(scoped.scope, Some(SyncScope::Chiplet));
         assert_eq!(scoped.fence, FenceId(3));
     }
+
+    #[test]
+    fn buffer_new_keeps_space_addr_and_len() {
+        let place = Place::new(ChipletId(2), MemorySpace::TileSram);
+        let addr = FabricAddr::new(place, 0x40);
+        let b = Buffer::new(MemorySpace::TileSram, addr, 8192);
+        assert_eq!(b.addr, addr);
+        assert_eq!(b.len, 8192);
+        assert_eq!(b, Buffer::new(MemorySpace::TileSram, addr, 8192));
+        assert_ne!(b, Buffer { unified: true, ..b });
+    }
+
+    #[test]
+    fn package_scope_rewrites_scope_only() {
+        let e = Event::on_timeline(FenceId(7), PartitionId(2));
+        let pkg = e
+            .with_scope(SyncScope::Chiplet)
+            .with_scope(SyncScope::Package);
+        assert_eq!(pkg.scope, Some(SyncScope::Package));
+        assert_eq!((pkg.fence, pkg.partition), (e.fence, e.partition));
+        assert_ne!(pkg, e);
+    }
 }

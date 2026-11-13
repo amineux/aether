@@ -1,6 +1,6 @@
 # Error-coverage allowlist: the 8 entries, one page
 
-Re-measured on `9b3e4a83c5` (2026-11-12), using the error-coverage test below. Aether has **153** `*Error`
+Re-measured on `fcf07dcdb4` (2026-11-13), using the error-coverage test below. Aether has **153** `*Error`
 variants in core/hal/drivers/kernel. **145** are named by a host test, demo or
 red-team line. The other **8** sit in
 [`core/tests/error_coverage_allowlist.txt`](../../core/tests/error_coverage_allowlist.txt),
