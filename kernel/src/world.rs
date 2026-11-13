@@ -348,7 +348,6 @@ pub fn sys_recv(
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
-    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
@@ -370,6 +369,7 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
     // own base is refused (would otherwise pin — and on x86 user-map —
     // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
     let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
+    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
     let iova = with(|w| {
         w.dma_pins
             .map(&mut w.npu, owner_root, &cap, PhysAddr(va), arena.size)
