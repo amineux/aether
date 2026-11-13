@@ -119,8 +119,10 @@ static SHARED_PIN_RESULT: AtomicI64 = AtomicI64::new(i64::MIN);
 extern "C" fn user_thread(_tid: u64) -> ! {
     debug_print(b"[init] user-thread share-aspace\r\n");
     loop {
-        let iova = SHARED_PIN.swap(0, Ordering::AcqRel);
+        let iova = SHARED_PIN.load(Ordering::Acquire);
         if iova != 0 {
+            // One producer and one consumer; no RMW is needed while idle.
+            SHARED_PIN.store(0, Ordering::Relaxed);
             let result = sys(SYS_UNMAP, iova, 256, 0);
             SHARED_PIN_RESULT.store(result, Ordering::Release);
         }
