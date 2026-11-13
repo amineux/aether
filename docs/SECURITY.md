@@ -232,3 +232,12 @@ Scheduler timing, DRAM bank contention, and NPU occupancy are classic
 side channels. v0.1 does not mitigate them. A production AI-chip OS would
 need cache coloring / bank partitioning and probably a deterministic
 wave scheduler for high-assurance tenants.
+
+### AArch64 user trap register preservation
+
+EL0 return restores IP0/IP1 (`x16`/`x17`) only after selecting the destination
+kernel stack. Reusing `x16` for that selection after restoring user registers
+would corrupt a live EL0 value across SVC or timer preemption. The AArch64 QEMU
+gate requires sentinel values to survive repeated `SYS_YIELD` calls, alongside
+the cloned-thread DMA unmap check. This is a register-preservation regression,
+not a complete scheduler or trap-handler proof.

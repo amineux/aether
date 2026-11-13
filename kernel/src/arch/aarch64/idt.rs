@@ -308,7 +308,6 @@ trap_return:
     ldp     x10, x11, [sp, #80]
     ldp     x12, x13, [sp, #96]
     ldp     x14, x15, [sp, #112]
-    ldp     x16, x17, [sp, #128]
     ldp     x18, x19, [sp, #144]
     ldp     x20, x21, [sp, #160]
     ldp     x22, x23, [sp, #176]
@@ -316,11 +315,15 @@ trap_return:
     ldp     x26, x27, [sp, #208]
     ldp     x28, x29, [sp, #224]
     ldr     x30,      [sp, #240]
+    /* Keep the original frame until after stack selection. EL0 may hold
+     * live values in IP0/IP1 across SVC or timer preemption. */
+    mov     x17, sp
     add     sp, sp, #288
     mrs     x16, tpidr_el1
     cbz     x16, 5f
     mov     sp, x16
 5:
+    ldp     x16, x17, [x17, #128]
     eret
 
 trap_return_el1:

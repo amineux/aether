@@ -925,6 +925,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] AArch64 x16/x17 preserved" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/aarch64-serial.log \

@@ -68,6 +68,31 @@ fn yield_now() {
     let _ = sys(SYS_YIELD, 0, 0, 0);
 }
 
+/// SVC/timer return must not corrupt a user's live IP0/IP1 scratch values.
+#[cfg(target_arch = "aarch64")]
+fn scratch_register_probe() -> bool {
+    for _ in 0..4 {
+        let x16: u64;
+        let x17: u64;
+        // SAFETY: the fixed SYS_YIELD call passes no pointers; explicit operands
+        // declare the two register sentinels and the syscall return register.
+        unsafe {
+            core::arch::asm!(
+                "svc #0",
+                in("x8") SYS_YIELD,
+                inout("x0") 0u64 => _,
+                inout("x16") 0x1616u64 => x16,
+                inout("x17") 0x1717u64 => x17,
+                options(nostack)
+            );
+        }
+        if x16 != 0x1616 || x17 != 0x1717 {
+            return false;
+        }
+    }
+    true
+}
+
 /// Physical load address of this arch's kernel image — memory a ring-3
 /// tenant must never be able to pin or map.
 #[cfg(target_arch = "x86_64")]
@@ -217,6 +242,15 @@ pub extern "C" fn _start() -> ! {
     debug_print(b"[init] ecall debug_print ok\r\n");
     #[cfg(target_arch = "aarch64")]
     debug_print(b"[init] svc debug_print ok\r\n");
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        if !scratch_register_probe() {
+            debug_print(b"[init] AArch64 x16/x17 preservation FAIL\r\n");
+            exit(1);
+        }
+        debug_print(b"[init] AArch64 x16/x17 preserved\r\n");
+    }
 
     if !spawn_user_thread() {
         exit(1);
