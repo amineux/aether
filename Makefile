@@ -538,6 +538,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/qemu-serial.log \
@@ -573,6 +574,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -621,6 +623,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -702,6 +705,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/smp-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/smp-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -746,6 +750,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-blk-serial.log \
@@ -839,6 +844,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/riscv-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/riscv-serial.log \
@@ -918,6 +924,8 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -q "\\[init\\] older arena capability survives allocation" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] tracked unmap refusal preserves pin" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] multiple DMA pins independently unmapped" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] AArch64 x16/x17 preserved" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/aarch64-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/aarch64-serial.log \

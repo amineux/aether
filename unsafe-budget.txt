@@ -3,7 +3,7 @@
 # Comments and string literals are not counted. Any change in a count,
 # or a new file with `unsafe`, must come with an edit to this file.
 # Regenerate: AETHER_UNSAFE_BUDGET_WRITE=1 cargo test -p aether-core --test unsafe_budget
-# files=34 total=248
+# files=34 total=249
    2 drivers/src/mmio.rs
    4 drivers/src/softnpu.rs
    1 kernel/src/arch/aarch64/idt.rs
@@ -36,5 +36,5 @@
    4 kernel/src/syscall.rs
    7 kernel/src/task.rs
    9 kernel/src/virtio_blk.rs
-  11 user/init/src/main.rs
+  12 user/init/src/main.rs
    4 user/probe/src/main.rs

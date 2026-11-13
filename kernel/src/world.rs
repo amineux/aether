@@ -369,9 +369,10 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
     // own base is refused (would otherwise pin — and on x86 user-map —
     // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
     let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
+    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
     let iova = with(|w| {
         w.dma_pins
-            .map(&mut w.npu, &cap, PhysAddr(va), arena.size)
+            .map(&mut w.npu, owner_root, &cap, PhysAddr(va), arena.size)
             .map_err(|_| SysError::Fault)
     })?;
     paging::allow_user_2m(va);
@@ -385,6 +386,7 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
     // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
     // this is not munmap of `SYS_MMAP` pages. The Result is the existing
     // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
@@ -395,7 +397,7 @@ pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
         // Stored per-pin authority is removed only after tenant-checked unmap
         // succeeds. Refusing an unknown address cannot lose another live pin.
         w.dma_pins
-            .unmap(&mut w.npu, PhysAddr(vaddr))
+            .unmap(&mut w.npu, owner_root, PhysAddr(vaddr))
             .map_err(|_| SysError::Fault)?;
         Ok(0)
     })

@@ -191,15 +191,21 @@ CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates 
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
 `-NoCap` when World has no tracked syscall pins, `-Fault` for an unknown or
-interior address, or a refused/missing device pin, and `0` when the named tracked
-pin was dropped. Authority is removed only after device unmap succeeds; refusal
+interior address, or a pin owned by a different address-space root, or a refused/missing device
+pin, and `0` when the caller's named tracked pin was dropped. Authority is removed only after device unmap succeeds; refusal
 preserves the other entries. Map reserves tracking capacity before pinning, and
 a failed map leaves that capacity available for retry. The table has `MAX_MAPS`
 slots; the software IOMMU's own limit includes boot pins and may be reached first.
 Map/unmap and tracking updates run under the World lock. `len` is ignored and CPU
 user mappings are retained: this is not `munmap` of `SYS_MMAP` pages. The stored
-capability snapshots remain part of the single shared kernel World; this does
-not add per-task authority, cap-revocation synchronization or hardware isolation.
+capability snapshots remain part of the single shared kernel World. Each syscall
+pin is tagged with the trusted caller's address-space root at map time and can be
+unmapped only from that root. SYS_CLONE siblings share the root and pin authority;
+separate roots cannot consume each other's recorded unmap authority even within
+the same tenant. Capability tables are still shared: this is not full per-process
+capability isolation, cap-revocation synchronization or hardware isolation.
+SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
+must accompany a future task-reaping implementation before roots can be recycled.
 Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel
@@ -226,3 +232,12 @@ Scheduler timing, DRAM bank contention, and NPU occupancy are classic
 side channels. v0.1 does not mitigate them. A production AI-chip OS would
 need cache coloring / bank partitioning and probably a deterministic
 wave scheduler for high-assurance tenants.
+
+### AArch64 user trap register preservation
+
+EL0 return restores IP0/IP1 (`x16`/`x17`) only after selecting the destination
+kernel stack. Reusing `x16` for that selection after restoring user registers
+would corrupt a live EL0 value across SVC or timer preemption. The AArch64 QEMU
+gate requires sentinel values to survive repeated `SYS_YIELD` calls, alongside
+the cloned-thread DMA unmap check. This is a register-preservation regression,
+not a complete scheduler or trap-handler proof.

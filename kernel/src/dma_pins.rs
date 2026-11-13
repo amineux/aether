@@ -8,6 +8,8 @@ use aether_hal::HalError;
 
 #[derive(Clone, Copy)]
 struct Pin {
+    /// Address-space root, shared by SYS_CLONE siblings (not a thread ID).
+    owner_root: u64,
     iova: PhysAddr,
     cap: Capability,
 }
@@ -28,6 +30,7 @@ impl<const N: usize> DmaPins<N> {
     pub fn map<M: DmaView>(
         &mut self,
         npu: &mut SoftNpuDevice<M>,
+        owner_root: u64,
         cap: &Capability,
         base: PhysAddr,
         len: u64,
@@ -40,20 +43,26 @@ impl<const N: usize> DmaPins<N> {
             .position(Option::is_none)
             .ok_or(HalError::Busy)?;
         let iova = npu.map_with_cap(cap, MapRequest::pin(base, len))?;
-        self.entries[slot] = Some(Pin { iova, cap: *cap });
+        self.entries[slot] = Some(Pin {
+            owner_root,
+            iova,
+            cap: *cap,
+        });
         Ok(iova)
     }
 
     pub fn unmap<M: DmaView>(
         &mut self,
         npu: &mut SoftNpuDevice<M>,
+        owner_root: u64,
         iova: PhysAddr,
     ) -> Result<(), HalError> {
-        // Exact starts only: never authorize an interior address or a boot pin.
+        // Same root and exact starts only: never authorize a foreign root,
+        // interior address or boot pin.
         let slot = self
             .entries
             .iter()
-            .position(|p| p.is_some_and(|p| p.iova == iova))
+            .position(|p| p.is_some_and(|p| p.owner_root == owner_root && p.iova == iova))
             .ok_or(HalError::Fault)?;
         let pin = self.entries[slot].unwrap();
         npu.unmap_with_cap(&pin.cap, pin.iova)?;
