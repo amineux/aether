@@ -191,15 +191,21 @@ CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates 
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
 `-NoCap` when World has no tracked syscall pins, `-Fault` for an unknown or
-interior address, or a refused/missing device pin, and `0` when the named tracked
-pin was dropped. Authority is removed only after device unmap succeeds; refusal
+interior address, or a pin owned by a different address-space root, or a refused/missing device
+pin, and `0` when the caller's named tracked pin was dropped. Authority is removed only after device unmap succeeds; refusal
 preserves the other entries. Map reserves tracking capacity before pinning, and
 a failed map leaves that capacity available for retry. The table has `MAX_MAPS`
 slots; the software IOMMU's own limit includes boot pins and may be reached first.
 Map/unmap and tracking updates run under the World lock. `len` is ignored and CPU
 user mappings are retained: this is not `munmap` of `SYS_MMAP` pages. The stored
-capability snapshots remain part of the single shared kernel World; this does
-not add per-task authority, cap-revocation synchronization or hardware isolation.
+capability snapshots remain part of the single shared kernel World. Each syscall
+pin is tagged with the trusted caller's address-space root at map time and can be
+unmapped only from that root. SYS_CLONE siblings share the root and pin authority;
+separate roots cannot consume each other's recorded unmap authority even within
+the same tenant. Capability tables are still shared: this is not full per-process
+capability isolation, cap-revocation synchronization or hardware isolation.
+SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
+must accompany a future task-reaping implementation before roots can be recycled.
 Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel

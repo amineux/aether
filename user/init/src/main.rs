@@ -7,6 +7,8 @@
 #![no_std]
 #![no_main]
 
+use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
@@ -107,6 +109,9 @@ fn exit(code: u64) -> ! {
     }
 }
 
+static SHARED_PIN: AtomicU64 = AtomicU64::new(0);
+static SHARED_PIN_RESULT: AtomicI64 = AtomicI64::new(i64::MIN);
+
 /// Second user thread: same PML4/satp as `/init`, own stack. Does not
 /// `SYS_EXIT` (that would take the guest down) and does not `SYS_RECV`
 /// (one waiter on the fabric ping is enough).
@@ -114,6 +119,11 @@ fn exit(code: u64) -> ! {
 extern "C" fn user_thread(_tid: u64) -> ! {
     debug_print(b"[init] user-thread share-aspace\r\n");
     loop {
+        let iova = SHARED_PIN.swap(0, Ordering::AcqRel);
+        if iova != 0 {
+            let result = sys(SYS_UNMAP, iova, 256, 0);
+            SHARED_PIN_RESULT.store(result, Ordering::Release);
+        }
         yield_now();
     }
 }
@@ -352,6 +362,26 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] multiple DMA pins independently unmapped\r\n");
+    // SYS_CLONE shares the root and therefore the pin authority, even though
+    // the sibling has a different thread ID and its own kernel/user stack.
+    let shared = sys(SYS_MAP, cap as u64, 0, 0);
+    if shared < 0 {
+        debug_print(b"[init] shared pin map FAIL\r\n");
+        exit(1);
+    }
+    SHARED_PIN.store(shared as u64, Ordering::Release);
+    for _ in 0..1024 {
+        if SHARED_PIN_RESULT.load(Ordering::Acquire) != i64::MIN {
+            break;
+        }
+        yield_now();
+    }
+    if SHARED_PIN_RESULT.load(Ordering::Acquire) != 0 {
+        debug_print(b"[init] clone pin authority FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] clone shares DMA pin authority\r\n");
+
     if !map_user_phys_probe() {
         exit(1);
     }
