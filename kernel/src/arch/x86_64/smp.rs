@@ -182,7 +182,7 @@ fn drain_work(cpu: u32) {
     WORK_DONE.fetch_add(1, Ordering::Release);
 }
 
-fn run_work_steal_smoke() {
+fn prepare_work_steal_smoke() {
     CPU_JOBS[0].store(0, Ordering::Relaxed);
     CPU_JOBS[1].store(0, Ordering::Relaxed);
     AP_STEAL_JOBS.store(0, Ordering::Relaxed);
@@ -190,7 +190,9 @@ fn run_work_steal_smoke() {
     HARTS_READY.store(0, Ordering::Relaxed);
     prepare_scheduler();
     WORK_GO.store(true, Ordering::Release);
+}
 
+fn run_work_steal_smoke() {
     drain_work(0);
 
     let _ = wait_ticks(|| WORK_DONE.load(Ordering::Acquire) >= 2, 20);
@@ -255,6 +257,11 @@ pub fn start_aps() {
         return;
     }
 
+    // Publish the initialized batch before starting the AP. Its bounded
+    // WORK_GO wait must not expire while the BSP is still in INIT-SIPI
+    // delays, serial output or the IPI check. Never reset counters after
+    // the AP can start consuming this batch.
+    prepare_work_steal_smoke();
     apic::init_sipi(APIC_ID_AP, AP_TRAMP_PHYS);
     println!("[smp] INIT-SIPI sent to APIC ID 1 (vector 8 @ 0x8000)");
 
