@@ -163,7 +163,7 @@ These are marked so a security review does not assume them:
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode / EL0 + user page tables — **landed** on x86, RISC-V, and aarch64: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, refuses maps/binds without Memory+MAP, and (Soft-CP / IreeShapedCp) refuses DMA until SET_SID is armed for that submit; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
-| Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World still has one shared `CapTable` (PR #10) | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
+| Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World has one bootstrap `CapTable`, restricted to the boot-designated /init root | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
@@ -190,7 +190,7 @@ threads share that PML4 — they are not a second isolation domain.
 CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates a
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
-`-NoCap` when World has no tracked syscall pins, `-Fault` for an unknown or
+`-NoCap` for a root without bootstrap table authority or when World has no tracked syscall pins, `-Fault` for an unknown or
 interior address, or a pin owned by a different address-space root, or a refused/missing device
 pin, and `0` when the caller's named tracked pin was dropped. Authority is removed only after device unmap succeeds; refusal
 preserves the other entries. Map reserves tracking capacity before pinning, and
@@ -202,7 +202,16 @@ capability snapshots remain part of the single shared kernel World. Each syscall
 pin is tagged with the trusted caller's address-space root at map time and can be
 unmapped only from that root. SYS_CLONE siblings share the root and pin authority;
 separate roots cannot consume each other's recorded unmap authority even within
-the same tenant. Capability tables are still shared: this is not full per-process
+the same tenant. The bootstrap capability table is usable only by the /init
+address-space root
+explicitly bound by boot code before userspace starts. SYS_SEND, SYS_RECV,
+SYS_MAP, SYS_UNMAP, SYS_ARENA_ALLOC, SYS_ACCEL_SUBMIT and SYS_ACCEL_WAIT
+return NoCap for other roots before copying user pointers or changing World.
+/probe cannot inherit bootstrap endpoint, queue or memory capabilities by guessing
+a CPtr, or allocate into that table. SYS_CLONE siblings retain access because they
+share /init's root. Kernel-internal sends remain trusted. The x86 QEMU gates
+require /probe to observe all seven refusals; all three architecture demos still
+exercise /init and cloned-thread DMA unmap. This is not full per-process
 capability isolation, cap-revocation synchronization or hardware isolation.
 SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
 must accompany a future task-reaping implementation before roots can be recycled.

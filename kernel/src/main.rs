@@ -8,6 +8,7 @@
 mod accel_boot;
 mod arch;
 mod console;
+mod cap_authority;
 mod dma_pins;
 mod elfload;
 mod init;
@@ -123,6 +124,7 @@ pub extern "C" fn kmain() -> ! {
                 arch::idle();
             }
             crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
+            world::bind_init_caps(init.cr3);
             task::spawn_kthread();
             task::spawn_user(init.entry, init.cr3);
             #[cfg(target_arch = "x86_64")]
