@@ -163,6 +163,13 @@ fn hart_step(cpu: u32) -> bool {
 fn drain_work(cpu: u32) {
     HARTS_READY.fetch_add(1, Ordering::Release);
     let _ = wait_ticks(|| HARTS_READY.load(Ordering::Acquire) >= 2, 10);
+    if cpu == 0 {
+        // Execute the BSP-affine job, then give the AP a bounded chance to
+        // steal before the BSP drains the seven stealable jobs. A ready
+        // barrier alone does not guarantee both CPUs get scheduled in TCG.
+        let _ = hart_step(0);
+        let _ = wait_ticks(|| AP_STEAL_JOBS.load(Ordering::Acquire) > 0, 10);
+    }
     let mut idle = 0u32;
     while idle < 256 {
         if hart_step(cpu) {
@@ -201,7 +208,7 @@ fn run_work_steal_smoke() {
     crate::console::write_u64(stolen as u64);
     crate::console::nl();
 
-    if c0 > 0 && c1 > 0 && stolen > 0 {
+    if c0 > 0 && c1 > 0 && stolen > 0 && c0 + c1 == SMOKE_JOBS {
         println!("[smp] SMP smoke ok (2 harts)");
     } else {
         println!("[smp] SMP smoke FAIL (need jobs on both CPUs + a steal)");
