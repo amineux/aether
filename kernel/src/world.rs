@@ -36,6 +36,7 @@ use crate::task;
 
 struct Inner {
     caps: CapTable,
+    cap_authority: crate::cap_authority::CapAuthority,
     fabric: Fabric,
     arenas: ArenaAllocator,
     npu: SoftNpuDevice<KernelDma>,
@@ -50,6 +51,20 @@ struct Inner {
 }
 
 static WORLD: SpinLock<Option<Inner>> = SpinLock::new(None);
+
+/// Boot code supplies the loaded /init root, never a syscall argument.
+pub fn bind_init_caps(root: u64) {
+    with(|w| w.cap_authority.bind(root)).expect("bootstrap cap root already bound or invalid");
+}
+
+fn require_init_caps() -> Result<(), SysError> {
+    let root = task::current_user_root();
+    if with(|w| w.cap_authority.permits(root)) {
+        Ok(())
+    } else {
+        Err(SysError::NoCap)
+    }
+}
 
 pub fn init() {
     let tenant = TenantId(1);
@@ -122,6 +137,7 @@ pub fn init() {
 
     *WORLD.lock() = Some(Inner {
         caps,
+        cap_authority: crate::cap_authority::CapAuthority::new(),
         fabric,
         arenas,
         npu,
@@ -282,6 +298,7 @@ fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
+    require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
@@ -324,6 +341,7 @@ pub fn sys_recv(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let object = with(|w| {
         w.caps
@@ -348,6 +366,7 @@ pub fn sys_recv(
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
+    require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
         w.caps
@@ -386,6 +405,7 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
+    require_init_caps()?;
     let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
     // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
     // this is not munmap of `SYS_MMAP` pages. The Result is the existing
@@ -404,6 +424,7 @@ pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysError> {
+    require_init_caps()?;
     if size == 0 || size > 64 * 1024 {
         return Err(SysError::Inval);
     }
@@ -432,6 +453,7 @@ fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
+    require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps
@@ -498,6 +520,7 @@ pub fn sys_accel_wait(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
+    require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
         w.caps

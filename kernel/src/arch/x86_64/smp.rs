@@ -163,6 +163,13 @@ fn hart_step(cpu: u32) -> bool {
 fn drain_work(cpu: u32) {
     HARTS_READY.fetch_add(1, Ordering::Release);
     let _ = wait_ticks(|| HARTS_READY.load(Ordering::Acquire) >= 2, 10);
+    if cpu == 0 {
+        // Execute the BSP-affine job, then give the AP a bounded chance to
+        // steal before the BSP drains the seven stealable jobs. A ready
+        // barrier alone does not guarantee both CPUs get scheduled in TCG.
+        let _ = hart_step(0);
+        let _ = wait_ticks(|| AP_STEAL_JOBS.load(Ordering::Acquire) > 0, 10);
+    }
     let mut idle = 0u32;
     while idle < 256 {
         if hart_step(cpu) {
@@ -175,7 +182,7 @@ fn drain_work(cpu: u32) {
     WORK_DONE.fetch_add(1, Ordering::Release);
 }
 
-fn run_work_steal_smoke() {
+fn prepare_work_steal_smoke() {
     CPU_JOBS[0].store(0, Ordering::Relaxed);
     CPU_JOBS[1].store(0, Ordering::Relaxed);
     AP_STEAL_JOBS.store(0, Ordering::Relaxed);
@@ -183,7 +190,9 @@ fn run_work_steal_smoke() {
     HARTS_READY.store(0, Ordering::Relaxed);
     prepare_scheduler();
     WORK_GO.store(true, Ordering::Release);
+}
 
+fn run_work_steal_smoke() {
     drain_work(0);
 
     let _ = wait_ticks(|| WORK_DONE.load(Ordering::Acquire) >= 2, 20);
@@ -201,7 +210,7 @@ fn run_work_steal_smoke() {
     crate::console::write_u64(stolen as u64);
     crate::console::nl();
 
-    if c0 > 0 && c1 > 0 && stolen > 0 {
+    if c0 > 0 && c1 > 0 && stolen > 0 && c0 + c1 == SMOKE_JOBS {
         println!("[smp] SMP smoke ok (2 harts)");
     } else {
         println!("[smp] SMP smoke FAIL (need jobs on both CPUs + a steal)");
@@ -248,6 +257,11 @@ pub fn start_aps() {
         return;
     }
 
+    // Publish the initialized batch before starting the AP. Its bounded
+    // WORK_GO wait must not expire while the BSP is still in INIT-SIPI
+    // delays, serial output or the IPI check. Never reset counters after
+    // the AP can start consuming this batch.
+    prepare_work_steal_smoke();
     apic::init_sipi(APIC_ID_AP, AP_TRAMP_PHYS);
     println!("[smp] INIT-SIPI sent to APIC ID 1 (vector 8 @ 0x8000)");
 
