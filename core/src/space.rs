@@ -157,7 +157,6 @@ pub fn coherent_load(rights: CapRights, here: Place, addr: FabricAddr) -> Result
     Err(SpaceError::UnifiedNotGranted)
 }
 
-
 /// Host red-team silent-remote clip: [`map_place`] (HAL `map_fabric` wraps the
 /// same path) refuses a remote `(place, local)` as
 /// [`SpaceError::SilentRemoteLoad`]. Sell needle is
@@ -188,8 +187,7 @@ pub fn run_silent_remote_demo() -> SilentRemoteReport {
     let local_ok = map_place(here, local).is_ok();
     let remote_refuse = map_place(here, remote) == Err(SpaceError::SilentRemoteLoad);
     let unified_not_default = !CapRights::MEM_FULL.contains(CapRights::UNIFIED)
-        && coherent_load(CapRights::MEM_FULL, here, remote)
-            == Err(SpaceError::UnifiedNotGranted);
+        && coherent_load(CapRights::MEM_FULL, here, remote) == Err(SpaceError::UnifiedNotGranted);
 
     SilentRemoteReport {
         local_ok,
@@ -298,7 +296,94 @@ mod tests {
         assert!(r.hbm_ok, "local DeviceHbm map_place admits: {r:?}");
         assert!(r.streaming_refused, "local Streaming → NotMappable");
         assert!(r.scratch_refused, "local Scratch → NotMappable");
-        assert!(r.remote_streaming_named, "remote Streaming → NotMappable, not SilentRemoteLoad");
+        assert!(
+            r.remote_streaming_named,
+            "remote Streaming → NotMappable, not SilentRemoteLoad"
+        );
         assert!(r.all_ok());
+    }
+
+    #[test]
+    fn from_u8_round_trips_names_and_refuses_unknown_tags() {
+        let all = [
+            (MemorySpace::Host, "HOST"),
+            (MemorySpace::DeviceHbm, "DEVICE_HBM"),
+            (MemorySpace::TileSram, "TILE_SRAM"),
+            (MemorySpace::CxlRegion, "CXL_REGION"),
+            (MemorySpace::Scratch, "SCRATCH"),
+            (MemorySpace::Streaming, "STREAMING"),
+        ];
+        for (space, name) in all {
+            assert_eq!(MemorySpace::from_u8(space as u8), Some(space));
+            assert_eq!(space.name(), name);
+            // Only Host admits a plain host load; UNIFIED is a capability.
+            assert_eq!(space.allows_host_load(), space == MemorySpace::Host);
+        }
+        for tag in [6u8, 7, 0x80, u8::MAX] {
+            assert_eq!(MemorySpace::from_u8(tag), None);
+        }
+        assert!(!MemorySpace::Host.is_on_tile());
+        assert!(!MemorySpace::DeviceHbm.is_on_tile());
+        assert!(!MemorySpace::CxlRegion.is_on_tile());
+        assert!(MemorySpace::Scratch.is_on_tile());
+        assert!(MemorySpace::Streaming.is_on_tile());
+    }
+
+    #[test]
+    fn remoteness_counts_space_and_tile_not_only_chiplet() {
+        let here = Place::new(ChipletId(0), MemorySpace::DeviceHbm);
+        // Same chiplet, different space: remote, so a silent map is refused.
+        let other_space = FabricAddr::new(Place::new(ChipletId(0), MemorySpace::Host), 0x10);
+        assert!(here.same_chiplet(other_space.place));
+        assert!(other_space.is_remote(here));
+        assert_eq!(
+            map_place(here, other_space),
+            Err(SpaceError::SilentRemoteLoad)
+        );
+
+        // Tile named on one side only, or different tiles: remote.
+        let tiled = here.with_tile(3);
+        assert!(FabricAddr::new(tiled, 0).is_remote(here));
+        assert!(FabricAddr::new(here, 0).is_remote(tiled));
+        assert!(FabricAddr::new(here.with_tile(4), 0).is_remote(tiled));
+        assert!(!FabricAddr::new(here.with_tile(3), 0).is_remote(tiled));
+
+        // A local map returns the local offset unchanged.
+        assert_eq!(
+            map_place(tiled, FabricAddr::new(tiled, 0xabc)).map(|p| p.0),
+            Ok(0xabc)
+        );
+        assert!(!here.same_chiplet(Place::new(ChipletId(1), MemorySpace::DeviceHbm)));
+    }
+
+    #[test]
+    fn coherent_load_needs_unified_unless_local_host() {
+        let host = Place::new(ChipletId(0), MemorySpace::Host);
+        assert_eq!(
+            coherent_load(CapRights::NONE, host, FabricAddr::new(host, 0)),
+            Ok(())
+        );
+
+        // Local but not Host memory is still not a plain coherent load.
+        let hbm = Place::new(ChipletId(0), MemorySpace::DeviceHbm);
+        assert_eq!(
+            coherent_load(CapRights::MEM_FULL, hbm, FabricAddr::new(hbm, 0)),
+            Err(SpaceError::UnifiedNotGranted)
+        );
+
+        // An explicit UNIFIED grant admits both local HBM and a remote place.
+        let remote = FabricAddr::new(Place::new(ChipletId(1), MemorySpace::CxlRegion), 0x2000);
+        assert_eq!(
+            coherent_load(CapRights(CapRights::UNIFIED), hbm, FabricAddr::new(hbm, 0)),
+            Ok(())
+        );
+        assert_eq!(
+            coherent_load(CapRights(CapRights::UNIFIED), host, remote),
+            Ok(())
+        );
+        assert_eq!(
+            coherent_load(CapRights::MEM_FULL, host, remote),
+            Err(SpaceError::UnifiedNotGranted)
+        );
     }
 }
