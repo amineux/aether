@@ -6,9 +6,7 @@
 
 use core::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
-use aether_core::sched::{Job, JobKind, TileKind, TileScheduler};
-use aether_core::types::{BankId, TileId};
-use aether_core::Phase;
+use aether_core::sched::TileScheduler;
 
 use crate::arch::irq;
 use crate::println;
@@ -23,7 +21,7 @@ const AP_MAIL_SIG: u64 = 0x8F10;
 const AP_SIG_LIVE: u32 = 0xA5A5_0001;
 const APIC_ID_AP: u32 = 1;
 const AP_STACK_SIZE: usize = 16 * 1024;
-const SMOKE_JOBS: u32 = 8;
+use crate::smp_smoke::JOBS as SMOKE_JOBS;
 
 core::arch::global_asm!(include_str!("ap_tramp.S"), options(att_syntax));
 
@@ -103,52 +101,11 @@ fn install_trampoline() -> bool {
     true
 }
 
-fn smoke_job(id: u32, hint: Option<TileId>) -> Job {
-    Job {
-        id,
-        kind: JobKind::Thread,
-        tile_hint: hint,
-        bank_affinity: None,
-        priority: 4,
-        deadline_ticks: None,
-        tenant: 1,
-        cut_id: None,
-        phase: Phase::Compute,
-        partition_id: None,
-        fence_id: None,
-        arena_color: None,
-        chiplet_scope: None,
-    }
-}
-
-fn prepare_scheduler() {
-    let mut s = SCHED.lock();
-    *s = TileScheduler::new();
-    s.add_tile(TileId(0), TileKind::Cpu, BankId(0));
-    s.add_tile(TileId(1), TileKind::Cpu, BankId(1));
-    // Job 1 stays on the BSP (hard affinity). The rest are stealable.
-    s.enqueue(smoke_job(1, Some(TileId(0))));
-    for id in 2..=SMOKE_JOBS {
-        s.enqueue(smoke_job(id, None));
-    }
-}
-
 fn hart_step(cpu: u32) -> bool {
-    let tile = TileId(cpu as u16);
     let mut s = SCHED.lock();
-    let (job, stole) = if cpu == 0 {
-        match s.pick(tile) {
-            Some(j) => (Some(j), false),
-            None => (s.steal(tile), true),
-        }
-    } else {
-        match s.steal(tile) {
-            Some(j) => (Some(j), true),
-            None => (s.pick(tile), false),
-        }
-    };
+    let selected = crate::smp_smoke::take(&mut s, cpu);
     drop(s);
-    let Some(_job) = job else {
+    let Some((_job, stole)) = selected else {
         return false;
     };
     if (cpu as usize) < CPU_JOBS.len() {
@@ -188,7 +145,7 @@ fn prepare_work_steal_smoke() {
     AP_STEAL_JOBS.store(0, Ordering::Relaxed);
     WORK_DONE.store(0, Ordering::Relaxed);
     HARTS_READY.store(0, Ordering::Relaxed);
-    prepare_scheduler();
+    crate::smp_smoke::prepare(&mut SCHED.lock());
     WORK_GO.store(true, Ordering::Release);
 }
 
