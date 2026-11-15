@@ -13,6 +13,8 @@ mod dma_pins;
 mod elfload;
 mod init;
 mod mm;
+#[cfg(target_arch = "x86_64")]
+mod smp_smoke;
 mod sync;
 mod syscall;
 mod task;
