@@ -625,6 +625,86 @@ mod tests {
     }
 
     #[test]
+    fn kit_sids_share_one_ste_with_distinct_substreams() {
+        let sids = [kit_cp_sid(), kit_iree_sid(), kit_wrong_sid()];
+        for sid in sids {
+            assert_eq!(sid.chiplet(), ChipletId(0));
+            assert_eq!(sid.tile(), TileId(KIT_TILE));
+        }
+        assert_eq!(sids[0].ssid(), KIT_CP_SSID);
+        assert_eq!(sids[1].ssid(), KIT_IREE_SSID);
+        assert_eq!(sids[2].ssid(), KIT_WRONG_SSID);
+        assert_ne!(sids[0].raw(), sids[1].raw());
+        assert_ne!(sids[0].raw(), sids[2].raw());
+        assert_ne!(sids[1].raw(), sids[2].raw());
+    }
+
+    #[test]
+    fn empty_and_note_only_scripts_dump_a_fresh_table() {
+        let fresh = IommuMap::new().dump();
+        assert_eq!(replay_jsonl(""), Ok(fresh));
+        assert_eq!(
+            replay_jsonl("\n  \n{\"step\": 0, \"op\": \"note\", \"text\": \"x\"}\n"),
+            Ok(fresh)
+        );
+        assert_eq!(replay_jsonl("{\"op\": \"dump\"}"), Ok(fresh));
+    }
+
+    #[test]
+    fn malformed_steps_are_refused_with_their_step_number() {
+        let err = |script: &str| replay_jsonl(script).unwrap_err();
+        assert_eq!(
+            err("{\"step\": 7}"),
+            BringupError::new(7, BringupErrorKind::BadLine)
+        );
+        assert_eq!(
+            err("{\"step\": 3, \"op\": \"reboot\"}"),
+            BringupError::new(3, BringupErrorKind::UnknownOp)
+        );
+        assert_eq!(
+            err("{\"step\": 4, \"op\": \"translate\", \"sid\": \"cp\"}"),
+            BringupError::new(4, BringupErrorKind::MissingField)
+        );
+        assert_eq!(
+            err("{\"step\": 5, \"op\": \"capture\", \"sid\": \"nope\"}"),
+            BringupError::new(5, BringupErrorKind::MissingField)
+        );
+        assert_eq!(
+            err("{\"step\": 6, \"op\": \"capture\", \"sid\": \"cp\", \"expect\": \"Bound\"}"),
+            BringupError::new(6, BringupErrorKind::ExpectMismatch)
+        );
+        assert_eq!(
+            err("{\"step\": 8, \"op\": \"invalidate\", \"cmd\": \"Flush\"}"),
+            BringupError::new(8, BringupErrorKind::UnknownOp)
+        );
+        // Without explicit step numbers, steps count from 1 (notes included).
+        assert_eq!(
+            err("{\"op\": \"note\"}\n{\"op\": \"dump\"}\n{\"op\": \"reboot\"}"),
+            BringupError::new(3, BringupErrorKind::UnknownOp)
+        );
+    }
+
+    #[test]
+    fn json_helpers_parse_hex_decimal_and_bare_tokens() {
+        assert_eq!(parse_hex("0x1000"), Some(0x1000));
+        assert_eq!(parse_hex("0X1f"), Some(0x1f));
+        assert_eq!(parse_hex(" 42 "), Some(42));
+        assert_eq!(parse_hex("0xzz"), None);
+        assert_eq!(parse_hex("cp"), None);
+        let line =
+            "{\"step\": 0x10, \"with_cap\": false, \"len\": \"0x2000\", \"expect_dropped\": 2}";
+        assert_eq!(json_u32(line, "step"), Some(16));
+        assert_eq!(json_bool(line, "with_cap"), Some(false));
+        assert_eq!(json_hex(line, "len"), Some(0x2000));
+        assert_eq!(json_u32(line, "expect_dropped"), Some(2));
+        assert_eq!(json_str(line, "op"), None);
+        assert_eq!(
+            json_str(line, "a_key_far_longer_than_the_forty_byte_buffer"),
+            None
+        );
+    }
+
+    #[test]
     fn script_names_the_kit_sequence() {
         assert!(SCRIPT.contains("\"op\": \"capture\""));
         assert!(SCRIPT.contains("\"op\": \"map\""));
