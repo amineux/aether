@@ -193,10 +193,7 @@ mod tests {
         trailer[12..16].copy_from_slice(&(RELA64_SIZE as u32).to_le_bytes());
         image.extend_from_slice(&trailer);
         assert_eq!(parse_pie_trailer(&image).unwrap(), (1, 32));
-        assert_eq!(
-            apply_pie_image(&mut image, KASLR_SLIDE_STRIDE).unwrap(),
-            1
-        );
+        assert_eq!(apply_pie_image(&mut image, KASLR_SLIDE_STRIDE).unwrap(), 1);
         let v = u64::from_le_bytes(image[16..24].try_into().unwrap());
         assert_eq!(v, KERNEL_TEXT_VA + 32 + KASLR_SLIDE_STRIDE);
     }
@@ -222,5 +219,85 @@ mod tests {
             apply_rela_dyn(&mut image, 0x200000, &[site(KERNEL_TEXT_VA, 0)]),
             Err(RelocError::BadSlide)
         );
+    }
+
+    fn rela_bytes(r: Rela64) -> [u8; RELA64_SIZE] {
+        let mut b = [0u8; RELA64_SIZE];
+        b[0..8].copy_from_slice(&r.offset.to_le_bytes());
+        b[8..16].copy_from_slice(&r.info.to_le_bytes());
+        b[16..24].copy_from_slice(&r.addend.to_le_bytes());
+        b
+    }
+
+    fn trailer(count: u32, rela_off: u32, entsize: u32) -> [u8; PIE_TRAILER_SIZE] {
+        let mut t = [0u8; PIE_TRAILER_SIZE];
+        t[0..4].copy_from_slice(&PIE_RELOC_MAGIC.to_le_bytes());
+        t[4..8].copy_from_slice(&count.to_le_bytes());
+        t[8..12].copy_from_slice(&rela_off.to_le_bytes());
+        t[12..16].copy_from_slice(&entsize.to_le_bytes());
+        t
+    }
+
+    #[test]
+    fn parse_rela64_round_trips_and_kind_ignores_symbol_index() {
+        let r = Rela64 {
+            offset: KERNEL_TEXT_VA + 0x40,
+            info: (7u64 << 32) | R_X86_64_RELATIVE as u64,
+            addend: -16,
+        };
+        let b = rela_bytes(r);
+        assert_eq!(parse_rela64(&b), Ok(r));
+        // kind() is the low 32 bits only; the symbol index is ignored.
+        assert_eq!(r.kind(), R_X86_64_RELATIVE);
+    }
+
+    #[test]
+    fn image_offset_refuses_sites_below_the_load_address() {
+        assert_eq!(site(KERNEL_TEXT_VA, 0).image_offset(), Some(0));
+        assert_eq!(site(KERNEL_TEXT_VA + 24, 0).image_offset(), Some(24));
+        assert_eq!(site(KERNEL_TEXT_VA - 8, 0).image_offset(), None);
+        assert_eq!(site(KERNEL_LMA, 0).image_offset(), None);
+        let mut image = [0u8; 16];
+        assert_eq!(
+            apply_rela_dyn(&mut image, 0, &[site(KERNEL_TEXT_VA - 8, 0)]),
+            Err(RelocError::OutOfImage)
+        );
+        assert_eq!(image, [0u8; 16]);
+        // A site whose 8-byte write would straddle the end is refused too.
+        assert_eq!(
+            apply_rela_dyn(&mut image, 0, &[site(KERNEL_TEXT_VA + 12, 0)]),
+            Err(RelocError::OutOfImage)
+        );
+    }
+
+    #[test]
+    fn trailer_refuses_wrong_entsize_and_accepts_empty_table() {
+        let mut wrong_ent = vec![0u8; 8];
+        wrong_ent.extend_from_slice(&trailer(0, 0, 16));
+        assert_eq!(parse_pie_trailer(&wrong_ent), Err(RelocError::Unsupported));
+        // Zero entries is a valid, empty table.
+        let mut empty = vec![0u8; 8];
+        empty.extend_from_slice(&trailer(0, 0, RELA64_SIZE as u32));
+        assert_eq!(parse_pie_trailer(&empty), Ok((0, 0)));
+        assert_eq!(apply_pie_image(&mut empty, KASLR_SLIDE_STRIDE), Ok(0));
+    }
+
+    #[test]
+    fn apply_rela_bytes_applies_each_entry_in_place() {
+        let mut image = [0u8; 32];
+        let mut blob = Vec::new();
+        blob.extend_from_slice(&rela_bytes(site(KERNEL_TEXT_VA, KERNEL_TEXT_VA + 0x100)));
+        blob.extend_from_slice(&rela_bytes(site(
+            KERNEL_TEXT_VA + 16,
+            KERNEL_TEXT_VA + 0x200,
+        )));
+        let slide = 2 * KASLR_SLIDE_STRIDE;
+        assert_eq!(apply_rela_bytes(&mut image, slide, &blob), Ok(2));
+        let a = u64::from_le_bytes(image[0..8].try_into().unwrap());
+        let b = u64::from_le_bytes(image[16..24].try_into().unwrap());
+        assert_eq!(a, KERNEL_TEXT_VA + 0x100 + slide);
+        assert_eq!(b, KERNEL_TEXT_VA + 0x200 + slide);
+        assert_eq!(image[8..16], [0u8; 8]);
+        assert_eq!(apply_rela_bytes(&mut image, slide, &[]), Ok(0));
     }
 }
