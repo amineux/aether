@@ -37,6 +37,15 @@ Each `Capability` stores:
 - `tenant` — must match the table owner at lookup
 - `parent` — derivation edge (set on derive / GRANT-copy)
 
+Within one table lifetime, mint generations run from 1 through `u32::MAX`
+without reuse. After the final generation, mint returns `GenerationMismatch`
+before changing slots; derive and GRANT-copy/move propagate the same refusal.
+Revoking caps frees slots but does not reset this exhaustion state. Existing
+caps and their revocation edges remain usable. This prevents counter wrap from
+aliasing an earlier derivation node; it does not make a raw `CPtr` a generational
+handle, provide global identities for multiple tables with the same tenant,
+or synchronize independently cloned tables.
+
 ## Invariants (implemented and tested)
 
 1. **No cross-tenant mint.** `CapTable::mint` rejects a cap whose tenant

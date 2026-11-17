@@ -5,11 +5,10 @@
 # is now named, or no longer exists). Removing a line is the goal: add a test
 # that asserts the variant by name, then delete the line.
 #
-# Snapshot re-counted over main ddca394 (2026-10-23, `make verify`): 153 variants, 145 named, 8 below.
-# None of the 8 is a tenant refuse path awaiting a test: kill-listed, boot tooling, kernel errno, or dead kept for ABI.
+# Generation-exhaustion revision (2026-11-17): 153 variants, 146 named, 7 below.
+# None of the 7 is a tenant refuse path awaiting a test: kill-listed, boot tooling, kernel errno, or dead kept for ABI.
 
 # --- Dead or unreachable (kill-listed, or kept for ABI) ---
-CapError::GenerationMismatch | never constructed; CapError changes are on the kill list, so it stays as-is and is listed here instead
 OpKernelError::Cap | dead, kept for ABI: OpKernelError is a public aether_core return type and inject / sparsify still wrap tab.lookup with it, but require_opkernel_bind refuses every lookup failure as NotBound first, so it cannot fire; host test missing_or_out_of_range_cptr_is_not_bound pins that. Removing the wrapper is an API change, not a needle
 
 # --- Constructed, refuse path exists, no test names it yet (needle candidates) ---
