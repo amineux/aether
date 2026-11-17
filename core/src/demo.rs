@@ -105,7 +105,12 @@ pub fn run_boot_demo() -> DemoReport {
         .unwrap();
     // B's owner grants A send rights on ep_b (kernel mints into A's table).
     caps_a
-        .mint(Capability::new(CapKind::Endpoint, CapRights(CapRights::WRITE), ep_b.0, tenant_a))
+        .mint(Capability::new(
+            CapKind::Endpoint,
+            CapRights(CapRights::WRITE),
+            ep_b.0,
+            tenant_a,
+        ))
         .unwrap();
     events.emit(EventKind::CapMint, ep_a.0 as u64, ep_b.0 as u64);
 
@@ -557,8 +562,8 @@ pub fn run_boot_demo() -> DemoReport {
     )
     .unwrap()
     .with_flow(FlowClass::Harmonic);
-    let harm_refused =
-        fabric.send_as(&caps_a, harm_tree) == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
+    let harm_refused = fabric.send_as(&caps_a, harm_tree)
+        == Err(FabricError::Hodge(HodgeError::HarmonicTreeReduce));
     events.emit(EventKind::HodgeRefuse, FlowClass::Harmonic as u64, 1);
     let hodge_ok = hodge_grad
         && grad_ok
@@ -739,5 +744,66 @@ mod tests {
         assert_eq!(r.c00, 2);
         assert_eq!(r.c11, 13);
         assert_eq!(r.arena_bank, 0);
+    }
+
+    #[test]
+    fn boot_demo_is_deterministic_across_runs() {
+        let a = run_boot_demo();
+        let b = run_boot_demo();
+        assert_eq!(a, b);
+        assert!(a.job_seq > 0);
+        assert!(a.events > 0);
+    }
+
+    #[test]
+    fn boot_demo_matmul_reads_back_identity_times_b() {
+        let r = run_boot_demo();
+        // C = I x B, so the diagonal entries read back are B[0][0] and B[1][1].
+        assert_eq!(r.c00, DEMO_B[0]);
+        assert_eq!(r.c11, DEMO_B[5]);
+    }
+
+    #[test]
+    fn all_ok_is_false_when_any_single_flag_is_false() {
+        let good = run_boot_demo();
+        assert!(good.all_ok());
+        let clears: [fn(&mut DemoReport); 17] = [
+            |r| r.ipc_ok = false,
+            |r| r.arena_ok = false,
+            |r| r.accel_ok = false,
+            |r| r.isolation_ok = false,
+            |r| r.sched_ok = false,
+            |r| r.cut_ok = false,
+            |r| r.hodge_ok = false,
+            |r| r.space_ok = false,
+            |r| r.activity_ok = false,
+            |r| r.fence_ok = false,
+            |r| r.map_ok = false,
+            |r| r.color_ok = false,
+            |r| r.revoke_ok = false,
+            |r| r.opkernel_ok = false,
+            |r| r.sparsify_ok = false,
+            |r| r.dtype_ok = false,
+            |r| r.window_ok = false,
+        ];
+        for (i, clear) in clears.iter().enumerate() {
+            let mut r = good;
+            clear(&mut r);
+            assert!(!r.all_ok(), "flag {i} cleared but all_ok stayed true");
+        }
+    }
+
+    #[test]
+    fn all_ok_ignores_numeric_fields() {
+        let mut r = run_boot_demo();
+        r.job_seq = 0;
+        r.c00 = 0;
+        r.c11 = 0;
+        r.arena_base = 0;
+        r.arena_bank = u8::MAX;
+        r.events = 0;
+        r.cut_phi_milli = 0;
+        r.fence_id = 0;
+        assert!(r.all_ok());
     }
 }
