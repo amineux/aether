@@ -1,13 +1,13 @@
-# Error-coverage allowlist: the 8 entries, one page
+# Error-coverage allowlist: the 7 entries, one page
 
-Re-measured on `e908e3fc1f` (2026-11-16), using the error-coverage test below. Aether has **153** `*Error`
-variants in core/hal/drivers/kernel. **145** are named by a host test, demo or
-red-team line. The other **8** sit in
+Re-measured for the generation-exhaustion revision (2026-11-17), using the error-coverage test below. Aether has **153** `*Error`
+variants in core/hal/drivers/kernel. **146** are named by a host test, demo or
+red-team line. The other **7** sit in
 [`core/tests/error_coverage_allowlist.txt`](../../core/tests/error_coverage_allowlist.txt),
 each with a reason. `core/tests/error_coverage.rs` fails CI if a variant is
 neither named nor listed, and also if a listed line goes stale.
 
-None of the 8 is a tenant refuse path waiting for a test. This page says why
+None of the 7 is a tenant refuse path waiting for a test. This page says why
 each one is there and what would take it off the list.
 
 Reproduce the count:
@@ -22,10 +22,13 @@ cargo test -q --locked -p aether-core --test error_coverage -- --nocapture | gre
 | `SysError::NoCap` | `kernel/src/syscall.rs` | Same: kernel errno, returned when a cap lookup fails in `kernel/src/world.rs`. The host-side refusals underneath it (`CapError::*`) are named. | Same as above. |
 | `SysError::Fault` | `kernel/src/syscall.rs` | Same: kernel errno, QEMU-only. | Same as above. |
 | `SysError::Again` | `kernel/src/syscall.rs` | Same: kernel errno, returned on `clone`, `mmap` first-fit and `FabricError::QueueFull`. `QueueFull` itself is named on the host. | Same as above. |
-| `CapError::GenerationMismatch` | `core/src/caps.rs` | Never constructed. Changes to `CapError` are on the kill list, and open PR #222 touches cap revocation, so this stays as-is. | An owner decision to delete it (an API change) or to wire generation checks; not a needle. |
 | `RelocError::BadMagic` | `core/src/reloc.rs` | PIE relocation-pack parser at boot. `RelocError` is on the kill list. | Lifting the kill list for the reloc parser. Not planned. |
 | `RelocError::Truncated` | `core/src/reloc.rs` | Same parser, same kill list. | Same as above. |
 | `OpKernelError::Cap` | `core/src/opkernel.rs` | Dead, kept for ABI. `OpKernelError` is a public `aether_core` return type, but `require_opkernel_bind` refuses every lookup failure as `NotBound` first, so this wrapper cannot fire. Host test `missing_or_out_of_range_cptr_is_not_bound` pins that. | Removing the wrapper, which is a public API change and an owner call. |
+
+The new generation-exhaustion refusal constructs the existing
+`CapError::GenerationMismatch`; boundary tests name it, so its previous
+"never constructed" entry has been removed. No enum variant was added or removed.
 
 ## What this page does not claim
 
@@ -37,4 +40,4 @@ cargo test -q --locked -p aether-core --test error_coverage -- --nocapture | gre
 
 The needle list is closed after Round 31. #230 named `BootFsError::NoRoom` and
 dropped it from this list (9 to 8). New coverage needs new refuse paths, not
-more tests against the 8 above.
+more tests against the 7 above.

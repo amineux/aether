@@ -181,6 +181,7 @@ pub enum CapError {
     WrongKind,
     InsufficientRights,
     TableFull,
+    /// Minting would reuse an exhausted derivation-generation namespace.
     GenerationMismatch,
     CrossTenant,
     WouldEscalate,
@@ -227,6 +228,7 @@ impl KillSet {
 pub struct CapTable {
     slots: [Option<Capability>; CAP_SLOTS],
     owner: TenantId,
+    /// Next fresh derivation generation; zero permanently marks exhaustion.
     mint_gen: u32,
 }
 
@@ -263,12 +265,14 @@ impl CapTable {
         if cap.kind == CapKind::Empty {
             return Err(CapError::WrongKind);
         }
+        // Generation is a derivation identity, not a recyclable slot index.
+        // Wrapping back to 1 can alias a live cap or an old parent edge.
+        if self.mint_gen == 0 {
+            return Err(CapError::GenerationMismatch);
+        }
         let slot = self.alloc_slot()?;
         cap.generation = self.mint_gen;
-        self.mint_gen = self.mint_gen.wrapping_add(1);
-        if self.mint_gen == 0 {
-            self.mint_gen = 1;
-        }
+        self.mint_gen = self.mint_gen.checked_add(1).unwrap_or(0);
         self.slots[slot] = Some(cap);
         Ok(CPtr(slot as u16))
     }
@@ -470,6 +474,90 @@ mod tests {
 
     fn ep_cap(obj: u32, tenant: TenantId) -> Capability {
         Capability::new(CapKind::Endpoint, CapRights::EP_FULL, obj, tenant)
+    }
+
+    #[test]
+    fn mint_generation_exhaustion_never_reuses_a_derivation_identity() {
+        let owner = TenantId(1);
+        let mut table = CapTable::new(owner);
+        let root = table.mint(mem_cap(7, owner)).unwrap();
+        let child = table.derive(root, CapRights(CapRights::READ)).unwrap();
+        let root_cap = *table.lookup(root).unwrap();
+        let child_cap = *table.lookup(child).unwrap();
+        // Exercise the boundary without billions of mint/revoke operations.
+        table.mint_gen = u32::MAX;
+        let last = table.mint(ep_cap(8, owner)).unwrap();
+        assert_eq!(table.lookup(last).unwrap().generation, u32::MAX);
+        for _ in 0..3 {
+            assert_eq!(
+                table.mint(mem_cap(9, owner)),
+                Err(CapError::GenerationMismatch)
+            );
+            assert_eq!(table.occupied(), 3);
+            assert_eq!(table.lookup(root), Ok(&root_cap));
+            assert_eq!(table.lookup(child), Ok(&child_cap));
+        }
+        // Reclaiming slots cannot reopen the exhausted identity namespace.
+        table.revoke(last).unwrap();
+        assert_eq!(
+            table.mint(ep_cap(10, owner)),
+            Err(CapError::GenerationMismatch)
+        );
+        table.revoke(root).unwrap();
+        assert_eq!(table.lookup(child), Err(CapError::EmptySlot));
+        assert_eq!(table.occupied(), 0);
+        assert_eq!(
+            table.mint(ep_cap(11, owner)),
+            Err(CapError::GenerationMismatch)
+        );
+    }
+
+    #[test]
+    fn exhausted_derive_preserves_parent_and_existing_children() {
+        let owner = TenantId(1);
+        let mut table = CapTable::new(owner);
+        let root = table.mint(mem_cap(7, owner)).unwrap();
+        table.mint_gen = u32::MAX;
+        let last = table.derive(root, CapRights(CapRights::READ)).unwrap();
+        assert_eq!(table.lookup(last).unwrap().generation, u32::MAX);
+        assert_eq!(
+            table.lookup(last).unwrap().parent,
+            Some(table.lookup(root).unwrap().cdt())
+        );
+        let before = table.slots;
+        assert_eq!(
+            table.derive(root, CapRights(CapRights::READ)),
+            Err(CapError::GenerationMismatch)
+        );
+        assert_eq!(table.slots, before);
+        table.revoke(root).unwrap();
+        assert_eq!(table.lookup(last), Err(CapError::EmptySlot));
+    }
+
+    #[test]
+    fn exhausted_transfer_target_preserves_source_for_both_copy_and_move() {
+        let mut source = CapTable::new(TenantId(1));
+        let root = source.mint(mem_cap(7, TenantId(1))).unwrap();
+        let mut target = CapTable::new(TenantId(2));
+        target.mint_gen = u32::MAX;
+        let last = target.mint(ep_cap(8, TenantId(2))).unwrap();
+        let source_before = source.slots;
+        let target_before = target.slots;
+        for move_cap in [false, true] {
+            assert_eq!(
+                source.transfer(root, &mut target, CapRights(CapRights::READ), move_cap),
+                Err(CapError::GenerationMismatch)
+            );
+            assert_eq!(source.slots, source_before);
+            assert_eq!(target.slots, target_before);
+        }
+        // Existing authorities remain usable even when no fresh caps can mint.
+        assert!(source
+            .require(root, CapKind::Memory, CapRights::MAP)
+            .is_ok());
+        assert!(target
+            .require(last, CapKind::Endpoint, CapRights::WRITE)
+            .is_ok());
     }
 
     #[test]
