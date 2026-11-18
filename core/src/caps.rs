@@ -12,6 +12,7 @@
 //! lock mint → derive → `revoke_in` (named tables only).
 
 use crate::types::TenantId;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub const CAP_SLOTS: usize = 32;
 
@@ -113,9 +114,9 @@ impl CapRights {
     }
 }
 
-/// Derivation-tree identity. Unique among caps minted in one table
-/// (`owner` + `node`). Children store the parent's node, including when
-/// the child lives in another table after GRANT.
+/// Derivation-tree identity. Production mint generations are unique across
+/// all tables in one process/boot lifetime. Children store the parent's node,
+/// including when the child lives in another table after GRANT.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CdtNode {
     pub owner: TenantId,
@@ -146,7 +147,7 @@ pub struct Capability {
 }
 
 impl Capability {
-    /// Derivation identity: table owner at mint + generation.
+    /// Derivation identity: tenant owner + globally issued mint generation.
     pub const fn cdt(self) -> CdtNode {
         CdtNode::new(self.tenant, self.generation)
     }
@@ -224,12 +225,35 @@ impl KillSet {
     }
 }
 
-#[derive(Clone, Debug)]
+// All production tables and their clones share one non-recycling namespace.
+// Relaxed ordering suffices: only uniqueness is synchronized by this counter;
+// publishing capabilities remains the caller's locking responsibility.
+static NEXT_GENERATION: AtomicU32 = AtomicU32::new(1);
+
+fn issue_generation(next: &AtomicU32) -> Result<u32, CapError> {
+    next.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |generation| {
+        (generation != 0).then(|| generation.checked_add(1).unwrap_or(0))
+    })
+    .map_err(|_| CapError::GenerationMismatch)
+}
+
+#[derive(Clone)]
 pub struct CapTable {
     slots: [Option<Capability>; CAP_SLOTS],
     owner: TenantId,
-    /// Next fresh derivation generation; zero permanently marks exhaustion.
-    mint_gen: u32,
+    /// Shared across tables; zero permanently marks namespace exhaustion.
+    generations: &'static AtomicU32,
+}
+
+// The allocator is shared process/boot state, not a per-table snapshot field.
+// Do not include its changing counter in Debug output used for slot snapshots.
+impl core::fmt::Debug for CapTable {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("CapTable")
+            .field("slots", &self.slots)
+            .field("owner", &self.owner)
+            .finish_non_exhaustive()
+    }
 }
 
 impl CapTable {
@@ -237,7 +261,7 @@ impl CapTable {
         Self {
             slots: [None; CAP_SLOTS],
             owner,
-            mint_gen: 1,
+            generations: &NEXT_GENERATION,
         }
     }
 
@@ -265,14 +289,10 @@ impl CapTable {
         if cap.kind == CapKind::Empty {
             return Err(CapError::WrongKind);
         }
-        // Generation is a derivation identity, not a recyclable slot index.
-        // Wrapping back to 1 can alias a live cap or an old parent edge.
-        if self.mint_gen == 0 {
-            return Err(CapError::GenerationMismatch);
-        }
+        // Reserve a slot before consuming a globally fresh identity. Refused
+        // validation/full-table requests must not burn namespace generations.
         let slot = self.alloc_slot()?;
-        cap.generation = self.mint_gen;
-        self.mint_gen = self.mint_gen.checked_add(1).unwrap_or(0);
+        cap.generation = issue_generation(self.generations)?;
         self.slots[slot] = Some(cap);
         Ok(CPtr(slot as u16))
     }
@@ -476,16 +496,22 @@ mod tests {
         Capability::new(CapKind::Endpoint, CapRights::EP_FULL, obj, tenant)
     }
 
+    fn isolated_table(owner: TenantId) -> CapTable {
+        let mut table = CapTable::new(owner);
+        table.generations = Box::leak(Box::new(AtomicU32::new(1)));
+        table
+    }
+
     #[test]
     fn mint_generation_exhaustion_never_reuses_a_derivation_identity() {
         let owner = TenantId(1);
-        let mut table = CapTable::new(owner);
+        let mut table = isolated_table(owner);
         let root = table.mint(mem_cap(7, owner)).unwrap();
         let child = table.derive(root, CapRights(CapRights::READ)).unwrap();
         let root_cap = *table.lookup(root).unwrap();
         let child_cap = *table.lookup(child).unwrap();
         // Exercise the boundary without billions of mint/revoke operations.
-        table.mint_gen = u32::MAX;
+        table.generations.store(u32::MAX, Ordering::Relaxed);
         let last = table.mint(ep_cap(8, owner)).unwrap();
         assert_eq!(table.lookup(last).unwrap().generation, u32::MAX);
         for _ in 0..3 {
@@ -515,9 +541,9 @@ mod tests {
     #[test]
     fn exhausted_derive_preserves_parent_and_existing_children() {
         let owner = TenantId(1);
-        let mut table = CapTable::new(owner);
+        let mut table = isolated_table(owner);
         let root = table.mint(mem_cap(7, owner)).unwrap();
-        table.mint_gen = u32::MAX;
+        table.generations.store(u32::MAX, Ordering::Relaxed);
         let last = table.derive(root, CapRights(CapRights::READ)).unwrap();
         assert_eq!(table.lookup(last).unwrap().generation, u32::MAX);
         assert_eq!(
@@ -538,8 +564,8 @@ mod tests {
     fn exhausted_transfer_target_preserves_source_for_both_copy_and_move() {
         let mut source = CapTable::new(TenantId(1));
         let root = source.mint(mem_cap(7, TenantId(1))).unwrap();
-        let mut target = CapTable::new(TenantId(2));
-        target.mint_gen = u32::MAX;
+        let mut target = isolated_table(TenantId(2));
+        target.generations.store(u32::MAX, Ordering::Relaxed);
         let last = target.mint(ep_cap(8, TenantId(2))).unwrap();
         let source_before = source.slots;
         let target_before = target.slots;
@@ -558,6 +584,108 @@ mod tests {
         assert!(target
             .require(last, CapKind::Endpoint, CapRights::WRITE)
             .is_ok());
+    }
+
+    #[test]
+    fn independent_same_tenant_tables_do_not_revoke_unrelated_capabilities() {
+        let owner = TenantId(7);
+        let mut source = CapTable::new(owner);
+        let mut other = CapTable::new(owner);
+        let root = source.mint(mem_cap(11, owner)).unwrap();
+        let unrelated = other.mint(ep_cap(22, owner)).unwrap();
+        let saved = *other.lookup(unrelated).unwrap();
+        source.revoke_in(root, &mut [&mut other]).unwrap();
+        assert_eq!(other.lookup(unrelated), Ok(&saved));
+        assert_eq!(source.lookup(root), Err(CapError::EmptySlot));
+    }
+
+    #[test]
+    fn same_tenant_grant_revokes_only_its_lineage_in_the_target_table() {
+        let owner = TenantId(7);
+        let mut source = CapTable::new(owner);
+        let mut target = CapTable::new(owner);
+        let root = source.mint(mem_cap(11, owner)).unwrap();
+        let unrelated = target.mint(ep_cap(22, owner)).unwrap();
+        let child = source
+            .transfer(
+                root,
+                &mut target,
+                CapRights(CapRights::READ | CapRights::GRANT),
+                false,
+            )
+            .unwrap();
+        let grandchild = target.derive(child, CapRights(CapRights::READ)).unwrap();
+        assert_eq!(
+            target.lookup(child).unwrap().parent,
+            Some(source.lookup(root).unwrap().cdt())
+        );
+        source.revoke_in(root, &mut [&mut target]).unwrap();
+        assert_eq!(target.lookup(child), Err(CapError::EmptySlot));
+        assert_eq!(target.lookup(grandchild), Err(CapError::EmptySlot));
+        assert!(target
+            .require(unrelated, CapKind::Endpoint, CapRights::WRITE)
+            .is_ok());
+    }
+
+    #[test]
+    fn cloned_tables_share_old_identities_but_future_mints_cannot_alias() {
+        let owner = TenantId(7);
+        let mut source = CapTable::new(owner);
+        let root = source.mint(mem_cap(11, owner)).unwrap();
+        let mut copy = source.clone();
+        assert_eq!(source.lookup(root), copy.lookup(root));
+        let a = source.mint(ep_cap(22, owner)).unwrap();
+        let b = copy.mint(ep_cap(33, owner)).unwrap();
+        assert_ne!(
+            source.lookup(a).unwrap().cdt(),
+            copy.lookup(b).unwrap().cdt()
+        );
+        source.revoke_in(a, &mut [&mut copy]).unwrap();
+        assert!(copy.require(b, CapKind::Endpoint, CapRights::WRITE).is_ok());
+        // Clone preserves old authority, not a new isolation domain. Naming
+        // both snapshots still revokes that shared root identity in both.
+        source.revoke_in(root, &mut [&mut copy]).unwrap();
+        assert_eq!(copy.lookup(root), Err(CapError::EmptySlot));
+        assert!(copy.require(b, CapKind::Endpoint, CapRights::WRITE).is_ok());
+    }
+
+    #[test]
+    fn concurrent_generation_reservations_are_unique_and_nonzero() {
+        let next = std::sync::Arc::new(AtomicU32::new(1));
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let next = next.clone();
+                std::thread::spawn(move || {
+                    (0..64)
+                        .map(|_| issue_generation(&next).unwrap())
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut issued: Vec<_> = workers
+            .into_iter()
+            .flat_map(|w| w.join().unwrap())
+            .collect();
+        issued.sort_unstable();
+        assert_eq!(issued, (1..=256).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn exhausted_namespace_is_shared_by_new_tables_and_clones() {
+        let mut source = isolated_table(TenantId(1));
+        source.generations.store(u32::MAX, Ordering::Relaxed);
+        let mut copy = source.clone();
+        let last = source.mint(mem_cap(11, TenantId(1))).unwrap();
+        assert_eq!(source.lookup(last).unwrap().generation, u32::MAX);
+        let mut later = CapTable::new(TenantId(2));
+        later.generations = source.generations;
+        for table in [&mut source, &mut copy, &mut later] {
+            let owner = table.owner;
+            assert_eq!(
+                table.mint(mem_cap(22, owner)),
+                Err(CapError::GenerationMismatch)
+            );
+        }
     }
 
     #[test]
@@ -835,9 +963,11 @@ mod tests {
     #[test]
     fn one_over_kill_capacity_preserves_all_state_then_retries() {
         let (a, b, c) = (TenantId(1), TenantId(2), TenantId(3));
-        let mut ta = CapTable::new(a);
+        let mut ta = isolated_table(a);
         let mut tb = CapTable::new(b);
         let mut tc = CapTable::new(c);
+        tb.generations = ta.generations;
+        tc.generations = ta.generations;
         let root = ta.mint(mem_cap(7, a)).unwrap();
         for _ in 1..CAP_SLOTS {
             ta.derive(root, CapRights(CapRights::READ)).unwrap();
@@ -857,6 +987,7 @@ mod tests {
             tc.mint(ep_cap(i as u32, c)).unwrap();
         }
         let before = [ta.clone(), tb.clone(), tc.clone()];
+        let before_generation = ta.generations.load(Ordering::Relaxed);
         for _ in 0..3 {
             // Visit the grandchild table before its parent's table. Finding
             // the 65th node requires a second fixed-point iteration.
@@ -866,7 +997,8 @@ mod tests {
             );
             for (actual, saved) in [&ta, &tb, &tc].into_iter().zip(before.iter()) {
                 assert_eq!(actual.slots, saved.slots);
-                assert_eq!(actual.mint_gen, saved.mint_gen);
+                assert!(core::ptr::eq(actual.generations, saved.generations));
+                assert_eq!(actual.generations.load(Ordering::Relaxed), before_generation);
                 assert_eq!(actual.owner, saved.owner);
             }
         }
@@ -881,7 +1013,7 @@ mod tests {
         assert_eq!(tb.occupied(), 0);
         assert_eq!(tc.occupied(), CAP_SLOTS - 1);
         assert_eq!(tc.slots, unrelated);
-        assert_eq!(tc.mint_gen, before[2].mint_gen);
+        assert_eq!(tc.generations.load(Ordering::Relaxed), before_generation);
     }
 }
 

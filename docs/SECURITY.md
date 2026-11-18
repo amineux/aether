@@ -37,14 +37,24 @@ Each `Capability` stores:
 - `tenant` — must match the table owner at lookup
 - `parent` — derivation edge (set on derive / GRANT-copy)
 
-Within one table lifetime, mint generations run from 1 through `u32::MAX`
-without reuse. After the final generation, mint returns `GenerationMismatch`
-before changing slots; derive and GRANT-copy/move propagate the same refusal.
-Revoking caps frees slots but does not reset this exhaustion state. Existing
-caps and their revocation edges remain usable. This prevents counter wrap from
-aliasing an earlier derivation node; it does not make a raw `CPtr` a generational
-handle, provide global identities for multiple tables with the same tenant,
-or synchronize independently cloned tables.
+Production tables share a process/boot-wide atomic mint-generation allocator.
+Generations run from 1 through `u32::MAX` without reuse across tables, including
+separate tables for the same tenant. This keeps `(tenant, generation)` derivation
+IDs distinct and preserves legitimate same-tenant KV grants. `CapTable::new`
+remains const and does not reset the shared allocator. Relaxed atomics allocate
+unique numbers; callers still synchronize publication and mutation of tables.
+
+After the final generation, mint returns `GenerationMismatch` before changing
+slots; derive and GRANT-copy/move propagate that refusal. Revocation frees slots
+but cannot reset exhaustion. The limit is now shared by all production tables
+for the process/boot lifetime, not a separate quota per table. Existing caps and
+revocation remain usable. Raw CPtrs still name recyclable slots.
+
+Cloning a table preserves its existing capabilities and their identities, so a
+clone is an authority snapshot, not a new isolation domain. Future mints in the
+original and clone use the shared allocator and cannot collide. Named-table
+revocation still reaches only the explicitly supplied tables; this change adds
+neither a global CNode registry nor a user-facing per-process cap-table syscall.
 
 ## Invariants (implemented and tested)
 
