@@ -31,3 +31,17 @@ retry while preserving 31 unrelated endpoint capabilities in the third table.
 This is a bounded software invariant, not a kernel-global CNode broadcast or
 formal verification. A caller that omits a table still gets the documented
 named-table behavior: descendants in that unnamed table are outside the walk.
+
+Production capability tables share one atomic generation allocator for their
+process/boot lifetime. A separate same-tenant table therefore cannot mint a new
+cap with the same `(tenant, generation)` as another table. Revoking a root while
+naming such a table preserves unrelated caps and removes only the root's actual
+descendants. Same-tenant copy/derive handoffs remain supported.
+
+A cloned table preserves identities of existing capabilities. Naming both
+snapshots in a revoke can remove that shared authority in both; future mints in
+either table get fresh generations. Host regressions cover independent tables,
+same-tenant grants with grandchildren, clones and concurrent generation issuance.
+The shared allocator refuses after `u32::MAX`; new tables cannot restart it.
+These are software lifetime guarantees, not persistent identities across reboot,
+a global revoke registry, or a hardware-isolation claim.
