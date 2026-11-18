@@ -112,7 +112,9 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         exp += 1;
     }
 
-    if exp > 255 - F32_BIAS {
+    // Unbiased exponent 128 is biased 255: the Inf/NaN encoding, so it
+    // already overflows (`>` here used to emit NaN for f32::MAX * 2).
+    if exp >= 255 - F32_BIAS {
         return sign | F32_POS_INF;
     }
 
@@ -156,7 +158,7 @@ fn pack_round(sign: u32, exp: i32, sig: u64, extra: u64) -> u32 {
         if sig >= ((F32_HIDDEN as u64) << 1) {
             sig >>= 1;
             exp += 1;
-            if exp > 255 - F32_BIAS {
+            if exp >= 255 - F32_BIAS {
                 return sign | F32_POS_INF;
             }
         }
@@ -341,6 +343,9 @@ pub fn f16_to_f32(h: u16) -> u32 {
 }
 
 /// IEEE-754 binary32 → binary16 (round-to-nearest-even).
+///
+/// FTZ on output: any input below the F16 minimum normal (2^-14) returns
+/// signed zero; F16 subnormals are not produced.
 pub fn f32_to_f16(s: u32) -> u16 {
     let sign = ((s >> 16) & (F16_SIGN as u32)) as u16;
     let exp = f32_exp(s);
@@ -363,11 +368,7 @@ pub fn f32_to_f16(s: u32) -> u16 {
         if exp == 0 && frac == 0 {
             return sign;
         }
-        let sig = if exp == 0 {
-            frac
-        } else {
-            frac | F32_HIDDEN
-        };
+        let sig = if exp == 0 { frac } else { frac | F32_HIDDEN };
         // Target: 10-bit F16 subnormal. F32 sig is 23/24 bits.
         // Value scale: shift right by (14 - unbiased_f32_exp) plus 13
         // to go from 23-bit frac to 10-bit.
@@ -447,7 +448,11 @@ pub fn max_f32(a: u32, b: u32) -> u32 {
     let am = a & !F32_SIGN;
     let bm = b & !F32_SIGN;
     if a_neg {
-        if am <= bm { a } else { b }
+        if am <= bm {
+            a
+        } else {
+            b
+        }
     } else if am >= bm {
         a
     } else {
@@ -474,7 +479,8 @@ mod tests {
             return;
         }
         assert_eq!(
-            got, expect,
+            got,
+            expect,
             "got {got:#010x} ({}) expect {expect:#010x} ({})",
             f32::from_bits(got),
             f32::from_bits(expect)
@@ -548,5 +554,165 @@ mod tests {
         assert_eq!(f16_to_f32(0x4000), bits(2.0));
         assert_eq!(f32_to_f16(bits(1.0)), 0x3c00);
         assert_eq!(mul_f16(0x4000, 0x4200), f32_to_f16(bits(6.0))); // 2*3
+    }
+
+    /// Exact power of two as an f32 (repeated doubling/halving is exact).
+    fn pow2(k: i32) -> f32 {
+        let mut v = 1.0f32;
+        if k >= 0 {
+            for _ in 0..k {
+                v *= 2.0;
+            }
+        } else {
+            for _ in 0..(-k) {
+                v *= 0.5;
+            }
+        }
+        v
+    }
+
+    #[test]
+    fn nan_inputs_return_canonical_qnan_with_sign() {
+        // Signalling NaN with a payload, and a quiet NaN with a payload.
+        let snan = 0x7f80_0001;
+        let qnan_payload = 0x7fc1_2345;
+        for nan in [snan, qnan_payload] {
+            assert_eq!(mul_f32(nan, bits(2.0)), F32_QNAN);
+            assert_eq!(mul_f32(bits(2.0), nan), F32_QNAN);
+            assert_eq!(add_f32(nan, bits(1.0)), F32_QNAN);
+            assert_eq!(add_f32(bits(1.0), nan), F32_QNAN);
+            // The NaN's sign is kept; the payload is not.
+            assert_eq!(mul_f32(nan | F32_SIGN, bits(2.0)), F32_QNAN | F32_SIGN);
+            assert_eq!(add_f32(nan | F32_SIGN, bits(1.0)), F32_QNAN | F32_SIGN);
+            // max prefers the number; NaN vs NaN is the positive canonical qNaN.
+            assert_eq!(max_f32(nan, bits(-5.0)), bits(-5.0));
+            assert_eq!(max_f32(bits(-5.0), nan), bits(-5.0));
+            assert_eq!(max_f32(nan | F32_SIGN, snan), F32_QNAN);
+        }
+        // inf * 0 and inf + (-inf) are invalid: canonical positive qNaN.
+        assert_eq!(mul_f32(F32_SIGN | F32_POS_INF, 0), F32_QNAN);
+        assert_eq!(mul_f32(F32_SIGN, F32_POS_INF), F32_QNAN);
+        assert_eq!(add_f32(F32_SIGN | F32_POS_INF, F32_POS_INF), F32_QNAN);
+        // F16 NaN keeps its sign and becomes the canonical F16/F32 qNaN.
+        assert_eq!(f16_to_f32(0x7c01), F32_QNAN);
+        assert_eq!(f16_to_f32(0xfc01), F32_QNAN | F32_SIGN);
+        assert_eq!(f32_to_f16(snan), 0x7e00);
+        assert_eq!(f32_to_f16(snan | F32_SIGN), 0xfe00);
+    }
+
+    #[test]
+    fn subnormal_inputs_flush_to_signed_zero() {
+        let tiny = 0x0000_0001; // smallest positive f32 subnormal
+                                // 2^-127, subnormal.
+        let big_sub = 0x0040_0000;
+        // Host IEEE would give a nonzero result for each of these; FTZ gives zero.
+        assert_eq!(mul_f32(tiny, bits(pow2(100))), 0);
+        assert_eq!(mul_f32(tiny | F32_SIGN, bits(pow2(100))), F32_SIGN);
+        assert_eq!(add_f32(big_sub, big_sub), 0);
+        assert_eq!(add_f32(big_sub | F32_SIGN, big_sub | F32_SIGN), F32_SIGN);
+        // A flushed operand acts as zero next to a normal operand.
+        assert_eq!(add_f32(big_sub, bits(1.0)), bits(1.0));
+        assert_eq!(max_f32(big_sub, big_sub | F32_SIGN), 0);
+        assert_eq!(max_f32(bits(-1.0), big_sub), 0);
+        // Subnormal times infinity is zero times infinity: invalid.
+        assert_eq!(mul_f32(big_sub, F32_POS_INF), F32_QNAN);
+    }
+
+    #[test]
+    fn overflow_saturates_to_signed_infinity() {
+        let max = bits(f32::MAX);
+        assert_eq!(mul_f32(max, bits(2.0)), F32_POS_INF);
+        assert_eq!(mul_f32(max, bits(-2.0)), F32_SIGN | F32_POS_INF);
+        assert_eq!(add_f32(max, max), F32_POS_INF);
+        assert_eq!(
+            add_f32(max | F32_SIGN, max | F32_SIGN),
+            F32_SIGN | F32_POS_INF
+        );
+        // f32::MAX has an odd significand, so MAX + half an ulp is a tie that
+        // rounds up past MAX to infinity (host agrees).
+        let half_ulp = bits(pow2(103)); // ulp(f32::MAX) = 2^104
+        close_bits(add_f32(max, half_ulp), bits(f32::MAX + pow2(103)));
+        assert_eq!(add_f32(max, half_ulp), F32_POS_INF);
+        // Products far below the normal range underflow to signed zero.
+        let small = bits(pow2(-100));
+        close_bits(mul_f32(small, small), bits(pow2(-100) * pow2(-100)));
+        assert_eq!(mul_f32(small, small | F32_SIGN), F32_SIGN);
+    }
+
+    #[test]
+    fn add_and_mul_round_ties_to_even() {
+        let one = bits(1.0);
+        // Half an ulp of 1.0.
+        let half_ulp_one = bits(pow2(-24));
+        // 1 + 2^-24 is a tie; the even neighbour is 1.0.
+        assert_eq!(add_f32(one, half_ulp_one), one);
+        // (1 + 2^-23) + 2^-24 is a tie; the even neighbour is 1 + 2^-22.
+        let odd = bits(1.0 + pow2(-23));
+        assert_eq!(add_f32(odd, half_ulp_one), bits(1.0 + pow2(-22)));
+        // Just above the tie rounds up.
+        let above = bits(pow2(-24) + pow2(-40));
+        assert_eq!(add_f32(one, above), bits(1.0 + pow2(-23)));
+        // Subtraction that borrows below a power of two; compare with host.
+        let tiny = bits(pow2(-25));
+        close_bits(add_f32(one, tiny | F32_SIGN), bits(1.0 - pow2(-25)));
+        // x - x is +0 for either sign of x.
+        assert_eq!(add_f32(bits(-3.5), bits(3.5)), 0);
+        assert_eq!(add_f32(bits(3.5), bits(-3.5)), 0);
+        // (1 + 2^-23)^2 = 1 + 2^-22 + 2^-46: residue below half an ulp.
+        close_bits(
+            mul_f32(odd, odd),
+            bits((1.0 + pow2(-23)) * (1.0 + pow2(-23))),
+        );
+        // (1 + 3*2^-23) * (1 + 2^-1) exercises the [2,4) product window.
+        let a = 1.0 + 3.0 * pow2(-23);
+        close_bits(mul_f32(bits(a), bits(1.5)), bits(a * 1.5));
+    }
+
+    #[test]
+    fn f16_conversion_exhaustive_and_boundaries() {
+        // Every F16 bit pattern: decode exactly, and encode back unchanged,
+        // except that F16 subnormals do not survive the trip (FTZ on output)
+        // and NaN payloads collapse to the canonical qNaN.
+        for h in 0..=u16::MAX {
+            let sign = h & F16_SIGN;
+            let exp = (h & F16_EXP_MASK) >> 10;
+            let frac = h & F16_FRAC_MASK;
+            let neg = if sign != 0 { -1.0f32 } else { 1.0 };
+            let f = f16_to_f32(h);
+            if exp == 31 && frac != 0 {
+                assert_eq!(f, F32_QNAN | ((sign as u32) << 16), "{h:#06x}");
+                assert_eq!(f32_to_f16(f), sign | F16_QNAN, "{h:#06x}");
+                continue;
+            }
+            let expect = if exp == 31 {
+                neg * f32::INFINITY
+            } else if exp == 0 {
+                neg * (frac as f32) * pow2(-24)
+            } else {
+                neg * ((1024 + frac as u32) as f32) * pow2(exp as i32 - 25)
+            };
+            assert_eq!(f, bits(expect), "decode {h:#06x}");
+            let back = f32_to_f16(f);
+            if exp == 0 && frac != 0 {
+                assert_eq!(back, sign, "subnormal {h:#06x} flushes");
+            } else {
+                assert_eq!(back, h, "round trip {h:#06x}");
+            }
+        }
+        // Encode boundaries.
+        assert_eq!(f32_to_f16(bits(65504.0)), 0x7bff); // F16 max
+        assert_eq!(f32_to_f16(bits(65519.0)), 0x7bff); // below the tie
+        assert_eq!(f32_to_f16(bits(65520.0)), F16_POS_INF); // tie rounds to even = inf
+        assert_eq!(f32_to_f16(bits(-1.0e6)), F16_SIGN | F16_POS_INF);
+        assert_eq!(f32_to_f16(bits(pow2(-14))), 0x0400); // F16 min normal
+        assert_eq!(f32_to_f16(bits(pow2(-20))), 0); // F16-subnormal range: FTZ
+        assert_eq!(f32_to_f16(bits(-pow2(-20))), F16_SIGN);
+        // F32 subnormal input.
+        assert_eq!(f32_to_f16(0x0000_0001), 0);
+        // Normal-range RNE: 1 + 2^-11 ties to 1.0; 1 + 3*2^-11 ties up to 1 + 2^-9.
+        assert_eq!(f32_to_f16(bits(1.0 + pow2(-11))), 0x3c00);
+        assert_eq!(f32_to_f16(bits(1.0 + 3.0 * pow2(-11))), 0x3c02);
+        // Mantissa carry into the exponent: 2 - 2^-12 rounds up to 2.0.
+        assert_eq!(f32_to_f16(bits(2.0 - pow2(-12))), 0x4000);
     }
 }
