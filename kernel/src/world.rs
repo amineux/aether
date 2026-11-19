@@ -181,14 +181,7 @@ pub fn kernel_send_ping() -> bool {
     // Kernel ping on tenant 1's own endpoint, through the checked path.
     let ok = with(|w| w.fabric.send_as(&w.caps, msg).is_ok());
     if ok {
-        if let Some(tid) = task::blocked_recv_thread(ep.0) {
-            let buf = task::take_user_buf(tid);
-            if buf != 0 {
-                let _ = copy_ipc_out_in(task::thread_cr3(tid), buf, 0xA3, 2, b"ping-fabric");
-                task::set_saved_rax(tid, 0);
-            }
-            task::wake_recv(ep.0);
-        }
+        deliver_blocked_recv(ep);
     }
     ok
 }
@@ -297,6 +290,45 @@ fn write_user_completion_in(root: u64, dst: u64, cpl: UserCompletion) -> Result<
     crate::syscall::write_user_in(root, dst, &b)
 }
 
+/// Consume the FIFO entry and complete exactly one blocked receive. The World
+/// lock disables interrupts, so the selected waiter/buffer cannot change between
+/// dequeue, copy and targeted wake on the current BSP-only userspace scheduler.
+fn deliver_blocked_recv(endpoint: EndpointId) {
+    with(|w| {
+        let Some(tid) = task::blocked_recv_thread(endpoint.0) else {
+            return;
+        };
+        let root = task::thread_cr3(tid);
+        let result =
+            crate::ipc_delivery::deliver_next(&mut w.fabric, w.caps.owner(), endpoint, |message| {
+                let buf = task::take_user_buf(tid);
+                copy_ipc_out_in(
+                    root,
+                    buf,
+                    message.header.badge,
+                    message.header.flags.0,
+                    message.payload(),
+                )
+            });
+        if let Ok(copied) = result {
+            let succeeded = copied.is_ok();
+            task::set_saved_rax(
+                tid,
+                match copied {
+                    Ok(()) => 0,
+                    Err(error) => crate::syscall::err_rax(error),
+                },
+            );
+            task::wake_recv(endpoint.0, tid);
+            if succeeded {
+                println!("[ipc] queued message completed one blocked receive");
+            }
+        }
+        // Empty/invalid queue: callback never ran; keep the waiter and its
+        // saved buffer blocked rather than returning a fabricated success.
+    });
+}
+
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     require_init_caps()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
@@ -325,14 +357,7 @@ pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
         FabricError::QueueFull => SysError::Again,
         _ => SysError::Inval,
     })?;
-    if let Some(tid) = task::blocked_recv_thread(dest.0) {
-        let buf = task::take_user_buf(tid);
-        if buf != 0 {
-            let _ = copy_ipc_out_in(task::thread_cr3(tid), buf, m.badge, m.flags, m.payload());
-            task::set_saved_rax(tid, 0);
-        }
-        task::wake_recv(dest.0);
-    }
+    deliver_blocked_recv(dest);
     Ok(0)
 }
 
