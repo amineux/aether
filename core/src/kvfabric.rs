@@ -1136,4 +1136,272 @@ mod tests {
         assert_ne!(SID_PREFILL, SID_DECODE);
         assert_ne!(SID_DECODE, SID_NEIGHBOR);
     }
+
+    fn kv_obj(id: u32, seq: u32, kind: KvKind, tenant: TenantId) -> KvObject {
+        KvObject {
+            id,
+            seq,
+            base: PhysAddr(0x8000_0000 + (id as u64) * 0x10_0000),
+            bytes: DEMO_KV_BYTES,
+            kind,
+            window: KvWindow {
+                layer_lo: 1,
+                layer_hi: 3,
+                token_lo: 16,
+                token_hi: 32,
+            },
+            tenant,
+        }
+    }
+
+    fn read(seq: u32, layer: u16, token: u32) -> AttendReq {
+        AttendReq {
+            seq,
+            layer,
+            token,
+            write: false,
+        }
+    }
+
+    #[test]
+    fn window_is_half_open_on_both_axes() {
+        let w = kv_obj(1, 0, KvKind::Kv, TenantId(1)).window;
+        assert!(w.contains(1, 16));
+        assert!(w.contains(2, 31));
+        assert!(!w.contains(0, 16), "layer below lo");
+        assert!(!w.contains(3, 16), "layer_hi is exclusive");
+        assert!(!w.contains(1, 15), "token below lo");
+        assert!(!w.contains(1, 32), "token_hi is exclusive");
+        let demo = KvWindow::demo();
+        assert!(demo.contains(0, 0));
+        assert!(demo.contains(DEMO_LAYERS - 1, DEMO_TOKENS - 1));
+        assert!(!demo.contains(DEMO_LAYERS, 0));
+        assert!(!demo.contains(0, DEMO_TOKENS));
+        assert_eq!(DEMO_KV_BYTES, 131_072);
+    }
+
+    #[test]
+    fn admit_kv_wave_budget_is_inclusive() {
+        assert_eq!(admit_kv_wave(0, 0), Ok(()));
+        assert_eq!(admit_kv_wave(10, 10), Ok(()), "cost == budget is admitted");
+        assert_eq!(admit_kv_wave(11, 10), Err(KvError::DeadlineMiss));
+        assert_eq!(
+            admit_kv_wave(u32::MAX, u32::MAX - 1),
+            Err(KvError::DeadlineMiss)
+        );
+        assert_eq!(admit_kv_wave(0, u32::MAX), Ok(()));
+    }
+
+    #[test]
+    fn ledger_fills_then_refuses_and_get_finds_by_id() {
+        let t = TenantId(1);
+        let mut ledger = KvLedger::default();
+        assert!(ledger.get(0).is_none());
+        for id in 0..LEDGER_CAP as u32 {
+            ledger.insert(kv_obj(id + 10, id, KvKind::Kv, t)).unwrap();
+        }
+        assert_eq!(
+            ledger.insert(kv_obj(99, 0, KvKind::Kv, t)),
+            Err(KvError::BadGrant)
+        );
+        assert!(ledger.get(99).is_none(), "refused insert is not visible");
+        for id in 0..LEDGER_CAP as u32 {
+            assert_eq!(ledger.get(id + 10).map(|o| o.seq), Some(id));
+        }
+    }
+
+    #[test]
+    fn attend_checks_each_gate_in_order() {
+        let t = TenantId(1);
+        let mut ledger = KvLedger::new();
+        ledger.insert(kv_obj(1, 7, KvKind::Kv, t)).unwrap();
+        ledger.insert(kv_obj(2, 7, KvKind::Weights, t)).unwrap();
+        // Ledger object whose tenant differs from the cap that names it.
+        ledger
+            .insert(kv_obj(3, 7, KvKind::Kv, TenantId(2)))
+            .unwrap();
+
+        let mut table = CapTable::new(t);
+        let mem = |object, rights| Capability::new(CapKind::Memory, CapRights(rights), object, t);
+        let ro = table
+            .mint(mem(1, CapRights::READ | CapRights::MAP))
+            .unwrap();
+        let rw = table
+            .mint(mem(1, CapRights::READ | CapRights::WRITE))
+            .unwrap();
+        let wo = table.mint(mem(1, CapRights::WRITE)).unwrap();
+        let weights = table.mint(mem(2, CapRights::READ)).unwrap();
+        let stolen = table.mint(mem(3, CapRights::READ)).unwrap();
+        let unregistered = table.mint(mem(42, CapRights::READ)).unwrap();
+        let wrong_kind = table
+            .mint(Capability::new(CapKind::Endpoint, CapRights::EP_FULL, 1, t))
+            .unwrap();
+
+        assert_eq!(attend(&table, ro, &ledger, read(7, 1, 16)), Ok(()));
+        let write = AttendReq {
+            write: true,
+            ..read(7, 1, 16)
+        };
+        assert_eq!(attend(&table, rw, &ledger, write), Ok(()));
+        assert_eq!(attend(&table, ro, &ledger, write), Err(KvError::WouldWrite));
+        assert_eq!(
+            attend(&table, wo, &ledger, read(7, 1, 16)),
+            Err(KvError::InsufficientRights)
+        );
+        assert_eq!(attend(&table, wo, &ledger, write), Ok(()));
+        assert_eq!(
+            attend(&table, ro, &ledger, read(7, 3, 16)),
+            Err(KvError::WindowOob)
+        );
+        assert_eq!(
+            attend(&table, weights, &ledger, read(7, 1, 16)),
+            Err(KvError::WeightsNotGranted)
+        );
+        assert_eq!(
+            attend(&table, stolen, &ledger, read(7, 1, 16)),
+            Err(KvError::CrossTenant)
+        );
+        assert_eq!(
+            attend(&table, unregistered, &ledger, read(7, 1, 16)),
+            Err(KvError::BadGrant)
+        );
+        assert_eq!(
+            attend(&table, wrong_kind, &ledger, read(7, 1, 16)),
+            Err(KvError::BadGrant)
+        );
+        assert_eq!(
+            attend(
+                &table,
+                CPtr(crate::caps::CAP_SLOTS as u16),
+                &ledger,
+                read(7, 1, 16)
+            ),
+            Err(KvError::Revoked)
+        );
+
+        // Ordering: sequence beats rights and window; rights beat window;
+        // kind (weights) beats sequence.
+        let bad_all = AttendReq {
+            seq: 8,
+            layer: 9,
+            token: 999,
+            write: true,
+        };
+        assert_eq!(
+            attend(&table, ro, &ledger, bad_all),
+            Err(KvError::SeqMismatch)
+        );
+        assert_eq!(
+            attend(&table, ro, &ledger, AttendReq { seq: 7, ..bad_all }),
+            Err(KvError::WouldWrite)
+        );
+        assert_eq!(
+            attend(&table, weights, &ledger, bad_all),
+            Err(KvError::WeightsNotGranted)
+        );
+
+        table.revoke(ro).unwrap();
+        assert_eq!(
+            attend(&table, ro, &ledger, read(7, 1, 16)),
+            Err(KvError::Revoked)
+        );
+        assert_eq!(attend(&table, rw, &ledger, read(7, 1, 16)), Ok(()));
+    }
+
+    #[test]
+    fn try_regrant_needs_grant_and_copy_is_revocable() {
+        let (a, b) = (TenantId(1), TenantId(2));
+        let mut src = CapTable::new(a);
+        let mut dest = CapTable::new(b);
+        let full = src
+            .mint(Capability::new(CapKind::Memory, CapRights::MEM_FULL, 5, a))
+            .unwrap();
+        let no_grant = src
+            .derive(full, CapRights(CapRights::READ | CapRights::MAP))
+            .unwrap();
+
+        assert_eq!(
+            try_regrant(&mut src, no_grant, &mut dest),
+            Err(KvError::WouldRegrant)
+        );
+        assert_eq!(dest.occupied(), 0, "refused regrant mints nothing");
+        assert_eq!(
+            try_regrant(&mut src, CPtr(crate::caps::CAP_SLOTS as u16 - 1), &mut dest),
+            Err(KvError::Revoked)
+        );
+
+        let copy = try_regrant(&mut src, full, &mut dest).unwrap();
+        let got = *dest.lookup(copy).unwrap();
+        assert_eq!(got.tenant, b);
+        assert_eq!(got.object, 5);
+        assert_eq!(got.rights, CapRights::MEM_FULL);
+        assert!(
+            src.lookup(full).is_ok(),
+            "copy, not move: source keeps its cap"
+        );
+
+        src.revoke_in(full, &mut [&mut dest]).unwrap();
+        assert_eq!(dest.lookup(copy), Err(CapError::EmptySlot));
+        assert_eq!(
+            try_regrant(&mut src, full, &mut dest),
+            Err(KvError::Revoked)
+        );
+    }
+
+    #[test]
+    fn map_errors_fold_into_kv_errors() {
+        assert_eq!(map_err(MapError::CrossTenant), KvError::CrossTenant);
+        assert_eq!(map_err(MapError::WrongStream), KvError::WrongStream);
+        assert_eq!(map_err(MapError::StreamAbort), KvError::WrongStream);
+        assert_eq!(map_err(MapError::NoMemoryCap), KvError::InsufficientRights);
+        for other in [MapError::BadRange, MapError::TableFull, MapError::NotMapped] {
+            assert_eq!(map_err(other), KvError::BadGrant, "{other:?}");
+        }
+    }
+
+    #[test]
+    fn pin_kv_refuses_weights_and_foreign_objects_without_mapping() {
+        let t = TenantId(1);
+        let mut ledger = KvLedger::new();
+        ledger.insert(kv_obj(1, 0, KvKind::Weights, t)).unwrap();
+        ledger
+            .insert(kv_obj(2, 0, KvKind::Kv, TenantId(2)))
+            .unwrap();
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::from_raw(SID_DECODE);
+        let weights = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 1, t);
+        let foreign = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, t);
+        let missing = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 3, t);
+        assert_eq!(
+            pin_kv(&mut iommu, &weights, &ledger, sid),
+            Err(KvError::WeightsNotGranted)
+        );
+        assert_eq!(
+            pin_kv(&mut iommu, &foreign, &ledger, sid),
+            Err(KvError::CrossTenant)
+        );
+        assert_eq!(
+            pin_kv(&mut iommu, &missing, &ledger, sid),
+            Err(KvError::BadGrant)
+        );
+        assert_eq!(iommu.walk(sid, PhysAddr(0)), Err(MapError::StreamAbort));
+    }
+
+    #[test]
+    fn kv_report_all_ok_gates_on_byte_ratios() {
+        let ok = run_kv_fabric_demo();
+        assert!(ok.all_ok());
+        let mut r = ok;
+        r.fabric_bytes = GRANT_RECORD_BYTES + 1;
+        assert!(!r.all_ok(), "fabric record must be exactly the grant");
+        let mut r = ok;
+        r.copy_bytes = ok.kv_bytes - 1;
+        assert!(!r.all_ok(), "copy must equal the KV page");
+        let mut r = ok;
+        r.weight_bytes = ok.kv_bytes;
+        assert!(!r.all_ok(), "weights must exceed KV");
+        let mut r = ok;
+        r.decode_readonly_dma = false;
+        assert!(!r.all_ok());
+    }
 }
