@@ -56,6 +56,29 @@ original and clone use the shared allocator and cannot collide. Named-table
 revocation still reaches only the explicitly supplied tables; this change adds
 neither a global CNode registry nor a user-facing per-process cap-table syscall.
 
+## IPC receive completion
+
+Both `SYS_SEND` and the kernel fabric ping complete a blocked receive from the
+checked endpoint FIFO, not a separate copy of the sender's input. Completion
+dequeues exactly one message and copies its stored badge, flags and payload.
+This keeps the queued and blocked paths consistent, including the endpoint-cap
+badge fallback when the caller supplied zero, and releases the queue slot.
+
+Only the waiter whose saved output buffer was handled becomes Ready. Other
+receivers on the endpoint remain blocked until their own completion. An empty
+or unauthorized dequeue does not touch the saved buffer or wake the waiter.
+The current BSP-only userspace scheduler serializes selection, dequeue, copy,
+saved errno and targeted wake under the interrupt-disabling World lock.
+
+A failed copy returns the negative syscall error to that receiver instead of
+success. The message is consumed, matching the immediate receive path; there is
+no retry/requeue guarantee for an invalid receive buffer. Host regressions cover
+FIFO/header fidelity, capacity reuse, ownership, copy failure and targeted wake.
+All seven QEMU gates require the cloned-thread protocol to receive two distinct
+messages around a known-window/unmapped-buffer copy fault, plus an actual kernel
+blocked-delivery marker. This does not introduce per-address-space cap tables or
+a new IPC ABI.
+
 ## Invariants (implemented and tested)
 
 1. **No cross-tenant mint.** `CapTable::mint` rejects a cap whose tenant

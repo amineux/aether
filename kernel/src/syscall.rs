@@ -39,7 +39,7 @@ pub enum SysError {
     Again = 4,
 }
 
-fn err_rax(e: SysError) -> u64 {
+pub(crate) fn err_rax(e: SysError) -> u64 {
     (e as i64).wrapping_neg() as u64
 }
 

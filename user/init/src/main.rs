@@ -137,13 +137,47 @@ fn exit(code: u64) -> ! {
 static SHARED_PIN: AtomicU64 = AtomicU64::new(0);
 static SHARED_PIN_RESULT: AtomicI64 = AtomicI64::new(i64::MIN);
 
+static IPC_COMMAND: AtomicU64 = AtomicU64::new(0);
+static IPC_READY: AtomicU64 = AtomicU64::new(0);
+static IPC_RESULT: AtomicI64 = AtomicI64::new(0);
+static IPC_BAD_BUF: AtomicU64 = AtomicU64::new(0);
+
+fn ipc_payload(phase: u64) -> &'static [u8] {
+    match phase {
+        1 => b"ipc-one",
+        2 => b"ipc-copy-fault",
+        _ => b"ipc-three",
+    }
+}
+
 /// Second user thread: same PML4/satp as `/init`, own stack. Does not
-/// `SYS_EXIT` (that would take the guest down) and does not `SYS_RECV`
-/// (one waiter on the fabric ping is enough).
+/// `SYS_EXIT` (that would take the guest down). Receives only when the parent
+/// requests the blocked-IPC regression, after the initial fabric ping is drained.
 #[inline(never)]
 extern "C" fn user_thread(_tid: u64) -> ! {
     debug_print(b"[init] user-thread share-aspace\r\n");
     loop {
+        let phase = IPC_COMMAND.load(Ordering::Acquire);
+        if phase != 0 {
+            IPC_COMMAND.store(0, Ordering::Relaxed);
+            let mut received = UserIpcMsg::empty();
+            let dst = if phase == 2 {
+                IPC_BAD_BUF.load(Ordering::Acquire)
+            } else {
+                core::ptr::addr_of_mut!(received) as u64
+            };
+            IPC_READY.store(phase, Ordering::Release);
+            let rc = sys(SYS_RECV, INIT_EP_CPTR as u64, dst, 0);
+            let ok = if phase == 2 {
+                rc == -3 // actual copy to a known-window, unmapped page
+            } else {
+                rc == 0
+                    && received.badge == 0xA3
+                    && received.flags == 2
+                    && received.payload() == ipc_payload(phase)
+            };
+            IPC_RESULT.store(if ok { phase as i64 } else { -1 }, Ordering::Release);
+        }
         let iova = SHARED_PIN.load(Ordering::Acquire);
         if iova != 0 {
             // One producer and one consumer; no RMW is needed while idle.
@@ -163,8 +197,8 @@ static mut CHILD_STACK: ChildStack = ChildStack([0; 8192]);
 
 fn spawn_user_thread() -> bool {
     let stack = unsafe {
-        (core::ptr::addr_of_mut!(CHILD_STACK) as *mut u8)
-            .add(core::mem::size_of::<ChildStack>()) as u64
+        (core::ptr::addr_of_mut!(CHILD_STACK) as *mut u8).add(core::mem::size_of::<ChildStack>())
+            as u64
     };
     let tid = sys(SYS_CLONE, user_thread as usize as u64, stack, 0);
     if tid < 0 {
@@ -199,6 +233,68 @@ fn straddle_probe(va: u64) -> bool {
         debug_print(b"[init] straddle FAIL\r\n");
         return false;
     }
+    true
+}
+
+fn blocked_ipc_smoke(msg: &mut UserIpcMsg, mmap_base: u64) -> bool {
+    // Consume our queued ack, leaving no stale ping/ack for the child.
+    let mut ack = UserIpcMsg::empty();
+    if sys(
+        SYS_RECV,
+        INIT_EP_CPTR as u64,
+        core::ptr::addr_of_mut!(ack) as u64,
+        0,
+    ) != 0
+        || ack.payload() != b"init-ack"
+    {
+        return false;
+    }
+    // grow_mmap mapped two pages. The third is inside the allowed ABI window
+    // but unmapped, so the blocked receiver must see the eventual copy fault.
+    IPC_BAD_BUF.store(mmap_base + 2 * 4096, Ordering::Release);
+    for phase in 1..=3 {
+        IPC_RESULT.store(0, Ordering::Release);
+        IPC_COMMAND.store(phase, Ordering::Release);
+        for _ in 0..1024 {
+            if IPC_READY.load(Ordering::Acquire) == phase {
+                break;
+            }
+            yield_now();
+        }
+        if IPC_READY.load(Ordering::Acquire) != phase {
+            return false;
+        }
+        // Give the sibling its next slice to enter SYS_RECV. A required
+        // kernel serial marker separately proves queued blocked delivery.
+        for _ in 0..16 {
+            yield_now();
+        }
+        if IPC_RESULT.load(Ordering::Acquire) != 0 {
+            return false; // no receive may complete before this phase's send
+        }
+        msg.badge = 0; // queued header must resolve the endpoint cap's badge
+        msg.flags = 2;
+        if !msg.set_payload(ipc_payload(phase))
+            || sys(
+                SYS_SEND,
+                INIT_EP_CPTR as u64,
+                msg as *mut UserIpcMsg as u64,
+                0,
+            ) != 0
+        {
+            return false;
+        }
+        for _ in 0..1024 {
+            if IPC_RESULT.load(Ordering::Acquire) != 0 {
+                break;
+            }
+            yield_now();
+        }
+        if IPC_RESULT.load(Ordering::Acquire) != phase as i64 {
+            return false;
+        }
+    }
+    debug_print(b"[init] blocked IPC delivers once and reports copy faults\r\n");
     true
 }
 
@@ -331,6 +427,10 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] fabric send/recv ok\r\n");
+    if !blocked_ipc_smoke(&mut msg, mm) {
+        debug_print(b"[init] blocked IPC FAIL\r\n");
+        exit(1);
+    }
 
     let cap = sys(SYS_ARENA_ALLOC, 256, 0, 0);
     if cap < 0 {
@@ -423,9 +523,7 @@ pub extern "C" fn _start() -> ! {
     }
 
     let mut tensors = [0u8; 256];
-    let ident = [
-        1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1,
-    ];
+    let ident = [1i32, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
     for (i, v) in ident.iter().enumerate() {
         tensors[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
     }

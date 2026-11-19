@@ -462,9 +462,9 @@ pub fn resched_from_trap(frame: &mut InterruptFrame, block: Option<WaitWhy>, use
     }
 }
 
-pub fn wake_recv(ep: u32) {
+pub fn wake_recv(ep: u32, tid: u32) {
     let t = tasks();
-    let _ = t.queue.wake_recv(aether_core::EndpointId(ep));
+    let _ = t.queue.wake_recv_one(aether_core::EndpointId(ep), tid);
 }
 
 pub fn wake_accel(queue: u32) {

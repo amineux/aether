@@ -12,6 +12,7 @@ mod cap_authority;
 mod dma_pins;
 mod elfload;
 mod init;
+mod ipc_delivery;
 mod mm;
 #[cfg(target_arch = "x86_64")]
 mod smp_smoke;
