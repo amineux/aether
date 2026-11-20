@@ -168,19 +168,28 @@ impl CpuQueue {
 
     /// Wake only the receiver whose output buffer has been completed.
     pub fn wake_recv_one(&mut self, ep: EndpointId, id: u32) -> bool {
+        self.wake_one(WaitWhy::Recv(ep.0), id)
+    }
+
+    pub fn wake_accel(&mut self, queue: u32) -> u32 {
+        self.wake(WaitWhy::Accel(queue))
+    }
+
+    /// A completion belongs to one waiter, not every thread on this queue.
+    pub fn wake_accel_one(&mut self, queue: u32, id: u32) -> bool {
+        self.wake_one(WaitWhy::Accel(queue), id)
+    }
+
+    fn wake_one(&mut self, why: WaitWhy, id: u32) -> bool {
         let Some(i) = self.idx(id) else { return false };
         let slot = &mut self.slots[i];
-        if slot.state != ThreadState::Blocked || slot.wait != WaitWhy::Recv(ep.0) {
+        if slot.state != ThreadState::Blocked || slot.wait != why {
             return false;
         }
         slot.state = ThreadState::Ready;
         slot.wait = WaitWhy::None;
         slot.slice_left = self.quantum;
         true
-    }
-
-    pub fn wake_accel(&mut self, queue: u32) -> u32 {
-        self.wake(WaitWhy::Accel(queue))
     }
 
     fn wake(&mut self, why: WaitWhy) -> u32 {
@@ -228,6 +237,30 @@ impl Default for CpuQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn targeted_accel_wake_leaves_other_waiters_blocked() {
+        let mut q = CpuQueue::new();
+        q.spawn(1);
+        q.spawn(2);
+        q.spawn(3);
+        assert_eq!(q.ensure_running(), Some(1));
+        assert_eq!(q.block(WaitWhy::Accel(7)), Some(2));
+        assert_eq!(q.block(WaitWhy::Accel(7)), Some(3));
+        assert_eq!(q.block(WaitWhy::Recv(7)), None);
+        assert!(!q.wake_accel_one(8, 1));
+        assert!(!q.wake_accel_one(7, 99));
+        assert!(!q.wake_accel_one(7, 3));
+        assert_eq!(q.blocked_count(), 3);
+        assert!(q.wake_accel_one(7, 1));
+        assert!(!q.wake_accel_one(7, 1));
+        assert_eq!(q.blocked_count(), 2);
+        assert_eq!(q.ensure_running(), Some(1));
+        assert_eq!(q.block(WaitWhy::Accel(8)), None);
+        assert!(!q.wake_accel_one(7, 1));
+        assert!(q.wake_accel_one(7, 2));
+        assert_eq!(q.blocked_count(), 2);
+    }
 
     #[test]
     fn targeted_receive_wake_does_not_resume_other_waiters() {

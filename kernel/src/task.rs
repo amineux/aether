@@ -467,9 +467,9 @@ pub fn wake_recv(ep: u32, tid: u32) {
     let _ = t.queue.wake_recv_one(aether_core::EndpointId(ep), tid);
 }
 
-pub fn wake_accel(queue: u32) {
+pub fn wake_accel(queue: u32, tid: u32) {
     let t = tasks();
-    let _ = t.queue.wake_accel(queue);
+    let _ = t.queue.wake_accel_one(queue, tid);
 }
 
 pub fn take_user_buf(id: u32) -> u64 {

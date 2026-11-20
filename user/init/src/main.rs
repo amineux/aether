@@ -142,6 +142,12 @@ static IPC_READY: AtomicU64 = AtomicU64::new(0);
 static IPC_RESULT: AtomicI64 = AtomicI64::new(0);
 static IPC_BAD_BUF: AtomicU64 = AtomicU64::new(0);
 
+static ACCEL_COMMAND: AtomicU64 = AtomicU64::new(0);
+static ACCEL_READY: AtomicU64 = AtomicU64::new(0);
+static ACCEL_RESULT: AtomicI64 = AtomicI64::new(0);
+static ACCEL_BAD_BUF: AtomicU64 = AtomicU64::new(0);
+static ACCEL_LAST_SEQ: AtomicU64 = AtomicU64::new(0);
+
 fn ipc_payload(phase: u64) -> &'static [u8] {
     match phase {
         1 => b"ipc-one",
@@ -152,7 +158,7 @@ fn ipc_payload(phase: u64) -> &'static [u8] {
 
 /// Second user thread: same PML4/satp as `/init`, own stack. Does not
 /// `SYS_EXIT` (that would take the guest down). Receives only when the parent
-/// requests the blocked-IPC regression, after the initial fabric ping is drained.
+/// requests blocked IPC/accelerator regressions, after the initial ping is drained.
 #[inline(never)]
 extern "C" fn user_thread(_tid: u64) -> ! {
     debug_print(b"[init] user-thread share-aspace\r\n");
@@ -177,6 +183,34 @@ extern "C" fn user_thread(_tid: u64) -> ! {
                     && received.payload() == ipc_payload(phase)
             };
             IPC_RESULT.store(if ok { phase as i64 } else { -1 }, Ordering::Release);
+        }
+        let phase = ACCEL_COMMAND.load(Ordering::Acquire);
+        if phase != 0 {
+            ACCEL_COMMAND.store(0, Ordering::Relaxed);
+            let mut received = UserCompletion {
+                job_seq: 0,
+                status: 0,
+                cycles: 0,
+            };
+            let dst = if phase == 2 {
+                ACCEL_BAD_BUF.load(Ordering::Acquire)
+            } else {
+                core::ptr::addr_of_mut!(received) as u64
+            };
+            ACCEL_READY.store(phase, Ordering::Release);
+            let rc = sys(SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64, dst, 0);
+            let ok = if phase == 2 {
+                rc == -3
+            } else {
+                rc == 0
+                    && received.status == 0
+                    && received.cycles == 64
+                    && u64::from(received.job_seq) > ACCEL_LAST_SEQ.load(Ordering::Acquire)
+            };
+            if ok && phase != 2 {
+                ACCEL_LAST_SEQ.store(u64::from(received.job_seq), Ordering::Release);
+            }
+            ACCEL_RESULT.store(if ok { phase as i64 } else { -1 }, Ordering::Release);
         }
         let iova = SHARED_PIN.load(Ordering::Acquire);
         if iova != 0 {
@@ -295,6 +329,50 @@ fn blocked_ipc_smoke(msg: &mut UserIpcMsg, mmap_base: u64) -> bool {
         }
     }
     debug_print(b"[init] blocked IPC delivers once and reports copy faults\r\n");
+    true
+}
+
+fn blocked_accel_smoke(job: &UserAccelJob, mmap_base: u64) -> bool {
+    // The third page is a valid ABI-window address but remains unmapped.
+    ACCEL_BAD_BUF.store(mmap_base + 2 * 4096, Ordering::Release);
+    for phase in 1..=3 {
+        ACCEL_RESULT.store(0, Ordering::Release);
+        ACCEL_COMMAND.store(phase, Ordering::Release);
+        for _ in 0..1024 {
+            if ACCEL_READY.load(Ordering::Acquire) == phase {
+                break;
+            }
+            yield_now();
+        }
+        if ACCEL_READY.load(Ordering::Acquire) != phase {
+            return false;
+        }
+        for _ in 0..16 {
+            yield_now();
+        }
+        if ACCEL_RESULT.load(Ordering::Acquire) != 0 {
+            return false; // no stale completion may satisfy the next wait
+        }
+        if sys(
+            SYS_ACCEL_SUBMIT,
+            INIT_QUEUE_CPTR as u64,
+            job as *const UserAccelJob as u64,
+            0,
+        ) != 0
+        {
+            return false;
+        }
+        for _ in 0..1024 {
+            if ACCEL_RESULT.load(Ordering::Acquire) != 0 {
+                break;
+            }
+            yield_now();
+        }
+        if ACCEL_RESULT.load(Ordering::Acquire) != phase as i64 {
+            return false;
+        }
+    }
+    debug_print(b"[init] blocked accel consumes once and reports copy faults\r\n");
     true
 }
 
@@ -541,6 +619,10 @@ pub extern "C" fn _start() -> ! {
         b: base + 64,
         c: base + 128,
     };
+    if !blocked_accel_smoke(&job, mm) {
+        debug_print(b"[init] blocked accel FAIL\r\n");
+        exit(1);
+    }
     let rc = sys(
         SYS_ACCEL_SUBMIT,
         INIT_QUEUE_CPTR as u64,
@@ -564,7 +646,8 @@ pub extern "C" fn _start() -> ! {
         core::ptr::addr_of_mut!(cpl) as u64,
         0,
     );
-    if rc < 0 {
+    if rc < 0 || cpl.status != 0 || u64::from(cpl.job_seq) <= ACCEL_LAST_SEQ.load(Ordering::Acquire)
+    {
         debug_print(b"[init] accel_wait FAIL\r\n");
         exit(1);
     }

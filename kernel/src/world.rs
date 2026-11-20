@@ -235,22 +235,31 @@ pub fn run_pending_accel() {
             status: cpl.status,
             cycles: cpl.cycles,
         });
+        deliver_blocked_accel(w);
     });
-    if let Some(tid) = task::blocked_accel_thread(1) {
+}
+
+/// Called under the World lock so result consumption, saved errno and the
+/// selected waiter's wake cannot race the current BSP userspace scheduler.
+fn deliver_blocked_accel(w: &mut Inner) {
+    let Some(tid) = task::blocked_accel_thread(1) else {
+        return;
+    };
+    let root = task::thread_cr3(tid);
+    let copied = crate::completion_delivery::deliver_next(&mut w.completion, |completion| {
         let buf = task::take_user_buf(tid);
-        if buf != 0 {
-            let _ = write_user_completion_in(
-                task::thread_cr3(tid),
-                buf,
-                UserCompletion {
-                    job_seq: cpl.job_seq,
-                    status: cpl.status,
-                    cycles: cpl.cycles,
-                },
-            );
-            task::set_saved_rax(tid, 0);
-        }
-        task::wake_accel(1);
+        write_user_completion_in(root, buf, completion)
+    });
+    if let Some(result) = copied {
+        task::set_saved_rax(
+            tid,
+            match result {
+                Ok(()) => 0,
+                Err(error) => crate::syscall::err_rax(error),
+            },
+        );
+        task::wake_accel(1, tid);
+        println!("[accel] consumed completion for one blocked waiter");
     }
 }
 
@@ -554,8 +563,13 @@ pub fn sys_accel_wait(
             .map_err(|_| SysError::NoCap)
     })?;
     crate::syscall::copy_to_user(out_ptr, core::mem::size_of::<UserCompletion>() as u64)?;
-    if let Some(cpl) = with(|w| w.completion.take()) {
-        write_user_completion(out_ptr, cpl)?;
+    let copied = with(|w| {
+        crate::completion_delivery::deliver_next(&mut w.completion, |cpl| {
+            write_user_completion(out_ptr, cpl)
+        })
+    });
+    if let Some(result) = copied {
+        result?;
         return Ok(0);
     }
     frame.set_ret(0);
