@@ -679,4 +679,259 @@ mod tests {
         assert!(r.non_hbm, "non-HBM TypedWindow → Unbound on HBM meter");
         assert!(r.all_ok());
     }
+
+    fn profile(slice: SpatialSlice, bw_mbps: u32) -> PartitionProfile {
+        PartitionProfile::new(
+            PartitionId(7),
+            slice,
+            QosBudget {
+                bw_mbps,
+                credits: 4,
+            },
+            BlastRadius {
+                max_nodes: 4,
+                max_hops: 1,
+            },
+        )
+    }
+
+    fn hbm_window() -> crate::window::TypedWindow {
+        use crate::iommu::StreamId;
+        use crate::types::PhysAddr;
+        use crate::window::{TypedWindow, WindowKind};
+        TypedWindow::new(
+            PhysAddr(0xB000),
+            0x1000,
+            WindowKind::Hbm,
+            StreamId::accel(ChipletId(0), TileId(0), 0),
+            TenantId(1),
+        )
+    }
+
+    #[test]
+    fn slice_masks_cover_bit_31_and_refuse_ids_past_the_mask_width() {
+        let s = SpatialSlice::single_chiplet(ChipletId(0), u32::MAX, u32::MAX);
+        assert!(s.contains_tile(TileId(0)));
+        assert!(s.contains_tile(TileId(31)));
+        // TileId is u16 and BankId is u8: ids >= 32 have no mask bit and must
+        // refuse even with a full mask (no shift wrap onto a low bit).
+        for t in [32u16, 33, 63, 64, u16::MAX] {
+            assert!(!s.contains_tile(TileId(t)), "tile {t}");
+        }
+        assert!(s.contains_bank(BankId(31)));
+        for b in [32u8, 33, 64, u8::MAX] {
+            assert!(!s.contains_bank(BankId(b)), "bank {b}");
+        }
+        let empty = SpatialSlice::single_chiplet(ChipletId(0), 0, 0);
+        assert!(!empty.contains_tile(TileId(0)));
+        assert!(!empty.contains_bank(BankId(0)));
+    }
+
+    #[test]
+    fn chiplet_range_is_inclusive_and_an_inverted_range_admits_nothing() {
+        let span = SpatialSlice {
+            chiplet_lo: ChipletId(1),
+            chiplet_hi: ChipletId(3),
+            tile_mask: 0b1,
+            bank_mask: 0b1,
+        };
+        assert!(!span.contains_chiplet(ChipletId(0)));
+        for c in 1..=3u8 {
+            assert!(span.contains_chiplet(ChipletId(c)), "chiplet {c}");
+        }
+        assert!(!span.contains_chiplet(ChipletId(4)));
+        let p = profile(span, 100);
+        assert!(p.admit_chiplet(ChipletId(3)).is_ok());
+        assert_eq!(
+            p.admit_chiplet(ChipletId(4)),
+            Err(PartitionError::OutsideSlice)
+        );
+
+        let inverted = SpatialSlice {
+            chiplet_lo: ChipletId(3),
+            chiplet_hi: ChipletId(1),
+            tile_mask: 0b1,
+            bank_mask: 0b1,
+        };
+        for c in 0..=4u8 {
+            assert!(!inverted.contains_chiplet(ChipletId(c)), "chiplet {c}");
+        }
+    }
+
+    #[test]
+    fn admit_place_checks_tile_before_bank_and_none_bank_skips_bank_check() {
+        // Tiles 0 and 2, bank 1 only.
+        let p = profile(SpatialSlice::single_chiplet(ChipletId(0), 0b101, 0b10), 100);
+        assert!(p.admit_place(TileId(2), None).is_ok());
+        assert!(p.admit_place(TileId(2), Some(BankId(1))).is_ok());
+        assert_eq!(
+            p.admit_place(TileId(2), Some(BankId(0))),
+            Err(PartitionError::OutsideSlice)
+        );
+        // Foreign tile refuses regardless of bank (including a valid one, or none).
+        assert_eq!(
+            p.admit_place(TileId(1), None),
+            Err(PartitionError::OutsideSlice)
+        );
+        assert_eq!(
+            p.admit_place(TileId(1), Some(BankId(1))),
+            Err(PartitionError::OutsideSlice)
+        );
+        // Boundaries are inclusive for hops/nodes.
+        assert!(p.admit_hops(p.blast.max_hops).is_ok());
+        assert!(p.admit_nodes(p.blast.max_nodes).is_ok());
+        assert_eq!(p.admit_hops(u8::MAX), Err(PartitionError::BlastRadius));
+        assert_eq!(p.admit_nodes(u16::MAX), Err(PartitionError::BlastRadius));
+    }
+
+    #[test]
+    fn hbm_meter_refusals_leave_usage_unchanged() {
+        let p = profile(SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1), 100);
+        let other = PartitionProfile::new(PartitionId(8), p.slice, p.qos, p.blast);
+        let hbm = hbm_window();
+        let mut m = SoftHbmBwMeter::new(p.id);
+        m.charge(&p, &hbm, 30).unwrap();
+
+        // Wrong partition profile → Unbound, nothing charged.
+        assert_eq!(m.charge(&other, &hbm, 10), Err(PartitionError::Unbound));
+        assert_eq!(m.used_mbps(), 30);
+        // Over budget → QosExceeded, nothing charged (no partial fill).
+        assert_eq!(m.charge(&p, &hbm, 71), Err(PartitionError::QosExceeded));
+        assert_eq!(m.used_mbps(), 30);
+        // u32::MAX saturates instead of wrapping below the budget.
+        assert_eq!(
+            m.charge(&p, &hbm, u32::MAX),
+            Err(PartitionError::QosExceeded)
+        );
+        assert_eq!(m.used_mbps(), 30);
+        // Exact fill admits; a zero charge at the full budget still admits.
+        m.charge(&p, &hbm, 70).unwrap();
+        assert_eq!(m.used_mbps(), p.qos.bw_mbps);
+        assert!(m.charge(&p, &hbm, 0).is_ok());
+        assert_eq!(m.charge(&p, &hbm, 1), Err(PartitionError::QosExceeded));
+    }
+
+    #[test]
+    fn hbm_meter_release_saturates_at_zero_and_zero_budget_refuses() {
+        let p = profile(SpatialSlice::single_chiplet(ChipletId(0), 0b1, 0b1), 100);
+        let hbm = hbm_window();
+        let mut m = SoftHbmBwMeter::new(p.id);
+        m.charge(&p, &hbm, 20).unwrap();
+        m.release(50);
+        assert_eq!(m.used_mbps(), 0);
+        m.release(u32::MAX);
+        assert_eq!(m.used_mbps(), 0);
+        // Over-release does not bank credit beyond bw_mbps.
+        assert_eq!(m.charge(&p, &hbm, 101), Err(PartitionError::QosExceeded));
+        assert!(m.charge(&p, &hbm, 100).is_ok());
+
+        let zero = profile(p.slice, 0);
+        let mut mz = SoftHbmBwMeter::new(zero.id);
+        assert_eq!(mz.charge(&zero, &hbm, 1), Err(PartitionError::QosExceeded));
+        assert!(mz.charge(&zero, &hbm, 0).is_ok());
+        assert_eq!(mz.used_mbps(), 0);
+    }
+
+    #[test]
+    fn report_all_ok_requires_every_flag() {
+        assert!(!BlastHopsReport {
+            two_slice: false,
+            in_budget: true,
+            over_hops: true
+        }
+        .all_ok());
+        assert!(!BlastHopsReport {
+            two_slice: true,
+            in_budget: false,
+            over_hops: true
+        }
+        .all_ok());
+        assert!(!BlastHopsReport {
+            two_slice: true,
+            in_budget: true,
+            over_hops: false
+        }
+        .all_ok());
+        assert!(!BlastNodesReport {
+            two_slice: false,
+            in_budget: true,
+            over_nodes: true
+        }
+        .all_ok());
+        assert!(!BlastNodesReport {
+            two_slice: true,
+            in_budget: false,
+            over_nodes: true
+        }
+        .all_ok());
+        assert!(!BlastNodesReport {
+            two_slice: true,
+            in_budget: true,
+            over_nodes: false
+        }
+        .all_ok());
+        assert!(!OutsideSliceReport {
+            two_slice: false,
+            in_slice: true,
+            outside: true
+        }
+        .all_ok());
+        assert!(!OutsideSliceReport {
+            two_slice: true,
+            in_slice: false,
+            outside: true
+        }
+        .all_ok());
+        assert!(!OutsideSliceReport {
+            two_slice: true,
+            in_slice: true,
+            outside: false
+        }
+        .all_ok());
+        let q = QosCreditsReport {
+            two_slice: true,
+            in_budget: true,
+            over_credits: true,
+            resume: true,
+        };
+        assert!(q.all_ok());
+        for k in 0..4 {
+            let mut r = q;
+            match k {
+                0 => r.two_slice = false,
+                1 => r.in_budget = false,
+                2 => r.over_credits = false,
+                _ => r.resume = false,
+            }
+            assert!(!r.all_ok(), "qos flag {k}");
+        }
+        let h = HbmBwReport {
+            two_slice: true,
+            in_budget: true,
+            over_bw: true,
+            resume: true,
+            non_hbm: true,
+        };
+        assert!(h.all_ok());
+        for k in 0..5 {
+            let mut r = h;
+            match k {
+                0 => r.two_slice = false,
+                1 => r.in_budget = false,
+                2 => r.over_bw = false,
+                3 => r.resume = false,
+                _ => r.non_hbm = false,
+            }
+            assert!(!r.all_ok(), "hbm flag {k}");
+        }
+    }
+
+    #[test]
+    fn red_team_clips_are_deterministic() {
+        assert_eq!(run_blast_hops_demo(), run_blast_hops_demo());
+        assert_eq!(run_blast_nodes_demo(), run_blast_nodes_demo());
+        assert_eq!(run_qos_credits_demo(), run_qos_credits_demo());
+        assert_eq!(run_outside_slice_demo(), run_outside_slice_demo());
+        assert_eq!(run_hbm_bw_demo(), run_hbm_bw_demo());
+    }
 }
