@@ -79,6 +79,28 @@ messages around a known-window/unmapped-buffer copy fault, plus an actual kernel
 blocked-delivery marker. This does not introduce per-address-space cap tables or
 a new IPC ABI.
 
+## Accelerator wait completion
+
+Immediate and blocked `SYS_ACCEL_WAIT` paths use the same one-slot completion
+consumer. A result is taken before copy and cannot satisfy another wait. An empty
+slot does not call the output function, clear a saved buffer or wake a waiter.
+For blocked waits, publishing the result, taking it, writing the selected output,
+saving the syscall result and targeted wake run under the World lock with
+interrupts disabled on the current BSP-only userspace scheduler. Other accelerator
+and IPC waiters remain blocked until their own completion.
+
+Copy faults return the actual negative syscall errno to the selected waiter,
+rather than success. The completion is consumed on copy failure, matching the
+immediate path. Device status/cycle fields remain completion data, not copy errno.
+Cloned-thread boot checks cover valid/fault/valid waits submitted one at a time,
+reject stale early returns and require increasing job sequences for valid results;
+the original parent-side matmul wait then receives a later completion. All seven
+QEMU gates require both the user protocol and an actual blocked-completion marker.
+
+This changes result delivery, not submission admission. The cache still holds one
+completion and does not provide a general multi-job result queue or new hardware
+isolation guarantees.
+
 ## Invariants (implemented and tested)
 
 1. **No cross-tenant mint.** `CapTable::mint` rejects a cap whose tenant

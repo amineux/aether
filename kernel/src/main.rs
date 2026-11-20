@@ -8,6 +8,7 @@
 mod accel_boot;
 mod arch;
 mod console;
+mod completion_delivery;
 mod cap_authority;
 mod dma_pins;
 mod elfload;
