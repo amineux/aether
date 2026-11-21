@@ -541,6 +541,8 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-serial.log \
@@ -582,6 +584,8 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-pcid-serial.log \
@@ -636,6 +640,8 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-nopcid-serial.log \
@@ -723,6 +729,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/smp-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/smp-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/smp-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/smp-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/smp-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/smp-serial.log \
@@ -773,6 +781,8 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-blk-serial.log \
@@ -872,6 +882,8 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/riscv-serial.log \
@@ -956,6 +968,8 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -qF "[init] clone shares DMA pin authority" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] blocked IPC delivers once and reports copy faults" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] blocked accel consumes once and reports copy faults" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[accel] completion cached until wait" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] AArch64 x16/x17 preserved" $(BUILD)/aarch64-serial.log \
