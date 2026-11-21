@@ -634,6 +634,23 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] accel_submit matmul 4x4 i32\r\n");
+    // Leave the result unread. Repeated valid submits must refuse without
+    // replacing it or spending fence/device capacity (credits are only four).
+    for _ in 0..16 {
+        yield_now();
+    }
+    for _ in 0..6 {
+        if sys(
+            SYS_ACCEL_SUBMIT,
+            INIT_QUEUE_CPTR as u64,
+            core::ptr::addr_of!(job) as u64,
+            0,
+        ) != -4
+        {
+            debug_print(b"[init] unread completion backpressure FAIL\r\n");
+            exit(1);
+        }
+    }
 
     let mut cpl = UserCompletion {
         job_seq: 0,
@@ -646,11 +663,45 @@ pub extern "C" fn _start() -> ! {
         core::ptr::addr_of_mut!(cpl) as u64,
         0,
     );
-    if rc < 0 || cpl.status != 0 || u64::from(cpl.job_seq) <= ACCEL_LAST_SEQ.load(Ordering::Acquire)
+    if rc < 0
+        || cpl.status != 0
+        || u64::from(cpl.job_seq) != ACCEL_LAST_SEQ.load(Ordering::Acquire) + 1
     {
         debug_print(b"[init] accel_wait FAIL\r\n");
         exit(1);
     }
+
+    // Consuming the old result releases capacity. The retry must be accepted
+    // and produce the next device sequence, not replay or skip the old one.
+    let prior_sequence = cpl.job_seq;
+    if sys(
+        SYS_ACCEL_SUBMIT,
+        INIT_QUEUE_CPTR as u64,
+        core::ptr::addr_of!(job) as u64,
+        0,
+    ) != 0
+    {
+        debug_print(b"[init] submit retry FAIL\r\n");
+        exit(1);
+    }
+    cpl = UserCompletion {
+        job_seq: 0,
+        status: 0,
+        cycles: 0,
+    };
+    if sys(
+        SYS_ACCEL_WAIT,
+        INIT_QUEUE_CPTR as u64,
+        core::ptr::addr_of_mut!(cpl) as u64,
+        0,
+    ) != 0
+        || cpl.status != 0
+        || cpl.job_seq != prior_sequence + 1
+    {
+        debug_print(b"[init] retry completion FAIL\r\n");
+        exit(1);
+    }
+    debug_print(b"[init] accel backpressure preserves result and retries\r\n");
 
     let c00 = i32::from_le_bytes(tensors[128..132].try_into().unwrap_or([0; 4]));
     let c11 = i32::from_le_bytes(tensors[148..152].try_into().unwrap_or([0; 4]));

@@ -236,6 +236,9 @@ pub fn run_pending_accel() {
             cycles: cpl.cycles,
         });
         deliver_blocked_accel(w);
+        if w.completion.is_some() {
+            println!("[accel] completion cached until wait");
+        }
     });
 }
 
@@ -525,19 +528,25 @@ pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
     );
     desc.op = op;
     with(|w| {
-        let fence = w
-            .timeline
-            .submit(&w.part, None)
-            .map_err(|_| SysError::Again)?;
-        desc.partition = w.part.id;
-        desc.fence_id = fence.id.0;
-        if w.npu.submit(&desc).is_err() {
-            let _ = w.timeline.timeout(fence.id);
-            return Err(SysError::Again);
-        }
-        w.pending = true;
-        w.completion = None;
-        Ok::<(), SysError>(())
+        let Inner {
+            pending,
+            completion,
+            timeline,
+            npu,
+            part,
+            ..
+        } = w;
+        crate::completion_delivery::submit_if_idle(pending, completion, || {
+            let fence = timeline.submit(part, None).map_err(|_| SysError::Again)?;
+            desc.partition = part.id;
+            desc.fence_id = fence.id.0;
+            if npu.submit(&desc).is_err() {
+                let _ = timeline.timeout(fence.id);
+                return Err(SysError::Again);
+            }
+            Ok(())
+        })
+        .unwrap_or(Err(SysError::Again))
     })?;
     println!("[accel] virtqueue doorbell kick (SoftNPU deferred to IRQ)");
     #[cfg(target_arch = "riscv64")]

@@ -97,9 +97,22 @@ reject stale early returns and require increasing job sequences for valid result
 the original parent-side matmul wait then receives a later completion. All seven
 QEMU gates require both the user protocol and an actual blocked-completion marker.
 
-This changes result delivery, not submission admission. The cache still holds one
-completion and does not provide a general multi-job result queue or new hardware
-isolation guarantees.
+The single-result pipeline admits a new `SYS_ACCEL_SUBMIT` only when no job is
+pending and no unread completion occupies the cache. After existing capability,
+shape, address and operation validation, a busy pipeline returns `Again` before
+allocating a timeline fence or calling the device. Admission and device submission
+run under the World lock, preventing a competing caller or IRQ from crossing the
+capacity check. A successful submit marks the job pending; a failed device submit
+keeps the slot idle and retains the existing fence-timeout cleanup.
+
+A completed but unread result is never cleared by a new submit. Consuming it,
+including a copy-fault consumption, releases admission capacity. The boot regression
+leaves a result unread, requires six valid submissions to return `Again`, checks
+that the original result survives with the next device sequence, and retries
+successfully after consumption. All seven QEMU gates require this result and a
+kernel cache marker; host tests additionally cover the in-flight guard and failed
+submission retry. The cache still holds one completion rather than a general
+multi-job result queue. These are software checks, not new hardware isolation.
 
 ## Invariants (implemented and tested)
 
