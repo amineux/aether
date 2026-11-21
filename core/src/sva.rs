@@ -160,4 +160,165 @@ mod tests {
             Err(MapError::Overlap)
         );
     }
+
+    fn tenant_cap(tenant: u32) -> Capability {
+        Capability::new(
+            CapKind::Memory,
+            CapRights::MEM_FULL,
+            tenant,
+            TenantId(tenant),
+        )
+        .with_generation(1)
+    }
+
+    fn bound_sva_table() -> (IommuMap, StreamId) {
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::from_raw(SVA_SID);
+        iommu.bind_mm(&mem_cap(), sid, SVA_MM).unwrap();
+        (iommu, sid)
+    }
+
+    #[test]
+    fn map_va_refuses_bad_ranges_and_non_memory_caps_without_pinning() {
+        let (mut iommu, sid) = bound_sva_table();
+        let cap = mem_cap();
+        assert_eq!(
+            iommu.map_va(&cap, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), 0),
+            Err(MapError::BadRange)
+        );
+        assert_eq!(
+            iommu.map_va(&cap, sid, PhysAddr(u64::MAX - 0x10), PhysAddr(SVA_PA), 0x20),
+            Err(MapError::BadRange)
+        );
+        assert_eq!(
+            iommu.map_va(&cap, sid, PhysAddr(SVA_VA), PhysAddr(u64::MAX - 0x10), 0x20),
+            Err(MapError::BadRange)
+        );
+        let act = Capability::new(CapKind::Activity, CapRights::ACTIVITY_FULL, 1, TenantId(1));
+        assert_eq!(
+            iommu.map_va(&act, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN),
+            Err(MapError::NoMemoryCap)
+        );
+        let read_only =
+            Capability::new(CapKind::Memory, CapRights(CapRights::READ), 1, TenantId(1))
+                .with_generation(1);
+        assert_eq!(
+            iommu.map_va(&read_only, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN),
+            Err(MapError::NoMemoryCap)
+        );
+        // Nothing was pinned; the mm binding survives the refusals.
+        assert_eq!(iommu.len(), 0);
+        assert_eq!(iommu.walk(sid, PhysAddr(SVA_VA)), Err(MapError::NotMapped));
+        assert_eq!(iommu.mm_of(sid), Some(SVA_MM));
+    }
+
+    #[test]
+    fn map_va_refuses_va_and_guest_pa_overlap_on_same_ssid() {
+        let (mut iommu, sid) = bound_sva_table();
+        let cap = mem_cap();
+        iommu
+            .map_va(&cap, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN)
+            .unwrap();
+        // Same process VA, different backing PA.
+        assert_eq!(
+            iommu.map_va(
+                &cap,
+                sid,
+                PhysAddr(SVA_VA + 0x800),
+                PhysAddr(SVA_PA + 0x10_0000),
+                SVA_LEN
+            ),
+            Err(MapError::Overlap)
+        );
+        // Different VA, same backing PA.
+        assert_eq!(
+            iommu.map_va(
+                &cap,
+                sid,
+                PhysAddr(SVA_VA + 0x10_0000),
+                PhysAddr(SVA_PA),
+                SVA_LEN
+            ),
+            Err(MapError::Overlap)
+        );
+        assert_eq!(iommu.len(), 1);
+        // Adjacent, non-overlapping VA and PA are admitted.
+        let next = iommu
+            .map_va(
+                &cap,
+                sid,
+                PhysAddr(SVA_VA + SVA_LEN),
+                PhysAddr(SVA_PA + SVA_LEN),
+                SVA_LEN,
+            )
+            .unwrap();
+        assert_eq!(next.iova, PhysAddr(SVA_VA + SVA_LEN));
+        assert_eq!(
+            iommu.walk(sid, next.iova).map(|w| w.pa),
+            Ok(PhysAddr(SVA_PA + SVA_LEN))
+        );
+        assert_eq!(iommu.len(), 2);
+    }
+
+    #[test]
+    fn foreign_tenant_cannot_bind_map_or_unmap_on_bound_ssid() {
+        let (mut iommu, sid) = bound_sva_table();
+        let owner = mem_cap();
+        let other = tenant_cap(2);
+        assert_eq!(
+            iommu.bind_mm(&other, sid, MmId(0x0200)),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(
+            iommu.map_va(&other, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN),
+            Err(MapError::CrossTenant)
+        );
+        let pin = iommu
+            .map_va(&owner, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN)
+            .unwrap();
+        assert_eq!(
+            iommu.unmap_va(&other, sid, pin.iova),
+            Err(MapError::CrossTenant)
+        );
+        assert_eq!(
+            iommu.walk(sid, pin.iova).map(|w| w.pa),
+            Ok(PhysAddr(SVA_PA))
+        );
+        assert_eq!(iommu.mm_of(sid), Some(SVA_MM));
+        assert_eq!(iommu.sid_for_mm(MmId(0x0200)), None);
+    }
+
+    #[test]
+    fn unmap_va_refusals_and_lookups_on_unbound_state() {
+        let (mut iommu, sid) = bound_sva_table();
+        let cap = mem_cap();
+        assert_eq!(
+            iommu.unmap_va(&cap, sid, PhysAddr(SVA_VA)),
+            Err(MapError::NotMapped)
+        );
+        assert_eq!(
+            iommu.unmap_va_keep_atc(&cap, sid, PhysAddr(SVA_VA)),
+            Err(MapError::NotMapped)
+        );
+        let pin = iommu
+            .map_va(&cap, sid, PhysAddr(SVA_VA), PhysAddr(SVA_PA), SVA_LEN)
+            .unwrap();
+        let other_ssid = sid.with_ssid(2);
+        assert_eq!(
+            iommu.unmap_va(&cap, other_ssid, pin.iova),
+            Err(MapError::WrongStream)
+        );
+        assert_eq!(
+            iommu.unmap_va_keep_atc(&cap, other_ssid, pin.iova),
+            Err(MapError::WrongStream)
+        );
+        assert_eq!(iommu.len(), 1);
+        // Reserved mm and never-bound SSIDs have no SVA binding.
+        assert_eq!(iommu.sid_for_mm(MmId(0)), None);
+        assert_eq!(iommu.mm_of(other_ssid), None);
+        assert_eq!(IommuMap::new().mm_of(sid), None);
+        assert_eq!(IommuMap::new().sid_for_mm(SVA_MM), None);
+        assert_eq!(iommu.unmap_va(&cap, sid, pin.iova), Ok(pin));
+        assert_eq!(iommu.len(), 0);
+    }
 }
