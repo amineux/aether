@@ -32,7 +32,7 @@ jobs:
           python3 scripts/admission_profile.py --output "${{ runner.temp }}/admission-profile"
       - name: Retain measurements including failures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: admission-profile-${{ github.sha }}
           path: |
@@ -63,7 +63,7 @@ jobs:
           python3 -m unittest discover -s scripts -p test_investor_report.py
       - name: Preserve evidence including failed checks
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: host-evidence-${{ github.sha }}
           path: ${{ runner.temp }}/aether-evidence
