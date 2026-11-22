@@ -1,14 +1,14 @@
 //! Ring-3 `/probe` — second static ELF64 non-PIE at 0x0240_0000.
 //!
-//! Own PML4. Checks bootstrap capability refusal, prints and yields so `/init` owns
+//! Own PML4 and private endpoint cap table. Checks bootstrap refusal and yields so `/init` owns
 //! `SYS_EXIT`. Does not touch `/init`'s window.
 
 #![no_std]
 #![no_main]
 
 use aether_core::sysnr::{
-    COW_TEMPLATE_WORD, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_DEBUG_PRINT, SYS_MAP,
-    SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_COW_BASE,
+    UserIpcMsg, COW_TEMPLATE_WORD, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC,
+    SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_COW_BASE,
 };
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR};
 
@@ -37,13 +37,38 @@ fn debug_print(s: &[u8]) {
 #[no_mangle]
 pub extern "C" fn _start() -> ! {
     debug_print(b"[probe] ring-3 /probe (static ELF64 non-PIE @ 0x2400000, own PML4)\r\n");
-    // Live bootstrap endpoint/queue and user-image Memory CPtr 2 must not
-    // authorize a separate root. Null buffers also prove refusal precedes copy.
+    // CPtr 0 names a distinct private endpoint here, not /init's CPtr 0.
+    // A successful round-trip checks actual table selection, badge and payload.
+    let mut sent = UserIpcMsg::empty();
+    sent.flags = 2;
+    sent.set_payload(b"probe-private");
+    let mut received = UserIpcMsg::empty();
+    if sys(
+        SYS_SEND,
+        INIT_EP_CPTR as u64,
+        core::ptr::addr_of!(sent) as u64,
+        0,
+    ) == 0
+        && sys(
+            SYS_RECV,
+            INIT_EP_CPTR as u64,
+            core::ptr::addr_of_mut!(received) as u64,
+            0,
+        ) == 0
+        && received.badge == 0xB4
+        && received.flags == sent.flags
+        && received.payload() == sent.payload()
+    {
+        debug_print(b"[probe] private cap space IPC ok\r\n");
+    } else {
+        debug_print(b"[probe] private cap space IPC FAIL\r\n");
+    }
+    // Empty endpoint slot 1, queue slot 1, Memory slot 2 and allocator authority
+    // are refused before copying even a null buffer; init caps are not inherited.
     let attempts = [
-        (SYS_SEND, INIT_EP_CPTR as u64, 0, 0),
-        (SYS_RECV, INIT_EP_CPTR as u64, 0, 0),
+        (SYS_SEND, 1, 0, 0),
+        (SYS_RECV, 1, 0, 0),
         (SYS_MAP, 2, 0, 0),
-        (SYS_UNMAP, 0, 0, 0),
         (SYS_ARENA_ALLOC, 4096, 0, 0),
         (SYS_ACCEL_SUBMIT, INIT_QUEUE_CPTR as u64, 0, 0),
         (SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64, 0, 0),
@@ -52,6 +77,10 @@ pub extern "C" fn _start() -> ! {
     for (nr, a0, a1, a2) in attempts {
         refused &= sys(nr, a0, a1, a2) == -2; // SysError::NoCap
     }
+    // No foreign root may consume a tracked pin. An empty pin set returns
+    // NoCap; a missing/interior/foreign pin in a live set returns Fault.
+    let unmap = sys(SYS_UNMAP, 0, 0, 0);
+    refused &= unmap == -2 || unmap == -3;
     if refused {
         debug_print(b"[probe] bootstrap capabilities refused across roots\r\n");
     } else {

@@ -76,8 +76,8 @@ no retry/requeue guarantee for an invalid receive buffer. Host regressions cover
 FIFO/header fidelity, capacity reuse, ownership, copy failure and targeted wake.
 All seven QEMU gates require the cloned-thread protocol to receive two distinct
 messages around a known-window/unmapped-buffer copy fault, plus an actual kernel
-blocked-delivery marker. This does not introduce per-address-space cap tables or
-a new IPC ABI.
+blocked-delivery marker. This does not change the IPC ABI. The current boot
+capability spaces are described below.
 
 ## Accelerator wait completion
 
@@ -267,7 +267,7 @@ threads share that PML4 — they are not a second isolation domain.
 CR4.SMEP/SMAP are on. The map API refuses a pin without a Memory cap, allocates a
 non-identity IOVA per stream, and refuses wrong-stream / cross-tenant
 unmap. `SYS_UNMAP` (number 5, same arguments) returns that result:
-`-NoCap` for a root without bootstrap table authority or when World has no tracked syscall pins, `-Fault` for an unknown or
+`-NoCap` for a root without a registered capability table or when World has no tracked syscall pins, `-Fault` for an unknown or
 interior address, or a pin owned by a different address-space root, or a refused/missing device
 pin, and `0` when the caller's named tracked pin was dropped. Authority is removed only after device unmap succeeds; refusal
 preserves the other entries. Map reserves tracking capacity before pinning, and
@@ -279,17 +279,34 @@ capability snapshots remain part of the single shared kernel World. Each syscall
 pin is tagged with the trusted caller's address-space root at map time and can be
 unmapped only from that root. SYS_CLONE siblings share the root and pin authority;
 separate roots cannot consume each other's recorded unmap authority even within
-the same tenant. The bootstrap capability table is usable only by the /init
-address-space root
-explicitly bound by boot code before userspace starts. SYS_SEND, SYS_RECV,
-SYS_MAP, SYS_UNMAP, SYS_ARENA_ALLOC, SYS_ACCEL_SUBMIT and SYS_ACCEL_WAIT
-return NoCap for other roots before copying user pointers or changing World.
-/probe cannot inherit bootstrap endpoint, queue or memory capabilities by guessing
-a CPtr, or allocate into that table. SYS_CLONE siblings retain access because they
-share /init's root. Kernel-internal sends remain trusted. The x86 QEMU gates
-require /probe to observe all seven refusals; all three architecture demos still
-exercise /init and cloned-thread DMA unmap. This is not full per-process
-capability isolation, cap-revocation synchronization or hardware isolation.
+the same tenant.
+
+### Boot capability spaces
+
+World stores separate capability tables for the two current boot images. Trusted
+boot code binds /init's loaded root once; on x86 it also binds /probe's loaded
+root to a fresh table containing just a private Endpoint READ|WRITE cap (no
+GRANT). Both images remain in tenant 1. CPtr 0 names different endpoints in the
+two tables; a CPtr is never a global object id. All capability syscalls select
+the table using the scheduler's trusted current root. Zero, unbound and unknown
+roots have no bootstrap fallback and return NoCap before touching user buffers.
+Blocked IPC delivery uses the saved waiter's root to select its table owner.
+
+/probe has no queue or memory cap, and cannot inherit /init's caps by guessing
+slots. SYS_ARENA_ALLOC remains an explicit init-only boot policy until an
+allocator-cap ABI exists. SYS_UNMAP uses the registered root and recorded per-pin
+authority; a foreign/missing pin returns Fault when pins exist, NoCap when the
+set is empty. SYS_CLONE siblings share their root's actual table, not snapshots.
+Kernel-internal ping sends remain trusted through the bootstrap table.
+
+Host tests exercise table selection, same-tenant slot separation, grant limits,
+shared-root visibility and refused rebinding. The five x86 QEMU gates require
+/probe's private endpoint round-trip (including badge and payload), plus refusal
+of absent endpoint, queue, memory and allocator authority and invalid unmap.
+All three architecture demos still exercise /init and cloned-thread IPC, DMA
+unmap and accelerator completion. This is a bounded two-image boot registry,
+not a dynamic cap-space or user grant syscall, separate-tenant scheduling,
+cap-revocation synchronization or hardware isolation. Roots cannot be rebound.
 SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
 must accompany a future task-reaping implementation before roots can be recycled.
 Treat isolation as “the cap tables + Soft SMMU + task-local

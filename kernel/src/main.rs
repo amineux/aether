@@ -9,7 +9,7 @@ mod accel_boot;
 mod arch;
 mod console;
 mod completion_delivery;
-mod cap_authority;
+mod cap_spaces;
 mod dma_pins;
 mod elfload;
 mod init;
@@ -129,6 +129,10 @@ pub extern "C" fn kmain() -> ! {
             }
             crate::mm::paging::prove_aspace(init.cr3, probe_cr3);
             world::bind_init_caps(init.cr3);
+            #[cfg(target_arch = "x86_64")]
+            if let Some(p) = probe.as_ref() {
+                world::bind_probe_caps(p.cr3);
+            }
             task::spawn_kthread();
             task::spawn_user(init.entry, init.cr3);
             #[cfg(target_arch = "x86_64")]

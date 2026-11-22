@@ -35,8 +35,7 @@ use crate::syscall::SysError;
 use crate::task;
 
 struct Inner {
-    caps: CapTable,
-    cap_authority: crate::cap_authority::CapAuthority,
+    cap_spaces: crate::cap_spaces::CapSpaces,
     fabric: Fabric,
     arenas: ArenaAllocator,
     npu: SoftNpuDevice<KernelDma>,
@@ -54,16 +53,27 @@ static WORLD: SpinLock<Option<Inner>> = SpinLock::new(None);
 
 /// Boot code supplies the loaded /init root, never a syscall argument.
 pub fn bind_init_caps(root: u64) {
-    with(|w| w.cap_authority.bind(root)).expect("bootstrap cap root already bound or invalid");
+    with(|w| w.cap_spaces.bind_init(root)).expect("bootstrap cap root already bound or invalid");
 }
 
-fn require_init_caps() -> Result<(), SysError> {
-    let root = task::current_user_root();
-    if with(|w| w.cap_authority.permits(root)) {
-        Ok(())
-    } else {
-        Err(SysError::NoCap)
-    }
+/// A separate endpoint/table for the second boot image, never bootstrap aliases.
+#[cfg(target_arch = "x86_64")]
+pub fn bind_probe_caps(root: u64) {
+    with(|w| {
+        let ep = w
+            .fabric
+            .create_endpoint(w.cap_spaces.bootstrap().owner())
+            .expect("probe ep");
+        assert_ne!(ep, w.ep);
+        w.cap_spaces
+            .bind_probe_endpoint(root, ep.0)
+            .expect("probe cap root invalid");
+    });
+}
+
+fn caller_root() -> Result<u64, SysError> {
+    let root = task::current_user_root().ok_or(SysError::NoCap)?;
+    with(|w| w.cap_spaces.get(root).map(|_| root).ok_or(SysError::NoCap))
 }
 
 pub fn init() {
@@ -136,8 +146,7 @@ pub fn init() {
     let timeline = Timeline::new(part.id);
 
     *WORLD.lock() = Some(Inner {
-        caps,
-        cap_authority: crate::cap_authority::CapAuthority::new(),
+        cap_spaces: crate::cap_spaces::CapSpaces::new(caps),
         fabric,
         arenas,
         npu,
@@ -179,7 +188,7 @@ pub fn kernel_send_ping() -> bool {
         Err(_) => return false,
     };
     // Kernel ping on tenant 1's own endpoint, through the checked path.
-    let ok = with(|w| w.fabric.send_as(&w.caps, msg).is_ok());
+    let ok = with(|w| w.fabric.send_as(w.cap_spaces.bootstrap(), msg).is_ok());
     if ok {
         deliver_blocked_recv(ep);
     }
@@ -311,8 +320,11 @@ fn deliver_blocked_recv(endpoint: EndpointId) {
             return;
         };
         let root = task::thread_cr3(tid);
+        let Some(caps) = w.cap_spaces.get(root) else {
+            return;
+        };
         let result =
-            crate::ipc_delivery::deliver_next(&mut w.fabric, w.caps.owner(), endpoint, |message| {
+            crate::ipc_delivery::deliver_next(&mut w.fabric, caps.owner(), endpoint, |message| {
                 let buf = task::take_user_buf(tid);
                 copy_ipc_out_in(
                     root,
@@ -342,18 +354,18 @@ fn deliver_blocked_recv(endpoint: EndpointId) {
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
-        w.caps
-            .require(cptr, CapKind::Endpoint, CapRights::WRITE)
-            .map(|c| (c.object, c.badge))
+        let caps = w.cap_spaces.get(root).ok_or(SysError::NoCap)?;
+        caps.require(cptr, CapKind::Endpoint, CapRights::WRITE)
+            .map(|c| (c.object, c.badge, caps.owner()))
             .map_err(|_| SysError::NoCap)
     })?;
     let m = crate::syscall::copy_user_ipc(msg_ptr)?;
     let dest = EndpointId(cap.0);
     // Sender tag is the calling table's owner, never caller-chosen.
-    let caller = with(|w| w.caps.owner());
+    let caller = cap.2;
     let msg = Message::new(
         dest,
         if m.badge != 0 { m.badge } else { cap.1 },
@@ -365,9 +377,12 @@ pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     .map_err(|_| SysError::Inval)?;
     // Checked send: caller owns `dest` or holds Endpoint+WRITE on it;
     // Hodge quota is charged to the caller's own per-tenant budget.
-    with(|w| w.fabric.send_as(&w.caps, msg)).map_err(|e| match e {
-        FabricError::QueueFull => SysError::Again,
-        _ => SysError::Inval,
+    with(|w| {
+        let caps = w.cap_spaces.get(root).ok_or(SysError::NoCap)?;
+        w.fabric.send_as(caps, msg).map_err(|e| match e {
+            FabricError::QueueFull => SysError::Again,
+            _ => SysError::Inval,
+        })
     })?;
     deliver_blocked_recv(dest);
     Ok(0)
@@ -378,17 +393,17 @@ pub fn sys_recv(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
-    let object = with(|w| {
-        w.caps
-            .require(cptr, CapKind::Endpoint, CapRights::READ)
-            .map(|c| c.object)
+    let (object, owner) = with(|w| {
+        let caps = w.cap_spaces.get(root).ok_or(SysError::NoCap)?;
+        caps.require(cptr, CapKind::Endpoint, CapRights::READ)
+            .map(|c| (c.object, caps.owner()))
             .map_err(|_| SysError::NoCap)
     })?;
     crate::syscall::copy_to_user(out_ptr, core::mem::size_of::<UserIpcMsg>() as u64)?;
     // Checked recv: only the endpoint's owner dequeues.
-    match with(|w| w.fabric.recv_as(w.caps.owner(), EndpointId(object))) {
+    match with(|w| w.fabric.recv_as(owner, EndpointId(object))) {
         Ok(got) => {
             copy_ipc_out(out_ptr, got.header.badge, got.header.flags.0, got.payload())?;
             Ok(0)
@@ -403,10 +418,12 @@ pub fn sys_recv(
 }
 
 pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     let cap = with(|w| {
-        w.caps
+        w.cap_spaces
+            .get(root)
+            .ok_or(SysError::NoCap)?
             .require(cptr, CapKind::Memory, CapRights::MAP)
             .copied()
             .map_err(|_| SysError::NoCap)
@@ -425,7 +442,7 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
     // own base is refused (would otherwise pin — and on x86 user-map —
     // arbitrary physical memory, e.g. kernel text). See sysnr::map_pin_addr.
     let va = aether_core::sysnr::map_pin_addr(arena.base.0, vaddr).ok_or(SysError::Inval)?;
-    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
+    let owner_root = root;
     let iova = with(|w| {
         w.dma_pins
             .map(&mut w.npu, owner_root, &cap, PhysAddr(va), arena.size)
@@ -442,8 +459,8 @@ pub fn sys_map(cptr: u64, vaddr: u64, _flags: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
-    require_init_caps()?;
-    let owner_root = task::current_user_root().ok_or(SysError::Fault)?;
+    let root = caller_root()?;
+    let owner_root = root;
     // Syscall 5 keeps its number and `(vaddr, len)` args. `len` is ignored:
     // this is not munmap of `SYS_MMAP` pages. The Result is the existing
     // negative `SysError` return — a refused or missing pin is not `Ok(0)`.
@@ -461,7 +478,10 @@ pub fn sys_unmap(vaddr: u64, _len: u64) -> Result<u64, SysError> {
 }
 
 pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
+    if !with(|w| w.cap_spaces.can_allocate(root)) {
+        return Err(SysError::NoCap);
+    }
     if size == 0 || size > 64 * 1024 {
         return Err(SysError::Inval);
     }
@@ -469,8 +489,12 @@ pub fn sys_arena_alloc(size: u64, _flags: u64, bank: u64) -> Result<u64, SysErro
     let bank = u8::try_from(bank).map_err(|_| SysError::Inval)?;
     let pref = Some(BankId(bank));
     let (arena, cptr) = with(|w| {
-        let (arena, cptr) = w.arenas
-            .alloc_with_cap(&mut w.caps, ArenaRequest::tensor(size, pref))
+        let (arena, cptr) = w
+            .arenas
+            .alloc_with_cap(
+                w.cap_spaces.get_mut(root).ok_or(SysError::NoCap)?,
+                ArenaRequest::tensor(size, pref),
+            )
             .map_err(|_| SysError::Inval)?;
         w.last_arena = Some(arena);
         Ok::<_, SysError>((arena, cptr))
@@ -490,10 +514,12 @@ fn dma_ok(w: &Inner, ptr: u64, len: u64) -> bool {
 }
 
 pub fn sys_accel_submit(cptr: u64, job_ptr: u64) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
-        w.caps
+        w.cap_spaces
+            .get(root)
+            .ok_or(SysError::NoCap)?
             .require(cptr, CapKind::AccelQueue, CapRights::SUBMIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
@@ -563,10 +589,12 @@ pub fn sys_accel_wait(
     out_ptr: u64,
     frame: &mut crate::arch::idt::InterruptFrame,
 ) -> Result<u64, SysError> {
-    require_init_caps()?;
+    let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
     with(|w| {
-        w.caps
+        w.cap_spaces
+            .get(root)
+            .ok_or(SysError::NoCap)?
             .require(cptr, CapKind::AccelQueue, CapRights::WAIT)
             .map(|_| ())
             .map_err(|_| SysError::NoCap)
