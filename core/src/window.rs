@@ -159,7 +159,6 @@ impl IommuMap {
     }
 }
 
-
 /// Host red-team report for TypedWindow SID pin/map.
 ///
 /// Sell line `[redteam] attack=typed-window-sid` — existing
@@ -193,13 +192,7 @@ pub fn run_typed_window_sid_demo() -> TypedWindowSidReport {
         Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, foreign).with_generation(1);
     let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
     let other = StreamId::accel(ChipletId(0), TileId(2), 3);
-    let win = TypedWindow::new(
-        PhysAddr(0xB000),
-        0x1000,
-        WindowKind::Hbm,
-        sid,
-        tenant,
-    );
+    let win = TypedWindow::new(PhysAddr(0xB000), 0x1000, WindowKind::Hbm, sid, tenant);
 
     let mapped = iommu.map_window_sid(&cap, win, sid);
     let match_ok = match &mapped {
@@ -266,11 +259,21 @@ pub fn run_smmu_bad_range_demo() -> SmmuBadRangeReport {
     let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
     let good = TypedWindow::new(PhysAddr(0xB000), 0x1000, WindowKind::Hbm, sid, tenant);
     let zero = TypedWindow::new(PhysAddr(0xC000), 0, WindowKind::Hbm, sid, tenant);
-    let over = TypedWindow::new(PhysAddr(u64::MAX - 0xFFF), 0x2000, WindowKind::Hbm, sid, tenant);
+    let over = TypedWindow::new(
+        PhysAddr(u64::MAX - 0xFFF),
+        0x2000,
+        WindowKind::Hbm,
+        sid,
+        tenant,
+    );
 
     let valid_ok = iommu.map_window(&cap, good).is_ok()
         && iommu
-            .bind_mm(&cap, StreamId::accel(ChipletId(0), TileId(2), 3), MmId(0x0100))
+            .bind_mm(
+                &cap,
+                StreamId::accel(ChipletId(0), TileId(2), 3),
+                MmId(0x0100),
+            )
             .is_ok();
     let zero_len = iommu.map_window(&cap, zero) == Err(MapError::BadRange);
     let overflow = iommu.map_window(&cap, over) == Err(MapError::BadRange);
@@ -436,5 +439,195 @@ mod tests {
         assert!(r.cross_tenant, "foreign tenant pin → CrossTenant");
         assert!(r.all_ok());
     }
-}
 
+    #[test]
+    fn request_and_region_carry_the_window_fields() {
+        let sid = StreamId::accel(ChipletId(1), TileId(3), 4);
+        let w = TypedWindow::new(PhysAddr(0xD000), 0x2000, WindowKind::Dram, sid, TenantId(5));
+        let req = w.request();
+        assert_eq!(req, MapRequest::pin_accel(PhysAddr(0xD000), 0x2000, sid));
+        assert_eq!(req.stream(), sid);
+        assert!(req.writable);
+
+        let mut iommu = IommuMap::new();
+        let cap = mem_cap(9, TenantId(5));
+        let m = iommu.map_window(&cap, w).unwrap();
+        assert_eq!(m.window, w);
+        assert_eq!(m.region.guest_pa, w.base);
+        assert_eq!(m.region.len, w.len);
+        assert_eq!(m.region.tenant, TenantId(5));
+        assert_eq!(m.region.object, 9);
+        assert!(m.region.writable);
+        assert_eq!(
+            iommu.resolve_stream(sid.raw(), PhysAddr(m.region.iova.0 + 0x1800)),
+            Some(PhysAddr(0xD000 + 0x1800))
+        );
+    }
+
+    #[test]
+    fn map_window_checks_cap_then_tenant_then_range() {
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+        let zero_foreign = TypedWindow::new(PhysAddr(0xB000), 0, WindowKind::Hbm, sid, TenantId(2));
+        let not_memory =
+            Capability::new(CapKind::Activity, CapRights(CapRights::MAP), 1, TenantId(1))
+                .with_generation(1);
+        assert_eq!(
+            iommu.map_window(&not_memory, zero_foreign),
+            Err(MapError::NoMemoryCap)
+        );
+        let cap = mem_cap(1, TenantId(1));
+        assert_eq!(
+            iommu.map_window(&cap, zero_foreign),
+            Err(MapError::CrossTenant)
+        );
+        let zero_own = TypedWindow {
+            tenant: TenantId(1),
+            ..zero_foreign
+        };
+        assert_eq!(iommu.map_window(&cap, zero_own), Err(MapError::BadRange));
+        assert!(iommu.region_at_any_guest(PhysAddr(0xB000)).is_none());
+        assert_eq!(
+            iommu
+                .map_window(&cap, win(WindowKind::Hbm, sid, TenantId(1)))
+                .map(|m| m.region.len),
+            Ok(0x1000)
+        );
+    }
+
+    #[test]
+    fn map_window_sid_mismatch_is_checked_first_and_pins_nothing() {
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+        let other = StreamId::accel(ChipletId(1), TileId(2), 2);
+        let no_map = Capability::new(CapKind::Memory, CapRights(CapRights::READ), 1, TenantId(1))
+            .with_generation(1);
+        let w = win(WindowKind::Hbm, sid, TenantId(1));
+        assert_eq!(
+            iommu.map_window_sid(&no_map, w, other),
+            Err(MapError::WrongStream)
+        );
+        assert_eq!(
+            iommu.map_window_sid(&no_map, w, sid),
+            Err(MapError::NoMemoryCap)
+        );
+        assert!(iommu.region_at_any_guest(w.base).is_none());
+        assert!(iommu.resolve_stream(sid.raw(), w.base).is_none());
+    }
+
+    #[test]
+    fn remapping_a_pinned_window_on_its_sid_is_overlap() {
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+        let cap = mem_cap(1, TenantId(1));
+        let w = win(WindowKind::Hbm, sid, TenantId(1));
+        let first = iommu.map_window(&cap, w).unwrap();
+        assert_eq!(iommu.map_window(&cap, w), Err(MapError::Overlap));
+        let tail = TypedWindow::new(PhysAddr(0xBFFF), 0x10, WindowKind::Hbm, sid, TenantId(1));
+        assert_eq!(iommu.map_window(&cap, tail), Err(MapError::Overlap));
+        let adjacent =
+            TypedWindow::new(PhysAddr(0xC000), 0x1000, WindowKind::Hbm, sid, TenantId(1));
+        let second = iommu.map_window(&cap, adjacent).unwrap();
+        assert_ne!(first.region.iova, second.region.iova);
+        assert_eq!(
+            iommu.region_at_iova(first.region.iova).map(|r| r.guest_pa),
+            Some(w.base)
+        );
+    }
+
+    #[test]
+    fn unmap_window_refusals_leave_the_pin_live() {
+        let mut iommu = IommuMap::new();
+        let sid = StreamId::accel(ChipletId(0), TileId(2), 2);
+        let cap = mem_cap(1, TenantId(1));
+        let mapped = iommu
+            .map_window(&cap, win(WindowKind::Hbm, sid, TenantId(1)))
+            .unwrap();
+        let iova = mapped.region.iova;
+
+        let unmapped_iova = PhysAddr(iova.0 + 0x1000);
+        assert!(iommu.region_at_iova(unmapped_iova).is_none());
+        assert_eq!(
+            iommu.unmap_window(&cap, sid, unmapped_iova),
+            Err(MapError::NotMapped)
+        );
+        let read_only = Capability::new(
+            CapKind::Memory,
+            CapRights(CapRights::READ | CapRights::WRITE),
+            1,
+            TenantId(1),
+        )
+        .with_generation(1);
+        assert_eq!(
+            iommu.unmap_window(&read_only, sid, iova),
+            Err(MapError::NoMemoryCap)
+        );
+        assert_eq!(
+            iommu.resolve_stream(sid.raw(), iova),
+            Some(PhysAddr(0xB000))
+        );
+
+        let gone = iommu
+            .unmap_window(&cap, sid, PhysAddr(iova.0 + 0x10))
+            .unwrap();
+        assert_eq!(gone.iova, iova);
+        assert_eq!(
+            iommu.unmap_window(&cap, sid, iova),
+            Err(MapError::NotMapped)
+        );
+        assert!(iommu.resolve_stream(sid.raw(), iova).is_none());
+    }
+
+    #[test]
+    fn reports_need_every_flag() {
+        let sid = TypedWindowSidReport {
+            match_ok: true,
+            wrong_stream: true,
+            cross_tenant: true,
+        };
+        assert!(sid.all_ok());
+        for r in [
+            TypedWindowSidReport {
+                match_ok: false,
+                ..sid
+            },
+            TypedWindowSidReport {
+                wrong_stream: false,
+                ..sid
+            },
+            TypedWindowSidReport {
+                cross_tenant: false,
+                ..sid
+            },
+        ] {
+            assert!(!r.all_ok(), "{r:?}");
+        }
+        let bad = SmmuBadRangeReport {
+            valid_ok: true,
+            zero_len: true,
+            overflow: true,
+            reserved_mm: true,
+        };
+        assert!(bad.all_ok());
+        for r in [
+            SmmuBadRangeReport {
+                valid_ok: false,
+                ..bad
+            },
+            SmmuBadRangeReport {
+                zero_len: false,
+                ..bad
+            },
+            SmmuBadRangeReport {
+                overflow: false,
+                ..bad
+            },
+            SmmuBadRangeReport {
+                reserved_mm: false,
+                ..bad
+            },
+        ] {
+            assert!(!r.all_ok(), "{r:?}");
+        }
+    }
+}
