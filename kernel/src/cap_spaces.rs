@@ -1,0 +1,94 @@
+//! Capability tables bound by trusted boot code to the two current images.
+//! Root identity comes from the scheduler, never a user-supplied task/tenant id.
+//! Clones share a root/table; unknown roots have no fallback to bootstrap caps.
+use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
+
+struct ProbeSpace {
+    root: u64,
+    caps: CapTable,
+}
+
+pub struct CapSpaces {
+    bootstrap: CapTable,
+    init_root: Option<u64>,
+    probe: Option<ProbeSpace>,
+}
+
+impl CapSpaces {
+    pub fn new(bootstrap: CapTable) -> Self {
+        Self {
+            bootstrap,
+            init_root: None,
+            probe: None,
+        }
+    }
+
+    /// Bind once, before entering userspace. Roots cannot yet be recycled.
+    pub fn bind_init(&mut self, root: u64) -> Result<(), ()> {
+        if root == 0 || self.init_root.is_some() {
+            return Err(());
+        }
+        self.init_root = Some(root);
+        Ok(())
+    }
+
+    /// Trusted boot policy for /probe: one private endpoint, no GRANT, memory,
+    /// accelerator or allocator authority. Both boot images remain tenant 1.
+    pub fn bind_probe_endpoint(&mut self, root: u64, endpoint: u32) -> Result<(), ()> {
+        if root == 0
+            || self.init_root.is_none()
+            || self.init_root == Some(root)
+            || self.probe.is_some()
+        {
+            return Err(());
+        }
+        let tenant = self.bootstrap.owner();
+        let mut caps = CapTable::new(tenant);
+        let slot = caps
+            .mint(
+                Capability::new(
+                    CapKind::Endpoint,
+                    CapRights(CapRights::READ | CapRights::WRITE),
+                    endpoint,
+                    tenant,
+                )
+                .with_badge(0xB4),
+            )
+            .map_err(|_| ())?;
+        assert_eq!(slot, CPtr(0));
+        self.probe = Some(ProbeSpace { root, caps });
+        Ok(())
+    }
+
+    pub fn get(&self, root: u64) -> Option<&CapTable> {
+        if self.init_root == Some(root) {
+            Some(&self.bootstrap)
+        } else {
+            self.probe
+                .as_ref()
+                .filter(|p| p.root == root)
+                .map(|p| &p.caps)
+        }
+    }
+
+    pub fn get_mut(&mut self, root: u64) -> Option<&mut CapTable> {
+        if self.init_root == Some(root) {
+            Some(&mut self.bootstrap)
+        } else {
+            self.probe
+                .as_mut()
+                .filter(|p| p.root == root)
+                .map(|p| &mut p.caps)
+        }
+    }
+
+    /// SYS_ARENA_ALLOC has no allocator-cap ABI yet: preserve init-only policy.
+    pub fn can_allocate(&self, root: u64) -> bool {
+        self.init_root == Some(root)
+    }
+
+    /// Kernel-internal ping only. User syscall lookups must use get(root).
+    pub fn bootstrap(&self) -> &CapTable {
+        &self.bootstrap
+    }
+}

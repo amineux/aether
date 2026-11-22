@@ -546,6 +546,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] user copy straddle ok (per-page; unmapped tail refused)" $(BUILD)/qemu-serial.log \
 	   && grep -q "\\[init\\] attack=map-user-phys refused (phys from arena cap only)" $(BUILD)/qemu-serial.log \
@@ -589,6 +590,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -645,6 +647,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -734,6 +737,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/smp-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/smp-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/smp-serial.log \
+	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
 		echo "qemu-smp-ci: SMP + SoftNPU demo ok (qemu exit $$ec)"; \
 		exit 0; \
@@ -786,6 +790,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[probe] bootstrap capabilities refused across roots" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[sid\\] two-SID Host1x-shaped submit sealed" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[chipsync\\] two-chiplet producer/consumer scoped timelines sealed" $(BUILD)/qemu-blk-serial.log \
