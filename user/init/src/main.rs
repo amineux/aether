@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–11).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–12).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
-    SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
+    SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
     SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
@@ -119,6 +119,54 @@ fn map_user_phys_probe() -> bool {
         return false;
     }
     debug_print(b"[init] attack=map-user-phys refused (phys from arena cap only)\r\n");
+    true
+}
+
+/// Refuse forged TIDs without indexing/truncating them, and reject endpoint
+/// rights escalation, non-endpoint caps and same-root sharing before mutation.
+fn endpoint_grant_probe() -> bool {
+    for tid in [0, 1, 2, 8, u32::MAX as u64, (1 << 32) | 3, u64::MAX] {
+        if sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, tid, 2) != -2 {
+            return false;
+        }
+    }
+    for (slot, rights) in [
+        (1, 1),
+        (2, 1),
+        (1 << 16, 2),
+        (0, 0),
+        (0, 4),
+        (0, 6),
+        (0, (1 << 16) | 2),
+        (0, u64::MAX),
+    ] {
+        if sys(SYS_CAP_GRANT, slot, 3, rights) != -2 {
+            return false;
+        }
+    }
+    debug_print(b"[init] endpoint grant refuses invalid targets and authority\r\n");
+    #[cfg(target_arch = "x86_64")]
+    {
+        // The known boot protocol reserves /probe slot 1. Syscall returns a
+        // destination CPtr; this is not the caller's slot or a raw object id.
+        if sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, 3, 2) != 1 {
+            return false;
+        }
+        let mut msg = UserIpcMsg::empty();
+        if sys(
+            SYS_RECV,
+            INIT_EP_CPTR as u64,
+            core::ptr::addr_of_mut!(msg) as u64,
+            0,
+        ) != 0
+            || msg.badge != 0xA3
+            || msg.flags != 2
+            || msg.payload() != b"probe-write-only"
+        {
+            return false;
+        }
+        debug_print(b"[init] endpoint grant reaches separate root with WRITE only\r\n");
+    }
     true
 }
 
@@ -710,6 +758,10 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
     debug_print(b"[init] SoftNPU C[0,0]=2 C[1,1]=13 (I @ B = B)\r\n");
+    if !endpoint_grant_probe() {
+        debug_print(b"[init] endpoint grant FAIL\r\n");
+        exit(1);
+    }
 
     debug_print(b"\r\n====================================================\r\n");
     debug_print(b"  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE\r\n");

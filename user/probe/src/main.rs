@@ -8,7 +8,8 @@
 
 use aether_core::sysnr::{
     UserIpcMsg, COW_TEMPLATE_WORD, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC,
-    SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD, USER_COW_BASE,
+    SYS_CAP_GRANT, SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
+    USER_COW_BASE,
 };
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR};
 
@@ -102,9 +103,30 @@ pub extern "C" fn _start() -> ! {
     } else {
         debug_print(b"[probe] cow FAIL\r\n");
     }
-    // Stay Ready and yield. Do not SYS_EXIT (that isa-debug-exits QEMU)
-    // and do not share /init's recv waiter.
+    // Boot protocol: poll slot 1 until /init explicitly copies WRITE on its
+    // endpoint. No shared memory or guessed raw endpoint id is involved.
+    let mut sent_grant = false;
     loop {
+        if !sent_grant {
+            let mut message = UserIpcMsg::empty();
+            message.flags = 2;
+            let limited = sys(SYS_RECV, 1, 0, 0) == -2
+                && sys(SYS_CAP_GRANT, 1, 2, 2) == -2
+                && sys(SYS_MAP, 1, 0, 0) == -2
+                && sys(SYS_ACCEL_SUBMIT, 1, 0, 0) == -2;
+            message.set_payload(if limited {
+                b"probe-write-only"
+            } else {
+                b"grant-rights-FAIL"
+            });
+            let result = sys(SYS_SEND, 1, core::ptr::addr_of!(message) as u64, 0);
+            if result == 0 {
+                sent_grant = true;
+            } else if result != -2 {
+                debug_print(b"[probe] endpoint grant send FAIL\r\n");
+            }
+        }
+        // Stay Ready; /init retains SYS_EXIT and is the only shared receiver.
         let _ = sys(SYS_YIELD, 0, 0, 0);
     }
 }

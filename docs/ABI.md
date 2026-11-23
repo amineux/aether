@@ -94,6 +94,18 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 9 | `exit(status)` | x86 `isa-debug-exit`; RISC-V sifive_test; aarch64 Angel SYS_EXIT (additive; 0–8 unchanged) |
 | 10 | `clone(entry, stack, flags)` | User thread on the caller's PML4 / satp / TTBR0. `flags` must be 0. Returns child tid. Child starts at `entry` with arg0 = tid and `rsp`/`sp` = `stack`. Additive; 0–9 unchanged. |
 | 11 | `mmap(addr, len, flags)` | Anonymous grow. `flags` must be 0. `addr` 0 = first free page in the grow window; nonzero must be page-aligned and in that window. Returns VA. Additive; 0–10 unchanged. |
+| 12 | `cap_grant(src_cptr, target_tid, rights)` | Copy endpoint READ/WRITE rights to a live user's different registered cap space. Requires Endpoint+GRANT and attenuation; nonzero rights must contain only READ (1) and/or WRITE (2). Returns destination CPtr; source retained. Other authority/targets refused with `-NoCap`, full destination with `-Again`. Additive; 0–11 unchanged. |
+
+`SYS_CAP_GRANT` is a bounded endpoint-copy operation between the current boot
+spaces. The full-width target TID is checked for a live user thread and resolved
+to its trusted scheduler root; no root or tenant is supplied by userspace.
+Cloned threads identify their shared cap space; same-space grants are refused.
+The destination learns its returned slot through an agreed out-of-band protocol
+(the boot demo reserves /probe slot 1). This is not a receive-notification or a
+new address-space constructor. GRANT propagation, move, zero/unknown/high rights,
+memory and accelerator caps are refused. Copies preserve the badge and record a
+derivation edge. No user revoke/close syscall exists yet: grants last for the
+boot and consume destination slots. Generation exhaustion fails closed as NoCap.
 
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
@@ -143,6 +155,6 @@ The ELF loader opens `/init` (and optional `/probe`) from an
 in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
 Boot seeds those names from an x86 virtio-blk AETHFS01 image when
 a drive is present, otherwise from the embedded ELF blobs. This is
-**not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11)
-is the only additive slot in this cut. No `SYS_OPEN` / `SYS_READ`.
+**not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11) and
+`SYS_CAP_GRANT` (12) are additive slots. No `SYS_OPEN` / `SYS_READ`.
 SoftNPU stays the in-kernel BAR.

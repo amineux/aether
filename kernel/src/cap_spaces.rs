@@ -1,7 +1,7 @@
 //! Capability tables bound by trusted boot code to the two current images.
 //! Root identity comes from the scheduler, never a user-supplied task/tenant id.
 //! Clones share a root/table; unknown roots have no fallback to bootstrap caps.
-use aether_core::caps::{CPtr, CapKind, CapRights, CapTable, Capability};
+use aether_core::caps::{CPtr, CapError, CapKind, CapRights, CapTable, Capability};
 
 struct ProbeSpace {
     root: u64,
@@ -58,6 +58,33 @@ impl CapSpaces {
         assert_eq!(slot, CPtr(0));
         self.probe = Some(ProbeSpace { root, caps });
         Ok(())
+    }
+
+    /// Copy an attenuated endpoint cap between the two registered spaces.
+    /// The caller supplies trusted scheduler roots. No move, GRANT propagation,
+    /// memory or queue sharing; a refused transfer leaves both tables intact.
+    pub fn grant_endpoint(
+        &mut self,
+        source_root: u64,
+        target_root: u64,
+        source: CPtr,
+        rights: u64,
+    ) -> Result<CPtr, CapError> {
+        let init = self.init_root.ok_or(CapError::InvalidCptr)?;
+        let probe = self.probe.as_mut().ok_or(CapError::InvalidCptr)?;
+        let (from, to) = if source_root == init && target_root == probe.root {
+            (&mut self.bootstrap, &mut probe.caps)
+        } else if source_root == probe.root && target_root == init {
+            (&mut probe.caps, &mut self.bootstrap)
+        } else {
+            return Err(CapError::InvalidCptr);
+        };
+        from.require(source, CapKind::Endpoint, CapRights::GRANT)?;
+        let bits = u16::try_from(rights).map_err(|_| CapError::WouldEscalate)?;
+        if bits == 0 || bits & !(CapRights::READ | CapRights::WRITE) != 0 {
+            return Err(CapError::WouldEscalate);
+        }
+        from.transfer(source, to, CapRights(bits), false)
     }
 
     pub fn get(&self, root: u64) -> Option<&CapTable> {

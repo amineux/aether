@@ -1,7 +1,7 @@
 //! Syscall numbers and the ring-3 C ABI.
 //!
 //! Numbers 0–8 are frozen (kernel/src/syscall.rs). Additive slots:
-//! `SYS_EXIT` (9), `SYS_CLONE` (10), and `SYS_MMAP` (11).
+//! `SYS_EXIT` (9), `SYS_CLONE` (10), `SYS_MMAP` (11), `SYS_CAP_GRANT` (12).
 
 /// Userspace message blob for `SYS_SEND` / `SYS_RECV`.
 /// Layout is the contract; the kernel copies it across the user/kernel cut.
@@ -94,6 +94,14 @@ pub const SYS_CLONE: u64 = 10;
 /// page-aligned and in that window. Not POSIX `mmap`: no file, no
 /// `MAP_SHARED`, no `PROT_*` / `MAP_*` theater. Additive; 0–10 unchanged.
 pub const SYS_MMAP: u64 = 11;
+
+/// Copy an endpoint capability into the address space of a live user TID.
+/// Args: source CPtr, destination TID, nonzero READ/WRITE rights subset. Requires
+/// source Endpoint+GRANT and attenuation; GRANT, memory and queue sharing are
+/// refused. Returns the destination CPtr (learned out of band by its receiver).
+/// Source is retained. Same-space/unknown/kernel TIDs and malformed authority
+/// return -NoCap; a full target table returns -Again. Numbers 0..11 are unchanged.
+pub const SYS_CAP_GRANT: u64 = 12;
 
 /// Static non-PIE `/init` link address (identity-mapped, USER pages).
 pub const USER_IMAGE_BASE: u64 = 0x0200_0000;
@@ -512,6 +520,7 @@ mod tests {
         assert_eq!(SYS_EXIT, 9);
         assert_eq!(SYS_CLONE, 10);
         assert_eq!(SYS_MMAP, 11);
+        assert_eq!(SYS_CAP_GRANT, 12);
     }
 
     #[test]
