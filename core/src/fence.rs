@@ -269,7 +269,6 @@ impl Timeline {
     }
 }
 
-
 /// Host red-team fence-not-ready clip: wait before complete on
 /// [`Timeline`]. Issued-but-not-retired → [`PartitionError::FenceNotReady`].
 /// Sell needle is `[redteam] attack=fence-not-ready` — existing path only;
@@ -456,5 +455,151 @@ mod tests {
         assert!(r.wait_before, "wait before retire → FenceNotReady");
         assert!(r.after_complete, "complete then wait succeeds");
         assert!(r.all_ok());
+    }
+
+    #[test]
+    fn refused_submits_consume_no_seq_or_credit() {
+        let p = profile(2);
+        let mut t = Timeline::new(PartitionId(1));
+        // FenceId(0) is "no fence", never a predecessor.
+        assert_eq!(
+            t.submit(&p, Some(FenceId(0))),
+            Err(PartitionError::FenceNotReady)
+        );
+        let other = PartitionProfile::new(
+            PartitionId(2),
+            SpatialSlice::single_chiplet(ChipletId(0), 2, 0b1),
+            QosBudget {
+                bw_mbps: 100,
+                credits: 2,
+            },
+            BlastRadius {
+                max_nodes: 2,
+                max_hops: 1,
+            },
+        );
+        assert_eq!(t.submit(&other, None), Err(PartitionError::Unbound));
+        assert_eq!(t.next_seq(), 1);
+        assert_eq!(t.in_flight(), 0);
+        let a = t.submit(&p, None).unwrap();
+        assert_eq!(a.seq(), 1);
+        // The just-issued head is a valid pred; one past it is not.
+        assert_eq!(
+            t.submit(&p, Some(FenceId(2))),
+            Err(PartitionError::FenceNotReady)
+        );
+        let b = t.submit(&p, Some(a.id)).unwrap();
+        assert_eq!(b.seq(), 2);
+        assert_eq!(t.submit(&p, None), Err(PartitionError::CreditExhausted));
+        assert_eq!(t.next_seq(), 3);
+        assert_eq!(t.in_flight(), 2);
+    }
+
+    #[test]
+    fn software_cap_bounds_in_flight_above_partition_credits() {
+        let p = profile(MAX_IN_FLIGHT * 2);
+        let mut t = Timeline::new(PartitionId(1));
+        for i in 0..MAX_IN_FLIGHT {
+            let pred = if i == 0 {
+                None
+            } else {
+                Some(FenceId(i as u64))
+            };
+            assert!(t.submit(&p, pred).is_ok(), "submit {i}");
+        }
+        assert_eq!(t.in_flight(), MAX_IN_FLIGHT);
+        assert_eq!(t.submit(&p, None), Err(PartitionError::CreditExhausted));
+        // Retiring all of them in order drains the pred queue end to end.
+        for seq in 1..=MAX_IN_FLIGHT as u64 {
+            let done = t.complete(FenceId(seq)).unwrap();
+            let want = if seq == 1 {
+                None
+            } else {
+                Some(FenceId(seq - 1))
+            };
+            assert_eq!(done.wait_for, want, "seq {seq}");
+        }
+        assert_eq!(t.in_flight(), 0);
+        assert_eq!(t.retired(), MAX_IN_FLIGHT as u64);
+        assert!(t.submit(&p, None).is_ok());
+    }
+
+    #[test]
+    fn settle_refusal_order_and_errors() {
+        let p = profile(4);
+        let mut t = Timeline::new(PartitionId(1));
+        // Empty timeline: nothing to retire.
+        assert_eq!(t.complete(FenceId(1)), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.timeout(FenceId(1)), Err(PartitionError::FenceNotReady));
+        let a = t.submit(&p, None).unwrap();
+        let b = t.submit(&p, None).unwrap();
+        // Seq 0, out-of-order head and never-issued seqs are not ready.
+        assert_eq!(t.complete(FenceId(0)), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.complete(b.id), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.timeout(b.id), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.complete(FenceId(3)), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.retired(), 0);
+        assert_eq!(t.in_flight(), 2);
+        t.complete(a.id).unwrap();
+        // Already retired: Unbound, whether or not work is still in flight.
+        assert_eq!(t.complete(a.id), Err(PartitionError::Unbound));
+        assert_eq!(t.timeout(a.id), Err(PartitionError::Unbound));
+        assert_eq!(t.retire_seq(a.seq()), Err(PartitionError::Unbound));
+        t.complete(b.id).unwrap();
+        assert_eq!(t.in_flight(), 0);
+        assert_eq!(t.complete(b.id), Err(PartitionError::Unbound));
+        assert_eq!(t.retired(), 2);
+    }
+
+    #[test]
+    fn timeout_then_complete_keeps_both_states_and_preds() {
+        let p = profile(4);
+        let mut t = Timeline::named(TimelineId(9), PartitionId(1));
+        assert_eq!(t.id(), TimelineId(9));
+        assert_eq!(t.partition(), PartitionId(1));
+        let a = t.submit(&p, None).unwrap();
+        let b = t.submit(&p, Some(a.id)).unwrap();
+        assert_eq!(b.timeline, TimelineId(9));
+        assert_eq!(b.partition, PartitionId(1));
+        let timed = t.timeout(a.id).unwrap();
+        assert_eq!(timed.wait_for, None);
+        // The timed-out pred is settled, so its successor can retire.
+        let done = t.complete(b.id).unwrap();
+        assert_eq!(done.wait_for, Some(a.id));
+        assert!(done.completed && !done.timed_out);
+        let seen_a = t.wait(a.id).unwrap();
+        assert!(seen_a.submitted && seen_a.timed_out && !seen_a.completed);
+        let seen_b = t.wait(b.id).unwrap();
+        assert!(seen_b.submitted && seen_b.completed && !seen_b.timed_out);
+        assert_eq!(seen_b.timeline, TimelineId(9));
+        assert_eq!(t.wait(FenceId(0)), Err(PartitionError::FenceNotReady));
+        assert_eq!(t.wait(FenceId(3)), Err(PartitionError::FenceNotReady));
+    }
+
+    #[test]
+    fn fence_builders_and_report_gating() {
+        let f = Fence::new(FenceId(5), TimelineId(2), PartitionId(3));
+        assert_eq!(f.seq(), 5);
+        assert_eq!(f.wait_for, None);
+        assert!(!f.submitted && !f.completed && !f.timed_out);
+        assert_eq!(f.after(FenceId(4)).wait_for, Some(FenceId(4)));
+        assert_eq!(f.after(FenceId(4)).seq(), 5);
+
+        let full = FenceNotReadyReport {
+            submitted: true,
+            wait_before: true,
+            after_complete: true,
+        };
+        assert!(full.all_ok());
+        for i in 0..3 {
+            let mut r = full;
+            match i {
+                0 => r.submitted = false,
+                1 => r.wait_before = false,
+                _ => r.after_complete = false,
+            }
+            assert!(!r.all_ok(), "FenceNotReadyReport field {i}");
+        }
+        assert_eq!(run_fence_not_ready_demo(), run_fence_not_ready_demo());
     }
 }
