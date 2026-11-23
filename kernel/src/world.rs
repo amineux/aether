@@ -353,6 +353,21 @@ fn deliver_blocked_recv(endpoint: EndpointId) {
     });
 }
 
+/// Copy endpoint READ/WRITE rights into a live thread's registered cap space.
+/// The returned CPtr belongs to the destination; threads sharing a root/table
+/// are refused. No caller-supplied root or tenant reaches the table registry.
+pub fn sys_cap_grant(cptr: u64, target_tid: u64, rights: u64) -> Result<u64, SysError> {
+    let root = caller_root()?;
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
+    let target = task::user_root(target_tid).ok_or(SysError::NoCap)?;
+    with(|w| w.cap_spaces.grant_endpoint(root, target, cptr, rights))
+        .map(|slot| u64::from(slot.0))
+        .map_err(|error| match error {
+            aether_core::caps::CapError::TableFull => SysError::Again,
+            _ => SysError::NoCap,
+        })
+}
+
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;

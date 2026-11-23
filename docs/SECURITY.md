@@ -305,8 +305,24 @@ shared-root visibility and refused rebinding. The five x86 QEMU gates require
 of absent endpoint, queue, memory and allocator authority and invalid unmap.
 All three architecture demos still exercise /init and cloned-thread IPC, DMA
 unmap and accelerator completion. This is a bounded two-image boot registry,
-not a dynamic cap-space or user grant syscall, separate-tenant scheduling,
+not dynamic cap-space creation, separate-tenant scheduling,
 cap-revocation synchronization or hardware isolation. Roots cannot be rebound.
+SYS_CAP_GRANT (12) copies only endpoint READ/WRITE rights between these registered
+spaces under the World lock. It resolves a full-width target TID with bounds and
+live-user checks, requires the source Endpoint+GRANT, and retains the source.
+It refuses same-space targets, GRANT propagation, memory/queue sharing, empty or
+out-of-width rights and escalation. A full target returns Again without changing
+either table; other refusals return NoCap. The receiving CPtr is returned to the
+grantor and must be learned out of band. The x86 boot demo reserves /probe slot 1:
+after /init grants WRITE, /probe's read and onward-grant attempts still fail,
+then it sends the distinct payload back to /init. All seven boot gates require
+invalid-target/authority refusals; the five x86 gates also require this cross-root
+message. Host regressions cover attenuation, parent/badge identity, refused
+non-endpoints/GRANT, full-width rights, root validation and full-table atomicity.
+Copies record core derivation edges, but there is no user revoke/close syscall
+or slot reclamation yet; grants persist for the boot and remain bounded by the
+32-slot target table. This does not claim revocation synchronization.
+
 SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
 must accompany a future task-reaping implementation before roots can be recycled.
 Treat isolation as “the cap tables + Soft SMMU + task-local

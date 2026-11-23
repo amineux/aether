@@ -397,6 +397,22 @@ pub fn thread_cr3(id: u32) -> u64 {
     tasks().threads[slot_index(id)].cr3
 }
 
+/// Resolve an untrusted full-width TID without truncation or unchecked indexing.
+/// Only live user threads can identify a grant destination. Root registration
+/// and different-space policy are additionally enforced by CapSpaces.
+pub fn user_root(id: u64) -> Option<u64> {
+    let t = tasks();
+    if !t.started {
+        return None;
+    }
+    let thread = t.threads.get(usize::try_from(id).ok()?)?;
+    if !thread.used || thread.cr3 == 0 || thread.cr3 == crate::mm::paging::kernel_cr3() {
+        None
+    } else {
+        Some(thread.cr3)
+    }
+}
+
 /// Caller's aspace root (user PML4 / satp / TTBR0), or `None` if the
 /// current thread is a kernel thread. `SYS_MMAP` maps into this root;
 /// SoftNPU kthread-B stays on [`crate::mm::paging::kernel_cr3`].
