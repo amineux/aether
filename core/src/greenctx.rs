@@ -327,14 +327,15 @@ impl SoftGreenPool {
             return Err(GreenCtxError::BadArg);
         }
         let sm = self.sm_share(ctx, n_co);
-        let mut cycles = bytes.saturating_mul(self.total.sm as u32) / sm as u32;
+        // u64 so large `bytes` cannot saturate the cycle count and inflate
+        // `bw_milli` (solo on the full pool must stay 1000 at any size).
+        let mut cycles64 = bytes as u64 * self.total.sm as u64 / sm as u64;
         if n_co > 1 {
-            cycles = cycles
-                .saturating_mul(1000 + SHARED_BW_TAX_MILLI)
-                / 1000;
+            cycles64 = cycles64 * (1000 + SHARED_BW_TAX_MILLI) as u64 / 1000;
         }
-        cycles = cycles.max(1);
-        let bw_milli = (bytes as u64 * 1000 / cycles as u64) as u32;
+        let cycles64 = cycles64.max(1);
+        let bw_milli = (bytes as u64 * 1000 / cycles64) as u32;
+        let cycles = cycles64.min(u32::MAX as u64) as u32;
         if self.pending_memcpy > 0 {
             self.pending_memcpy -= 1;
             if self.pending_memcpy == 0 {
@@ -464,7 +465,6 @@ pub fn run_greenctx_demo() -> GreenCtxReport {
     }
 }
 
-
 /// Host red-team report for SoftGreenPool SM/WQ overcommit refuse.
 ///
 /// Sell line `[redteam] attack=greenctx-overcommit` — existing
@@ -492,12 +492,7 @@ impl GreenCtxOvercommitReport {
 /// Software pool ceiling — not HW MIG / BAR0 / SoftNPU / diligence 70/30 sell.
 pub fn run_greenctx_overcommit_demo() -> GreenCtxOvercommitReport {
     let mut p = SoftGreenPool::new();
-    let fill_ok = p
-        .create(SmWqBudget {
-            sm: 8,
-            wq: 8,
-        })
-        .is_ok();
+    let fill_ok = p.create(SmWqBudget { sm: 8, wq: 8 }).is_ok();
     let overcommit = p.create(SmWqBudget::split_30()) == Err(GreenCtxError::Overcommit);
 
     let mut p2 = SoftGreenPool::new();
@@ -542,8 +537,7 @@ pub fn run_greenctx_unbound_demo() -> GreenCtxUnboundReport {
     let (hi, lo) = p.split_70_30().unwrap();
     p.bind(lo, 0).unwrap();
     let sid = StreamId::from_raw(0x11_22_33_44);
-    let migrate_ok = p.migrate_to_yield(0, hi, sid) == Ok(sid)
-        && p.ctx_for_queue(0) == Some(hi);
+    let migrate_ok = p.migrate_to_yield(0, hi, sid) == Ok(sid) && p.ctx_for_queue(0) == Some(hi);
     // Queue 1 never bound → Unbound (distinct from Busy after bind).
     let unbound = p.migrate_to_yield(1, hi, sid) == Err(GreenCtxError::Unbound);
     // Nonexistent dest id → Unbound (queue 0 is bound to hi).
@@ -601,7 +595,6 @@ pub fn run_greenctx_exhausted_demo() -> GreenCtxExhaustedReport {
         contrast_overcommit,
     }
 }
-
 
 /// Host red-team report for SoftGreenPool migrate_to_yield Busy refuse.
 ///
@@ -667,11 +660,7 @@ mod tests {
         assert_eq!(p.ctx(hi).unwrap().budget.sm, 7);
         assert_eq!(p.ctx(lo).unwrap().budget.sm, 3);
         assert_eq!(
-            p.create(SmWqBudget {
-                sm: 1,
-                wq: 1
-            })
-            .unwrap_err(),
+            p.create(SmWqBudget { sm: 1, wq: 1 }).unwrap_err(),
             GreenCtxError::Overcommit
         );
     }
@@ -679,11 +668,7 @@ mod tests {
     #[test]
     fn overcommit_refused_before_bind() {
         let mut p = SoftGreenPool::new();
-        p.create(SmWqBudget {
-            sm: 8,
-            wq: 8,
-        })
-        .unwrap();
+        p.create(SmWqBudget { sm: 8, wq: 8 }).unwrap();
         assert_eq!(
             p.create(SmWqBudget::split_30()).unwrap_err(),
             GreenCtxError::Overcommit
@@ -786,4 +771,169 @@ mod tests {
         assert!(r.all_ok());
     }
 
+    #[test]
+    fn memcpy_bw_does_not_inflate_for_large_byte_counts() {
+        // Regression: u32 saturating cycle math inflated bw_milli once
+        // bytes * pool (or the co-run tax) overflowed u32.
+        let mut p = SoftGreenPool::new();
+        let solo = p.memcpy_solo(u32::MAX).unwrap();
+        assert_eq!(solo.bw_milli, 1000, "solo on full pool is 1000 at any size");
+        assert_eq!(solo.cycles, u32::MAX);
+
+        let (hi, _lo) = p.split_70_30().unwrap();
+        let small = p.memcpy(Some(hi), DEMO_MEMCPY_BYTES, 2).unwrap();
+        let large = p.memcpy(Some(hi), 10_000_000, 2).unwrap();
+        // 7/10 SMs with the 10% shared-HBM tax: 1000 * 7 / 11 = 636.
+        assert_eq!(small.bw_milli, 636);
+        assert_eq!(large.bw_milli, 636);
+        assert_eq!(large.cycles, 15_714_285);
+
+        // A cycle count that cannot fit u32 is clamped, bw stays honest.
+        let mut q = SoftGreenPool::new();
+        q.create(SmWqBudget { sm: 1, wq: 1 }).unwrap();
+        let slow = q.memcpy(Some(GreenCtxId(0)), u32::MAX, 1).unwrap();
+        assert_eq!(slow.sm, 1);
+        assert_eq!(slow.cycles, u32::MAX);
+        assert_eq!(slow.bw_milli, 100);
+    }
+
+    #[test]
+    fn create_refuses_zero_budget_without_charging() {
+        let mut p = SoftGreenPool::new();
+        assert!(SmWqBudget { sm: 0, wq: 0 }.is_empty());
+        assert!(!SmWqBudget { sm: 0, wq: 1 }.is_empty());
+        assert!(!SmWqBudget::split_30().is_empty());
+        for b in [
+            SmWqBudget { sm: 0, wq: 0 },
+            SmWqBudget { sm: 0, wq: 3 },
+            SmWqBudget { sm: 3, wq: 0 },
+        ] {
+            assert_eq!(p.create(b), Err(GreenCtxError::BadArg));
+        }
+        assert_eq!(p.allocated(), SmWqBudget { sm: 0, wq: 0 });
+        assert!(!p.partitioned());
+        assert_eq!(p.ctx(GreenCtxId(0)), None);
+        // WQ alone can overcommit even when SMs fit.
+        p.create(SmWqBudget { sm: 1, wq: 9 }).unwrap();
+        assert_eq!(
+            p.create(SmWqBudget { sm: 1, wq: 2 }),
+            Err(GreenCtxError::Overcommit)
+        );
+        assert_eq!(p.allocated(), SmWqBudget { sm: 1, wq: 9 });
+    }
+
+    #[test]
+    fn split_and_share_refuse_a_used_pool() {
+        let mut p = SoftGreenPool::new();
+        p.create(SmWqBudget::split_30()).unwrap();
+        assert_eq!(p.split_70_30(), Err(GreenCtxError::Busy));
+        assert_eq!(p.share_unpartitioned(), Err(GreenCtxError::Busy));
+        assert_eq!(p.allocated(), SmWqBudget::split_30());
+
+        // Shared contexts do not charge exclusive SMs and stay unpartitioned.
+        let mut s = SoftGreenPool::new();
+        let (a, b) = s.share_unpartitioned().unwrap();
+        assert_ne!(a, b);
+        assert!(!s.partitioned());
+        assert_eq!(s.allocated(), SmWqBudget { sm: 0, wq: 0 });
+        assert_eq!(s.ctx(a).unwrap().budget, SmWqBudget::full());
+        s.share_unpartitioned().unwrap();
+        assert_eq!(s.share_unpartitioned(), Err(GreenCtxError::Exhausted));
+        assert!(s.ctx(GreenCtxId(MAX_GREEN_CTX as u16 - 1)).is_some());
+    }
+
+    #[test]
+    fn bind_unbind_edges() {
+        let mut p = SoftGreenPool::new();
+        let (hi, lo) = p.split_70_30().unwrap();
+        assert_eq!(p.bind(hi, 2), Err(GreenCtxError::BadArg));
+        assert_eq!(p.bind(GreenCtxId(3), 0), Err(GreenCtxError::Unbound));
+        assert_eq!(p.bind(GreenCtxId(99), 0), Err(GreenCtxError::Unbound));
+        p.bind(hi, 0).unwrap();
+        p.bind(hi, 0).unwrap(); // idempotent re-bind
+        assert_eq!(p.bind(hi, 1), Err(GreenCtxError::Busy));
+        assert_eq!(p.bind(lo, 0), Err(GreenCtxError::Busy));
+        assert_eq!(p.ctx_for_queue(0), Some(hi));
+        assert_eq!(p.unbind(hi), Ok(0));
+        assert_eq!(p.unbind(hi), Err(GreenCtxError::Unbound));
+        assert_eq!(p.unbind(GreenCtxId(99)), Err(GreenCtxError::Unbound));
+        assert_eq!(p.ctx_for_queue(0), None);
+        p.bind(lo, 0).unwrap();
+        assert_eq!(p.ctx_for_queue(0), Some(lo));
+    }
+
+    #[test]
+    fn migrate_to_self_is_noop_and_ghost_dest_keeps_source() {
+        let mut p = SoftGreenPool::new();
+        let (hi, lo) = p.split_70_30().unwrap();
+        p.bind(lo, 1).unwrap();
+        let sid = StreamId::from_raw(0x0a0b_0c0d);
+        assert_eq!(p.migrate_to_yield(1, lo, sid), Ok(sid));
+        assert_eq!(p.ctx_for_queue(1), Some(lo));
+        assert_eq!(
+            p.migrate_to_yield(1, GreenCtxId(3), sid),
+            Err(GreenCtxError::Unbound)
+        );
+        // Refusal left the source binding intact.
+        assert_eq!(p.ctx_for_queue(1), Some(lo));
+        assert_eq!(p.ctx(hi).unwrap().bound_queue, None);
+    }
+
+    #[test]
+    fn wave_n_tracks_pending_memcpy_and_resets() {
+        let mut p = SoftGreenPool::new();
+        assert_eq!(p.wave_n(), 1);
+        p.note_memcpy_submit();
+        p.note_memcpy_submit();
+        assert_eq!(p.wave_n(), 2);
+        // A refused memcpy does not consume a pending submit.
+        assert_eq!(p.memcpy(None, 0, 2), Err(GreenCtxError::BadArg));
+        assert_eq!(p.wave_n(), 2);
+        let a = p.memcpy(None, DEMO_MEMCPY_BYTES, p.wave_n()).unwrap();
+        assert_eq!(p.wave_n(), 2, "frozen until the wave drains");
+        let b = p.memcpy(None, DEMO_MEMCPY_BYTES, p.wave_n()).unwrap();
+        assert_eq!(a, b, "both sides of the pair see the same n_co");
+        assert_eq!(a.n_co, 2);
+        assert_eq!(a.sm, SOFT_SM_POOL / 2);
+        assert_eq!(p.wave_n(), 1);
+        // Extra memcpy with nothing pending keeps wave_n at 1.
+        p.memcpy(None, DEMO_MEMCPY_BYTES, 1).unwrap();
+        assert_eq!(p.wave_n(), 1);
+    }
+
+    #[test]
+    fn interference_and_solo_restore_partition_flag() {
+        let solo = MemcpyReport {
+            bytes: 1000,
+            sm: 10,
+            n_co: 1,
+            cycles: 1000,
+            bw_milli: 1000,
+        };
+        let half = MemcpyReport {
+            bw_milli: 500,
+            ..solo
+        };
+        let faster = MemcpyReport {
+            bw_milli: 1200,
+            ..solo
+        };
+        let zero = MemcpyReport {
+            bw_milli: 0,
+            ..solo
+        };
+        assert_eq!(half.interference_milli(solo), 500);
+        assert_eq!(faster.interference_milli(solo), 0);
+        assert_eq!(half.interference_milli(zero), 0);
+        assert_eq!(zero.interference_milli(solo), 1000);
+
+        let mut p = SoftGreenPool::new();
+        p.split_70_30().unwrap();
+        let r = p.memcpy_solo(DEMO_MEMCPY_BYTES).unwrap();
+        assert_eq!(r.sm, SOFT_SM_POOL);
+        assert_eq!(r.bw_milli, 1000);
+        assert!(p.partitioned(), "memcpy_solo restores partitioned mode");
+        assert_eq!(p.memcpy_solo(0), Err(GreenCtxError::BadArg));
+        assert!(p.partitioned());
+    }
 }
