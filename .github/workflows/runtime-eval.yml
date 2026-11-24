@@ -35,7 +35,7 @@ jobs:
           aether-eval run "${{ runner.temp }}/scenario.json" --output "${{ runner.temp }}/iree-evidence"
       - name: Retain measurements and failures
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: iree-cpu-${{ github.sha }}
           path: ${{ runner.temp }}/iree-evidence
