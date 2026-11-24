@@ -56,11 +56,12 @@ jobs:
       - name: Render investor evaluation report
         if: always()
         run: python3 scripts/investor_report.py "${{ runner.temp }}/aether-evidence"
-      - name: Evidence and report failure-path tests
+      - name: Evidence, report and QEMU setup failure-path tests
         if: always()
         run: |
           python3 -m unittest discover -s scripts -p test_collect_evidence.py
           python3 -m unittest discover -s scripts -p test_investor_report.py
+          python3 -m unittest discover -s scripts -p test_install_qemu.py
       - name: Preserve evidence including failed checks
         if: always()
         uses: actions/upload-artifact@v4
@@ -82,13 +83,8 @@ jobs:
         run: rustup target add x86_64-unknown-none
 
       - name: Install QEMU and binutils
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends \
-            qemu-system-x86 binutils gcc
-          command -v qemu-system-x86_64
-          qemu-system-x86_64 --version
+        timeout-minutes: 8
+        run: python3 scripts/install_qemu.py x86_64
 
       - name: Host tests
         run: cargo test --workspace --locked
@@ -163,12 +159,8 @@ jobs:
         run: rustup target add riscv64gc-unknown-none-elf
 
       - name: Install QEMU (RISC-V)
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends qemu-system-misc
-          command -v qemu-system-riscv64
-          qemu-system-riscv64 --version
+        timeout-minutes: 8
+        run: python3 scripts/install_qemu.py riscv64
 
       - name: RISC-V virt demo
         run: make qemu-riscv-ci
@@ -184,10 +176,8 @@ jobs:
         run: rustup target add aarch64-unknown-none
 
       - name: Install QEMU (aarch64)
-        timeout-minutes: 5
-        run: |
-          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
-          sudo env DEBIAN_FRONTEND=noninteractive apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y --no-install-recommends qemu-system-arm
+        timeout-minutes: 8
+        run: python3 scripts/install_qemu.py aarch64
 
       - name: aarch64 virt demo
         run: make qemu-aarch64-ci
