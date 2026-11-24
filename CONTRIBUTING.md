@@ -36,3 +36,22 @@ Report missing tools and checks honestly; do not describe a shim as an actual
 Keep claims aligned with demonstrated evidence. Soft SMMU tests are software
 checks, not hardware isolation or formal verification. Preserve existing
 limitations and do not invent partner validation or commercial traction.
+
+## QEMU CI dependency setup
+
+The Ubuntu x86_64 CI hosts use `python3 scripts/install_qemu.py <guest>`
+(`x86_64`, `riscv64` or `aarch64`). A regional runner mirror has repeatedly
+stalled while downloading the large `qemu-system-misc` archive, before the
+kernel build. Setup bounds metadata acquisition at 60 seconds and package
+acquisition at 120 seconds, with a five-second termination grace per phase.
+It then retries through HTTPS Ubuntu archive/security repositories using the
+Ubuntu archive keyring and isolated source/list files. Runner source files
+are preserved; fallback metadata remains in the ephemeral runner for diagnosis.
+
+Only acquisition is timed out or retried. After a complete download, apt installs
+with `--no-download`; installation or emulator-version failures remain failures.
+The eight-minute setup limit leaves room for failover. All existing QEMU boot
+commands and success markers remain required. Exercise the helper's failure
+paths with `python3 -m unittest discover -s scripts -p test_install_qemu.py`;
+these tests simulate command results, while CI performs actual package installs
+and boots for all three guest architectures.
