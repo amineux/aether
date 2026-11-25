@@ -309,6 +309,136 @@ mod tests {
         assert_eq!(fs.bytes_fd(RamFd(3)).unwrap_err(), RamFsError::BadFd);
     }
 
+    #[test]
+    fn name_length_boundary_and_non_ascii() {
+        let mut fs = RamFs::new();
+        // MAX_NAME counts the leading '/': 16 bytes admit, 17 refuse.
+        let full = "/0123456789abcde";
+        assert_eq!(full.len(), MAX_NAME);
+        fs.seed(full, b"full").unwrap();
+        assert_eq!(fs.bytes(full).unwrap(), b"full");
+        let mut h = fs.open(full).unwrap();
+        let mut buf = [0u8; 8];
+        assert_eq!(fs.read(&mut h, &mut buf).unwrap(), 4);
+        assert_eq!(&buf[..4], b"full");
+        let over = "/0123456789abcdef";
+        assert_eq!(over.len(), MAX_NAME + 1);
+        assert_eq!(fs.seed(over, b"x").unwrap_err(), RamFsError::BadName);
+        // Non-ASCII UTF-8, NUL and path separators never become names.
+        for bad in ["/\u{e9}", "/a\0b", "/a\\b", "/a\tb", "//"] {
+            assert_eq!(
+                fs.seed(bad, b"x").unwrap_err(),
+                RamFsError::BadName,
+                "{bad:?}"
+            );
+        }
+        assert_eq!(fs.len(), 1);
+    }
+
+    #[test]
+    fn refusal_order_bad_name_then_exists_then_full() {
+        let mut fs = RamFs::new();
+        for name in ["/a", "/b", "/c", "/d", "/e", "/f", "/g", "/h"] {
+            fs.seed(name, b"x").unwrap();
+        }
+        // At capacity: a bad name is still BadName and a held name is
+        // still Exists, so callers can tell the causes apart.
+        assert_eq!(fs.seed("bad", b"y").unwrap_err(), RamFsError::BadName);
+        assert_eq!(fs.seed("/a", b"y").unwrap_err(), RamFsError::Exists);
+        assert_eq!(fs.seed("/z", b"y").unwrap_err(), RamFsError::Full);
+        assert_eq!(fs.len(), MAX_FILES);
+        assert_eq!(fs.bytes("/a").unwrap(), b"x");
+        // Lookups validate the name before searching.
+        assert_eq!(fs.open("init").unwrap_err(), RamFsError::BadName);
+        assert_eq!(fs.bytes("/a/b").unwrap_err(), RamFsError::BadName);
+        assert_eq!(fs.open("/z").unwrap_err(), RamFsError::NotFound);
+        assert!(!fs.contains("a"));
+    }
+
+    #[test]
+    fn refused_seeds_do_not_consume_slots_and_fds_are_stable() {
+        let mut fs = RamFs::new();
+        let init = fs.seed(INIT_PATH, b"init").unwrap();
+        assert_eq!(fs.seed(INIT_PATH, b"dup").unwrap_err(), RamFsError::Exists);
+        assert_eq!(fs.seed("/bad name", b"x").unwrap_err(), RamFsError::BadName);
+        let probe = fs.seed(PROBE_PATH, b"probe").unwrap();
+        assert_eq!(init.slot(), 0);
+        assert_eq!(probe.slot(), 1);
+        assert_eq!(fs.len(), 2);
+        assert_eq!(fs.open(INIT_PATH).unwrap().fd(), init);
+        assert_eq!(fs.open(PROBE_PATH).unwrap().fd(), probe);
+        assert_eq!(fs.bytes_fd(init).unwrap(), b"init");
+        assert_eq!(fs.bytes_fd(probe).unwrap(), b"probe");
+        assert_eq!(fs.size(probe).unwrap(), 5);
+        // A slot past the published count is BadFd even inside MAX_FILES.
+        assert_eq!(fs.size(RamFd(2)).unwrap_err(), RamFsError::BadFd);
+        assert_eq!(fs.bytes_fd(RamFd(u8::MAX)).unwrap_err(), RamFsError::BadFd);
+    }
+
+    #[test]
+    fn handles_have_independent_cursors() {
+        let mut fs = RamFs::new();
+        fs.seed(INIT_PATH, b"0123456789").unwrap();
+        let mut a = fs.open(INIT_PATH).unwrap();
+        let mut b = fs.open(INIT_PATH).unwrap();
+        let mut buf = [0u8; 4];
+        assert_eq!(fs.read(&mut a, &mut buf).unwrap(), 4);
+        assert_eq!(&buf, b"0123");
+        assert_eq!(b.offset(), 0);
+        assert_eq!(fs.read(&mut b, &mut buf[..2]).unwrap(), 2);
+        assert_eq!(&buf[..2], b"01");
+        // A copied handle snapshots the cursor; advancing one leaves the other.
+        let mut c = a;
+        assert_eq!(fs.read(&mut c, &mut buf).unwrap(), 4);
+        assert_eq!(&buf, b"4567");
+        assert_eq!(a.offset(), 4);
+        assert_eq!(c.offset(), 8);
+        assert_eq!(fs.read(&mut a, &mut buf).unwrap(), 4);
+        assert_eq!(&buf, b"4567");
+    }
+
+    #[test]
+    fn empty_buffer_and_stale_cursor_reads() {
+        let mut fs = RamFs::new();
+        fs.seed(INIT_PATH, b"abc").unwrap();
+        let mut h = fs.open(INIT_PATH).unwrap();
+        // A zero-length buffer copies nothing and keeps the cursor.
+        assert_eq!(fs.read(&mut h, &mut []).unwrap(), 0);
+        assert_eq!(h.offset(), 0);
+        // A cursor past EOF is clamped to the file size and reads 0.
+        let mut stale = RamHandle {
+            fd: h.fd(),
+            offset: 100,
+        };
+        let mut buf = [0xeeu8; 4];
+        assert_eq!(fs.read(&mut stale, &mut buf).unwrap(), 0);
+        assert_eq!(stale.offset(), 3);
+        assert_eq!(buf, [0xee; 4]);
+        // A handle whose fd is not published is BadFd and keeps its cursor.
+        let mut ghost = RamHandle {
+            fd: RamFd(5),
+            offset: 1,
+        };
+        assert_eq!(
+            fs.read(&mut ghost, &mut buf).unwrap_err(),
+            RamFsError::BadFd
+        );
+        assert_eq!(ghost.offset(), 1);
+    }
+
+    #[test]
+    fn files_borrow_seeded_bytes_without_copying() {
+        let blob: &'static [u8] = b"embedded-elf";
+        let mut fs = RamFs::new();
+        let fd = fs.seed(INIT_PATH, blob).unwrap();
+        assert_eq!(fs.bytes(INIT_PATH).unwrap().as_ptr(), blob.as_ptr());
+        assert_eq!(fs.bytes_fd(fd).unwrap().as_ptr(), blob.as_ptr());
+        assert_eq!(fs.bytes(INIT_PATH).unwrap().len(), blob.len());
+        // A copied table still borrows the same bytes.
+        let copy = fs;
+        assert_eq!(copy.bytes(INIT_PATH).unwrap().as_ptr(), blob.as_ptr());
+    }
+
     fn write16(buf: &mut [u8], off: usize, v: u16) {
         buf[off..off + 2].copy_from_slice(&v.to_le_bytes());
     }
