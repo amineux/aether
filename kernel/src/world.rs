@@ -320,6 +320,7 @@ fn deliver_blocked_recv(endpoint: EndpointId) {
             return;
         };
         let root = task::thread_cr3(tid);
+        if !w.cap_spaces.can_receive(root, endpoint.0) { return; }
         let Some(caps) = w.cap_spaces.get(root) else {
             return;
         };
@@ -366,6 +367,25 @@ pub fn sys_cap_grant(cptr: u64, target_tid: u64, rights: u64) -> Result<u64, Sys
             aether_core::caps::CapError::TableFull => SysError::Again,
             _ => SysError::NoCap,
         })
+}
+
+/// Revoke descendants and cancel receives that lost READ authority atomically
+/// under World lock on the BSP-only userspace scheduler. No FIFO entry is taken.
+pub fn sys_cap_revoke(cptr: u64, flags: u64, reserved: u64) -> Result<u64, SysError> {
+    let root = caller_root()?;
+    if flags != 0 || reserved != 0 {
+        return Err(SysError::Inval);
+    }
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
+    with(|w| {
+        w.cap_spaces
+            .revoke_endpoint(root, cptr)
+            .map_err(|_| SysError::NoCap)?;
+        if task::cancel_revoked_receivers(|root, ep| w.cap_spaces.can_receive(root, ep)) > 0 {
+            println!("[ipc] revoked receive authority returned NoCap");
+        }
+        Ok(0)
+    })
 }
 
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {

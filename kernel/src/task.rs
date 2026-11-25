@@ -483,6 +483,24 @@ pub fn wake_recv(ep: u32, tid: u32) {
     let _ = t.queue.wake_recv_one(aether_core::EndpointId(ep), tid);
 }
 
+/// Called with World locked/interrupts disabled after endpoint revocation.
+/// Discard saved output pointers without touching userspace or the fabric FIFO.
+pub fn cancel_revoked_receivers(mut permitted: impl FnMut(u64, u32) -> bool) -> u32 {
+    let t = tasks();
+    let threads = &mut t.threads;
+    t.queue.cancel_recv_if(|id, ep| {
+        let thread = &mut threads[slot_index(id)];
+        if permitted(thread.cr3, ep.0) {
+            return false;
+        }
+        thread.user_buf = 0;
+        thread
+            .saved
+            .set_ret(crate::syscall::err_rax(crate::syscall::SysError::NoCap));
+        true
+    })
+}
+
 pub fn wake_accel(queue: u32, tid: u32) {
     let t = tasks();
     let _ = t.queue.wake_accel_one(queue, tid);

@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–12).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–13).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
-    SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
+    SYS_CAP_REVOKE, SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
     SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
@@ -125,6 +125,20 @@ fn map_user_phys_probe() -> bool {
 /// Refuse forged TIDs without indexing/truncating them, and reject endpoint
 /// rights escalation, non-endpoint caps and same-root sharing before mutation.
 fn endpoint_grant_probe() -> bool {
+    for slot in [1, 2, 31, 1 << 16, u64::MAX] {
+        if sys(SYS_CAP_REVOKE, slot, 0, 0) != -2 {
+            return false;
+        }
+    }
+    for (flags, reserved) in [(1, 0), (0, 1), (u64::MAX, u64::MAX)] {
+        if sys(SYS_CAP_REVOKE, INIT_EP_CPTR as u64, flags, reserved) != -1 {
+            return false;
+        }
+    }
+    if sys(SYS_CAP_REVOKE, INIT_EP_CPTR as u64, 0, 0) != 0 {
+        return false;
+    }
+    debug_print(b"[init] endpoint revocation refuses invalid authority and flags\r\n");
     for tid in [0, 1, 2, 8, u32::MAX as u64, (1 << 32) | 3, u64::MAX] {
         if sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, tid, 2) != -2 {
             return false;
@@ -166,6 +180,37 @@ fn endpoint_grant_probe() -> bool {
             return false;
         }
         debug_print(b"[init] endpoint grant reaches separate root with WRITE only\r\n");
+        // Reclaim the WRITE grant, reuse its slot for READ, and let /probe
+        // enter a blocked receive on the now-empty endpoint. It detects READ
+        // using a null-buffer refusal (Fault rather than NoCap), not shared RAM.
+        if sys(SYS_CAP_REVOKE, INIT_EP_CPTR as u64, 0, 0) != 0
+            || sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, 3, 1) != 1
+        {
+            return false;
+        }
+        for _ in 0..16 {
+            yield_now();
+        }
+        // Revoke must complete the old waiter with NoCap before regranting the
+        // same slot; a new cap must never revive that saved receive buffer.
+        if sys(SYS_CAP_REVOKE, INIT_EP_CPTR as u64, 0, 0) != 0
+            || sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, 3, 2) != 1
+        {
+            return false;
+        }
+        msg = UserIpcMsg::empty();
+        if sys(
+            SYS_RECV,
+            INIT_EP_CPTR as u64,
+            core::ptr::addr_of_mut!(msg) as u64,
+            0,
+        ) != 0
+            || msg.badge != 0xA3
+            || msg.payload() != b"probe-after-revoke"
+        {
+            return false;
+        }
+        debug_print(b"[init] revoked blocked receiver and reused target slot\r\n");
     }
     true
 }

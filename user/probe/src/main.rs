@@ -8,8 +8,8 @@
 
 use aether_core::sysnr::{
     UserIpcMsg, COW_TEMPLATE_WORD, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC,
-    SYS_CAP_GRANT, SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
-    USER_COW_BASE,
+    SYS_CAP_GRANT, SYS_CAP_REVOKE, SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP,
+    SYS_YIELD, USER_COW_BASE,
 };
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR};
 
@@ -71,6 +71,7 @@ pub extern "C" fn _start() -> ! {
         (SYS_RECV, 1, 0, 0),
         (SYS_MAP, 2, 0, 0),
         (SYS_ARENA_ALLOC, 4096, 0, 0),
+        (SYS_CAP_REVOKE, 0, 0, 0),
         (SYS_ACCEL_SUBMIT, INIT_QUEUE_CPTR as u64, 0, 0),
         (SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64, 0, 0),
     ];
@@ -105,9 +106,9 @@ pub extern "C" fn _start() -> ! {
     }
     // Boot protocol: poll slot 1 until /init explicitly copies WRITE on its
     // endpoint. No shared memory or guessed raw endpoint id is involved.
-    let mut sent_grant = false;
+    let mut grant_phase = 0;
     loop {
-        if !sent_grant {
+        if grant_phase == 0 {
             let mut message = UserIpcMsg::empty();
             message.flags = 2;
             let limited = sys(SYS_RECV, 1, 0, 0) == -2
@@ -121,9 +122,48 @@ pub extern "C" fn _start() -> ! {
             });
             let result = sys(SYS_SEND, 1, core::ptr::addr_of!(message) as u64, 0);
             if result == 0 {
-                sent_grant = true;
+                grant_phase = 1;
             } else if result != -2 {
                 debug_print(b"[probe] endpoint grant send FAIL\r\n");
+            }
+        }
+        if grant_phase == 1 && sys(SYS_RECV, 1, 0, 0) == -3 {
+            // READ now exists. This valid buffer must remain untouched when
+            // the blocked syscall is canceled by capability revocation.
+            let mut blocked = UserIpcMsg::empty();
+            blocked.badge = 0xCAFE;
+            if sys(SYS_RECV, 1, core::ptr::addr_of_mut!(blocked) as u64, 0) == -2
+                && blocked.badge == 0xCAFE
+                && blocked.len == 0
+            {
+                debug_print(b"[probe] revoked blocked receive returns NoCap\r\n");
+                grant_phase = 2;
+            } else {
+                debug_print(b"[probe] revoked blocked receive FAIL\r\n");
+                grant_phase = 255;
+            }
+        }
+        if grant_phase == 2 {
+            // The unrelated private cap must survive. A fresh WRITE grant can
+            // reuse slot 1, but still cannot authorize READ or onward GRANT.
+            let mut private = UserIpcMsg::empty();
+            private.set_payload(b"private-survived");
+            let mut private_out = UserIpcMsg::empty();
+            let intact = sys(SYS_SEND, 0, core::ptr::addr_of!(private) as u64, 0) == 0
+                && sys(SYS_RECV, 0, core::ptr::addr_of_mut!(private_out) as u64, 0) == 0
+                && private_out.badge == 0xB4
+                && private_out.payload() == private.payload();
+            let limited = sys(SYS_RECV, 1, 0, 0) == -2
+                && sys(SYS_CAP_GRANT, 1, 2, 2) == -2
+                && sys(SYS_CAP_REVOKE, 1, 0, 0) == -2;
+            let mut message = UserIpcMsg::empty();
+            message.set_payload(if intact && limited {
+                b"probe-after-revoke"
+            } else {
+                b"revoke-FAIL"
+            });
+            if sys(SYS_SEND, 1, core::ptr::addr_of!(message) as u64, 0) == 0 {
+                grant_phase = 3;
             }
         }
         // Stay Ready; /init retains SYS_EXIT and is the only shared receiver.

@@ -240,7 +240,7 @@ These are marked so a security review does not assume them:
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode / EL0 + user page tables — **landed** on x86, RISC-V, and aarch64: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, refuses maps/binds without Memory+MAP, and (Soft-CP / IreeShapedCp) refuses DMA until SET_SID is armed for that submit; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
-| Revoke is not a user syscall | Ring-3 cannot name revoke; kernel World has one bootstrap `CapTable`, restricted to the boot-designated /init root | Internal `CapTable::revoke` / `revoke_in`; per-task tables still open |
+| User revoke is endpoint-only | SYS_CAP_REVOKE retains Endpoint+GRANT and reclaims descendants across the two boot spaces; blocked receives losing READ return NoCap | Memory/accelerator revocation, endpoint close and task lifetime cleanup remain open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
@@ -306,7 +306,7 @@ of absent endpoint, queue, memory and allocator authority and invalid unmap.
 All three architecture demos still exercise /init and cloned-thread IPC, DMA
 unmap and accelerator completion. This is a bounded two-image boot registry,
 not dynamic cap-space creation, separate-tenant scheduling,
-cap-revocation synchronization or hardware isolation. Roots cannot be rebound.
+memory/accelerator revocation or hardware isolation. Roots cannot be rebound.
 SYS_CAP_GRANT (12) copies only endpoint READ/WRITE rights between these registered
 spaces under the World lock. It resolves a full-width target TID with bounds and
 live-user checks, requires the source Endpoint+GRANT, and retains the source.
@@ -319,9 +319,28 @@ then it sends the distinct payload back to /init. All seven boot gates require
 invalid-target/authority refusals; the five x86 gates also require this cross-root
 message. Host regressions cover attenuation, parent/badge identity, refused
 non-endpoints/GRANT, full-width rights, root validation and full-table atomicity.
-Copies record core derivation edges, but there is no user revoke/close syscall
-or slot reclamation yet; grants persist for the boot and remain bounded by the
-32-slot target table. This does not claim revocation synchronization.
+SYS_CAP_REVOKE (13) requires the caller's Endpoint+GRANT and removes descendants
+across both registered tables while retaining the selected root capability.
+The bounded core walk plans the complete lineage before mutation; a refusal
+changes no slots and triggers no waiter cancellation. Freed slots can be
+regranted with fresh generations. Unrelated capabilities, even on the same
+endpoint object, are outside that lineage.
+
+Revocation and receive cancellation run in one interrupt-disabled World critical
+section on the BSP-only userspace scheduler. A blocked receive remains valid if
+its root still holds any Endpoint+READ on its saved endpoint. Otherwise its saved
+output pointer is discarded, saved errno becomes NoCap, and that receiver becomes
+Ready. No FIFO entry is dequeued or copied; previously sent messages remain for
+an authorized receiver. Accelerator waiters are untouched. Blocked delivery also
+rechecks READ authority. Slot reuse cannot resurrect a canceled receive.
+
+The five x86 gates require actual blocked-read cancellation, an untouched output
+buffer, regrant into the freed slot, continued private IPC and a distinct message
+after revocation. All seven gates require revoke authority/flags refusals and
+retained source authority. Host tests cover exact-bound reclamation, oversized
+atomic refusal, root aliases, selective cancellation and FIFO preservation.
+This remains endpoint-only revocation over two boot tables: no memory/accelerator
+revocation, endpoint close, dynamic process registry or task lifetime cleanup.
 
 SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
 must accompany a future task-reaping implementation before roots can be recycled.

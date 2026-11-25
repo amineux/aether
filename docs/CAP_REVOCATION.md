@@ -45,3 +45,26 @@ same-tenant grants with grandchildren, clones and concurrent generation issuance
 The shared allocator refuses after `u32::MAX`; new tables cannot restart it.
 These are software lifetime guarantees, not persistent identities across reboot,
 a global revoke registry, or a hardware-isolation claim.
+
+## Retaining root authority and kernel endpoint revocation
+
+`revoke_descendants_in` shares the same bounded plan with `revoke_in` but keeps
+the selected root identity (including aliases of that identity). It removes only
+descendants in the named tables, without consuming mint generations. A walk that
+exceeds 64 nodes still refuses before mutation. Exact-bound and 65-node refusal
+regressions also cover this operation; the root can grant again into freed slots.
+The deleting `revoke`/`revoke_in` APIs retain their original behavior.
+
+SYS_CAP_REVOKE (13) exposes this operation only for Endpoint+GRANT in the current
+boot registry and names both tables. World then cancels blocked receives whose
+root no longer holds any READ capability on the saved endpoint, returning NoCap
+without copying or consuming a queued message. It retains other endpoint
+lineages and accelerator waiters. The walk and cancellation share World's
+interrupt-disabled lock on the current BSP-only userspace scheduler.
+
+The x86 boot protocol revokes a WRITE grant, reuses its slot for READ, cancels
+that blocked read, and grants WRITE into the freed slot again. The peer checks
+its untouched output and continued private IPC before sending a distinct message.
+This adds neither endpoint destruction nor memory/DMA revocation, general
+process lifetime cleanup or a hardware-isolation claim. See [ABI](ABI.md) and
+[security boundaries](SECURITY.md) for the syscall and waiter semantics.

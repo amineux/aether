@@ -1,7 +1,7 @@
 //! Syscall numbers and the ring-3 C ABI.
 //!
 //! Numbers 0–8 are frozen (kernel/src/syscall.rs). Additive slots:
-//! `SYS_EXIT` (9), `SYS_CLONE` (10), `SYS_MMAP` (11), `SYS_CAP_GRANT` (12).
+//! `SYS_EXIT` (9), `SYS_CLONE` (10), `SYS_MMAP` (11), `SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13).
 
 /// Userspace message blob for `SYS_SEND` / `SYS_RECV`.
 /// Layout is the contract; the kernel copies it across the user/kernel cut.
@@ -102,6 +102,12 @@ pub const SYS_MMAP: u64 = 11;
 /// Source is retained. Same-space/unknown/kernel TIDs and malformed authority
 /// return -NoCap; a full target table returns -Again. Numbers 0..11 are unchanged.
 pub const SYS_CAP_GRANT: u64 = 12;
+
+/// Revoke descendants of an Endpoint+GRANT cap across the boot cap spaces,
+/// retaining the source. Args: source CPtr, flags=0, reserved=0. Returns 0,
+/// -Inval for nonzero reserved args, -NoCap for refused authority. Blocked
+/// receivers losing READ are completed with -NoCap; queued messages remain.
+pub const SYS_CAP_REVOKE: u64 = 13;
 
 /// Static non-PIE `/init` link address (identity-mapped, USER pages).
 pub const USER_IMAGE_BASE: u64 = 0x0200_0000;
@@ -521,6 +527,7 @@ mod tests {
         assert_eq!(SYS_CLONE, 10);
         assert_eq!(SYS_MMAP, 11);
         assert_eq!(SYS_CAP_GRANT, 12);
+        assert_eq!(SYS_CAP_REVOKE, 13);
     }
 
     #[test]

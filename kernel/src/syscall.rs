@@ -1,5 +1,5 @@
 //! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is
-//! `SYS_CLONE`; 11 is `SYS_MMAP`; 12 is `SYS_CAP_GRANT`.
+//! `SYS_CLONE`; 11 is `SYS_MMAP`; 12 is `SYS_CAP_GRANT`; 13 is `SYS_CAP_REVOKE`.
 //!
 //! User enters here through `syscall`/`sysret` (x86), `ecall`/`sret`
 //! (RISC-V), or `svc`/`eret` (aarch64). Cap checks sit on
@@ -31,6 +31,7 @@ pub const SYS_EXIT: u64 = 9;
 pub const SYS_CLONE: u64 = 10;
 pub const SYS_MMAP: u64 = 11;
 pub const SYS_CAP_GRANT: u64 = aether_core::sysnr::SYS_CAP_GRANT;
+pub const SYS_CAP_REVOKE: u64 = aether_core::sysnr::SYS_CAP_REVOKE;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SysError {
@@ -183,7 +184,7 @@ pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
             Ok(0)
         }
         SYS_SEND | SYS_RECV | SYS_MAP | SYS_UNMAP | SYS_ACCEL_SUBMIT | SYS_ACCEL_WAIT
-        | SYS_ARENA_ALLOC | SYS_CAP_GRANT => {
+        | SYS_ARENA_ALLOC | SYS_CAP_GRANT | SYS_CAP_REVOKE => {
             Err(SysError::Inval)
         }
         _ => Err(SysError::Inval),
@@ -211,6 +212,7 @@ fn dispatch_trap(
             Ok(0)
         }
         SYS_CAP_GRANT => world::sys_cap_grant(a0, a1, a2),
+        SYS_CAP_REVOKE => world::sys_cap_revoke(a0, a1, a2),
         SYS_SEND => world::sys_send(a0, a1),
         SYS_RECV => world::sys_recv(a0, a1, frame),
         SYS_MAP => world::sys_map(a0, a1, a2),

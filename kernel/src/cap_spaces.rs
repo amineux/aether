@@ -87,6 +87,37 @@ impl CapSpaces {
         from.transfer(source, to, CapRights(bits), false)
     }
 
+    /// Revoke endpoint descendants across every registered boot space. Keep
+    /// the source root so its owner can grant again after reclaiming slots.
+    pub fn revoke_endpoint(&mut self, root: u64, source: CPtr) -> Result<(), CapError> {
+        self.get(root).ok_or(CapError::InvalidCptr)?.require(
+            source,
+            CapKind::Endpoint,
+            CapRights::GRANT,
+        )?;
+        if self.init_root == Some(root) {
+            if let Some(probe) = self.probe.as_mut() {
+                self.bootstrap
+                    .revoke_descendants_in(source, &mut [&mut probe.caps])
+            } else {
+                self.bootstrap.revoke_descendants_in(source, &mut [])
+            }
+        } else {
+            self.probe
+                .as_mut()
+                .ok_or(CapError::InvalidCptr)?
+                .caps
+                .revoke_descendants_in(source, &mut [&mut self.bootstrap])
+        }
+    }
+
+    /// Blocked receives are authorized by a currently held READ cap on the
+    /// endpoint, not solely by the numeric endpoint id saved in the scheduler.
+    pub fn can_receive(&self, root: u64, endpoint: u32) -> bool {
+        self.get(root)
+            .is_some_and(|caps| caps.holds_rights(CapKind::Endpoint, endpoint, CapRights::READ))
+    }
+
     pub fn get(&self, root: u64) -> Option<&CapTable> {
         if self.init_root == Some(root) {
             Some(&self.bootstrap)
