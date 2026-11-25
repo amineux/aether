@@ -339,3 +339,163 @@ fn full_target_grant_refusal_preserves_source_and_all_existing_children() {
         }
     }
 }
+
+#[test]
+fn revoke_reclaims_descendants_preserves_private_space_and_reuses_target_slot() {
+    let mut spaces = spaces();
+    spaces.bind_init(INIT).unwrap();
+    spaces.bind_probe_endpoint(PROBE, 11).unwrap();
+    let parent = *spaces.get(INIT).unwrap().lookup(CPtr(0)).unwrap();
+    let private = *spaces.get(PROBE).unwrap().lookup(CPtr(0)).unwrap();
+    let read = spaces
+        .grant_endpoint(INIT, PROBE, CPtr(0), CapRights::READ as u64)
+        .unwrap();
+    let write = spaces
+        .grant_endpoint(INIT, PROBE, CPtr(0), CapRights::WRITE as u64)
+        .unwrap();
+    let old = *spaces.get(PROBE).unwrap().lookup(read).unwrap();
+    assert!(spaces.can_receive(PROBE, 10));
+    spaces.revoke_endpoint(INIT, CPtr(0)).unwrap();
+    assert!(!spaces.can_receive(PROBE, 10));
+    assert!(spaces.can_receive(INIT, 10));
+    assert!(spaces.can_receive(PROBE, 11));
+    assert_eq!(spaces.get(INIT).unwrap().lookup(CPtr(0)), Ok(&parent));
+    assert_eq!(spaces.get(PROBE).unwrap().lookup(CPtr(0)), Ok(&private));
+    assert!(spaces.get(PROBE).unwrap().lookup(read).is_err());
+    assert!(spaces.get(PROBE).unwrap().lookup(write).is_err());
+    let next = spaces
+        .grant_endpoint(INIT, PROBE, CPtr(0), CapRights::WRITE as u64)
+        .unwrap();
+    assert_eq!(next, read);
+    let fresh = spaces.get(PROBE).unwrap().lookup(next).unwrap();
+    assert_ne!(fresh.generation, old.generation);
+    assert_eq!(fresh.parent, Some(parent.cdt()));
+    assert!(!spaces.can_receive(PROBE, 10));
+}
+
+#[test]
+fn revoke_refuses_unknown_wrong_kind_and_ungranted_authority_without_mutation() {
+    let mut spaces = spaces();
+    spaces.bind_init(INIT).unwrap();
+    spaces.bind_probe_endpoint(PROBE, 11).unwrap();
+    let child = spaces
+        .grant_endpoint(INIT, PROBE, CPtr(0), CapRights::READ as u64)
+        .unwrap();
+    let before = *spaces.get(PROBE).unwrap().lookup(child).unwrap();
+    for (root, slot) in [
+        (0, CPtr(0)),
+        (0x3000, CPtr(0)),
+        (INIT, CPtr(1)),
+        (INIT, CPtr(31)),
+        (PROBE, CPtr(0)),
+        (PROBE, child),
+    ] {
+        assert!(spaces.revoke_endpoint(root, slot).is_err());
+        assert_eq!(spaces.get(PROBE).unwrap().lookup(child), Ok(&before));
+        assert!(spaces.can_receive(PROBE, 10));
+    }
+    assert!(!spaces.can_receive(0, 10));
+    assert!(!spaces.can_receive(0x3000, 10));
+}
+
+#[test]
+fn revoke_without_second_boot_image_keeps_parent_and_is_repeatable() {
+    let mut spaces = spaces();
+    assert!(spaces.revoke_endpoint(INIT, CPtr(0)).is_err());
+    spaces.bind_init(INIT).unwrap();
+    for _ in 0..2 {
+        spaces.revoke_endpoint(INIT, CPtr(0)).unwrap();
+        assert!(spaces.can_receive(INIT, 10));
+        assert_eq!(spaces.get(INIT).unwrap().occupied(), 2);
+    }
+}
+
+#[test]
+fn revoke_cancels_only_receivers_losing_read_and_preserves_the_fifo() {
+    use aether_core::fabric::{ChipletRoute, Fabric, Message, MsgFlags};
+    use aether_core::preempt::{CpuQueue, ThreadState, WaitWhy};
+    let mut fabric = Fabric::new();
+    let ep = fabric.create_endpoint(TenantId(1)).unwrap();
+    let private = fabric.create_endpoint(TenantId(1)).unwrap();
+    let mut caps = CapTable::new(TenantId(1));
+    caps.mint(Capability::new(
+        CapKind::Endpoint,
+        CapRights::EP_FULL,
+        ep.0,
+        TenantId(1),
+    ))
+    .unwrap();
+    let mut spaces = CapSpaces::new(caps);
+    spaces.bind_init(INIT).unwrap();
+    spaces.bind_probe_endpoint(PROBE, private.0).unwrap();
+    spaces
+        .grant_endpoint(INIT, PROBE, CPtr(0), CapRights::READ as u64)
+        .unwrap();
+    fabric
+        .send_as(
+            spaces.get(INIT).unwrap(),
+            Message::new(
+                ep,
+                0xA3,
+                MsgFlags(2),
+                ChipletRoute::LOCAL,
+                TenantId(1),
+                b"retained",
+            )
+            .unwrap(),
+        )
+        .unwrap();
+    let mut queue = CpuQueue::new();
+    for id in 1..=6 {
+        assert!(queue.spawn(id));
+    }
+    queue.ensure_running();
+    for why in [
+        WaitWhy::Recv(ep.0),
+        WaitWhy::Recv(ep.0),
+        WaitWhy::Recv(ep.0),
+        WaitWhy::Recv(private.0),
+        WaitWhy::Accel(1),
+    ] {
+        queue.block(why);
+    }
+    spaces.revoke_endpoint(INIT, CPtr(0)).unwrap();
+    let mut visited = Vec::new();
+    let mut completed = Vec::new();
+    assert_eq!(
+        queue.cancel_recv_if(|id, endpoint| {
+            visited.push(id);
+            let root = if id == 1 { INIT } else { PROBE };
+            if spaces.can_receive(root, endpoint.0) {
+                return false;
+            }
+            completed.push(id);
+            true
+        }),
+        2
+    );
+    assert_eq!(visited, vec![1, 2, 3, 4]);
+    assert_eq!(completed, vec![2, 3]);
+    for id in [2, 3] {
+        assert_eq!(
+            queue.slots.iter().find(|s| s.id == id).unwrap().state,
+            ThreadState::Ready
+        );
+    }
+    for id in [1, 4, 5] {
+        assert_eq!(
+            queue.slots.iter().find(|s| s.id == id).unwrap().state,
+            ThreadState::Blocked
+        );
+    }
+    assert_eq!(queue.current, Some(6));
+    assert_eq!(
+        queue
+            .cancel_recv_if(|id, ep| !spaces.can_receive(if id == 1 { INIT } else { PROBE }, ep.0)),
+        0
+    );
+    assert_eq!(
+        fabric.recv_as(TenantId(1), ep).unwrap().payload(),
+        b"retained"
+    );
+}

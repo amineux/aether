@@ -95,6 +95,7 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 10 | `clone(entry, stack, flags)` | User thread on the caller's PML4 / satp / TTBR0. `flags` must be 0. Returns child tid. Child starts at `entry` with arg0 = tid and `rsp`/`sp` = `stack`. Additive; 0–9 unchanged. |
 | 11 | `mmap(addr, len, flags)` | Anonymous grow. `flags` must be 0. `addr` 0 = first free page in the grow window; nonzero must be page-aligned and in that window. Returns VA. Additive; 0–10 unchanged. |
 | 12 | `cap_grant(src_cptr, target_tid, rights)` | Copy endpoint READ/WRITE rights to a live user's different registered cap space. Requires Endpoint+GRANT and attenuation; nonzero rights must contain only READ (1) and/or WRITE (2). Returns destination CPtr; source retained. Other authority/targets refused with `-NoCap`, full destination with `-Again`. Additive; 0–11 unchanged. |
+| 13 | `cap_revoke(src_cptr, flags, reserved)` | Requires Endpoint+GRANT. Revoke descendants across registered boot cap spaces, retaining the source. Both trailing args must be 0. Returns 0; `-Inval` for reserved args, `-NoCap` for refused authority. Blocked receives losing READ return `-NoCap`; queued messages are retained. Additive; 0–12 unchanged. |
 
 `SYS_CAP_GRANT` is a bounded endpoint-copy operation between the current boot
 spaces. The full-width target TID is checked for a live user thread and resolved
@@ -104,8 +105,21 @@ The destination learns its returned slot through an agreed out-of-band protocol
 (the boot demo reserves /probe slot 1). This is not a receive-notification or a
 new address-space constructor. GRANT propagation, move, zero/unknown/high rights,
 memory and accelerator caps are refused. Copies preserve the badge and record a
-derivation edge. No user revoke/close syscall exists yet: grants last for the
-boot and consume destination slots. Generation exhaustion fails closed as NoCap.
+derivation edge. SYS_CAP_REVOKE reclaims descendant slots; there is no general
+close, memory/accelerator revocation or task cleanup. Generation exhaustion
+fails closed as NoCap.
+
+SYS_CAP_REVOKE requires the caller's Endpoint+GRANT capability and preserves its
+identity and rights, permitting regrant after revocation. It uses the bounded
+named-table walk across the current boot registry; a refused walk changes no
+slot or waiter. Under the World lock on the BSP-only userspace scheduler, a
+blocked receive is canceled if its root no longer holds any READ capability on
+its saved endpoint. Its output pointer is cleared, its saved return becomes
+-NoCap and only then it becomes Ready. No user copy or FIFO dequeue occurs.
+Other READ authority, private endpoints and accelerator waiters remain valid.
+This is object-based receive authority, not a promise to retain a particular
+CPtr generation for a blocked syscall. Regranting a reclaimed slot cannot revive
+a canceled receive. Sent messages remain queued for an authorized receiver.
 
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
@@ -156,5 +170,5 @@ in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
 Boot seeds those names from an x86 virtio-blk AETHFS01 image when
 a drive is present, otherwise from the embedded ELF blobs. This is
 **not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11) and
-`SYS_CAP_GRANT` (12) are additive slots. No `SYS_OPEN` / `SYS_READ`.
+`SYS_CAP_GRANT` (12) and `SYS_CAP_REVOKE` (13) are additive slots. No `SYS_OPEN` / `SYS_READ`.
 SoftNPU stays the in-kernel BAR.

@@ -353,6 +353,26 @@ impl CapTable {
         cptr: CPtr,
         others: &mut [&mut CapTable],
     ) -> Result<Capability, CapError> {
+        self.revoke_impl(cptr, others, false)
+    }
+
+    /// Revoke descendants in the named tables while retaining the selected
+    /// root authority (including aliases with that derivation identity).
+    /// Planning is bounded and completes before any slot is changed.
+    pub fn revoke_descendants_in(
+        &mut self,
+        cptr: CPtr,
+        others: &mut [&mut CapTable],
+    ) -> Result<(), CapError> {
+        self.revoke_impl(cptr, others, true).map(|_| ())
+    }
+
+    fn revoke_impl(
+        &mut self,
+        cptr: CPtr,
+        others: &mut [&mut CapTable],
+        keep_root: bool,
+    ) -> Result<Capability, CapError> {
         // Plan the complete walk before mutating any table. The old walk
         // removed the root first and silently ignored descendants once the
         // fixed kill set filled, so a call naming three full tables could
@@ -370,9 +390,10 @@ impl CapTable {
                 break;
             }
         }
-        self.empty_killed(&kill);
+        let keep = if keep_root { Some(cap.cdt()) } else { None };
+        self.empty_killed(&kill, keep);
         for t in others.iter_mut() {
-            t.empty_killed(&kill);
+            t.empty_killed(&kill, keep);
         }
         Ok(cap)
     }
@@ -388,10 +409,10 @@ impl CapTable {
         Ok(())
     }
 
-    fn empty_killed(&mut self, kill: &KillSet) {
+    fn empty_killed(&mut self, kill: &KillSet, keep: Option<CdtNode>) {
         for slot in self.slots.iter_mut() {
             if let Some(cap) = slot {
-                if kill.contains(cap.cdt()) {
+                if kill.contains(cap.cdt()) && Some(cap.cdt()) != keep {
                     *slot = None;
                 }
             }
@@ -1015,6 +1036,90 @@ mod tests {
         assert_eq!(tc.slots, unrelated);
         assert_eq!(tc.generations.load(Ordering::Relaxed), before_generation);
     }
+    #[test]
+    fn revoke_descendants_preserves_root_identity_and_unrelated_caps() {
+        let mut a = isolated_table(TenantId(1));
+        let mut b = CapTable::new(TenantId(1));
+        b.generations = a.generations;
+        let root = a.mint(ep_cap(7, TenantId(1))).unwrap();
+        let local = a.derive(root, CapRights(CapRights::READ)).unwrap();
+        let child = a.transfer(root, &mut b, CapRights::EP_FULL, false).unwrap();
+        let grandchild = b.derive(child, CapRights(CapRights::WRITE)).unwrap();
+        let unrelated = b.mint(ep_cap(7, TenantId(1))).unwrap();
+        let before = *a.lookup(root).unwrap();
+        let unrelated_before = *b.lookup(unrelated).unwrap();
+        let generation = a.generations.load(Ordering::Relaxed);
+        for _ in 0..2 {
+            a.revoke_descendants_in(root, &mut [&mut b]).unwrap();
+            assert_eq!(a.lookup(root), Ok(&before));
+            assert_eq!(a.lookup(local), Err(CapError::EmptySlot));
+            assert_eq!(b.lookup(child), Err(CapError::EmptySlot));
+            assert_eq!(b.lookup(grandchild), Err(CapError::EmptySlot));
+            assert_eq!(b.lookup(unrelated), Ok(&unrelated_before));
+            assert_eq!(a.generations.load(Ordering::Relaxed), generation);
+        }
+    }
+
+    #[test]
+    fn revoke_descendants_at_bound_reclaims_every_child_and_can_grant_again() {
+        let mut a = isolated_table(TenantId(1));
+        let mut b = CapTable::new(TenantId(2));
+        b.generations = a.generations;
+        let root = a.mint(mem_cap(7, TenantId(1))).unwrap();
+        for _ in 1..CAP_SLOTS {
+            a.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        fill_descendants(&mut a, root, &mut b);
+        assert_eq!(a.occupied() + b.occupied(), CDT_KILL_CAP);
+        let parent = *a.lookup(root).unwrap();
+        a.revoke_descendants_in(root, &mut [&mut b]).unwrap();
+        assert_eq!((a.occupied(), b.occupied()), (1, 0));
+        assert_eq!(a.lookup(root), Ok(&parent));
+        assert_eq!(
+            a.transfer(root, &mut b, CapRights(CapRights::READ), false),
+            Ok(CPtr(0))
+        );
+    }
+
+    #[test]
+    fn over_bound_descendant_revoke_is_atomic_in_all_named_tables() {
+        let mut a = isolated_table(TenantId(1));
+        let mut b = CapTable::new(TenantId(2));
+        b.generations = a.generations;
+        let mut c = CapTable::new(TenantId(3));
+        c.generations = a.generations;
+        let root = a.mint(mem_cap(7, TenantId(1))).unwrap();
+        for _ in 1..CAP_SLOTS {
+            a.derive(root, CapRights(CapRights::READ)).unwrap();
+        }
+        let children = fill_descendants(&mut a, root, &mut b);
+        b.transfer(children[0], &mut c, CapRights(CapRights::READ), false)
+            .unwrap();
+        let before = [a.slots, b.slots, c.slots];
+        assert_eq!(
+            a.revoke_descendants_in(root, &mut [&mut c, &mut b]),
+            Err(CapError::RevokeTooLarge)
+        );
+        assert_eq!([a.slots, b.slots, c.slots], before);
+    }
+
+    #[test]
+    fn descendant_revoke_keeps_shared_root_aliases_but_removes_children() {
+        let mut a = isolated_table(TenantId(1));
+        let root = a.mint(ep_cap(7, TenantId(1))).unwrap();
+        let child = a.derive(root, CapRights(CapRights::READ)).unwrap();
+        let mut alias = a.clone();
+        let alias_child = alias.derive(root, CapRights(CapRights::WRITE)).unwrap();
+        let parent = *a.lookup(root).unwrap();
+        a.revoke_descendants_in(root, &mut [&mut alias]).unwrap();
+        assert_eq!(a.lookup(root), Ok(&parent));
+        assert_eq!(alias.lookup(root), Ok(&parent));
+        assert_eq!(a.lookup(child), Err(CapError::EmptySlot));
+        assert_eq!(alias.lookup(child), Err(CapError::EmptySlot));
+        assert_eq!(alias.lookup(alias_child), Err(CapError::EmptySlot));
+    }
+
+
 }
 
 /// Property / exhaustive CDT tests. See `docs/SECURITY.md`.

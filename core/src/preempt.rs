@@ -180,6 +180,25 @@ impl CpuQueue {
         self.wake_one(WaitWhy::Accel(queue), id)
     }
 
+    /// Cancel selected blocked receives. The callback completes each selected
+    /// syscall before its thread becomes Ready; other wait kinds are untouched.
+    pub fn cancel_recv_if(&mut self, mut cancel: impl FnMut(u32, EndpointId) -> bool) -> u32 {
+        let mut count = 0;
+        for i in 0..MAX_THREADS {
+            let slot = self.slots[i];
+            if slot.state == ThreadState::Blocked {
+                if let WaitWhy::Recv(ep) = slot.wait {
+                    if cancel(slot.id, EndpointId(ep))
+                        && self.wake_recv_one(EndpointId(ep), slot.id)
+                    {
+                        count += 1;
+                    }
+                }
+            }
+        }
+        count
+    }
+
     fn wake_one(&mut self, why: WaitWhy, id: u32) -> bool {
         let Some(i) = self.idx(id) else { return false };
         let slot = &mut self.slots[i];
