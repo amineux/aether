@@ -377,4 +377,147 @@ mod tests {
         assert_eq!(q.tick(), Some(1));
         assert!(q.switches >= 4);
     }
+
+    #[test]
+    fn spawn_refuses_zero_duplicate_and_full_table() {
+        let mut q = CpuQueue::new();
+        assert!(!q.spawn(0));
+        assert!(q.spawn(1));
+        assert!(!q.spawn(1));
+        for id in 2..=MAX_THREADS as u32 {
+            assert!(q.spawn(id));
+        }
+        assert!(!q.spawn(MAX_THREADS as u32 + 1));
+        assert_eq!(q.ready_count(), MAX_THREADS);
+        assert!(q.slots.iter().all(|s| s.slice_left == DEFAULT_QUANTUM));
+    }
+
+    #[test]
+    fn empty_queue_ops_are_noops_but_ticks_count() {
+        let mut q = CpuQueue::new();
+        assert_eq!(q.ensure_running(), None);
+        assert_eq!(q.yield_now(), None);
+        assert_eq!(q.block(WaitWhy::Recv(1)), None);
+        assert_eq!(q.tick(), None);
+        assert_eq!(q.tick(), None);
+        assert_eq!(q.ticks, 2);
+        assert_eq!(q.switches, 0);
+        assert_eq!(q.current, None);
+        assert_eq!(q.blocked_count(), 0);
+    }
+
+    #[test]
+    fn tick_counts_down_slice_before_rotating() {
+        let mut q = CpuQueue::new();
+        q.quantum = 3;
+        q.spawn(1);
+        q.spawn(2);
+        assert_eq!(q.tick(), None); // elects 1, slice 3 -> 2
+        assert_eq!(q.current, Some(1));
+        assert_eq!(q.tick(), None);
+        assert_eq!(q.tick(), Some(2));
+        assert_eq!(q.switches, 1);
+        assert_eq!(q.ticks, 3);
+        let s1 = q.slots.iter().find(|s| s.id == 1).unwrap();
+        assert_eq!((s1.state, s1.slice_left), (ThreadState::Ready, 3));
+        let s2 = q.slots.iter().find(|s| s.id == 2).unwrap();
+        assert_eq!((s2.state, s2.slice_left), (ThreadState::Running, 3));
+    }
+
+    #[test]
+    fn lone_thread_tick_refills_slice_without_switching() {
+        let mut q = CpuQueue::new();
+        q.spawn(1);
+        for _ in 0..5 {
+            assert_eq!(q.tick(), None);
+            assert_eq!(q.current, Some(1));
+            assert!(q.slots[0].slice_left >= 1 && q.slots[0].slice_left <= DEFAULT_QUANTUM);
+        }
+        assert_eq!(q.switches, 0);
+    }
+
+    #[test]
+    fn broadcast_wake_only_matches_exact_wait_reason() {
+        let mut q = CpuQueue::new();
+        for id in 1..=4 {
+            q.spawn(id);
+        }
+        q.ensure_running();
+        assert_eq!(q.block(WaitWhy::Recv(7)), Some(2));
+        assert_eq!(q.block(WaitWhy::Recv(7)), Some(3));
+        assert_eq!(q.block(WaitWhy::Recv(9)), Some(4));
+        assert_eq!(q.block(WaitWhy::Accel(7)), None);
+        assert_eq!(q.blocked_count(), 4);
+        assert_eq!(q.wake_recv(EndpointId(8)), 0);
+        assert_eq!(q.wake_recv(EndpointId(7)), 2);
+        assert_eq!(q.wake_recv(EndpointId(7)), 0);
+        assert_eq!(q.blocked_count(), 2);
+        for s in q.slots.iter().filter(|s| s.id == 1 || s.id == 2) {
+            assert_eq!(
+                (s.state, s.wait, s.slice_left),
+                (ThreadState::Ready, WaitWhy::None, q.quantum)
+            );
+        }
+        assert_eq!(q.wake_accel(9), 0);
+        assert_eq!(q.wake_accel(7), 1);
+        assert_eq!(q.wake_recv(EndpointId(9)), 1);
+        assert_eq!(q.blocked_count(), 0);
+    }
+
+    #[test]
+    fn cancel_recv_if_wakes_only_selected_receive_waiters() {
+        let mut q = CpuQueue::new();
+        for id in 1..=4 {
+            q.spawn(id);
+        }
+        q.ensure_running();
+        assert_eq!(q.block(WaitWhy::Recv(7)), Some(2));
+        assert_eq!(q.block(WaitWhy::Recv(8)), Some(3));
+        assert_eq!(q.block(WaitWhy::Accel(7)), Some(4));
+        let mut seen = [(0u32, 0u32); MAX_THREADS];
+        let mut n = 0;
+        let woke = q.cancel_recv_if(|id, ep| {
+            seen[n] = (id, ep.0);
+            n += 1;
+            ep.0 == 7
+        });
+        assert_eq!(woke, 1);
+        // The callback sees receive waiters only, in slot order.
+        assert_eq!(&seen[..n], &[(1, 7), (2, 8)]);
+        let s = |q: &CpuQueue, id| *q.slots.iter().find(|s| s.id == id).unwrap();
+        assert_eq!(
+            (s(&q, 1).state, s(&q, 1).wait),
+            (ThreadState::Ready, WaitWhy::None)
+        );
+        assert_eq!(
+            (s(&q, 2).state, s(&q, 2).wait),
+            (ThreadState::Blocked, WaitWhy::Recv(8))
+        );
+        assert_eq!(
+            (s(&q, 3).state, s(&q, 3).wait),
+            (ThreadState::Blocked, WaitWhy::Accel(7))
+        );
+        assert_eq!(q.current, Some(4));
+        assert_eq!(q.cancel_recv_if(|_, _| false), 0);
+        assert_eq!(q.blocked_count(), 2);
+        assert_eq!(q.cancel_recv_if(|_, _| true), 1);
+        assert_eq!(q.blocked_count(), 1); // accelerator waiter is never cancelled
+    }
+
+    #[test]
+    fn rotation_skips_blocked_slots_and_wraps() {
+        let mut q = CpuQueue::new();
+        q.spawn(1);
+        q.spawn(2);
+        q.spawn(3);
+        q.ensure_running();
+        assert_eq!(q.yield_now(), Some(2));
+        assert_eq!(q.block(WaitWhy::Recv(5)), Some(3));
+        assert_eq!(q.yield_now(), Some(1)); // wraps past blocked 2
+        assert_eq!(q.yield_now(), Some(3));
+        assert_eq!(q.switches, 4);
+        assert!(q.wake_recv_one(EndpointId(5), 2));
+        assert_eq!(q.yield_now(), Some(1)); // slot order after 3 wraps to 1
+        assert_eq!(q.yield_now(), Some(2));
+    }
 }
