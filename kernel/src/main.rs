@@ -12,6 +12,7 @@ mod completion_delivery;
 mod cap_spaces;
 mod dma_pins;
 mod elfload;
+mod endpoint_close;
 mod init;
 mod ipc_delivery;
 mod mm;

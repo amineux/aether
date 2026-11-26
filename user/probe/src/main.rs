@@ -8,8 +8,8 @@
 
 use aether_core::sysnr::{
     UserIpcMsg, COW_TEMPLATE_WORD, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC,
-    SYS_CAP_GRANT, SYS_CAP_REVOKE, SYS_DEBUG_PRINT, SYS_MAP, SYS_RECV, SYS_SEND, SYS_UNMAP,
-    SYS_YIELD, USER_COW_BASE,
+    SYS_CAP_GRANT, SYS_CAP_REVOKE, SYS_DEBUG_PRINT, SYS_EP_CLOSE, SYS_MAP, SYS_RECV, SYS_SEND,
+    SYS_UNMAP, SYS_YIELD, USER_COW_BASE,
 };
 use aether_core::{INIT_EP_CPTR, INIT_QUEUE_CPTR};
 
@@ -72,6 +72,7 @@ pub extern "C" fn _start() -> ! {
         (SYS_MAP, 2, 0, 0),
         (SYS_ARENA_ALLOC, 4096, 0, 0),
         (SYS_CAP_REVOKE, 0, 0, 0),
+        (SYS_EP_CLOSE, 0, 0, 0),
         (SYS_ACCEL_SUBMIT, INIT_QUEUE_CPTR as u64, 0, 0),
         (SYS_ACCEL_WAIT, INIT_QUEUE_CPTR as u64, 0, 0),
     ];
@@ -165,6 +166,34 @@ pub extern "C" fn _start() -> ! {
             if sys(SYS_SEND, 1, core::ptr::addr_of!(message) as u64, 0) == 0 {
                 grant_phase = 3;
             }
+        }
+        if grant_phase == 3 && sys(SYS_RECV, 1, 0, 0) == -3 {
+            let mut output = UserIpcMsg::empty();
+            output.badge = 0xC105E;
+            let denied = sys(SYS_EP_CLOSE, 1, 0, 0) == -2;
+            let result = sys(SYS_RECV, 1, core::ptr::addr_of_mut!(output) as u64, 0);
+            let mut private = UserIpcMsg::empty();
+            private.set_payload(b"close-private");
+            let mut received = UserIpcMsg::empty();
+            let intact = sys(SYS_SEND, 0, core::ptr::addr_of!(private) as u64, 0) == 0
+                && sys(SYS_RECV, 0, core::ptr::addr_of_mut!(received) as u64, 0) == 0
+                && received.badge == 0xB4
+                && received.payload() == private.payload();
+            if denied
+                && result == -2
+                && output.badge == 0xC105E
+                && output.len == 0
+                && intact
+                && sys(SYS_SEND, 1, 0, 0) == -2
+                && sys(SYS_RECV, 1, 0, 0) == -2
+            {
+                debug_print(
+                    b"[probe] endpoint close cancels receive and preserves private IPC\r\n",
+                );
+            } else {
+                debug_print(b"[probe] endpoint close FAIL\r\n");
+            }
+            grant_phase = 4;
         }
         // Stay Ready; /init retains SYS_EXIT and is the only shared receiver.
         let _ = sys(SYS_YIELD, 0, 0, 0);

@@ -111,6 +111,32 @@ impl CapSpaces {
         }
     }
 
+    /// Delete a closing endpoint's root and descendants in both boot spaces.
+    /// Caller preflights the fabric owner before changing either subsystem.
+    pub fn remove_endpoint(&mut self, root: u64, source: CPtr) -> Result<(), CapError> {
+        self.get(root).ok_or(CapError::InvalidCptr)?.require(
+            source,
+            CapKind::Endpoint,
+            CapRights::GRANT,
+        )?;
+        if self.init_root == Some(root) {
+            if let Some(probe) = self.probe.as_mut() {
+                self.bootstrap
+                    .revoke_in(source, &mut [&mut probe.caps])
+                    .map(|_| ())
+            } else {
+                self.bootstrap.revoke_in(source, &mut []).map(|_| ())
+            }
+        } else {
+            self.probe
+                .as_mut()
+                .ok_or(CapError::InvalidCptr)?
+                .caps
+                .revoke_in(source, &mut [&mut self.bootstrap])
+                .map(|_| ())
+        }
+    }
+
     /// Blocked receives are authorized by a currently held READ cap on the
     /// endpoint, not solely by the numeric endpoint id saved in the scheduler.
     pub fn can_receive(&self, root: u64, endpoint: u32) -> bool {

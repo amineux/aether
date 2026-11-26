@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–13).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–14).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
-    SYS_CAP_REVOKE, SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
+    SYS_EP_CLOSE, SYS_CAP_REVOKE, SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
     SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
@@ -212,6 +212,48 @@ fn endpoint_grant_probe() -> bool {
         }
         debug_print(b"[init] revoked blocked receiver and reused target slot\r\n");
     }
+    true
+}
+
+fn endpoint_close_probe() -> bool {
+    for slot in [1, 2, 31, 1 << 16, u64::MAX] {
+        if sys(SYS_EP_CLOSE, slot, 0, 0) != -2 {
+            return false;
+        }
+    }
+    for (flags, reserved) in [(1, 0), (0, 1), (u64::MAX, u64::MAX)] {
+        if sys(SYS_EP_CLOSE, INIT_EP_CPTR as u64, flags, reserved) != -1 {
+            return false;
+        }
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        // Reuse the peer slot for a READ waiter; close must cancel it even
+        // though endpoint teardown is different from retaining-root revocation.
+        if sys(SYS_CAP_REVOKE, INIT_EP_CPTR as u64, 0, 0) != 0
+            || sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, 3, 1) != 1
+        {
+            return false;
+        }
+        for _ in 0..16 {
+            yield_now();
+        }
+    }
+    if sys(SYS_EP_CLOSE, INIT_EP_CPTR as u64, 0, 0) != 0 {
+        return false;
+    }
+    for nr in [SYS_EP_CLOSE, SYS_SEND, SYS_RECV, SYS_CAP_REVOKE] {
+        if sys(nr, INIT_EP_CPTR as u64, 0, 0) != -2 {
+            return false;
+        }
+    }
+    if sys(SYS_CAP_GRANT, INIT_EP_CPTR as u64, 3, 2) != -2 {
+        return false;
+    }
+    for _ in 0..16 {
+        yield_now();
+    }
+    debug_print(b"[init] endpoint close invalidates handles\r\n");
     true
 }
 
@@ -808,6 +850,10 @@ pub extern "C" fn _start() -> ! {
         exit(1);
     }
 
+    if !endpoint_close_probe() {
+        debug_print(b"[init] endpoint close FAIL\r\n");
+        exit(1);
+    }
     debug_print(b"\r\n====================================================\r\n");
     debug_print(b"  FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE\r\n");
     debug_print(b"  CUT BIND + HODGE FLOW CLASS ENFORCED\r\n");

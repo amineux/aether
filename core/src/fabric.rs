@@ -401,11 +401,13 @@ impl Fabric {
 
     /// Checked recv: only the endpoint's owner may dequeue. Another tenant's
     /// id, an unknown id and a stale id are all [`FabricError::NoSuchEndpoint`].
+    /// A closed endpoint returns Closed before dequeuing, including when empty.
     pub fn recv_as(&mut self, caller: TenantId, id: EndpointId) -> Result<Message, FabricError> {
         let ep = self.ep_mut(id)?;
         if ep.owner != caller {
             return Err(FabricError::NoSuchEndpoint);
         }
+        if ep.closed { return Err(FabricError::Closed); }
         ep.pop().ok_or(FabricError::WouldBlock)
     }
 
@@ -423,7 +425,8 @@ impl Fabric {
         Ok(ep.qlen)
     }
 
-    /// Close `id`. The endpoint stops admitting sends (`Closed`) and its slot
+    /// Close `id`. Sends and checked receives return `Closed`; queued data
+    /// remains available to trusted diagnostics until the slot is reused. Its slot
     /// becomes reusable by the next [`Self::create_endpoint`]. No tenant
     /// check: kernel-trust primitive; tenant-facing paths use
     /// [`Self::close_for`].
