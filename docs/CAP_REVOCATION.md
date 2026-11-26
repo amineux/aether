@@ -65,6 +65,21 @@ interrupt-disabled lock on the current BSP-only userspace scheduler.
 The x86 boot protocol revokes a WRITE grant, reuses its slot for READ, cancels
 that blocked read, and grants WRITE into the freed slot again. The peer checks
 its untouched output and continued private IPC before sending a distinct message.
-This adds neither endpoint destruction nor memory/DMA revocation, general
+Retaining-root revocation adds neither endpoint close nor memory/DMA revocation, general
 process lifetime cleanup or a hardware-isolation claim. See [ABI](ABI.md) and
 [security boundaries](SECURITY.md) for the syscall and waiter semantics.
+
+## Endpoint close
+
+SYS_EP_CLOSE (14) requires Endpoint+GRANT plus endpoint ownership. It uses the
+deleting walk across the boot registry, then closes the fabric object. All
+receivers on that object are canceled under World lock, including independently
+minted READ aliases outside the deleted lineage. Retaining a cap to a closed
+object does not make checked receive block: it returns Closed before dequeue.
+Foreign owners still get NoSuchEndpoint before closure is revealed. The kernel
+maps the fabric refusal to Inval; deleted source/child CPtrs return NoCap.
+
+Closed slots can be reused with fresh endpoint IDs. Queued data is retained for
+trusted diagnostics until reuse, never copied to canceled receivers. Unrelated
+private IPC remains valid. This is endpoint teardown, not task exit or address-
+space lifetime cleanup; root bindings still cannot be recycled.

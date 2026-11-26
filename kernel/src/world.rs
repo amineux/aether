@@ -388,6 +388,27 @@ pub fn sys_cap_revoke(cptr: u64, flags: u64, reserved: u64) -> Result<u64, SysEr
     })
 }
 
+/// Owner/GRANT checked teardown, plus cancellation of every waiter on the closed
+/// object, including a waiter with an independent READ alias outside the lineage.
+pub fn sys_ep_close(cptr: u64, flags: u64, reserved: u64) -> Result<u64, SysError> {
+    let root = caller_root()?;
+    if flags != 0 || reserved != 0 {
+        return Err(SysError::Inval);
+    }
+    let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;
+    with(|w| {
+        let endpoint = crate::endpoint_close::close(&mut w.cap_spaces, &mut w.fabric, root, cptr)
+            .map_err(|_| SysError::NoCap)?;
+        if task::cancel_revoked_receivers(|root, ep| {
+            crate::endpoint_close::receiver_allowed(&w.cap_spaces, endpoint, root, ep)
+        }) > 0
+        {
+            println!("[ipc] endpoint close returned NoCap to receivers");
+        }
+        Ok(0)
+    })
+}
+
 pub fn sys_send(cptr: u64, msg_ptr: u64) -> Result<u64, SysError> {
     let root = caller_root()?;
     let cptr = CPtr::try_from(cptr).map_err(|_| SysError::NoCap)?;

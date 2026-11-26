@@ -96,6 +96,7 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 11 | `mmap(addr, len, flags)` | Anonymous grow. `flags` must be 0. `addr` 0 = first free page in the grow window; nonzero must be page-aligned and in that window. Returns VA. Additive; 0–10 unchanged. |
 | 12 | `cap_grant(src_cptr, target_tid, rights)` | Copy endpoint READ/WRITE rights to a live user's different registered cap space. Requires Endpoint+GRANT and attenuation; nonzero rights must contain only READ (1) and/or WRITE (2). Returns destination CPtr; source retained. Other authority/targets refused with `-NoCap`, full destination with `-Again`. Additive; 0–11 unchanged. |
 | 13 | `cap_revoke(src_cptr, flags, reserved)` | Requires Endpoint+GRANT. Revoke descendants across registered boot cap spaces, retaining the source. Both trailing args must be 0. Returns 0; `-Inval` for reserved args, `-NoCap` for refused authority. Blocked receives losing READ return `-NoCap`; queued messages are retained. Additive; 0–12 unchanged. |
+| 14 | `ep_close(src_cptr, flags, reserved)` | Requires Endpoint+GRANT and endpoint ownership. Deletes the source and descendants across boot cap spaces and closes the fabric object. Trailing args must be 0. Returns 0, `-Inval` for reserved args, `-NoCap` for refused authority. All blocked receives on the closed object return `-NoCap`. Additive; 0–13 unchanged. |
 
 `SYS_CAP_GRANT` is a bounded endpoint-copy operation between the current boot
 spaces. The full-width target TID is checked for a live user thread and resolved
@@ -106,7 +107,7 @@ The destination learns its returned slot through an agreed out-of-band protocol
 new address-space constructor. GRANT propagation, move, zero/unknown/high rights,
 memory and accelerator caps are refused. Copies preserve the badge and record a
 derivation edge. SYS_CAP_REVOKE reclaims descendant slots; there is no general
-close, memory/accelerator revocation or task cleanup. Generation exhaustion
+memory/accelerator revocation or task cleanup. Generation exhaustion
 fails closed as NoCap.
 
 SYS_CAP_REVOKE requires the caller's Endpoint+GRANT capability and preserves its
@@ -120,6 +121,19 @@ Other READ authority, private endpoints and accelerator waiters remain valid.
 This is object-based receive authority, not a promise to retain a particular
 CPtr generation for a blocked syscall. Regranting a reclaimed slot cannot revive
 a canceled receive. Sent messages remain queued for an authorized receiver.
+
+SYS_EP_CLOSE differs from retaining-root revocation: the selected root is deleted.
+Ownership is checked before the bounded lineage walk; refused preflight/walk
+changes neither capabilities nor fabric. Close and receive cancellation run
+under World lock. Every waiter on the closed object is canceled, including one
+with an independent READ lineage; output pointers are discarded without copy.
+Other endpoints and accelerator waiters remain valid. Future checked receives on
+the closed fabric ID return Closed rather than WouldBlock, so a surviving stale
+alias cannot block forever (World maps this fabric refusal to Inval). Queued
+messages remain for trusted diagnostics until the slot is reused; they are not
+sent to canceled receivers. Fabric IDs are never reused, even when a closed slot
+is allocated again. Raw CPtrs remain recyclable slot indexes, not versioned handles.
+This does not implement thread exit, root recycling or general object destruction.
 
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
@@ -170,5 +184,5 @@ in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
 Boot seeds those names from an x86 virtio-blk AETHFS01 image when
 a drive is present, otherwise from the embedded ELF blobs. This is
 **not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11) and
-`SYS_CAP_GRANT` (12) and `SYS_CAP_REVOKE` (13) are additive slots. No `SYS_OPEN` / `SYS_READ`.
+`SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13), and `SYS_EP_CLOSE` (14) are additive slots. No `SYS_OPEN` / `SYS_READ`.
 SoftNPU stays the in-kernel BAR.

@@ -544,6 +544,7 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-serial.log \
@@ -551,6 +552,8 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] endpoint grant reaches separate root with WRITE only" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] revoked blocked receiver and reused target slot" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[probe] endpoint close cancels receive and preserves private IPC" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[ipc] endpoint close returned NoCap to receivers" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[probe] revoked blocked receive returns NoCap" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[ipc] revoked receive authority returned NoCap" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] straddle read: <AAAAAAAAAAAAAAAABBBBBBBBBBBBBBBB>" $(BUILD)/qemu-serial.log \
@@ -594,6 +597,7 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-pcid-serial.log \
@@ -601,6 +605,8 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] endpoint grant reaches separate root with WRITE only" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] revoked blocked receiver and reused target slot" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[probe] endpoint close cancels receive and preserves private IPC" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[ipc] endpoint close returned NoCap to receivers" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[probe] revoked blocked receive returns NoCap" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[ipc] revoked receive authority returned NoCap" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-pcid-serial.log \
@@ -657,6 +663,7 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-nopcid-serial.log \
@@ -664,6 +671,8 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] endpoint grant reaches separate root with WRITE only" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] revoked blocked receiver and reused target slot" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[probe] endpoint close cancels receive and preserves private IPC" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[ipc] endpoint close returned NoCap to receivers" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[probe] revoked blocked receive returns NoCap" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[ipc] revoked receive authority returned NoCap" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-nopcid-serial.log \
@@ -753,6 +762,7 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/smp-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/smp-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/smp-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/smp-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/smp-serial.log \
@@ -760,6 +770,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] endpoint grant reaches separate root with WRITE only" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] revoked blocked receiver and reused target slot" $(BUILD)/smp-serial.log \
+	   && grep -qF "[probe] endpoint close cancels receive and preserves private IPC" $(BUILD)/smp-serial.log \
+	   && grep -qF "[ipc] endpoint close returned NoCap to receivers" $(BUILD)/smp-serial.log \
 	   && grep -qF "[probe] revoked blocked receive returns NoCap" $(BUILD)/smp-serial.log \
 	   && grep -qF "[ipc] revoked receive authority returned NoCap" $(BUILD)/smp-serial.log \
 	   && grep -q "FABRIC IPC + TENSOR ARENA + ACCEL JOB COMPLETE" $(BUILD)/smp-serial.log; then \
@@ -812,6 +824,7 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-blk-serial.log \
@@ -819,6 +832,8 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -qF "[probe] private cap space IPC ok" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] endpoint grant reaches separate root with WRITE only" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] revoked blocked receiver and reused target slot" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[probe] endpoint close cancels receive and preserves private IPC" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[ipc] endpoint close returned NoCap to receivers" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[probe] revoked blocked receive returns NoCap" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[ipc] revoked receive authority returned NoCap" $(BUILD)/qemu-blk-serial.log \
 	   && grep -q "\\[blast\\] two-tenant blast radius sealed" $(BUILD)/qemu-blk-serial.log \
@@ -920,6 +935,7 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/riscv-serial.log \
@@ -1008,6 +1024,7 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -qF "[init] accel backpressure preserves result and retries" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/aarch64-serial.log \

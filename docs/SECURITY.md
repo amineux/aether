@@ -240,7 +240,7 @@ These are marked so a security review does not assume them:
 | Init is kernel-mode | A buggy demo can touch any PA | Ring-3 / U-mode / EL0 + user page tables — **landed** on x86, RISC-V, and aarch64: `/init` is user; send/recv/map/accel `require()` the CPtr. Kernel `run_boot_demo` is still a trusted self-check. |
 | Send path in the kernel demo does not re-walk the sender CPtr on every fabric.send | A kernel-internal caller could pass a raw EndpointId | `SYS_SEND` is the user send path and always `require`s WRITE |
 | No hardware SMMU | A real device DMA can ignore Soft SMMU | Soft SMMU walks STE→CD→S1/S2, hardens SSID/CD, aborts until Bound, ATS-invalidates a software ATC, allocates non-identity IOVA, refuses maps/binds without Memory+MAP, and (Soft-CP / IreeShapedCp) refuses DMA until SET_SID is armed for that submit; `TypedWindow` is a software pin stub; hardware SMMU still needs partner silicon |
-| User revoke is endpoint-only | SYS_CAP_REVOKE retains Endpoint+GRANT and reclaims descendants across the two boot spaces; blocked receives losing READ return NoCap | Memory/accelerator revocation, endpoint close and task lifetime cleanup remain open |
+| User revoke is endpoint-only | SYS_CAP_REVOKE retains Endpoint+GRANT and reclaims descendants across the two boot spaces; blocked receives losing READ return NoCap | Memory/accelerator revocation and task lifetime cleanup remain open |
 | `revoke` is not a global CNode walk | A GRANT-child in a table the caller did not pass to `revoke_in` survives | Explicit named-table walk; not a seL4 MDB |
 | Identity islands on kernel CR3 | Bulk 4 GiB identity is unmapped. Remaining supervisor islands: low 2 MiB (SIPI / mailbox / trampoline), virtio-blk window, APIC MMIO. SoftNPU is Soft SMMU + HH. User CR3 has no identity (KPTI subset). `USER_MMAP_BASE` is user-only, not an identity island | Meltdown-complete trampoline unmap; POSIX MM |
 | COW is one 4 KiB page | `/init` + `/probe` share one RO template until a write fault; `SYS_CLONE` shares the broken page | `fork`-shaped aspace clone |
@@ -340,7 +340,21 @@ after revocation. All seven gates require revoke authority/flags refusals and
 retained source authority. Host tests cover exact-bound reclamation, oversized
 atomic refusal, root aliases, selective cancellation and FIFO preservation.
 This remains endpoint-only revocation over two boot tables: no memory/accelerator
-revocation, endpoint close, dynamic process registry or task lifetime cleanup.
+revocation, dynamic process registry or task lifetime cleanup.
+
+SYS_EP_CLOSE (14) additionally requires the fabric endpoint's owner to match the
+calling table. It preflights this before deleting the root and descendants in
+both boot tables, then closes the object under the same World lock. Every blocked
+receive on that object returns NoCap, even if an independent READ cap remains.
+No user copy or FIFO dequeue occurs. Checked fabric receive refuses Closed before
+pop, including for an empty queue, and checks ownership before revealing closure.
+This prevents a stale alias from blocking after teardown. Pending data is retained
+for trusted diagnostics until slot reuse; fresh endpoints get fresh IDs, so old
+object IDs cannot reach the new endpoint. Other endpoints/accelerator waiters stay
+valid. The five x86 gates require real blocked close cancellation with an untouched
+buffer and surviving private IPC; all seven require close refusal and invalidated
+source handles. Root/cap/owner preflight and slot-reuse behavior are host-tested.
+This is not task reaping or memory/DMA teardown.
 
 SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
 must accompany a future task-reaping implementation before roots can be recycled.
