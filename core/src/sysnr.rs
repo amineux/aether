@@ -256,7 +256,9 @@ pub fn user_mmap_first_fit(lo: u64, hi: u64, len: u64, taken: &[(u64, u64)]) -> 
         if end > hi {
             return None;
         }
-        let overlap = taken.iter().any(|&(t, n)| va < t.saturating_add(n) && t < end);
+        let overlap = taken
+            .iter()
+            .any(|&(t, n)| va < t.saturating_add(n) && t < end);
         if !overlap {
             return Some(va);
         }
@@ -278,9 +280,9 @@ pub fn user_clone_pair_ok(entry: u64, stack: u64) -> bool {
     if entry == 0 || stack == 0 || stack & 0xF != 0 {
         return false;
     }
-    USER_WINDOWS.iter().any(|&(lo, hi)| {
-        user_range_ok_in(lo, hi, entry, 1) && stack > lo && stack <= hi
-    })
+    USER_WINDOWS
+        .iter()
+        .any(|&(lo, hi)| user_range_ok_in(lo, hi, entry, 1) && stack > lo && stack <= hi)
 }
 
 /// User copies are split at this size; each piece gets its own translation.
@@ -606,13 +608,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(c, USER_MMAP_BASE + 0x2000);
-        assert!(user_mmap_first_fit(
-            USER_MMAP_BASE,
-            USER_MMAP_END,
-            USER_MMAP_MAX,
-            &[(a, 0x1000)]
-        )
-        .is_none());
+        assert!(
+            user_mmap_first_fit(USER_MMAP_BASE, USER_MMAP_END, USER_MMAP_MAX, &[(a, 0x1000)])
+                .is_none()
+        );
         assert!(user_mmap_first_fit(USER_MMAP_BASE, USER_MMAP_END, 0, &[]).is_none());
     }
 
@@ -627,7 +626,10 @@ mod tests {
             USER_AA_IMAGE_BASE + 0x100,
             USER_AA_STACK_TOP
         ));
-        assert!(!user_clone_pair_ok(USER_IMAGE_BASE + 0x100, USER_PROBE_STACK_TOP));
+        assert!(!user_clone_pair_ok(
+            USER_IMAGE_BASE + 0x100,
+            USER_PROBE_STACK_TOP
+        ));
         assert!(!user_clone_pair_ok(USER_IMAGE_BASE, 0));
         assert!(!user_clone_pair_ok(0, USER_STACK_TOP));
         assert!(!user_clone_pair_ok(USER_IMAGE_BASE, USER_STACK_TOP - 1));
@@ -659,9 +661,206 @@ mod tests {
         });
         assert_eq!(r, Ok(()));
         assert_eq!(n, 4);
-        assert_eq!(seen, [base + 100, base + USER_PAGE, base + 2 * USER_PAGE, base + 3 * USER_PAGE]);
+        assert_eq!(
+            seen,
+            [
+                base + 100,
+                base + USER_PAGE,
+                base + 2 * USER_PAGE,
+                base + 3 * USER_PAGE
+            ]
+        );
         // Hole in the middle page of three.
         let mid = |va: u64| va / USER_PAGE != (base + USER_PAGE) / USER_PAGE;
-        assert_eq!(user_pages_ok(base + 100, 2 * USER_PAGE as usize, mid), Err(base + USER_PAGE));
+        assert_eq!(
+            user_pages_ok(base + 100, 2 * USER_PAGE as usize, mid),
+            Err(base + USER_PAGE)
+        );
+    }
+
+    #[test]
+    fn range_ok_in_exact_fit_empty_end_and_overflow() {
+        let (lo, hi) = (0x1000u64, 0x2000u64);
+        assert!(user_range_ok_in(lo, hi, lo, 0x1000));
+        assert!(!user_range_ok_in(lo, hi, lo, 0x1001));
+        assert!(!user_range_ok_in(lo, hi, lo - 1, 1));
+        // An empty range may sit at the exclusive end, but not past it.
+        assert!(user_range_ok_in(lo, hi, hi, 0));
+        assert!(!user_range_ok_in(lo, hi, hi + 1, 0));
+        // ptr + len wrapping the address space is refused, not truncated.
+        assert!(!user_range_ok_in(lo, hi, lo + 0x800, u64::MAX));
+        assert!(!user_range_ok_in(0, u64::MAX, u64::MAX, 1));
+        assert!(user_range_ok_in(0, u64::MAX, u64::MAX - 1, 1));
+    }
+
+    #[test]
+    fn adjacent_known_windows_do_not_merge() {
+        // RISC-V and aarch64 grow windows start exactly at their image end.
+        const { assert!(USER_RV_IMAGE_END == USER_RV_MMAP_BASE) };
+        const { assert!(USER_AA_IMAGE_END == USER_AA_MMAP_BASE) };
+        for edge in [USER_RV_IMAGE_END, USER_AA_IMAGE_END] {
+            assert!(user_range_known(edge - 8, 8));
+            assert!(user_range_known(edge, 8));
+            // Each half is known, but one range may not span two windows.
+            assert!(!user_range_known(edge - 8, 16));
+        }
+        // x86: the virtio-blk window ends where the grow window starts and is
+        // never user-known, so a range reaching back into it is refused.
+        const { assert!(BLK_WINDOW_END == USER_MMAP_BASE) };
+        assert!(!user_range_known(USER_MMAP_BASE - 8, 16));
+        assert!(!user_range_known(USER_PROBE_END - 8, 16));
+    }
+
+    #[test]
+    fn mmap_len_and_window_bounds() {
+        assert!(user_mmap_len_ok(0x1000));
+        assert!(user_mmap_len_ok(USER_MMAP_MAX));
+        assert!(!user_mmap_len_ok(USER_MMAP_MAX + 0x1000));
+        assert!(!user_mmap_len_ok(0x1001));
+        assert!(!user_mmap_len_ok(0));
+        for (lo, hi) in MMAP_WINDOWS {
+            assert_eq!(hi - lo, USER_MMAP_MAX);
+            assert!(user_mmap_ok(lo, USER_MMAP_MAX, 0));
+            assert!(!user_mmap_ok(lo + 0x1000, USER_MMAP_MAX, 0));
+            assert!(user_mmap_ok(hi - 0x1000, 0x1000, 0));
+            assert!(!user_mmap_ok(hi, 0x1000, 0));
+            assert!(!user_mmap_ok(lo - 0x1000, 0x1000, 0));
+        }
+        // Kernel-picked address still checks length and flags.
+        assert!(user_mmap_ok(0, USER_MMAP_MAX, 0));
+        assert!(!user_mmap_ok(0, USER_MMAP_MAX + 0x1000, 0));
+        assert!(!user_mmap_ok(0, 0x1000, u64::MAX));
+        // Page-aligned addresses in non-grow user windows are refused.
+        assert!(!user_mmap_ok(USER_COW_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(USER_PROBE_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(USER_RV_IMAGE_BASE, 0x1000, 0));
+        assert!(!user_mmap_ok(USER_AA_IMAGE_BASE, 0x1000, 0));
+    }
+
+    #[test]
+    fn first_fit_holes_foreign_taken_and_unaligned_inputs() {
+        let (b, e) = (USER_MMAP_BASE, USER_MMAP_END);
+        assert_eq!(user_mmap_first_fit(b + 0x800, e, 0x1000, &[]), None);
+        assert_eq!(user_mmap_first_fit(b, e, 0x800, &[]), None);
+        // A hole exactly the requested size is reused; a larger request skips it.
+        let taken = [(b, 0x1000), (b + 0x3000, 0x1000)];
+        assert_eq!(user_mmap_first_fit(b, e, 0x2000, &taken), Some(b + 0x1000));
+        assert_eq!(user_mmap_first_fit(b, e, 0x3000, &taken), Some(b + 0x4000));
+        // Mappings outside [lo, hi) do not block the window.
+        let foreign = [(USER_RV_MMAP_BASE, USER_MMAP_MAX)];
+        assert_eq!(user_mmap_first_fit(b, e, USER_MMAP_MAX, &foreign), Some(b));
+        // An unaligned taken entry blocks its whole page.
+        assert_eq!(
+            user_mmap_first_fit(b, e, 0x1000, &[(b + 0x10, 0x10)]),
+            Some(b + 0x1000)
+        );
+        // A taken length that would wrap saturates and blocks everything after it.
+        let huge = [(b + 0x2000, u64::MAX)];
+        assert_eq!(user_mmap_first_fit(b, e, 0x2000, &huge), Some(b));
+        assert_eq!(user_mmap_first_fit(b, e, 0x3000, &huge), None);
+        // Only the last page left: found exactly at hi - 4 KiB.
+        let full_but_last = [(b, USER_MMAP_MAX - 0x1000)];
+        assert_eq!(
+            user_mmap_first_fit(b, e, 0x1000, &full_but_last),
+            Some(e - 0x1000)
+        );
+        assert_eq!(user_mmap_first_fit(b, e, 0x2000, &full_but_last), None);
+    }
+
+    #[test]
+    fn clone_pair_alignment_and_window_edges() {
+        // Stack top must be 16-byte aligned; 8-aligned is not enough.
+        assert!(!user_clone_pair_ok(
+            USER_IMAGE_BASE + 0x100,
+            USER_STACK_TOP - 8
+        ));
+        assert!(user_clone_pair_ok(
+            USER_IMAGE_BASE + 0x100,
+            USER_STACK_TOP - 16
+        ));
+        // Stack top equal to the window base has no room below it.
+        assert!(!user_clone_pair_ok(USER_IMAGE_BASE, USER_IMAGE_BASE));
+        assert!(user_clone_pair_ok(USER_IMAGE_BASE, USER_IMAGE_BASE + 0x10));
+        // Entry may be the last byte of the window, not the exclusive end.
+        assert!(user_clone_pair_ok(USER_IMAGE_END - 1, USER_STACK_TOP));
+        assert!(!user_clone_pair_ok(USER_IMAGE_END, USER_STACK_TOP));
+        assert!(user_clone_pair_ok(USER_PROBE_BASE, USER_PROBE_STACK_TOP));
+        // Entry and stack from different architectures' windows are refused.
+        assert!(!user_clone_pair_ok(
+            USER_RV_IMAGE_BASE + 0x100,
+            USER_AA_STACK_TOP
+        ));
+        assert!(!user_clone_pair_ok(
+            USER_AA_IMAGE_BASE + 0x100,
+            USER_RV_STACK_TOP
+        ));
+        assert!(!user_clone_pair_ok(USER_RV_MMAP_BASE, USER_RV_MMAP_END));
+    }
+
+    #[test]
+    fn chunks_and_page_gate_edges() {
+        let base = USER_MMAP_BASE;
+        assert_eq!(user_chunks(base, 0).count(), 0);
+        let mut one = user_chunks(base, USER_PAGE as usize);
+        assert_eq!(
+            one.next(),
+            Some(UserChunk {
+                va: base,
+                off: 0,
+                len: USER_PAGE as usize
+            })
+        );
+        assert_eq!(one.next(), None);
+        // Wrapping ranges, including one ending exactly at 2^64, yield nothing.
+        assert_eq!(user_chunks(u64::MAX - 4, 16).count(), 0);
+        assert_eq!(
+            user_chunks(u64::MAX - (USER_PAGE - 1), USER_PAGE as usize).count(),
+            0
+        );
+
+        // The refusal names the page base, not the unaligned pointer.
+        assert_eq!(user_pages_ok(base + 100, 10, |_| false), Err(base));
+        // Wrap and empty ranges never consult the page table.
+        let mut calls = 0;
+        assert_eq!(
+            user_pages_ok(u64::MAX - 4, 16, |_| {
+                calls += 1;
+                true
+            }),
+            Err(u64::MAX - 4)
+        );
+        assert_eq!(
+            user_pages_ok(base, 0, |_| {
+                calls += 1;
+                false
+            }),
+            Ok(())
+        );
+        assert_eq!(calls, 0);
+        // The gate stops at the first refused page.
+        let mut seen = 0;
+        let r = user_pages_ok(base, 3 * USER_PAGE as usize, |va| {
+            seen += 1;
+            va < base + USER_PAGE
+        });
+        assert_eq!(r, Err(base + USER_PAGE));
+        assert_eq!(seen, 2);
+    }
+
+    #[test]
+    fn ipc_payload_full_width_refusal_keeps_prior_and_forged_len_clamps() {
+        let mut m = UserIpcMsg::empty();
+        assert_eq!(m.payload(), b"");
+        let full = [0x5Au8; 64];
+        assert!(m.set_payload(&full));
+        assert_eq!(m.len, 64);
+        assert_eq!(m.payload(), &full[..]);
+        assert!(m.set_payload(b"ok"));
+        assert!(!m.set_payload(&[1u8; 65]));
+        assert_eq!(m.len, 2);
+        assert_eq!(m.payload(), b"ok");
+        // A len copied in from ring 3 cannot read past the 64-byte buffer.
+        m.len = u16::MAX;
+        assert_eq!(m.payload().len(), 64);
     }
 }
