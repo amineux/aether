@@ -356,8 +356,23 @@ buffer and surviving private IPC; all seven require close refusal and invalidate
 source handles. Root/cap/owner preflight and slot-reuse behavior are host-tested.
 This is not task reaping or memory/DMA teardown.
 
-SYS_EXIT currently shuts down the guest, not one task. Root-reuse lifetime cleanup
-must accompany a future task-reaping implementation before roots can be recycled.
+SYS_EXIT still shuts down the guest. SYS_THREAD_EXIT (15) retires a user clone
+only while another live thread shares its root and a ready successor exists.
+The policy checks queue liveness and trusted roots before mutation; kernel or
+other-root threads do not satisfy the sibling requirement. The retired queue
+entry cannot be scheduled or woken. Its saved user buffer and root lookup are
+cleared, while its TID stays allocated and its kernel stack is not overwritten:
+the trap return still runs on that stack. This quarantine prevents TID aliasing
+and premature stack reuse; it does not reclaim slots. Shared caps, pages and DMA
+remain live for the sibling. No automatic endpoint close or process cleanup is
+performed. The last root thread returns Again and remains running.
+
+All seven QEMU gates require two actual retirements, a non-returning user-thread
+protocol with distinct TIDs, last-root/reserved-argument refusals, and continued
+parent IPC/DMA/accelerator/endpoint behavior. Host tests exercise successor
+selection, atomic refusals, blocked siblings and retired-slot exclusion. There is
+no join/reap API; quarantined TIDs can exhaust clone capacity. Root-reuse lifetime
+cleanup must accompany future process teardown before roots can be recycled.
 Treat isolation as “the cap tables + Soft SMMU + task-local
 USER leaves do the right thing” — which is the part we can unit-test
 and boot-test today — not “the hardware cannot cheat.” The kernel

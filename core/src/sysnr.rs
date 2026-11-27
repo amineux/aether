@@ -1,7 +1,7 @@
 //! Syscall numbers and the ring-3 C ABI.
 //!
 //! Numbers 0–8 are frozen (kernel/src/syscall.rs). Additive slots:
-//! `SYS_EXIT` (9), `SYS_CLONE` (10), `SYS_MMAP` (11), `SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13), `SYS_EP_CLOSE` (14).
+//! `SYS_EXIT` (9), `SYS_CLONE` (10), `SYS_MMAP` (11), `SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13), `SYS_EP_CLOSE` (14), `SYS_THREAD_EXIT` (15).
 
 /// Userspace message blob for `SYS_SEND` / `SYS_RECV`.
 /// Layout is the contract; the kernel copies it across the user/kernel cut.
@@ -114,6 +114,13 @@ pub const SYS_CAP_REVOKE: u64 = 13;
 /// -Inval for reserved args, -NoCap for refused authority. All blocked receives
 /// on the object return -NoCap. No FIFO entry is copied; old IDs never retarget.
 pub const SYS_EP_CLOSE: u64 = 14;
+
+/// Retire the calling user thread while another live thread shares its root.
+/// Args: diagnostic status, flags=0, reserved=0. Success never returns to the
+/// caller. -Inval for reserved args; -Again if retirement is not safe/possible.
+/// TID/kernel stack are quarantined; shared caps, mappings and DMA stay live.
+/// This is not last-root cleanup or SYS_EXIT (9), which still exits the guest.
+pub const SYS_THREAD_EXIT: u64 = 15;
 
 /// Static non-PIE `/init` link address (identity-mapped, USER pages).
 pub const USER_IMAGE_BASE: u64 = 0x0200_0000;
@@ -535,6 +542,7 @@ mod tests {
         assert_eq!(SYS_CAP_GRANT, 12);
         assert_eq!(SYS_CAP_REVOKE, 13);
         assert_eq!(SYS_EP_CLOSE, 14);
+        assert_eq!(SYS_THREAD_EXIT, 15);
     }
 
     #[test]

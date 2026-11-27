@@ -1,5 +1,5 @@
 //! Syscall ABI. Numbers 0–8 are frozen; 9 is `SYS_EXIT`; 10 is
-//! `SYS_CLONE`; 11 is `SYS_MMAP`; 12 is `SYS_CAP_GRANT`; 13 is `SYS_CAP_REVOKE`; 14 is `SYS_EP_CLOSE`.
+//! `SYS_CLONE`; 11 is `SYS_MMAP`; 12 is `SYS_CAP_GRANT`; 13 is `SYS_CAP_REVOKE`; 14 is `SYS_EP_CLOSE`; 15 is `SYS_THREAD_EXIT`.
 //!
 //! User enters here through `syscall`/`sysret` (x86), `ecall`/`sret`
 //! (RISC-V), or `svc`/`eret` (aarch64). Cap checks sit on
@@ -33,6 +33,7 @@ pub const SYS_MMAP: u64 = 11;
 pub const SYS_CAP_GRANT: u64 = aether_core::sysnr::SYS_CAP_GRANT;
 pub const SYS_CAP_REVOKE: u64 = aether_core::sysnr::SYS_CAP_REVOKE;
 pub const SYS_EP_CLOSE: u64 = aether_core::sysnr::SYS_EP_CLOSE;
+pub const SYS_THREAD_EXIT: u64 = aether_core::sysnr::SYS_THREAD_EXIT;
 
 #[derive(Clone, Copy, Debug)]
 pub enum SysError {
@@ -185,7 +186,7 @@ pub fn dispatch(nr: u64, a0: u64, a1: u64, _a2: u64) -> Result<u64, SysError> {
             Ok(0)
         }
         SYS_SEND | SYS_RECV | SYS_MAP | SYS_UNMAP | SYS_ACCEL_SUBMIT | SYS_ACCEL_WAIT
-        | SYS_ARENA_ALLOC | SYS_CAP_GRANT | SYS_CAP_REVOKE | SYS_EP_CLOSE => {
+        | SYS_ARENA_ALLOC | SYS_CAP_GRANT | SYS_CAP_REVOKE | SYS_EP_CLOSE | SYS_THREAD_EXIT => {
             Err(SysError::Inval)
         }
         _ => Err(SysError::Inval),
@@ -233,6 +234,10 @@ fn dispatch_trap(
             task::clone_user(a0, a1).ok_or(SysError::Again)
         }
         SYS_MMAP => sys_mmap(a0, a1, a2),
+        SYS_THREAD_EXIT => {
+            if a1 != 0 || a2 != 0 { return Err(SysError::Inval); }
+            if task::exit_user_thread(frame, a0) { Ok(0) } else { Err(SysError::Again) }
+        }
         SYS_EXIT => {
             crate::console::write_str("[sys] exit status=");
             crate::console::write_u64(a0);

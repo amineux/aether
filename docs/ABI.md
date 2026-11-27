@@ -97,6 +97,7 @@ Entry is `svc #0`; the kernel returns with `eret`.
 | 12 | `cap_grant(src_cptr, target_tid, rights)` | Copy endpoint READ/WRITE rights to a live user's different registered cap space. Requires Endpoint+GRANT and attenuation; nonzero rights must contain only READ (1) and/or WRITE (2). Returns destination CPtr; source retained. Other authority/targets refused with `-NoCap`, full destination with `-Again`. Additive; 0–11 unchanged. |
 | 13 | `cap_revoke(src_cptr, flags, reserved)` | Requires Endpoint+GRANT. Revoke descendants across registered boot cap spaces, retaining the source. Both trailing args must be 0. Returns 0; `-Inval` for reserved args, `-NoCap` for refused authority. Blocked receives losing READ return `-NoCap`; queued messages are retained. Additive; 0–12 unchanged. |
 | 14 | `ep_close(src_cptr, flags, reserved)` | Requires Endpoint+GRANT and endpoint ownership. Deletes the source and descendants across boot cap spaces and closes the fabric object. Trailing args must be 0. Returns 0, `-Inval` for reserved args, `-NoCap` for refused authority. All blocked receives on the closed object return `-NoCap`. Additive; 0–13 unchanged. |
+| 15 | `thread_exit(status, flags, reserved)` | Shared-root user-thread retirement. Trailing args must be 0. Success never resumes the caller. `-Inval` for reserved args; `-Again` unless a live sibling shares the root and a ready successor exists. TID/kernel stack quarantined; shared objects retained. Status is diagnostic only, without a join API. Additive; 0–14 unchanged. |
 
 `SYS_CAP_GRANT` is a bounded endpoint-copy operation between the current boot
 spaces. The full-width target TID is checked for a live user thread and resolved
@@ -134,6 +135,18 @@ messages remain for trusted diagnostics until the slot is reused; they are not
 sent to canceled receivers. Fabric IDs are never reused, even when a closed slot
 is allocated again. Raw CPtrs remain recyclable slot indexes, not versioned handles.
 This does not implement thread exit, root recycling or general object destruction.
+
+SYS_THREAD_EXIT retires only the caller's CPU queue entry and clears its saved
+user-buffer pointer/root lookup. It switches to a ready successor through the
+existing trap-frame path. The old TID stays allocated and its kernel stack stays
+untouched because the return trampoline is still using it; clone allocation must
+not reuse either. Retired IDs cannot be grant destinations. Shared capabilities,
+page tables, user memory and DMA pins remain owned by the live sibling root.
+The last live thread of a root is refused with Again, even if another root or a
+kernel thread is runnable. A blocked live sibling counts for root lifetime, but
+a ready successor is still required for the switch. No join/reap or address-
+space teardown is provided; repeated retirements can exhaust the bounded TID
+pool, after which clone returns Again. SYS_EXIT (9) still shuts down the guest.
 
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
@@ -184,5 +197,5 @@ in-kernel ramfs (`core/src/ramfs.rs`: `seed` / `open` / `read`).
 Boot seeds those names from an x86 virtio-blk AETHFS01 image when
 a drive is present, otherwise from the embedded ELF blobs. This is
 **not** a user syscall: numbers **0–10 stay frozen**; `SYS_MMAP` (11) and
-`SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13), and `SYS_EP_CLOSE` (14) are additive slots. No `SYS_OPEN` / `SYS_READ`.
+`SYS_CAP_GRANT` (12), `SYS_CAP_REVOKE` (13), and `SYS_EP_CLOSE` (14) and `SYS_THREAD_EXIT` (15) are additive slots. No `SYS_OPEN` / `SYS_READ`.
 SoftNPU stays the in-kernel BAR.
