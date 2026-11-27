@@ -545,6 +545,8 @@ qemu-ci: $(LOADER_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/qemu-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/qemu-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-serial.log \
@@ -598,6 +600,8 @@ qemu-pcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-pcid-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/qemu-pcid-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/qemu-pcid-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-pcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-pcid-serial.log \
@@ -664,6 +668,8 @@ qemu-nopcid-ci: $(LOADER_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-nopcid-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/qemu-nopcid-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/qemu-nopcid-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-nopcid-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-nopcid-serial.log \
@@ -763,6 +769,8 @@ qemu-smp-ci: $(LOADER_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/smp-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/smp-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/smp-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/smp-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/smp-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/smp-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/smp-serial.log \
@@ -825,6 +833,8 @@ qemu-blk-ci: $(LOADER_ELF) $(BOOTFS_IMG)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/qemu-blk-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/qemu-blk-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/qemu-blk-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/qemu-blk-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/qemu-blk-serial.log \
@@ -936,6 +946,8 @@ qemu-riscv-ci: $(RV_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/riscv-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/riscv-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/riscv-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/riscv-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/riscv-serial.log \
@@ -1025,6 +1037,8 @@ qemu-aarch64-ci: $(AA_ELF)
 	   && grep -qF "[init] endpoint grant refuses invalid targets and authority" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] endpoint revocation refuses invalid authority and flags" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[init] endpoint close invalidates handles" $(BUILD)/aarch64-serial.log \
+	   && grep -qF "[init] clone thread exit preserves parent and quarantines tids" $(BUILD)/aarch64-serial.log \
+	   && test "$$(grep -cF "[sched] retired shared-root user thread" $(BUILD)/aarch64-serial.log)" -ge 2 \
 	   && grep -qF "[accel] completion cached until wait" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[accel] consumed completion for one blocked waiter" $(BUILD)/aarch64-serial.log \
 	   && grep -qF "[ipc] queued message completed one blocked receive" $(BUILD)/aarch64-serial.log \

@@ -478,6 +478,44 @@ pub fn resched_from_trap(frame: &mut InterruptFrame, block: Option<WaitWhy>, use
     }
 }
 
+/// Retire a shared-root user thread from an IRQ-masked trap on the BSP.
+/// Keep used=true and the kernel stack untouched: the return trampoline is
+/// still executing on that stack, and stale TIDs must not alias new threads.
+pub fn exit_user_thread(frame: &mut InterruptFrame, status: u64) -> bool {
+    let t = tasks();
+    if !t.started {
+        return false;
+    }
+    let current = t.current;
+    let kernel_root = crate::mm::paging::kernel_cr3();
+    let roots = |id: u32| {
+        t.threads
+            .get(slot_index(id))
+            .filter(|thread| thread.used && thread.cr3 != 0 && thread.cr3 != kernel_root)
+            .map(|thread| thread.cr3)
+    };
+    let Some(root) = roots(current) else {
+        return false;
+    };
+    let Some(next) = crate::thread_exit::retire_shared(&mut t.queue, current, root, roots) else {
+        return false;
+    };
+    t.current = next;
+    apply_hw(t, current, next);
+    *frame = t.threads[slot_index(next)].saved;
+    let retired = &mut t.threads[slot_index(current)];
+    retired.user_buf = 0;
+    retired.cr3 = 0;
+    // Do not release used or clear kstack. alloc_tid must quarantine this TID.
+    mark_switched();
+    write_str("[sched] retired shared-root user thread tid=");
+    write_u64(current as u64);
+    write_str(" status=");
+    write_u64(status);
+    console::nl();
+    true
+}
+
 pub fn wake_recv(ep: u32, tid: u32) {
     let t = tasks();
     let _ = t.queue.wake_recv_one(aether_core::EndpointId(ep), tid);

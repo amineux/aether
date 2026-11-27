@@ -21,6 +21,7 @@ mod smp_smoke;
 mod sync;
 mod syscall;
 mod task;
+mod thread_exit;
 #[cfg(target_arch = "x86_64")]
 mod virtio_blk;
 mod world;

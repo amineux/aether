@@ -1,6 +1,6 @@
 //! Ring-3 `/init` — static ELF64 non-PIE at 0x0200_0000.
 //!
-//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–14).
+//! Talks to the kernel only through `syscall` / `ecall` / `svc` (numbers 0–15).
 //! Well-known CPtrs 0 (endpoint) and 1 (accel queue) are minted before
 //! the drop. `SYS_CLONE` starts a sibling thread on this aspace.
 
@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicI64, AtomicU64, Ordering};
 use aether_core::demo::DEMO_B;
 use aether_core::sysnr::{
     UserAccelJob, UserCompletion, UserIpcMsg, INIT_EP_CPTR, INIT_QUEUE_CPTR, MMAP_GROW_WORD,
-    SYS_EP_CLOSE, SYS_CAP_REVOKE, SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
+    SYS_THREAD_EXIT, SYS_EP_CLOSE, SYS_CAP_REVOKE, SYS_CAP_GRANT, SYS_ACCEL_SUBMIT, SYS_ACCEL_WAIT, SYS_ARENA_ALLOC, SYS_CLONE, SYS_DEBUG_PRINT, SYS_EXIT,
     SYS_MAP, SYS_MMAP, SYS_RECV, SYS_SEND, SYS_UNMAP, SYS_YIELD,
 };
 #[cfg(target_arch = "x86_64")]
@@ -364,6 +364,56 @@ struct ChildStack([u8; 8192]);
 
 static mut CHILD_STACK: ChildStack = ChildStack([0; 8192]);
 
+static mut EXIT_STACK: ChildStack = ChildStack([0; 8192]);
+static EXIT_STARTED: AtomicU64 = AtomicU64::new(0);
+static EXIT_RETURNED: AtomicU64 = AtomicU64::new(0);
+
+extern "C" fn exiting_thread(tid: u64) -> ! {
+    EXIT_STARTED.store(tid, Ordering::Release);
+    let _ = sys(SYS_THREAD_EXIT, 37, 0, 0);
+    EXIT_RETURNED.store(1, Ordering::Release);
+    loop {
+        yield_now();
+    }
+}
+
+fn thread_exit_probe() -> bool {
+    for (flags, reserved) in [(1, 0), (0, 1)] {
+        if sys(SYS_THREAD_EXIT, 0, flags, reserved) != -1 {
+            return false;
+        }
+    }
+    // /probe has another root. Only an actual sibling may keep ours alive.
+    if sys(SYS_THREAD_EXIT, 0, 0, 0) != -4 {
+        return false;
+    }
+    let mut prior = 0;
+    for _ in 0..2 {
+        EXIT_STARTED.store(0, Ordering::Release);
+        let top = (core::ptr::addr_of_mut!(EXIT_STACK) as *mut u8)
+            .wrapping_add(core::mem::size_of::<ChildStack>()) as u64;
+        let tid = sys(SYS_CLONE, exiting_thread as usize as u64, top, 0);
+        if tid <= 0 || tid as u64 == prior {
+            return false;
+        }
+        for _ in 0..32 {
+            yield_now();
+        }
+        if EXIT_STARTED.load(Ordering::Acquire) != tid as u64
+            || EXIT_RETURNED.load(Ordering::Acquire) != 0
+        {
+            return false;
+        }
+        prior = tid as u64;
+    }
+    // Retired slots must not count as live siblings or be silently reused.
+    if sys(SYS_THREAD_EXIT, 0, 0, 0) != -4 {
+        return false;
+    }
+    debug_print(b"[init] clone thread exit preserves parent and quarantines tids\r\n");
+    true
+}
+
 fn spawn_user_thread() -> bool {
     let stack = unsafe {
         (core::ptr::addr_of_mut!(CHILD_STACK) as *mut u8).add(core::mem::size_of::<ChildStack>())
@@ -561,6 +611,10 @@ pub extern "C" fn _start() -> ! {
         debug_print(b"[init] AArch64 x16/x17 preserved\r\n");
     }
 
+    if !thread_exit_probe() {
+        debug_print(b"[init] thread exit FAIL\r\n");
+        exit(1);
+    }
     if !spawn_user_thread() {
         exit(1);
     }

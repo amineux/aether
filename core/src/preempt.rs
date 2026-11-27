@@ -144,6 +144,27 @@ impl CpuQueue {
         }
     }
 
+    /// Retire the running slot only after a ready successor is found. Refusal
+    /// leaves the running thread and all queue metadata unchanged.
+    pub fn finish_current(&mut self) -> Option<u32> {
+        let current = self.current?;
+        let index = self.idx(current)?;
+        if self.slots[index].state != ThreadState::Running {
+            return None;
+        }
+        let next = self.pick_ready(Some(current))?;
+        self.slots[index] = ThreadSlot {
+            id: 0,
+            state: ThreadState::Empty,
+            wait: WaitWhy::None,
+            slice_left: 0,
+        };
+        self.set_state(next, ThreadState::Running);
+        self.current = Some(next);
+        self.switches += 1;
+        Some(next)
+    }
+
     /// Block current on `why`. Returns the thread that should run, if any.
     pub fn block(&mut self, why: WaitWhy) -> Option<u32> {
         let cur = self.current?;
