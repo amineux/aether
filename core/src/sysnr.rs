@@ -85,7 +85,9 @@ pub const SYS_EXIT: u64 = 9;
 /// `clone(entry, stack, flags) → tid`. `flags` must be 0. The child
 /// does not return from clone: it starts at `entry` with arg0 = tid
 /// and `rsp`/`sp` = `stack`. Not Linux `clone`, not `fork`, no new
-/// address space, no TLS, no files.
+/// address space, no TLS, no files. Entry must be USER-mapped and the
+/// 16-byte stack landing area writable in the caller's root; mapping refusal
+/// returns -Fault before allocating a TID. Execute permission is not checked.
 pub const SYS_CLONE: u64 = 10;
 /// Grow the caller's aspace with anonymous 4 KiB USER pages.
 ///
@@ -283,6 +285,20 @@ pub fn user_clone_pair_ok(entry: u64, stack: u64) -> bool {
     USER_WINDOWS
         .iter()
         .any(|&(lo, hi)| user_range_ok_in(lo, hi, entry, 1) && stack > lo && stack <= hi)
+}
+
+/// Validate clone's initial mapped entry byte and 16-byte stack landing area.
+/// The caller must query USER mappings in the calling thread's actual root,
+/// requiring writable stack pages. This does not check execute permission or
+/// guarantee that later instructions/stack growth will remain mapped.
+pub fn user_clone_pages_ok(
+    entry: u64,
+    stack: u64,
+    mut page_ok: impl FnMut(u64, bool) -> bool,
+) -> bool {
+    user_clone_pair_ok(entry, stack)
+        && user_pages_ok(entry, 1, |va| page_ok(va, false)).is_ok()
+        && user_pages_ok(stack - 16, 16, |va| page_ok(va, true)).is_ok()
 }
 
 /// User copies are split at this size; each piece gets its own translation.
@@ -862,5 +878,66 @@ mod tests {
         // A len copied in from ring 3 cannot read past the 64-byte buffer.
         m.len = u16::MAX;
         assert_eq!(m.payload().len(), 64);
+    }
+
+    #[test]
+    fn clone_mapping_gate_refuses_malformed_pair_before_any_walk() {
+        for (entry, stack) in [
+            (0, USER_STACK_TOP),
+            (USER_IMAGE_BASE, 0),
+            (USER_IMAGE_BASE, USER_STACK_TOP - 1),
+            (USER_IMAGE_BASE, USER_PROBE_STACK_TOP),
+            (USER_IMAGE_BASE, USER_IMAGE_BASE),
+            (u64::MAX, u64::MAX),
+        ] {
+            assert!(!user_clone_pages_ok(entry, stack, |_, _| panic!(
+                "invalid pair walked"
+            )));
+        }
+    }
+
+    #[test]
+    fn clone_mapping_gate_checks_entry_then_writable_landing_area() {
+        let entry = USER_IMAGE_BASE + 0x100;
+        let mut seen = std::vec::Vec::new();
+        assert!(user_clone_pages_ok(entry, USER_STACK_TOP, |va, write| {
+            seen.push((va, write));
+            true
+        }));
+        assert_eq!(seen, [(entry, false), (USER_STACK_TOP - 16, true)]);
+        // A read-only page can contain the entry but cannot host the stack,
+        // even when both addresses happen to be on the same page.
+        assert!(!user_clone_pages_ok(
+            entry,
+            USER_IMAGE_BASE + 0x200,
+            |_, write| !write
+        ));
+    }
+
+    #[test]
+    fn clone_mapping_gate_refuses_unmapped_entry_without_stack_walk() {
+        let mut calls = 0;
+        assert!(!user_clone_pages_ok(
+            USER_IMAGE_BASE,
+            USER_STACK_TOP,
+            |_, write| {
+                assert!(!write);
+                calls += 1;
+                false
+            }
+        ));
+        assert_eq!(calls, 1);
+    }
+
+    #[test]
+    fn clone_mapping_gate_refuses_stack_hole_for_every_image_window() {
+        for (lo, hi) in USER_WINDOWS {
+            assert!(!user_clone_pages_ok(lo, hi, |va, _| va < hi - USER_PAGE));
+            assert!(user_clone_pages_ok(lo, lo + 16, |va, _write| {
+                assert_eq!(va, lo);
+                // The first legal landing area begins at the window base.
+                true
+            }));
+        }
     }
 }

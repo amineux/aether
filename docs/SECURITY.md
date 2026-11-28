@@ -408,3 +408,15 @@ would corrupt a live EL0 value across SVC or timer preemption. The AArch64 QEMU
 gate requires sentinel values to survive repeated `SYS_YIELD` calls, alongside
 the cloned-thread DMA unmap check. This is a register-preservation regression,
 not a complete scheduler or trap-handler proof.
+
+### Clone mapping preflight
+
+`SYS_CLONE` validates its initial entry byte and 16-byte stack landing area in
+its caller's trusted root before allocating a TID. Both must be USER mappings;
+the stack must also be writable. Range-valid foreign image windows and missing
+or read-only stack pages return Fault without changing the task table. This
+uses the same page walker as user copies. It does not enforce execute permission
+or instruction alignment, validate future stack growth, or replace fault handling.
+Host tests exercise the actual shared gate and short-circuit behavior. Every
+QEMU boot gate requires repeated foreign-window refusals followed by successful
+shared-root clones, demonstrating that refused requests preserve TID capacity.

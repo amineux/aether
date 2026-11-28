@@ -377,6 +377,33 @@ extern "C" fn exiting_thread(tid: u64) -> ! {
     }
 }
 
+fn clone_mapping_probe() -> bool {
+    use aether_core::sysnr::{
+        USER_AA_IMAGE_BASE, USER_AA_IMAGE_END, USER_IMAGE_BASE, USER_IMAGE_END, USER_PROBE_BASE,
+        USER_PROBE_END, USER_RV_IMAGE_BASE, USER_RV_IMAGE_END,
+    };
+    let entry = exiting_thread as usize as u64;
+    // Foreign boot/architecture windows pass the range-only gate, but are not
+    // mapped in this caller's root. Repeated refusals must consume no TID.
+    for (lo, hi) in [
+        (USER_IMAGE_BASE, USER_IMAGE_END),
+        (USER_PROBE_BASE, USER_PROBE_END),
+        (USER_RV_IMAGE_BASE, USER_RV_IMAGE_END),
+        (USER_AA_IMAGE_BASE, USER_AA_IMAGE_END),
+    ] {
+        if entry >= lo && entry < hi {
+            continue;
+        }
+        for _ in 0..3 {
+            if sys(SYS_CLONE, lo, hi, 0) != -3 {
+                return false;
+            }
+        }
+    }
+    debug_print(b"[init] clone refuses unmapped windows before allocating tids\r\n");
+    true
+}
+
 fn thread_exit_probe() -> bool {
     for (flags, reserved) in [(1, 0), (0, 1)] {
         if sys(SYS_THREAD_EXIT, 0, flags, reserved) != -1 {
@@ -611,6 +638,10 @@ pub extern "C" fn _start() -> ! {
         debug_print(b"[init] AArch64 x16/x17 preserved\r\n");
     }
 
+    if !clone_mapping_probe() {
+        debug_print(b"[init] clone mapping FAIL\r\n");
+        exit(1);
+    }
     if !thread_exit_probe() {
         debug_print(b"[init] thread exit FAIL\r\n");
         exit(1);

@@ -151,10 +151,15 @@ pool, after which clone returns Again. SYS_EXIT (9) still shuts down the guest.
 `SYS_CLONE` is a **documented subset**, not Linux `clone` and not
 `fork`: no new address space, no TLS, no files, no `CLONE_*` flags.
 `entry` and `stack` must sit in the same known user window (16-byte
-aligned stack). `SYS_EXIT` is still guest-wide (isa-debug-exit /
-sifive_test), so the child must not call it. World still has one
-shared `CapTable`. `/probe` remains a second ELF with its own PML4
-— that is not this syscall.
+aligned stack). Before allocating a TID, the kernel checks the entry byte is
+USER-mapped in the caller's actual root and the 16 bytes below stack-top are
+USER-mapped and writable. Missing/readonly mappings return `-Fault` without
+consuming a TID. A numerically valid foreign image window is insufficient.
+This initial landing check does not validate execute permission, instruction
+alignment, the entire future stack, or later accesses. `SYS_EXIT` is still
+guest-wide (isa-debug-exit / sifive_test), so the child must not call it.
+A clone shares its caller's capability space. `/probe` remains a second ELF
+with its own root and capability table — that is not this syscall.
 
 No new syscall for COW. The kernel maps one shared 4 KiB USER page
 at `USER_COW_BASE` (`0x0280_0000`) read-only into x86 `/init` and
