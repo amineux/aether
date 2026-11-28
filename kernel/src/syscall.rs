@@ -8,7 +8,7 @@
 #![allow(dead_code)]
 
 use aether_core::sysnr::{
-    user_chunks, user_clone_pair_ok, user_mmap_ok, user_pages_ok, user_range_known, UserAccelJob,
+    user_chunks, user_clone_pages_ok, user_mmap_ok, user_pages_ok, user_range_known, UserAccelJob,
     UserIpcMsg,
 };
 
@@ -228,7 +228,10 @@ fn dispatch_trap(
             if a2 != 0 {
                 return Err(SysError::Inval);
             }
-            if !user_clone_pair_ok(a0, a1) {
+            let root = task::current_user_root().ok_or(SysError::Fault)?;
+            if !user_clone_pages_ok(a0, a1, |va, write| {
+                crate::mm::paging::user_page_kva_in(root, va, write).is_some()
+            }) {
                 return Err(SysError::Fault);
             }
             task::clone_user(a0, a1).ok_or(SysError::Again)
