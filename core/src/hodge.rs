@@ -140,8 +140,7 @@ impl HodgeQuotaReport {
 /// Quota ceiling — not HarmonicTreeReduce / CurlOnTree / ClassNotAuthorized.
 pub fn run_hodge_quota_demo() -> HodgeQuotaReport {
     let mut empty = HodgeQuota::empty();
-    let empty_refused =
-        empty.admit(FlowClass::Gradient, false) == Err(HodgeError::QuotaExceeded);
+    let empty_refused = empty.admit(FlowClass::Gradient, false) == Err(HodgeError::QuotaExceeded);
 
     let mut generous = HodgeQuota::generous();
     let generous_ok = generous.admit(FlowClass::Gradient, false).is_ok()
@@ -188,19 +187,23 @@ pub fn run_hodge_class_unauthorized_demo() -> HodgeClassUnauthorizedReport {
     let cap = Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 1, TenantId(1))
         .with_badge(CLASS_GRADIENT | CLASS_CURL)
         .with_generation(1);
-    let badge_ok = authorize(&cap, FlowClass::Gradient).is_ok()
-        && authorize(&cap, FlowClass::Curl).is_ok();
+    let badge_ok =
+        authorize(&cap, FlowClass::Gradient).is_ok() && authorize(&cap, FlowClass::Curl).is_ok();
     let harmonic_refused =
         authorize(&cap, FlowClass::Harmonic) == Err(HodgeError::ClassNotAuthorized);
 
-    let mem = Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(1))
-        .with_generation(1);
-    let wrong_kind =
-        authorize(&mem, FlowClass::Gradient) == Err(HodgeError::ClassNotAuthorized);
+    let mem =
+        Capability::new(CapKind::Memory, CapRights::MEM_FULL, 2, TenantId(1)).with_generation(1);
+    let wrong_kind = authorize(&mem, FlowClass::Gradient) == Err(HodgeError::ClassNotAuthorized);
 
-    let no_write_cap = Capability::new(CapKind::FlowQuota, CapRights(CapRights::READ), 3, TenantId(1))
-        .with_badge(CLASS_ALL)
-        .with_generation(1);
+    let no_write_cap = Capability::new(
+        CapKind::FlowQuota,
+        CapRights(CapRights::READ),
+        3,
+        TenantId(1),
+    )
+    .with_badge(CLASS_ALL)
+    .with_generation(1);
     let no_write =
         authorize(&no_write_cap, FlowClass::Gradient) == Err(HodgeError::ClassNotAuthorized);
 
@@ -279,5 +282,190 @@ mod tests {
         assert!(r.wrong_kind, "Memory kind → ClassNotAuthorized");
         assert!(r.no_write, "FlowQuota without WRITE → ClassNotAuthorized");
         assert!(r.all_ok());
+    }
+
+    #[test]
+    fn flow_class_tag_round_trip_and_refusal() {
+        for c in [FlowClass::Gradient, FlowClass::Curl, FlowClass::Harmonic] {
+            assert_eq!(FlowClass::from_u8(c as u8), Some(c));
+        }
+        for v in [3u8, 4, 7, 0x80, u8::MAX] {
+            assert_eq!(FlowClass::from_u8(v), None, "tag {v} must not decode");
+        }
+        assert_eq!(FlowClass::Gradient.as_str(), "gradient");
+        assert_eq!(FlowClass::Curl.as_str(), "curl");
+        assert_eq!(FlowClass::Harmonic.as_str(), "harmonic");
+    }
+
+    #[test]
+    fn class_bits_match_badge_constants() {
+        assert_eq!(FlowClass::Gradient.bit(), CLASS_GRADIENT);
+        assert_eq!(FlowClass::Curl.bit(), CLASS_CURL);
+        assert_eq!(FlowClass::Harmonic.bit(), CLASS_HARMONIC);
+        assert_eq!(CLASS_GRADIENT | CLASS_CURL | CLASS_HARMONIC, CLASS_ALL);
+        // Bits are disjoint, so one badge bit never authorizes two classes.
+        assert_eq!(CLASS_GRADIENT & CLASS_CURL, 0);
+        assert_eq!(CLASS_GRADIENT & CLASS_HARMONIC, 0);
+        assert_eq!(CLASS_CURL & CLASS_HARMONIC, 0);
+    }
+
+    #[test]
+    fn topology_policy_checked_before_quota_and_refusal_consumes_nothing() {
+        // Policy refusals win over an exhausted quota: the error names the
+        // topology mistake, not the ceiling.
+        let mut empty = HodgeQuota::empty();
+        assert_eq!(
+            empty.admit(FlowClass::Curl, true),
+            Err(HodgeError::CurlOnTree)
+        );
+        assert_eq!(
+            empty.admit(FlowClass::Harmonic, true),
+            Err(HodgeError::HarmonicTreeReduce)
+        );
+        assert_eq!(
+            empty.admit(FlowClass::Gradient, true),
+            Err(HodgeError::QuotaExceeded)
+        );
+
+        // A policy refusal on a funded quota leaves every counter untouched.
+        let mut q = HodgeQuota::generous();
+        let before = q;
+        assert!(q.admit(FlowClass::Curl, true).is_err());
+        assert!(q.admit(FlowClass::Harmonic, true).is_err());
+        assert_eq!(q, before);
+
+        // Gradient tree offload is admitted and charged like a plain send.
+        q.admit(FlowClass::Gradient, true).unwrap();
+        assert_eq!(q.remain(FlowClass::Gradient), 63);
+        assert_eq!(q.remain(FlowClass::Curl), 64);
+        assert_eq!(q.remain(FlowClass::Harmonic), 64);
+    }
+
+    #[test]
+    fn per_class_quota_exhausts_independently() {
+        let mut q = HodgeQuota::generous();
+        for i in 0..64u32 {
+            q.admit(FlowClass::Gradient, false).unwrap();
+            assert_eq!(q.remain(FlowClass::Gradient), 63 - i);
+        }
+        assert_eq!(
+            q.admit(FlowClass::Gradient, false),
+            Err(HodgeError::QuotaExceeded)
+        );
+        assert_eq!(
+            q.admit(FlowClass::Gradient, true),
+            Err(HodgeError::QuotaExceeded)
+        );
+        // Refusal at zero does not wrap the counter.
+        assert_eq!(q.remain(FlowClass::Gradient), 0);
+        // Other classes keep their full budget.
+        assert_eq!(q.remain(FlowClass::Curl), 64);
+        assert_eq!(q.remain(FlowClass::Harmonic), 64);
+        q.admit(FlowClass::Curl, false).unwrap();
+        q.admit(FlowClass::Harmonic, false).unwrap();
+    }
+
+    #[test]
+    fn single_credit_quota_admits_exactly_once() {
+        let mut q = HodgeQuota { remain: [0, 1, 0] };
+        assert_eq!(
+            q.admit(FlowClass::Gradient, false),
+            Err(HodgeError::QuotaExceeded)
+        );
+        q.admit(FlowClass::Curl, false).unwrap();
+        assert_eq!(
+            q.admit(FlowClass::Curl, false),
+            Err(HodgeError::QuotaExceeded)
+        );
+        assert_eq!(q, HodgeQuota::empty());
+    }
+
+    #[test]
+    fn authorize_needs_kind_write_and_class_bit() {
+        let t = TenantId(1);
+        // WRITE alone (no READ / GRANT) is sufficient with the class bit.
+        let write_only = Capability::new(CapKind::FlowQuota, CapRights(CapRights::WRITE), 1, t)
+            .with_badge(CLASS_HARMONIC)
+            .with_generation(1);
+        assert!(authorize(&write_only, FlowClass::Harmonic).is_ok());
+        assert_eq!(
+            authorize(&write_only, FlowClass::Gradient),
+            Err(HodgeError::ClassNotAuthorized)
+        );
+
+        // Zero badge authorizes no class, even with full rights.
+        let no_classes = Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 2, t)
+            .with_badge(0)
+            .with_generation(1);
+        for c in [FlowClass::Gradient, FlowClass::Curl, FlowClass::Harmonic] {
+            assert_eq!(
+                authorize(&no_classes, c),
+                Err(HodgeError::ClassNotAuthorized)
+            );
+        }
+
+        // Full badge + full rights authorizes every class.
+        let all = Capability::new(CapKind::FlowQuota, CapRights::HODGE_FULL, 3, t)
+            .with_badge(CLASS_ALL)
+            .with_generation(1);
+        for c in [FlowClass::Gradient, FlowClass::Curl, FlowClass::Harmonic] {
+            assert!(authorize(&all, c).is_ok());
+        }
+
+        // Wrong kind is refused even when rights and badge would pass.
+        let wrong_kind = Capability::new(CapKind::Memory, CapRights::HODGE_FULL, 4, t)
+            .with_badge(CLASS_ALL)
+            .with_generation(1);
+        assert_eq!(
+            authorize(&wrong_kind, FlowClass::Gradient),
+            Err(HodgeError::ClassNotAuthorized)
+        );
+    }
+
+    #[test]
+    fn hodge_reports_all_ok_requires_every_flag() {
+        let q = HodgeQuotaReport {
+            empty_refused: true,
+            generous_ok: true,
+        };
+        assert!(q.all_ok());
+        assert!(!HodgeQuotaReport {
+            empty_refused: false,
+            ..q
+        }
+        .all_ok());
+        assert!(!HodgeQuotaReport {
+            generous_ok: false,
+            ..q
+        }
+        .all_ok());
+
+        let c = HodgeClassUnauthorizedReport {
+            badge_ok: true,
+            harmonic_refused: true,
+            wrong_kind: true,
+            no_write: true,
+        };
+        assert!(c.all_ok());
+        assert!(!HodgeClassUnauthorizedReport {
+            badge_ok: false,
+            ..c
+        }
+        .all_ok());
+        assert!(!HodgeClassUnauthorizedReport {
+            harmonic_refused: false,
+            ..c
+        }
+        .all_ok());
+        assert!(!HodgeClassUnauthorizedReport {
+            wrong_kind: false,
+            ..c
+        }
+        .all_ok());
+        assert!(!HodgeClassUnauthorizedReport {
+            no_write: false,
+            ..c
+        }
+        .all_ok());
     }
 }
